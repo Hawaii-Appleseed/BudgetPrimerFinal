@@ -125,7 +125,13 @@ a { color: var(--dark); }
 .r6 { clip-path: polygon(0% 78.889%, 14.216% 89.861%, 21.405% 89.861%, 0% 73.333%); }
 .r7 { clip-path: polygon(40.441% 88.636%, 100% 88.636%, 100% 93.838%, 47.173% 93.838%); }
 .r8 { clip-path: polygon(0% 87.475%, 3.088% 89.861%, 10.278% 89.861%, 0% 81.919%); }
-.cover-inner { position: relative; z-index: 2; padding: 2.2in .7in 0; }
+/* z-index 1, NOT 2. It only has to clear the ribbons (which set none at all);
+   2 collided exactly with the z-index layout.py gives every placed text box,
+   and this wrapper comes later in the markup, so it won the tie. A note
+   dropped on the cover then painted UNDERNEATH the cover's own title and this
+   wrapper — visible, because both are transparent, and completely unclickable.
+   Anything that raises this back to 2 buries the editable layer again. */
+.cover-inner { position: relative; z-index: 1; padding: 2.2in .7in 0; }
 .logo-lockup { display: flex; align-items: center; }
 .logo-lockup.light { justify-content: center; }
 .logo-img { height: 40px; width: auto; display: block; }

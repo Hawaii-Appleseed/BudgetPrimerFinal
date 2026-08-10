@@ -1229,6 +1229,36 @@ class Handler(SimpleHTTPRequestHandler):
             req = json.loads(self.rfile.read(n) or b"{}")
         except json.JSONDecodeError as e:
             return self._json(400, {"ok": False, "error": f"bad request: {e}"})
+        # PRIMER_TEST_SAFE: the Playwright suite's guard against real commits,
+        # pushes, exports and uploads, moved SERVER-side. It used to be four
+        # context.route() blocks in the test fixture — but one registered route
+        # turns on full request interception for the context, and Firefox's
+        # interception pipe wedges streaming the ~30MB Pyodide fetch on a
+        # second boot: every multi-boot spec then timed out at first render
+        # while the app itself was fine. Answering here needs no interception
+        # at all, and it also closes the fixture's documented gap — a spec
+        # POSTing through Playwright's `request` fixture bypassed the browser
+        # routes entirely and hit the real endpoint. Response shapes mirror
+        # the old mocks exactly; specs assert on them.
+        if os.environ.get("PRIMER_TEST_SAFE") == "1":
+            if path in ("/__save", "/__push"):
+                return self._json(200, {"ok": True, "ahead": 0, "message":
+                    "blocked in tests — no real save/push happens here"})
+            if path == "/__pull":
+                return self._json(200, {"ok": False, "error":
+                    "blocked in tests — no real repo is updated here"})
+            if path == "/__upload":
+                name = str(req.get("name") or "upload.png")
+                return self._json(200, {"ok": True, "src": f"assets/{name}",
+                                        "path": f"report2027/web/assets/{name}"})
+            if path == "/__export":
+                body = b"%PDF-1.4 fake export for tests"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
         if path == "/__window":
             return self._new_window(req)
         if path == "/__pull":
