@@ -528,6 +528,10 @@
           border:1px dashed var(--ctl-line); border-radius:5px; background:none;
           color:var(--dim); cursor:pointer; font:9.5px system-ui; }
   #rail-add:hover { border-color:var(--sage); color:var(--txt); }
+  /* display:flex above beats [hidden]'s own display:none — the same trap as
+     #bar > button[hidden] and .pop .shp. Hidden when the renderer declares no
+     pages, so it has to actually win. */
+  #rail-add[hidden] { display:none; }
 
   /* -- the left panel: a tool's full surface, where a popover would be
      cramped. Light, because it is a content surface rather than chrome. */
@@ -7645,6 +7649,35 @@ function keysFor(d) {
 // a metadata list of all of them (labels, and the ones currently hidden). So
 // the rail = the order, drawn from what the report says exists.
 let designedPages = [];                  // [{id, label}] from ds-pagemeta
+// Whether the RENDERER declared its pages (ds-pagemeta). Only then does
+// layout.pages mean anything: reordering, hiding and blank pages all require a
+// renderer that reads L.page_order(), and a renderer that never said what its
+// pages are has not got one. When false the strip is still drawn — thumbnails
+// and navigation, which need nothing from the renderer — but the controls that
+// would write an order nothing honours are left off, rather than silently
+// doing nothing. L.pagemeta() is the one call that flips this on.
+let pagesDeclared = false;
+
+/** Every sheet the reader actually sees, paired with its id.
+ *
+ *  The strip used to find a page's markup with section[data-page="<id>"], which
+ *  only the Primer's renderer stamps — so for every other report the lookup
+ *  missed, each chip fell back to the empty hatch, and clicking one scrolled
+ *  nowhere. Carrying the ELEMENT alongside the id removes the second lookup
+ *  entirely: whatever the sheets are called, the preview and the click both
+ *  address the node itself.
+ *
+ *  Ids match data-page where a renderer stamps it (so they line up with
+ *  ds-pagemeta and with the numbers boxes are stored under) and are ordinals
+ *  otherwise, which is what a report with no page identity means by "page 3". */
+function docSheets() {
+  const d = $('out').contentDocument;
+  if (!d || !d.body) return [];
+  return [...d.querySelectorAll('section.page')].map((pg, i) => {
+    const pid = pg.dataset.page;
+    return { pg, id: pid == null ? i + 1 : (/^\d+$/.test(pid) ? +pid : pid) };
+  });
+}
 
 function pageOrder() {
   // Default: every designed page in identity order. An explicit order may hide
@@ -7680,16 +7713,21 @@ function railRender() {
   // way Canva lets you drop a page exactly where you are looking rather than
   // adding at the end and dragging it back. Quiet until hovered.
   order.forEach((pid, i) => {
-    list.appendChild(railInsert(i));
+    if (pagesDeclared) list.appendChild(railInsert(i));
     list.appendChild(chip(pid, i + 1, labelOf(pid), false));
   });
-  list.appendChild(railInsert(order.length));
+  if (pagesDeclared) list.appendChild(railInsert(order.length));
   if (hidden.length) {
     const sep = document.createElement('div');
     sep.id = 'rail-head'; sep.textContent = 'Hidden';
     list.appendChild(sep);
     hidden.forEach(p => list.appendChild(chip(p.id, null, p.label, true)));
   }
+  // Adding a blank page needs the same renderer support reordering does: the
+  // page is a layout.pages entry, and a renderer that never reads the order
+  // renders nothing for it. The button used to sit there on every report and
+  // quietly do nothing — the one case worse than not offering it.
+  $('rail-add').hidden = !pagesDeclared;
   railThumbs();
   railSyncActive();
 }
@@ -7769,11 +7807,14 @@ async function railThumbs() {
   // The report's inherited text styling hangs off <body>, which has no
   // counterpart in a shadow tree — carry it across explicitly.
   const b = getComputedStyle(d.body);
+  // One pass over the sheets, addressed by node rather than re-queried per chip
+  // by an attribute most renderers never stamp.
+  const sheets = new Map(docSheets().map(s => [String(s.id), s.pg]));
   $('rail-list').querySelectorAll('.chip').forEach(c => {
     const host = c.querySelector('.chip-view');
     const frame = c.querySelector('.chip-thumb');
     if (!host) return;
-    const sec = d.querySelector(`section[data-page="${CSS.escape(c.dataset.pid)}"]`);
+    const sec = sheets.get(c.dataset.pid);
     if (!sec) { frame.classList.add('empty'); if (host.shadowRoot) host.shadowRoot.replaceChildren(); return; }
     const pw = sec.offsetWidth, ph = sec.offsetHeight;
     if (!pw || !ph) { frame.classList.add('empty'); return; }
@@ -7813,7 +7854,7 @@ function railScrollSync() {
 
 function railSyncActive() {
   if ($('rail').hidden) return;
-  const cur = String(visiblePageId());
+  const cur = String(visibleSheetId() ?? visiblePageId());
   $('rail-list').querySelectorAll('.chip').forEach(c =>
     c.classList.toggle('on', c.dataset.pid === cur && !c.classList.contains('hidden-pg')));
 }
@@ -7835,7 +7876,7 @@ function chip(pid, pos, label, isHidden) {
   const c = document.createElement('div');
   c.className = 'chip' + (isBlank ? ' blank' : '') + (isHidden ? ' hidden-pg' : '');
   c.dataset.pid = pid;
-  c.draggable = !isHidden;
+  c.draggable = !isHidden && pagesDeclared;
   const name = isBlank ? 'blank page' : (label || 'page ' + pid);
   c.title = isHidden ? name + ' — hidden from the report' : name;
   // .chip-view is the SHADOW HOST and nothing else: a host renders its shadow
@@ -7888,41 +7929,42 @@ function chip(pid, pos, label, isHidden) {
       $('stat').textContent = `page deleted`;
     });
     c.appendChild(x);
-  } else {
-    const eye = document.createElement('button');
-    eye.className = 'chip-eye';
-    eye.textContent = isHidden ? '𐄂' : '👁';
-    eye.setAttribute('aria-label', isHidden ? 'Show this page' : 'Hide this page from the report');
-    eye.addEventListener('click', async e => {
+  } else if (isHidden) {
+    // HIDING a page is gone: a designed page's content lives in content.md and
+    // the page is what shows it, so "hide" was a page-shaped way to do what
+    // editing the content does properly — and a hidden page is invisible
+    // everywhere except this strip, which is a poor place to keep something.
+    //
+    // SHOWING one stays, and only here, on a chip in the Hidden group. Nothing
+    // in the editor can put a page there any more, so this is reachable only
+    // for a report whose layout.json omits a page from pages.order — restoring
+    // it would otherwise mean hand-editing that file.
+    const show = document.createElement('button');
+    show.className = 'chip-eye';
+    show.textContent = '👁';
+    show.setAttribute('aria-label', 'Show this page');
+    show.addEventListener('click', async e => {
       e.stopPropagation();
       pushHistory();
-      let order = pageOrder();
-      if (isHidden) {
-        // Re-show at its designed position among the visible pages.
-        const target = pid;
-        order = order.slice();
-        const after = designedPages.filter(p => p.id < target).map(p => p.id);
-        let at = 0;
-        for (let k = 0; k < order.length; k++) if (after.includes(order[k])) at = k + 1;
-        order.splice(at, 0, target);
-      } else {
-        if (order.length <= 1) { $('stat').textContent = 'a report needs at least one page'; return; }
-        order = order.filter(p => p !== pid);
-      }
+      // Back at its designed position among the visible pages.
+      const order = pageOrder().slice();
+      const before = designedPages.filter(p => p.id < pid).map(p => p.id);
+      let at = 0;
+      for (let k = 0; k < order.length; k++) if (before.includes(order[k])) at = k + 1;
+      order.splice(at, 0, pid);
       writeOrder(order, pageBlanks());
       await render();
     });
-    c.appendChild(eye);
+    c.appendChild(show);
   }
   // Click a visible chip to scroll to it; the rail is navigation too.
   if (!isHidden) c.addEventListener('click', () => {
-    const d = $('out').contentDocument;
-    const sec = d.querySelector(`section[data-page="${CSS.escape(String(pid))}"]`);
+    const sec = (docSheets().find(s => String(s.id) === String(pid)) || {}).pg;
     if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
     list.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
   });
-  // Drag to reorder.
-  if (!isHidden) {
+  // Drag to reorder — only where an order is honoured.
+  if (!isHidden && pagesDeclared) {
     c.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(pid)); });
     c.addEventListener('dragover', e => { e.preventDefault(); c.classList.add('drag-over'); });
     c.addEventListener('dragleave', () => c.classList.remove('drag-over'));
@@ -8034,6 +8076,32 @@ $('ar-pagedup').addEventListener('click', () => {
 const placeX = w => Math.max(0.3, (PAGE_W_IN - w) / 2);
 
 /** The identity of the page whose middle is nearest the viewport middle. */
+/** Of these [{pg, id}], the one nearest the middle of the viewport. */
+function nearestToMid(pages) {
+  const d = $('out').contentDocument;
+  const mid = d.defaultView.innerHeight / 2;
+  let best = pages[0].id, dist = Infinity;
+  pages.forEach(({ pg, id }) => {
+    const r = pg.getBoundingClientRect();
+    const dd = Math.abs((r.top + r.bottom) / 2 - mid);
+    if (dd < dist) { dist = dd; best = id; }
+  });
+  return best;
+}
+
+/** Which SHEET the canvas is looking at — the page strip's highlight.
+ *
+ *  Deliberately not visiblePageId(): that one answers "where would a new
+ *  element go?", so it must name a page the renderer actually mounts, and on a
+ *  report that mounts only some of its sheets (demo-report's endnotes page has
+ *  no marker, by design) it names the mounted one no matter what you scrolled
+ *  to. The strip is about what is in front of you, so every sheet counts —
+ *  otherwise scrolling to page 2 kept the highlight on page 1. */
+function visibleSheetId() {
+  const sheets = docSheets();
+  return sheets.length ? nearestToMid(sheets) : null;
+}
+
 function visiblePageId() {
   const d = $('out').contentDocument;
   // NEVER undefined. Every insert stamps this onto the new element and the
@@ -8061,14 +8129,7 @@ function visiblePageId() {
   if (!pages.length)
     pages = [...d.querySelectorAll('section.page')].map((pg, i) => ({ pg, id: i + 1 }));
   if (!pages.length) return first();
-  const mid = d.defaultView.innerHeight / 2;
-  let best = pages[0].id, dist = Infinity;
-  pages.forEach(({ pg, id }) => {
-    const r = pg.getBoundingClientRect();
-    const dd = Math.abs((r.top + r.bottom) / 2 - mid);
-    if (dd < dist) { dist = dd; best = id; }
-  });
-  return best;
+  return nearestToMid(pages);
 }
 
 // ------------------------------------------------------------------- zoom
@@ -11820,7 +11881,15 @@ function wire(roots) {
   paintSel(d);                 // the selection is ids, so it survives a render
   presentRewire(d);            // and so does a running presentation
   const meta = d.getElementById('ds-pagemeta');
-  if (meta) { try { designedPages = JSON.parse(meta.textContent); } catch (e) {} }
+  pagesDeclared = false;
+  if (meta) {
+    try { designedPages = JSON.parse(meta.textContent); pagesDeclared = true; } catch (e) {}
+  }
+  // No declaration: take the pages from the document itself, so the strip is
+  // drawn for reports whose renderer predates L.pagemeta(). Order-editing stays
+  // off (see pagesDeclared) — this is enough for thumbnails and navigation,
+  // which is what the strip was missing entirely.
+  if (!pagesDeclared) designedPages = docSheets().map(s => ({ id: s.id }));
   railRender();
   // The strip follows the canvas. Listener on the iframe's own window, which
   // a full render replaces wholesale, so nothing accumulates — but a patch

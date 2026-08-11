@@ -2082,6 +2082,34 @@ class Layout:
     def blank_ids(self) -> list:
         return [b["id"] for b in (self.pages.get("blanks") or [])]
 
+    def pagemeta(self, pages) -> str:
+        """Declare this report's DESIGNED pages to the editor's page strip.
+
+        The strip is the page-order editor, so it has to know what exists
+        before any of it is reordered — including pages currently HIDDEN,
+        which are omitted from the order and so are absent from the DOM
+        entirely. Nothing in the rendered page can carry that, which is why it
+        is declared rather than inferred.
+
+        Only the Primer's own renderer emitted this, so every other report
+        opened with no strip at all — no page thumbnails, no reordering, and
+        no route back to a page once hidden. One call puts a renderer on the
+        same footing.
+
+        `pages` is designed ids (blanks live in layout.json and the editor
+        already knows them), or (id, label) pairs when the pages have names
+        worth showing in the strip. Edit-mode only, like data-el and the
+        mount markers, so the published bytes cannot move.
+        """
+        if not os.environ.get("DOCSYNC_EDIT"):
+            return ""
+        out = []
+        for p in pages:
+            pid, label = (tuple(p) + (None,))[:2] if isinstance(p, (tuple, list)) else (p, None)
+            out.append({"id": pid, "label": label} if label else {"id": pid})
+        return ('<script type="application/json" id="ds-pagemeta">'
+                + json.dumps(out) + "</script>")
+
     def fill_tag(self, el_id: str) -> str:
         """The editor's right-click hook for recolourable surfaces.
 

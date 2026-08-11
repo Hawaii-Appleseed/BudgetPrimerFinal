@@ -58,7 +58,8 @@ C = Content(_CONTENT, styles=L)
 
 # Page 1 always exists; pages added in the editor land in layout.pages and
 # come back through the same helper every renderer uses.
-PAGES = L.page_order(1)
+DESIGNED_PAGES = 1
+PAGES = L.page_order(DESIGNED_PAGES)
 
 body = "".join(
     f'<section class="page" data-page="{{pid}}"{{L.fill_attr(f"page.{{pid}}")}}>'
@@ -66,6 +67,9 @@ body = "".join(
     f'</section>'
     for pid in PAGES
 )
+# Tell the editor's page strip which pages are designed, so it can draw a
+# thumbnail per page and reorder them. Without this the strip stays hidden.
+body += L.pagemeta(range(1, DESIGNED_PAGES + 1))
 body = C.fn.resolve(body)
 
 notes = C.fn.endnotes()
