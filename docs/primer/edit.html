@@ -1125,6 +1125,10 @@
     <p class="pop-h">Open a report</p>
     <div id="open-list"></div>
     <button class="shp" id="open-all">All reports…</button>
+    <!-- The start page's "+ New report", reachable without leaving the
+         document being edited. Local only, like New window: creating a
+         project is the server's job (/__scaffold). -->
+    <button class="shp" id="open-new" hidden>+ New report…</button>
   </div>
   <div class="pop pop-sizes" id="resizepop" hidden>
     <p class="pop-h">Doc size</p>
@@ -10728,6 +10732,9 @@ async function detectLocal() {
   // Only the local server can open another app window; a hosted editor has
   // ordinary browser tabs for that.
   $('file-newwin').hidden = false;
+  // Creating a report is also the server's job (/__scaffold), so the
+  // "+ New report…" row in Open exists in local mode only.
+  $('open-new').hidden = false;
   // Same for signing THIS COMPUTER in: the server holds the credential and
   // does the pushing, so the row only means something when there is one.
   $('file-ghconn').hidden = false;
@@ -13782,13 +13789,13 @@ $('file-resize').onclick = () => { renderSizes(); togglePop($('resizepop'), $('f
 //
 // Only in LOCAL mode: there is no server to ask otherwise, and a hosted editor
 // has ordinary browser tabs for this anyway.
-$('file-newwin').onclick = async () => {
-  $('filepop').hidden = true;
+/** Ask the server to open URL as a second app window (see /__window). */
+async function openEditorWindow(url) {
   try {
     const r = await fetch(withProject('/__window'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: location.href }),
+      body: JSON.stringify({ url }),
     });
     const j = await r.json();
     $('stat').textContent = j.ok
@@ -13797,6 +13804,83 @@ $('file-newwin').onclick = async () => {
   } catch (e) {
     $('stat').textContent = 'could not open a window: ' + e.message;
   }
+}
+
+// A sentinel no project id can collide with: ids come from slugify, which
+// only ever emits [a-z0-9-].
+const NEW_REPORT = '\u0000new';
+
+$('file-newwin').onclick = async () => {
+  $('filepop').hidden = true;
+  const ids = REGISTRY ? Object.keys(REGISTRY) : [];
+  const pick = await dsForm('New window', [{
+    name: 'project', label: 'Open which report?', type: 'select',
+    options: [...ids.map(id => ({ value: id, label: (REGISTRY[id] || {}).name || id })),
+              { value: NEW_REPORT, label: '+ New report…' }],
+    value: activeProjectId(),
+  }], { okLabel: 'Open' });
+  if (!pick) return;
+  if (pick.project === NEW_REPORT) return newReport(true);
+  await openEditorWindow(location.origin + location.pathname
+    + '?project=' + encodeURIComponent(pick.project));
+};
+
+// The start page's "+ New report" (POST /__scaffold), from inside the editor.
+// Same contract as start.html: a title, a derived-but-editable short id, a
+// page size fixed at creation (File ▸ Resize changes it later). The server
+// scaffolds, registers and builds it, so "Create" lands in a working editor —
+// in THIS window from File ▸ Open, in a second one from File ▸ New window.
+const NEW_REPORT_SIZES = [
+  { value: 'letter',   label: 'Letter — 8.5 × 11 in',        w: 8.5,    h: 11.0 },
+  { value: 'a4',       label: 'A4 — 8.27 × 11.69 in',        w: 8.27,   h: 11.69 },
+  { value: 'legal',    label: 'Legal — 8.5 × 14 in',         w: 8.5,    h: 14.0 },
+  { value: 'slide169', label: 'Slide 16:9 — 13.33 × 7.5 in', w: 13.333, h: 7.5 },
+  { value: 'slide43',  label: 'Slide 4:3 — 10 × 7.5 in',     w: 10,     h: 7.5 },
+];
+const slugifyReport = s =>
+  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+async function newReport(intoNewWindow) {
+  const r = await dsForm('New report', [
+    { name: 'name', label: 'Title', type: 'text', required: true,
+      placeholder: 'My report' },
+    { name: 'slug', label: 'Short id (optional — from the title)', type: 'text',
+      placeholder: 'my-report' },
+    { name: 'size', label: 'Page size', type: 'select', value: 'letter',
+      options: NEW_REPORT_SIZES },
+  ], { okLabel: 'Create',
+       validate: v => slugifyReport(v.slug || v.name || '')
+         ? null : 'a title (or a short id) is needed' });
+  if (!r) return;
+  const name = r.name.trim();
+  const slug = slugifyReport(r.slug || name);
+  const size = NEW_REPORT_SIZES.find(s => s.value === r.size) || NEW_REPORT_SIZES[0];
+  $('stat').textContent = `creating "${name}"…`;
+  let j;
+  try {
+    j = await (await fetch('/__scaffold', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug, size: { w: size.w, h: size.h } }),
+    })).json();
+  } catch (e) {
+    $('stat').textContent = 'could not create it: ' + e.message;
+    return;
+  }
+  if (!j.ok) { $('stat').textContent = j.error || 'could not create it'; return; }
+  const url = location.origin + location.pathname
+    + '?project=' + encodeURIComponent(j.slug);
+  if (intoNewWindow) return openEditorWindow(url);
+  location.href = url;
+}
+
+$('open-new').onclick = async () => {
+  $('openpop').hidden = true;
+  // Same guard as picking another report from this list: creating lands in
+  // THIS window, so unsaved edits here would be lost.
+  if (dirty && !await dsConfirm('Create a new report? Unsaved edits here are lost.',
+      { okLabel: 'Create', danger: true })) return;
+  await newReport(false);
 };
 // Connect GitHub: the sign-in panel if the device flow is configured, the
 // paste-a-token prompt otherwise — either way the credential ends up ON THE
