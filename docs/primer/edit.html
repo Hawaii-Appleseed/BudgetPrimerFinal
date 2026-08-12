@@ -14221,13 +14221,18 @@ $('file-quit').onclick = async () => {
     return;
   }
   // An --app window was opened by `open`, not by script, so Chrome is entitled
-  // to refuse window.close(). Ask, then say what happened either way — a dead
-  // server behind a window that looks fine is the state this whole row exists
-  // to avoid creating.
+  // to refuse window.close(). The server closes its own windows on the way
+  // down (serve.py _close_own_windows — the launcher's find-by-URL walk,
+  // ending in close), so normally this window is gone before the line below
+  // would draw. Both fallbacks stay: close() covers the plain-tab case the
+  // AppleScript leaves alone, and the message covers the cases nothing can
+  // close — Automation declined, a browser that is not Chrome — where a
+  // live-looking window over a dead server MUST say what it is. The timer
+  // only fires if the window is still here to run it, so it cannot lie.
   window.close();
   setTimeout(() => {
-    $('stat').textContent = 'editor stopped — this window can be closed';
-  }, 400);
+    $('stat').textContent = 'editor stopped — close this window';
+  }, 1500);
 };
 
 // Connect GitHub: the sign-in panel if the device flow is configured, the

@@ -627,6 +627,67 @@ LINGER = int(os.environ.get("PRIMER_LINGER", "120"))
 SERVERS: list = []                       # filled by main(); reaper shuts these down
 
 
+def _close_own_windows() -> bool:
+    """Close every Chrome window showing THIS server, macOS only.
+
+    The quit path's other half. The AppleScript is the launcher's
+    focus_existing() walk — window by window, tab by tab, matched on the URL
+    prefix — ending in `close` instead of `activate`, so it rides the same
+    Automation grant the launcher already prompted for. Matching on the tab
+    URL rather than "the window the request came from" is deliberate: quit
+    stops the server for EVERY window, so every window goes.
+
+    Closing the TAB (not the window) handles both shapes: an --app window is
+    its tab, so the window follows; and if the editor is ever a plain tab in
+    a browsing window (the no-Chrome `open` fallback after Chrome was later
+    installed), only the editor's tab goes, not the person's other tabs.
+
+    Best-effort by design. Permission declined, Chrome absent, tab already
+    closed — each just returns False, and the page's own status line (which
+    never assumes the close worked) tells the person to close the window.
+    """
+    if sys.platform != "darwin":
+        return False
+    script = """
+on run argv
+  set closed to false
+  tell application "System Events"
+    if not (exists process "Google Chrome") then return "no"
+  end tell
+  tell application "Google Chrome"
+    repeat with w in windows
+      set doomed to {}
+      repeat with t in tabs of w
+        set u to URL of t
+        repeat with target in argv
+          if u starts with (target as text) then
+            set end of doomed to t
+            exit repeat
+          end if
+        end repeat
+      end repeat
+      repeat with t in doomed
+        close t
+        set closed to true
+      end repeat
+    end repeat
+  end tell
+  if closed then return "yes"
+  return "no"
+end run
+"""
+    try:
+        r = subprocess.run(
+            # Every origin a window of this server can carry: the launcher
+            # opens localhost, _new_window accepts 127.0.0.1 and [::1] too.
+            ["osascript", "-", f"http://localhost:{PORT}/",
+             f"http://127.0.0.1:{PORT}/", f"http://[::1]:{PORT}/"],
+            input=script, capture_output=True, text=True, timeout=6)
+        return r.returncode == 0 and "yes" in (r.stdout or "")
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _idle_reaper():
     gone_since = None
     while True:
@@ -1715,6 +1776,17 @@ class Handler(SimpleHTTPRequestHandler):
 
         def go():
             time.sleep(0.4)
+            # Close the editor's own windows before the server goes. The page
+            # cannot do this for itself: a --app window opened by `open` is not
+            # script-opened, so Chrome refuses its window.close() — which left
+            # a live-looking window over a dead server, the exact state this
+            # row exists to avoid. The launcher already walks Chrome's windows
+            # by URL to RAISE one (focus_existing); this is the same walk with
+            # `close` at the end, so the Automation grant it prompted for is
+            # the one this uses. Every failure mode — permission declined,
+            # Chrome absent, tab already closed — just leaves the window for
+            # the person, with the editor's status line saying to close it.
+            _close_own_windows()
             for srv in SERVERS:
                 threading.Thread(target=srv.shutdown, daemon=True).start()
         threading.Thread(target=go, daemon=True).start()

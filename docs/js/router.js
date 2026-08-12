@@ -221,7 +221,7 @@ class Router {
             } else if (path === '/school-food-service') {
                 footerSourceEl.innerHTML = 'Data Source: <a href="https://hawaiipublicschools.org/data-reports/fiscal/" target="_blank" rel="noopener">HIDOE School Food Services</a> · cash basis, FY2021–FY2025 (as of June 30, 2025)';
             } else {
-                footerSourceEl.innerHTML = 'Data Source: <a href="https://www.capitol.hawaii.gov/session/2026/bills/HB1800_HD1_.HTM" target="_blank" rel="noopener">HB1800</a> Supplemental Appropriations (HD1, <a href="https://www.capitol.hawaii.gov/session/2026/bills/HB1800_SD1_.HTM" target="_blank" rel="noopener">SD1</a>)';
+                footerSourceEl.innerHTML = 'Data Source: <a href="https://www.capitol.hawaii.gov/sessions/session2026/bills/HB1800_CD1_.HTM" target="_blank" rel="noopener">HB1800</a> Supplemental Appropriations, enacted as Act 175 (June 26, 2026)';
             }
         }
     }

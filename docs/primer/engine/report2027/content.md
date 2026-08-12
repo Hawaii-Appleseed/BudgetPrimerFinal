@@ -47,7 +47,7 @@ Copyright © 2026 Hawaiʻi Appleseed Center for Law & Economic Justice. All righ
 **THE INVESTMENTS** that Hawaiʻi’s government makes in its people through the state budget should reflect our shared priorities and values. This budget primer is intended to help readers understand how our state budget works and to encourage policy decisions that lift up Hawaiʻi’s working families.
 
 [[basics.p2]]
-The state budget funds Hawaiʻi’s three government branches: the Legislature; the Judiciary; and the Executive. A small portion funds the Office of Hawaiian Affairs (OHA) as well. More than 99 percent of the state budget goes toward funding the executive branch.
+The state budget funds Hawaiʻi’s three government branches: the Legislature; the Judiciary; and the Executive. A small portion funds the Office of Hawaiian Affairs (OHA) as well. Nearly 99 percent of the state budget goes toward funding the executive branch.
 
 [[basics.branch.legislature.title]]
 ### Legislature
@@ -204,7 +204,7 @@ For detailed, program-level data on the state budget:
 Explore the interactive Budget Tracker →
 
 [[categories.p1]]
-The Executive departments with the largest overall budgets are the Departments of Human Services, Transportation, Budget and Finance, and Education. The Department of Transportation’s Capital Improvement Appropriations budget is larger than its operating budget—the state’s airports, harbors, and highways are in the middle of a multi-year construction cycle. The Department of Health has a larger operating budget than all but four departments, and the DOE operating budget covers K–12 public school teacher salaries statewide.
+The Executive departments with the largest overall budgets are the Departments of Human Services, Transportation, Budget and Finance, and Education. The Department of Transportation’s Capital Improvement Appropriations budget is larger than its operating budget—the state’s airports, harbors, and highways are in the middle of a multi-year construction cycle. The Department of Health has a larger operating budget than all but three departments, and the DOE operating budget covers K–12 public school teacher salaries statewide.
 
 [[obligated.title]]
 ### Obligated Costs
@@ -404,15 +404,15 @@ OHA[^act248]
 [act175-exec]: “Act 175,” State of Hawaiʻi, June 26, 2026 (HB1800 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB1800_CD1_.HTM
 [act178]: “Act 178,” State of Hawaiʻi, 2026 (HB2095 CD1), amending Act 227, Session Laws of Hawaiʻi 2025. — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2095_CD1_.HTM
 [act1]: “Act 1,” State of Hawaiʻi, 2026 (HB2240 HD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2240_HD1_.HTM
-[act127]: “Act 127,” State of Hawaiʻi, May 29, 2025 (HB1439 CD1), FY2026–27 legislative cost items. — https://www.capitol.hawaii.gov/sessions/session2025/bills/GM1227_.PDF
-[act248]: “Act 248,” State of Hawaiʻi, June 30, 2025 (HB410 CD1). — https://www.capitol.hawaii.gov/sessions/session2025/bills/GM1351_.PDF
+[act127]: “Act 127,” State of Hawaiʻi, May 29, 2025 (HB1439 CD1), FY2026–27 legislative cost items. — https://www.capitol.hawaii.gov/sessions/session2025/bills/HB1439_CD1_.HTM
+[act248]: “Act 248,” State of Hawaiʻi, June 30, 2025 (HB410 CD1). — https://www.capitol.hawaii.gov/sessions/session2025/bills/HB410_CD1_.HTM
 [hidot-visitor]: “Visitor Info,” Hawaiʻi Department of Transportation. — https://hidot.hawaii.gov/highways/visitor
 [act99]: “Act 99,” State of Hawaiʻi, June 5, 2026 (HB2275 CD2). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2275_CD2_.HTM
 [act123]: “Act 123,” State of Hawaiʻi, June 8, 2026 (SB2930 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/SB2930_CD1_.HTM
 [act184]: “Act 184,” State of Hawaiʻi, July 6, 2026 (SB2599 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/SB2599_CD1_.HTM
 [act80]: “Act 80,” State of Hawaiʻi, June 4, 2026 (HB2339 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2339_CD1_.HTM
 [act21-partii]: “Act 21,” State of Hawaiʻi, May 21, 2026 (HB2310 CD1), Part II. — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2310_CD1_.HTM
-[act139]: “Act 139,” State of Hawaiʻi, May 30, 2025 (SB1300 CD1), §3–4. — https://www.capitol.hawaii.gov/sessions/session2025/bills/GM1239_.PDF
+[act139]: “Act 139,” State of Hawaiʻi, May 30, 2025 (SB1300 CD1), §3–4. — https://www.capitol.hawaii.gov/sessions/session2025/bills/SB1300_CD1_.HTM
 [act26]: “Act 26,” State of Hawaiʻi, May 22, 2026 (HB2272 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2272_CD1_.HTM
 [act21-parti-act33]: “Act 21” Part I and “Act 33,” State of Hawaiʻi, May 2026 (HB2310 CD1; HB2271 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2271_CD1_.HTM
 [act175-mof]: “Act 175,” State of Hawaiʻi, June 26, 2026 (HB1800 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB1800_CD1_.HTM

@@ -4,7 +4,7 @@
     2027
   ],
   "default_fiscal_year": 2026,
-  "generated_at": "2026-06-12T21:30:08.590282",
+  "generated_at": "2026-08-12T12:51:24.951419",
   "years": {
     "2026": {
       "honolulu": {
@@ -17464,8 +17464,8 @@
           "Federal Funds": 57961082.0
         },
         "source": {
-          "label": "FY2026 Proposed Operating Budget \u00b7 data.honolulu.gov",
-          "url": "https://data.honolulu.gov/d/7sq2-y9vx"
+          "label": "FY2027 Proposed Operating Budget \u00b7 data.honolulu.gov",
+          "url": "https://data.honolulu.gov/d/puaw-t6sa"
         },
         "operating": {
           "total": 2361890715.0,
