@@ -224,6 +224,24 @@
            background:rgba(255,255,255,.07); padding:2px 8px; border-radius:99px; }
   #fit { background:#C0392B; color:#fff; padding:3px 10px; border-radius:99px;
          font:12px system-ui; cursor:help; }
+  /* What a conversion had to decide. A strip under the bar rather than a chip
+     in it: these are sentences, not a word, and they are read once. Dismissable
+     for the same reason — a notice that cannot be got rid of becomes furniture
+     and stops being read at all. */
+  /* A flex sibling between the bar and the canvas, not an overlay: it takes its
+     own height and the canvas starts below it, so nothing is covered and there
+     is no bar height to keep in step with. */
+  #notices { flex:none; display:flex; flex-direction:column; }
+  #notices[hidden] { display:none; }
+  .ds-note { display:flex; align-items:flex-start; gap:10px; padding:9px 14px;
+         background:#F6EFD9; color:#5A4A22; border-bottom:1px solid #E5D9B6;
+         font:12.5px/1.5 system-ui; }
+  .ds-note-x { flex:none; margin-left:auto; border:0; background:none;
+         color:#8A7433; cursor:pointer; font:16px/1 system-ui; padding:0 2px;
+         border-radius:5px; }
+  .ds-note-x:hover { background:#E5D9B6; color:#4A3D1C; }
+  .ds-note-all { flex:none; border:0; background:none; color:#8A7433;
+         cursor:pointer; font:11.5px system-ui; text-decoration:underline; }
   /* Which build is running. Deliberately the quietest thing in the bar — it is
      reference, not news, and it is read maybe twice in an install's life. */
   #ver { font:11px ui-monospace,monospace; color:var(--dim); opacity:.65;
@@ -1303,6 +1321,10 @@
        selected chart (renderChartPanel). -->
   <div class="pop" id="chartpop" hidden></div>
 </div>
+<!-- What a conversion had to decide for you (L.notices() in the renderer, and
+     docsync.ingest is what writes them). Filled in by renderNotices(); empty
+     and hidden for every report that was authored rather than converted. -->
+<div id="notices" hidden></div>
 <div id="work">
 <!-- The contextual controls live INSIDE #work now and float over the canvas.
      They used to sit in their own 46px band between the top bar and the page —
@@ -7755,6 +7777,63 @@ function railRender() {
   railSyncActive();
 }
 
+// ----------------------------------------------------- conversion notices
+// Things the RENDERER says the editor should pass on (L.notices()) — what a
+// conversion had to decide: a page size taken from page 1 when later pages
+// differed, artwork it could not bring across, fonts it could not carry.
+//
+// Dismissed per report and per message, keyed by the text itself: re-running a
+// conversion that reaches the same conclusions must not re-nag, while a NEW
+// conclusion is new news and speaks up. localStorage, like the other "how you
+// work" preferences here (see the folded page strip) — a dismissal is not a
+// document edit and has no business in layout.json or in a commit.
+const noteKey = () => 'ds-notes-seen:' + (M && M.id ? M.id : '');
+
+function notesSeen() {
+  try { return new Set(JSON.parse(localStorage.getItem(noteKey()) || '[]')); }
+  catch (e) { return new Set(); }         // file:// or a wiped store
+}
+
+function markNoteSeen(msgs) {
+  const seen = notesSeen();
+  msgs.forEach(m => seen.add(m));
+  try { localStorage.setItem(noteKey(), JSON.stringify([...seen])); } catch (e) {}
+}
+
+function renderNotices(d) {
+  const host = $('notices');
+  const el = d.getElementById('ds-notices');
+  let msgs = [];
+  if (el) { try { msgs = JSON.parse(el.textContent) || []; } catch (e) {} }
+  const seen = notesSeen();
+  const show = msgs.filter(m => typeof m === 'string' && m.trim() && !seen.has(m));
+  host.textContent = '';
+  host.hidden = !show.length;
+  if (!show.length) return;
+  show.forEach(msg => {
+    const row = document.createElement('div');
+    row.className = 'ds-note';
+    const txt = document.createElement('span');
+    txt.textContent = msg;
+    const x = document.createElement('button');
+    x.className = 'ds-note-x';
+    x.textContent = '×';
+    x.setAttribute('aria-label', 'Dismiss this notice');
+    x.onclick = () => { markNoteSeen([msg]); renderNotices(d); };
+    row.append(txt, x);
+    // "Dismiss all" only where there IS more than one — on a single notice the
+    // × beside it already is dismiss-all.
+    if (show.length > 1 && msg === show[0]) {
+      const all = document.createElement('button');
+      all.className = 'ds-note-all';
+      all.textContent = `Dismiss all ${show.length}`;
+      all.onclick = () => { markNoteSeen(show); renderNotices(d); };
+      row.insertBefore(all, x);
+    }
+    host.appendChild(row);
+  });
+}
+
 // ------------------------------------------------------- page thumbnails
 // Each chip shows the page itself: the rendered <section> CLONED into a shadow
 // root and scaled down — live markup, not a raster snapshot, so it costs one
@@ -11918,6 +11997,7 @@ function wire(roots) {
   reportFit(d);
   paintSel(d);                 // the selection is ids, so it survives a render
   presentRewire(d);            // and so does a running presentation
+  renderNotices(d);
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {

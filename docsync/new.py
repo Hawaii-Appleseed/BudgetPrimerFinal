@@ -57,9 +57,14 @@ L = Layout(_LAYOUT, page=({w}, {h}))
 C = Content(_CONTENT, styles=L)
 
 # Page 1 always exists; pages added in the editor land in layout.pages and
-# come back through the same helper every renderer uses.
-DESIGNED_PAGES = 1
+# come back through the same helper every renderer uses. A converted document
+# starts with the page count it had.
+DESIGNED_PAGES = {pages}
 PAGES = L.page_order(DESIGNED_PAGES)
+
+# What conversion had to decide for you, said in the editor rather than in
+# terminal output you will never see again. Empty for a blank project.
+NOTICES = {notes}
 
 body = "".join(
     f'<section class="page" data-page="{{pid}}"{{L.fill_attr(f"page.{{pid}}")}}>'
@@ -70,6 +75,7 @@ body = "".join(
 # Tell the editor's page strip which pages are designed, so it can draw a
 # thumbnail per page and reorder them. Without this the strip stays hidden.
 body += L.pagemeta(range(1, DESIGNED_PAGES + 1))
+body += L.notices(NOTICES)
 body = C.fn.resolve(body)
 
 notes = C.fn.endnotes()
@@ -151,11 +157,19 @@ class NewProjectError(Exception):
 
 
 def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
-           root: Path = ROOT) -> Path:
+           root: Path = ROOT, pages: int = 1, notices=None,
+           layout: dict | None = None) -> Path:
     """Write the project and register it in docsync.yml. Returns its dir.
 
     Refuses rather than overwrites: an existing binding or directory means
     the slug is taken, and "create" must never be a way to lose work.
+
+    `pages`, `notices` and `layout` are what CONVERSION adds (docsync.ingest):
+    a document arrives with a page count, with things the conversion had to
+    decide that the editor should say out loud, and with its content already
+    placed. They default to the blank-canvas project this has always made, so
+    the hosted "+ New report" path calls this exactly as before — and there is
+    still ONE renderer template, which is the point of it living here.
     """
     if not SLUG_RE.match(slug):
         raise NewProjectError(
@@ -193,10 +207,17 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     if proj.exists():
         raise NewProjectError(f"{proj} already exists — pick another id")
 
+    if int(pages) < 1:
+        raise NewProjectError("a report needs at least one page")
     proj.mkdir(parents=True)
     (proj / "content.md").write_text(_CONTENT_MD.format(name=name.strip()))
-    (proj / "render_report.py").write_text(_RENDERER.format(w=w, h=h))
-    (proj / "layout.json").write_text(json.dumps({"positions": {}}, indent=2) + "\n")
+    # json.dumps for both, so a notice carrying an apostrophe or a quote cannot
+    # end the Python string it is baked into.
+    (proj / "render_report.py").write_text(_RENDERER.format(
+        w=w, h=h, pages=int(pages),
+        notes=json.dumps([str(m) for m in (notices or [])])))
+    (proj / "layout.json").write_text(
+        json.dumps(layout if layout is not None else {"positions": {}}, indent=2) + "\n")
     # Append the binding. docsync.yml is a hand-edited file, so this stays an
     # append of well-formed text at the end — never a parse-and-rewrite that
     # would strip its comments.

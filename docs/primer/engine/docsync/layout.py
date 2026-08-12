@@ -2110,6 +2110,27 @@ class Layout:
         return ('<script type="application/json" id="ds-pagemeta">'
                 + json.dumps(out) + "</script>")
 
+    def notices(self, messages) -> str:
+        """Things the EDITOR should say to whoever opens this report — once.
+
+        Conversion is what needs this. Turning a document into a project means
+        making choices someone may want to revisit — a page size taken from the
+        first page when later ones differ, text whose font could not be carried
+        across — and the place to say so is the editor, where the report is
+        looked at, not a line of terminal output from a command run once and
+        scrolled away.
+
+        Dismissable there, and remembered dismissed, because a notice that
+        cannot be got rid of becomes furniture and stops being read.
+
+        Edit-mode only, like pagemeta: the published page carries none of it.
+        """
+        msgs = [str(m).strip() for m in (messages or []) if str(m).strip()]
+        if not msgs or not os.environ.get("DOCSYNC_EDIT"):
+            return ""
+        return ('<script type="application/json" id="ds-notices">'
+                + json.dumps(msgs) + "</script>")
+
     def fill_tag(self, el_id: str) -> str:
         """The editor's right-click hook for recolourable surfaces.
 

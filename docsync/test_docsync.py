@@ -1287,6 +1287,68 @@ try:
 finally:
     del os.environ["DOCSYNC_EDIT"]
 
+# ---- notices: what a conversion had to decide, said in the editor -----------
+_nl = _layout({"positions": {}, "shapes": [], "boxes": []})
+check_eq("notices: the published page carries none of them",
+         _nl.notices(["a page size was guessed"]), "")
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _n = _layout({"positions": {}, "shapes": [], "boxes": []}).notices(
+        ["page size came from page 1", "fonts were not carried"])
+    check("notices: JSON the editor can parse", _n,
+          '<script type="application/json" id="ds-notices">')
+    check_eq("notices: both messages, in order",
+             json.loads(_n.split(">", 1)[1].rsplit("<", 1)[0]),
+             ["page size came from page 1", "fonts were not carried"])
+    # A report with nothing to say must emit nothing at all, or the editor
+    # shows an empty strip on every project that was authored not converted.
+    for empty in ([], None, ["", "   "]):
+        check_eq(f"notices: {empty!r} emits nothing",
+                 _layout({"positions": {}, "shapes": [], "boxes": []}).notices(empty), "")
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+
+# ---- ingest: the coordinate translation, without writing a project ---------
+# A PDF is already a placed document; conversion is points -> inches. Tested
+# through the pure functions so it needs no PDF and no project on disk.
+from docsync import ingest as _ing                                # noqa: E402
+
+check_eq("ingest: 72pt is one inch", _ing._in(72), 1.0)
+check_eq("ingest: a letter sheet in inches", (_ing._in(612), _ing._in(792)), (8.5, 11.0))
+# One size per document: the first page wins and the rest are NAMED, which is
+# what the editor's dismissable notice is built from.
+check_eq("ingest: no outliers when every page matches",
+         _ing.size_outliers([(8.5, 11.0), (8.5, 11.0)]), [])
+check_eq("ingest: outliers are 1-based page numbers",
+         _ing.size_outliers([(8.5, 11.0), (8.5, 14.0), (8.5, 11.0), (11.0, 8.5)]), [2, 4])
+# Generators emit 611.976 for letter often enough that an exact comparison
+# would call every page an outlier.
+check_eq("ingest: a rounding-error difference is the same size",
+         _ing.size_outliers([(8.5, 11.0), (8.499, 11.001)]), [])
+# Markdown's own leading markers would silently turn a line into a list.
+check_eq("ingest: a numbered line stays that line", _ing._md("1. Introduction"),
+         "\\1. Introduction")
+check_eq("ingest: a dashed line stays that line", _ing._md("- not a bullet"),
+         "\\- not a bullet")
+check_eq("ingest: PDF line breaks collapse", _ing._md("one\ntwo   three\n"),
+         "one two three")
+check_eq("ingest: colour black is left unsaid", _ing._colour(0), None)
+check_eq("ingest: a packed sRGB int becomes hex", _ing._colour(0x52796F), "#52796F")
+# The style must never name a FONT: layout.py refuses a family it cannot load,
+# so carrying the PDF's own would refuse the whole draft rather than degrade.
+_st = _ing._style_for({"lines": [{"spans": [
+    {"text": "a heading", "size": 18.0, "color": 0x222E33, "font": "ABCDEF+Helvetica"}]}]})
+check_eq("ingest: point size becomes CSS px", _st.get("size"), 24.0)
+check_eq("ingest: colour carries", _st.get("color"), "#222E33")
+check_eq("ingest: font is never carried", "font" in _st, False)
+from docsync.layout import _check_text as _ct                     # noqa: E402
+_ct(_st, "ingest style")                  # and it must pass layout's own gate
+# The dominant span decides, so a heading is not described by its footnote mark.
+_st2 = _ing._style_for({"lines": [{"spans": [
+    {"text": "x", "size": 6.0, "color": 0},
+    {"text": "a much longer run of body text", "size": 10.0, "color": 0}]}]})
+check_eq("ingest: the longest run sets the size", _st2.get("size"), round(10 * 96 / 72, 1))
+
 # ---- act boxes: the editor-native Download-PDF button -----------------------
 # A text box carrying act:'pdf' is an ordinary movable in the editor and a
 # REAL button in the published page — layout.text_boxes owns both faces.
