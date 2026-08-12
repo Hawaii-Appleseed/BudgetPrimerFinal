@@ -142,6 +142,23 @@ BODY = _body_m.group(1) if _body_m else SRC
 _head_src = SRC[:_body_m.start()] if _body_m else ""
 STYLE = "\\n".join(re.findall(r"<style[^>]*>(.*?)</style>", _head_src, re.S | re.I))
 
+# An imported page's DARK palette is a trap in the editor. The sheet this
+# wrapper draws is always white, and a dark theme only recolours the text — so
+# its near-white --ink lands on white paper. Measured on the page that showed
+# this up: text luminance 179 against a 255 sheet, which is legible nowhere.
+#
+# Every page that ships a dark block ships a light one too, and that is the
+# palette a printed report wants (such pages usually say so themselves, in an
+# @media print block). So the dark half is switched off — by making its media
+# condition unsatisfiable. An unknown media-feature VALUE invalidates only the
+# component it appears in, so a comma-separated list keeps its other arms.
+#
+# EDIT MODE ONLY, deliberately: the published page is a real web page and keeps
+# its dark mode, and these bytes stay identical to before outside the editor.
+if EDIT:
+    STYLE = re.sub(r"prefers-color-scheme\\s*:\\s*dark",
+                   "prefers-color-scheme:ds-edit-light-only", STYLE, flags=re.I)
+
 # Every sheet this report has, in order: the imported page, then any blank pages
 # added in the editor. Going through L.page_order() is what lets the editor's
 # page strip offer reordering and "+ Page" at all — it gates both on the
