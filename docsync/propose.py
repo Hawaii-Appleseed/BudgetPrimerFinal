@@ -282,6 +282,32 @@ BODY = re.sub("\u27e6S:([a-z0-9_.-]+)\u27e7", lambda m: L.spacer(m.group(1)), BO
 BODY = re.sub("\u27e6E:([a-z0-9_.-]+)\u27e7", lambda m: L.attr(m.group(1)), BODY)
 BODY = re.sub("\u27e6B:([a-z0-9_.-]+)\u27e7", lambda m: L.sec(m.group(1)), BODY)
 
+# Every sheet, in order: this page, then any blank page added in the editor.
+# Going through L.page_order() plus L.pagemeta() is what lets the editor's page
+# strip offer "+ Page" and reordering \u2014 it withholds both from a renderer that
+# never declared its pages, since an order nothing reads draws nothing.
+DESIGNED_PAGES = 1
+
+
+def sheet(pid):
+    """One <section class="page">: this report's markup for the designed page,
+    empty for a blank page added in the editor.
+
+    data-page carries the page's IDENTITY, which stops matching its position
+    the moment the order can be changed.
+    """
+    inner = BODY if pid == DESIGNED_PAGES else ""
+    return (f'<section class="page" data-page="{pid}"{L.fill_attr(f"page.{pid}")}>'
+            f'{inner}'
+            # Inside the section: .page is the positioning context every placed
+            # element is measured against, so as siblings they sat a box out.
+            f'{L.layer(pid)}{L.text_boxes(pid)}{L.tables_html(pid)}'
+            f'</section>')
+
+
+SHEETS = ("".join(sheet(pid) for pid in L.page_order(DESIGNED_PAGES))
+          + L.pagemeta(range(1, DESIGNED_PAGES + 1)))
+
 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -297,10 +323,7 @@ html = f"""<!DOCTYPE html>
 </style>
 </head>
 <body>
-<section class="page">
-{BODY}
-</section>
-{L.layer(1)}{L.text_boxes(1)}{L.tables_html(1)}
+{SHEETS}
 </body>
 </html>
 """

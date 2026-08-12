@@ -142,6 +142,35 @@ BODY = _body_m.group(1) if _body_m else SRC
 _head_src = SRC[:_body_m.start()] if _body_m else ""
 STYLE = "\\n".join(re.findall(r"<style[^>]*>(.*?)</style>", _head_src, re.S | re.I))
 
+# Every sheet this report has, in order: the imported page, then any blank pages
+# added in the editor. Going through L.page_order() is what lets the editor's
+# page strip offer reordering and "+ Page" at all — it gates both on the
+# renderer having declared its pages (L.pagemeta below), because an order no
+# renderer reads is an order nothing would draw.
+DESIGNED_PAGES = 1
+
+
+def sheet(pid):
+    """One <section class="page">: the imported markup for the designed page,
+    empty for a blank page added in the editor.
+
+    data-page is not decoration. The strip addresses sheets by it, and once the
+    order can differ from the DOM order — which is the whole point of
+    reordering — position alone stops identifying a page.
+    """
+    inner = BODY if pid == DESIGNED_PAGES else ""
+    return (f'<section class="page" data-page="{{pid}}"{{L.fill_attr(f"page.{{pid}}")}}>'
+            f'{{inner}}'
+            # INSIDE the section, not after it: .page is the positioning context
+            # every placed element is measured against, so emitting these as its
+            # siblings put every shape and text box a box out.
+            f'{{L.layer(pid)}}{{L.text_boxes(pid)}}{{L.tables_html(pid)}}'
+            f'</section>')
+
+
+SHEETS = ("".join(sheet(pid) for pid in L.page_order(DESIGNED_PAGES))
+          + L.pagemeta(range(1, DESIGNED_PAGES + 1)))
+
 html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -157,10 +186,7 @@ html = f"""<!DOCTYPE html>
 </style>
 </head>
 <body>
-<section class="page">
-{{BODY}}
-</section>
-{{L.layer(1)}}{{L.text_boxes(1)}}{{L.tables_html(1)}}
+{{SHEETS}}
 </body>
 </html>
 """

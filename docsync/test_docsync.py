@@ -1227,10 +1227,10 @@ finally:
 # ---- the mount marker: where an insert may land, and as which page ---------
 # The editor stamps a page onto every new element and the validator refuses
 # one without a real page number, so a page it cannot work out is not a
-# degraded guess — it bricks the draft on the FIRST thing added. Only the
-# Primer's renderer stamps data-page on its sections; every other report
-# relies on this marker, which carries the number the renderer itself looks
-# boxes up by. Published output must not change at all.
+# degraded guess — it bricks the draft on the FIRST thing added. A renderer that
+# stamps no data-page on its sections relies on this marker, which carries the
+# number the renderer itself looks boxes up by. Published output must not
+# change at all.
 _mt = _layout({"positions": {}, "shapes": [], "boxes": []})
 check_eq("mount: the published page carries no editing scaffolding",
          _mt.text_boxes(1), "")
@@ -1252,6 +1252,38 @@ try:
                               "md": "hi"}]}).text_boxes(1)
     check("mount: a page WITH boxes is marked too", _m2, 'data-ds-mount="1"')
     check("mount: the boxes still render alongside it", _m2, "hi")
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+
+# ---- pagemeta: the renderer declaring which pages it has --------------------
+# The editor's page strip needs the list BEFORE any of it is reordered, and a
+# hidden page is absent from the DOM entirely, so it is declared rather than
+# inferred. It is also the capability flag: the strip offers reordering and
+# blank pages only to a renderer that made this call, because layout.pages
+# means nothing to one that never reads page_order().
+_pm = _layout({"positions": {}, "shapes": [], "boxes": []})
+check_eq("pagemeta: the published page carries none of it", _pm.pagemeta([1, 2]), "")
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _p1 = _layout({"positions": {}, "shapes": [], "boxes": []}).pagemeta([1, 2, 3])
+    check("pagemeta: it is JSON the editor can parse", _p1,
+          '<script type="application/json" id="ds-pagemeta">')
+    check_eq("pagemeta: bare ids need no label",
+             json.loads(_p1.split(">", 1)[1].rsplit("<", 1)[0]),
+             [{"id": 1}, {"id": 2}, {"id": 3}])
+    # (id, label) pairs are what puts a page's NAME in the strip — the fallback
+    # can count sheets but can never know they are called Cover and Contents.
+    _p2 = _layout({"positions": {}, "shapes": [], "boxes": []}).pagemeta(
+        [(1, "Cover"), (2, "Contents")])
+    check_eq("pagemeta: pairs carry the label through",
+             json.loads(_p2.split(">", 1)[1].rsplit("<", 1)[0]),
+             [{"id": 1, "label": "Cover"}, {"id": 2, "label": "Contents"}])
+    # A generator is the natural argument (range(1, n + 1)), so it must not be
+    # consumed before it is read.
+    check_eq("pagemeta: a range works like a list",
+             json.loads(_layout({"positions": {}, "shapes": [], "boxes": []})
+                        .pagemeta(range(1, 3)).split(">", 1)[1].rsplit("<", 1)[0]),
+             [{"id": 1}, {"id": 2}])
 finally:
     del os.environ["DOCSYNC_EDIT"]
 
