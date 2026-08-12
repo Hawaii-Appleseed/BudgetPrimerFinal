@@ -14361,12 +14361,133 @@ async function inlineEverything(doc) {
   }
 }
 
+/** Resolve a single @media feature against the design viewport.
+ *  true / false / null, where null means "this editor cannot decide" and the
+ *  caller must leave the query standing. */
+function mediaFeature(feat, viewPx) {
+  const s = feat.replace(/^\(|\)$/g, '').trim();
+  const len = t => {
+    const m = /^([+-]?[\d.]+)(px|em|rem|in|cm|mm|pt|pc|q)?$/i.exec(t.trim());
+    if (!m) return null;
+    const k = { px: 1, em: 16, rem: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4,
+                pt: 96 / 72, pc: 16, q: 96 / 101.6 }[(m[2] || 'px').toLowerCase()];
+    return k ? parseFloat(m[1]) * k : null;
+  };
+  const cmp = (l, op, r) => op === '<' ? l < r : op === '<=' ? l <= r
+                          : op === '>' ? l > r : op === '>=' ? l >= r
+                          : Math.abs(l - r) < 0.5;
+  let m;
+  if ((m = /^(min|max)-(?:device-)?width\s*:\s*(.+)$/i.exec(s))) {
+    const v = len(m[2]);
+    return v === null ? null : (m[1].toLowerCase() === 'min' ? viewPx >= v : viewPx <= v);
+  }
+  // Range syntax: (width >= 900px) and (500px <= width <= 900px).
+  if ((m = /^(?:device-)?width\s*(<=|>=|<|>|=)\s*(.+)$/i.exec(s))) {
+    const v = len(m[2]);
+    return v === null ? null : cmp(viewPx, m[1], v);
+  }
+  if ((m = /^(.+?)\s*(<=|<)\s*(?:device-)?width\s*(<=|<)\s*(.+)$/i.exec(s))) {
+    const a = len(m[1]), b = len(m[4]);
+    return (a === null || b === null) ? null : (cmp(a, m[2], viewPx) && cmp(viewPx, m[3], b));
+  }
+  if ((m = /^(?:device-)?width\s*:\s*(.+)$/i.exec(s))) {
+    const v = len(m[1]);
+    return v === null ? null : cmp(viewPx, '=', v);
+  }
+  return null;                                   // orientation, hover, height…
+}
+
+/** Resolve a whole @media prelude (a comma-separated OR list) at the design
+ *  viewport: true = always on here, false = never on here, null = undecidable. */
+function mediaVerdict(prelude, viewPx) {
+  let anyTrue = false, allDecided = true;
+  for (const q0 of prelude.split(',')) {
+    const q = q0.trim().toLowerCase();
+    if (!q) continue;
+    if (/^not\s/.test(q)) { allDecided = false; continue; }   // inverted: leave it alone
+    const type = (q.match(/^(?:only\s+)?(all|screen|print|speech|tty|tv|projection)\b/) || [])[1] || 'all';
+    if (type !== 'all' && type !== 'screen') continue;        // print/speech: never on here
+    let ok = true;
+    for (const f of q.match(/\([^)]*\)/g) || []) {
+      const r = mediaFeature(f, viewPx);
+      if (r === null) { allDecided = false; ok = false; break; }
+      if (!r) { ok = false; break; }
+    }
+    if (ok) anyTrue = true;
+  }
+  return anyTrue ? true : (allDecided ? false : null);
+}
+
+/** Resolve @media at EXPORT time, at the width the report is composed against.
+ *
+ *  A media query in a pasted block is evaluated against the HOST page's
+ *  viewport — but the block is a fixed-width design scaled into a column, and
+ *  the two have nothing to do with each other. The Budget Primer's stylesheet
+ *  says `@media (min-width:1120px){.page{zoom:1.25}}`: pasted into a desktop
+ *  Squarespace page that fired, blew the page up to 1.25× inside a wrapper
+ *  sized for 1×, and `overflow:hidden` clipped the right-hand inch. Its
+ *  `@media (max-width:850px)` twin is the same trap in reverse — a phone would
+ *  reflow the block into a layout the editor never showed.
+ *
+ *  So width queries are decided HERE, once, and the winning rules are inlined:
+ *  the block carries exactly one layout, the one the editor showed, and no
+ *  host viewport can switch it. `@media print` goes with them — a fragment in
+ *  someone else's page is not a printed sheet, and its 8.5×11in overrides
+ *  would fight the scale wrapper. Anything undecidable (orientation,
+ *  prefers-*) is left standing rather than guessed at. */
+function flattenMedia(css, viewPx) {
+  css = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = [];
+  let i = 0;
+  while (i < css.length) {
+    const open = css.indexOf('{', i);
+    if (open === -1) { out.push(css.slice(i)); break; }
+    const head = css.slice(i, open).trim();
+    let depth = 1, j = open + 1;
+    while (j < css.length && depth) {
+      if (css[j] === '{') depth++;
+      else if (css[j] === '}') depth--;
+      j++;
+    }
+    const body = css.slice(open + 1, j - 1);
+    if (/^@media/i.test(head)) {
+      const v = mediaVerdict(head.replace(/^@media/i, ''), viewPx);
+      if (v === true) out.push(flattenMedia(body, viewPx));            // always on: inline
+      else if (v === null) out.push(`${head}{${flattenMedia(body, viewPx)}}`);
+      // v === false: drop it entirely
+    } else if (/^@(supports|layer|container)/i.test(head)) {
+      out.push(`${head}{${flattenMedia(body, viewPx)}}`);
+    } else {
+      out.push(`${head}{${body}}`);
+    }
+    i = j;
+  }
+  return out.join('');
+}
+
+/** vw is the same leak as a media query: a length that silently re-measures
+ *  itself against whatever page the block was pasted into. Freeze it at the
+ *  design viewport. (vh is left alone — a scaled block has no design viewport
+ *  HEIGHT to freeze it against, and vh is vanishingly rare in a paged report.)
+ *  The lookbehind keeps the substitution out of base64 data: URIs, where a
+ *  run like "…A12vw+" would otherwise match. */
+function freezeViewportUnits(css, viewPx) {
+  return css.replace(/(?<![\w.#+/-])([\d.]+)vw\b/gi,
+    (m, n) => +(parseFloat(n) * viewPx / 100).toFixed(2) + 'px');
+}
+
 /** Prefix every selector so pasted CSS cannot reach the host page — and,
  *  just as important, so the host's CSS cannot reach in. Squarespace styles
  *  h1/p/a globally; without scoping, a pasted block inherits them and stops
  *  looking like what the editor showed. @media/@supports recurse; @font-face
- *  and @keyframes are left alone (they name things, they do not select). */
-function scopeCss(css, sel) {
+ *  and @keyframes are left alone (they name things, they do not select).
+ *
+ *  `bodySel` is where document-level rules (:root/html/body) land. In a block
+ *  that is NOT the outer wrapper: the wrapper is as wide as the host's column,
+ *  while the document those rules were written for is the fixed-width design
+ *  box inside it. Sending `body{…}` to the wrapper made every body-level width,
+ *  padding and centring rule measure against the wrong element. */
+function scopeCss(css, sel, bodySel) {
   // Comments first, or they are read as part of the next selector: a
   // Google-Fonts sheet puts /* latin */ before every @font-face, and each one
   // came out as "#wrap /* latin */ @font-face{…}" — invalid, and it took the
@@ -14387,7 +14508,7 @@ function scopeCss(css, sel) {
     }
     const body = css.slice(open + 1, j - 1);
     if (/^@(media|supports|layer|container)/i.test(head)) {
-      out.push(`${head}{${scopeCss(body, sel)}}`);
+      out.push(`${head}{${scopeCss(body, sel, bodySel)}}`);
     } else if (head.startsWith('@')) {
       out.push(`${head}{${body}}`);                       // font-face, keyframes
     } else {
@@ -14395,8 +14516,8 @@ function scopeCss(css, sel) {
         h = h.trim();
         if (!h) return h;
         // :root/html/body are the document itself — inside a block, that is
-        // the wrapper.
-        if (/^(:root|html|body)$/i.test(h)) return sel;
+        // the element standing in for the document.
+        if (/^(:root|html|body)$/i.test(h)) return bodySel || sel;
         return `${sel} ${h}`;
       }).filter(Boolean).join(',');
       out.push(`${heads}{${body}}`);
@@ -14404,6 +14525,59 @@ function scopeCss(css, sel) {
     i = j;
   }
   return out.join('');
+}
+
+/** How wide the design ACTUALLY is, measured rather than assumed.
+ *
+ *  The old export took the page width straight out of the manifest — 8.5in →
+ *  816px — and scaled to that. That number is a lie in three separate ways:
+ *  the report may have been resized since it was built (layout.page), its CSS
+ *  may zoom or otherwise scale the sheet, and a full-bleed element may sit
+ *  wider than the sheet. Every one of those makes the wrapper narrower than
+ *  its contents, and the wrapper's overflow:hidden then eats the right edge.
+ *
+ *  So: render the very bytes being exported into an offscreen iframe at the
+ *  width the report is composed against, and read the width off the result.
+ *  Whatever the CSS does, the number comes out the other side. */
+async function measureDesignWidth(bodyHtml, css, viewPx) {
+  const f = document.createElement('iframe');
+  f.setAttribute('aria-hidden', 'true');
+  f.style.cssText = 'position:fixed;left:-99999px;top:0;border:0;visibility:hidden;'
+                  + 'height:2000px;width:' + viewPx + 'px';
+  document.body.appendChild(f);
+  try {
+    await new Promise(res => {
+      f.addEventListener('load', res, { once: true });
+      f.srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8">`
+               // Hide the measuring frame's own scrollbar: it narrows the
+               // layout viewport, and a stretch-to-fit wrapper then measures
+               // 15px shy of full width — just enough to be mistaken for
+               // content and set the design width 15px too wide.
+               + `<style>html,body{margin:0}html{scrollbar-width:none}`
+               + `::-webkit-scrollbar{width:0;height:0}</style>`
+               + `<style>${css}</style></head>`
+               + `<body>${bodyHtml}</body></html>`;
+    });
+    const d = f.contentDocument;
+    try { await d.fonts.ready; } catch (e) { /* older engine: measure anyway */ }
+    // The SHEET is the design. `<section class="page">` is the editor's one
+    // hard structural requirement (docsync/scaffold.py), so every document it
+    // can export has one — and its rendered width is the answer whatever the
+    // CSS did to get there: a resize the manifest doesn't know about, a zoom,
+    // a bleed page wider than its siblings. Everything OUTSIDE the sheet (the
+    // toolbar, the download bar) is chrome that stretches to whatever width it
+    // is handed, so it adapts to the block instead of defining it.
+    let w = 0;
+    for (const el of d.querySelectorAll('.page')) {
+      w = Math.max(w, el.getBoundingClientRect().width);
+    }
+    // No sheet at all — an adopted web page rather than a paged report. Then
+    // the design really is as wide as the viewport it was composed at.
+    if (w < 1) w = d.documentElement.clientWidth || viewPx;
+    return Math.ceil(w);
+  } finally {
+    f.remove();
+  }
 }
 
 async function exportHtml(forSquarespace) {
@@ -14427,40 +14601,82 @@ async function exportHtml(forSquarespace) {
       // responsive", it would be a different page. Scaling keeps every
       // relationship exact and simply fits it to the column.
       const uid = 'dsx-' + Math.random().toString(36).slice(2, 8);
-      const w = (M.page && M.page.w) || 8.5;
-      const css = [...doc.querySelectorAll('style')].map(n => n.textContent).join('\n');
+      // The design viewport: the width the report is composed against, which
+      // is what every media query and vw length in its CSS was written for.
+      const view = VIEW_W;
+      let css = [...doc.querySelectorAll('style')].map(n => n.textContent).join('\n');
+      css = freezeViewportUnits(flattenMedia(css, view), view);
       doc.querySelectorAll('style, script, link').forEach(n => n.remove());
+      // Inline styles carry the same vw leak as the stylesheet does.
+      doc.querySelectorAll('[style]').forEach(el => {
+        const s = el.getAttribute('style') || '';
+        if (/vw\b/i.test(s)) el.setAttribute('style', freezeViewportUnits(s, view));
+      });
+      const body = doc.body.innerHTML;
+      const design = (await measureDesignWidth(body, css, view))
+                     || Math.round(PAGE_W_IN * DPI);      // fallback: the sheet itself
       out = `<!-- Exported from the draft editor. Paste into a Squarespace
      Code Block. Styles are scoped to #${uid}, so nothing here can affect the
      rest of the page and the page's own CSS cannot reach in. The block is
-     SCALED to its column, not reflowed: this document is placed at a fixed
-     ${w}in width, so scaling is what keeps it identical. -->
+     SCALED to its column, not reflowed: it is a fixed ${design}px-wide design
+     (measured at export, not assumed), so scaling is what keeps it identical.
+     Its media queries and vw lengths were resolved at export too — a pasted
+     block must not re-answer them against the host page's viewport. -->
 <div id="${uid}" class="dsx-wrap">
 <style>
 #${uid}.dsx-wrap { all:initial; display:block; width:100%; overflow:hidden; }
-#${uid} .dsx-scale { transform-origin:top left; }
+#${uid} .dsx-scale { transform-origin:top left; width:${design}px; display:flow-root; }
 #${uid} * { box-sizing:border-box; }
-${scopeCss(css, '#' + uid)}
+${scopeCss(css, '#' + uid, '#' + uid + ' .dsx-scale')}
 </style>
 <div class="dsx-scale">
-${doc.body.innerHTML}
+${body}
 </div>
 <script>
 (function(){
   var w = document.getElementById('${uid}');
   var inner = w.querySelector('.dsx-scale');
-  var DESIGN = ${w} * 96;                       // the width everything was placed at
-  function fit(){
-    var s = Math.min(1, w.clientWidth / DESIGN);
-    inner.style.transform = 'scale(' + s + ')';
+  var DESIGN = ${design};        // measured at export from the real render
+  var lastW = -1;
+  function fit(force){
+    var avail = w.clientWidth;
+    // No width yet — the block is in a tab, an accordion or a container the
+    // host has not laid out. Measuring that as zero and REMEMBERING it left
+    // the whole report at scale(0): invisible, with nothing scheduled to try
+    // again. Never latch it; wait for a signal that means something.
+    if (avail <= 0) { lastW = -1; return; }
+    if (!force && avail === lastW) return;
+    lastW = avail;
+    var s = Math.min(1, avail / DESIGN);
+    inner.style.width = DESIGN + 'px';
+    inner.style.transform = s === 1 ? 'none' : 'scale(' + s + ')';
+    // Centre it. transform-origin is the top left, so a scaled box keeps the
+    // UNSCALED box's left edge — in a column wider than the design that left
+    // the block hard against the left margin, reading as skewed rather than
+    // placed. Below the design width the scale already fills the column and
+    // this is a no-op.
+    inner.style.marginLeft = Math.max(0, (avail - DESIGN * s) / 2) + 'px';
     // The wrapper must take the SCALED height or the block leaves a gap
     // below it the size of the shrink.
-    inner.style.width = DESIGN + 'px';
-    w.style.height = (inner.scrollHeight * s) + 'px';
+    w.style.height = Math.ceil(inner.scrollHeight * s) + 'px';
   }
-  fit();
-  addEventListener('resize', fit);
-  if (window.ResizeObserver) new ResizeObserver(fit).observe(w);
+  fit(true);
+  addEventListener('resize', function(){ fit(true); });
+  if (window.ResizeObserver) new ResizeObserver(function(){ fit(); }).observe(w);
+  // Height is only final once the things that occupy it have arrived. A fit()
+  // run before the webfonts swap or the images decode measures a document
+  // that is not the one the reader ends up with — and the wrapper keeps that
+  // stale height, clipping the last page or leaving a gap under it.
+  addEventListener('load', function(){ fit(true); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ fit(true); });
+  Array.prototype.forEach.call(w.querySelectorAll('img'), function(im){
+    if (!im.complete) im.addEventListener('load', function(){ fit(true); }, { once: true });
+  });
+  // A floor under all of it. ResizeObserver is driven by the frame loop, so a
+  // host that renders the block in a background tab never delivers one — and
+  // then the only fit that ever ran was the one at parse time.
+  setTimeout(function(){ fit(true); }, 0);
+  setTimeout(function(){ fit(true); }, 400);
 })();
 <\/script>
 </div>
