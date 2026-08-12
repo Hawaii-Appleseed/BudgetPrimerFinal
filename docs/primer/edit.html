@@ -1018,6 +1018,11 @@
      File-menu row that hides itself (New window, local-only) stayed on screen. */
   .pop .shp[hidden] { display:none; }
   .pop .shp:hover { background:var(--sage); color:#fff; }
+  /* A row that stops the whole editor should not look like the row that opens
+     a dialog. Quiet until reached for — the same red the confirm it raises
+     uses, so the two read as one action. */
+  .pop .shp.danger { color:#A93226; }
+  .pop .shp.danger:hover { background:#C0392B; color:#fff; }
   .pop .shp svg { display:block; }
   /* the layers panel: this page's objects, top of the stack first */
   #layerspop { min-width:230px; max-height:340px; overflow-y:auto; }
@@ -1124,6 +1129,14 @@
          clicked to bring it back. Hidden entirely when nothing is deleted. -->
     <button class="shp" id="file-restore" hidden>Restore deleted…</button>
     <button class="shp" id="tok" aria-label="Check or replace the GitHub token used to save">Token…</button>
+    <!-- Stopping the whole thing on purpose. The server already exits by
+         itself two minutes after the last window closes, so this is for the
+         cases waiting does not cover: a force-quit browser sends no goodbye
+         and pins the server for hours, and a server that has gone wrong is
+         exactly when you want it stopped now. Local only — there is no server
+         to stop otherwise. -->
+    <p class="pop-h" id="file-quit-h" hidden>This editor</p>
+    <button class="shp danger" id="file-quit" hidden>Force quit</button>
   </div>
   <div class="pop" id="openpop" hidden>
     <p class="pop-h">Open a report</p>
@@ -1177,6 +1190,16 @@
     <button id="zb-in" class="zb-step" aria-label="Zoom in (⌘+)">+</button>
     <output id="zb-val" for="zb-range">100%</output>
   </span>
+  <!-- Reload the editor. An --app window has NO browser chrome — no address
+       bar, no reload button — so the only way to refresh one was ⌘R, which
+       assumes you know the window is a browser at all. And refreshing is the
+       fix for the two states the editor cannot fix from inside: a page served
+       stale from the offline cache (which draws perfectly and then fails on
+       its engine files) and a boot that failed before the app existed. -->
+  <button id="reload" aria-label="Refresh the editor (⌘R) — reloads this window">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 7a5 5 0 1 1-1.6-3.7"/><path d="M12.2 1.6v2.9H9.3"/></svg></button>
   <button id="guides" aria-label="Rulers and snap guides — drag from a ruler to add one">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" rx="1"/>
@@ -8578,6 +8601,18 @@ function startGuideDrag(d, pg, axis, idx, e0) {
   d.addEventListener('mouseup', up);
 }
 
+// Refresh the window. Unsaved edits are the whole risk here — a reload throws
+// away everything not written to disk — so the guard is the same one switching
+// project uses, and for the same reason.
+$('reload').addEventListener('click', async () => {
+  if (dirty && !await dsConfirm('Refresh the editor? Unsaved edits are lost.',
+      { okLabel: 'Refresh', danger: true })) return;
+  // beforeunload also guards this, and a confirmed reload must not then ask
+  // again in the browser's own words.
+  dirty = false;
+  location.reload();
+});
+
 $('guides').addEventListener('click', () => {
   guidesOn = !guidesOn;
   try { localStorage.setItem('ds-guides', guidesOn ? '1' : '0'); } catch (e) { /* file: */ }
@@ -10796,6 +10831,9 @@ async function detectLocal() {
   // Creating a report is also the server's job (/__scaffold), so the
   // "+ New report…" row in Open exists in local mode only.
   $('open-new').hidden = false;
+  // And there is only something to quit when there is a server. The header
+  // goes with it, or a hosted editor shows a section with nothing in it.
+  $('file-quit').hidden = $('file-quit-h').hidden = false;
   // Same for signing THIS COMPUTER in: the server holds the credential and
   // does the pushing, so the row only means something when there is one.
   $('file-ghconn').hidden = false;
@@ -13951,6 +13989,45 @@ $('open-new').onclick = async () => {
       { okLabel: 'Create', danger: true })) return;
   await newReport(false);
 };
+// Stop the server, now, rather than PRIMER_LINGER seconds after the last
+// window closes. Nothing is destroyed: every Save is already on disk and the
+// next app-open boots a fresh server — but it does take the editor away from
+// EVERY open window, which is the part worth saying out loud.
+$('file-quit').onclick = async () => {
+  $('filepop').hidden = true;
+  if (!await dsConfirm(dirty
+      ? 'Force quit? Unsaved edits here are lost, and the editor stops for '
+        + 'every open window.'
+      : 'Force quit? The editor stops for every open window.',
+      { okLabel: 'Force quit', danger: true })) return;
+  // The confirm above already asked; beforeunload must not ask again in the
+  // browser's own words as the window goes.
+  dirty = false;
+  $('stat').textContent = 'stopping the editor…';
+  let j = null;
+  try {
+    // keepalive: the window may be gone before this settles.
+    j = await (await fetch(withProject('/__quit'),
+                           { method: 'POST', keepalive: true })).json();
+  } catch (e) {
+    // A server that closes the connection on its way down lands here having
+    // done exactly what was asked, so this is not treated as a failure — only
+    // an explicit refusal below is.
+  }
+  if (j && j.ok === false) {
+    $('stat').textContent = j.error || 'could not stop the editor';
+    return;
+  }
+  // An --app window was opened by `open`, not by script, so Chrome is entitled
+  // to refuse window.close(). Ask, then say what happened either way — a dead
+  // server behind a window that looks fine is the state this whole row exists
+  // to avoid creating.
+  window.close();
+  setTimeout(() => {
+    $('stat').textContent = 'editor stopped — this window can be closed';
+  }, 400);
+};
+
 // Connect GitHub: the sign-in panel if the device flow is configured, the
 // paste-a-token prompt otherwise — either way the credential ends up ON THE
 // SERVER (sendTokenToServer via storeAuth/askToken), which is the party that

@@ -1218,7 +1218,7 @@ class Handler(SimpleHTTPRequestHandler):
                 CLIENTS.pop(cid, None)
             return self._json(200, {"ok": True, "clients": len(CLIENTS)})
         if path not in ("/__save", "/__push", "/__export", "/__upload",
-                        "/__update", "/__rollback", "/__window",
+                        "/__update", "/__rollback", "/__window", "/__quit",
                         "/__scaffold", "/__adopt", "/__connect", "/__pull",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
                         "/__oauth/device/code", "/__oauth/device/token",
@@ -1241,6 +1241,13 @@ class Handler(SimpleHTTPRequestHandler):
         # routes entirely and hit the real endpoint. Response shapes mirror
         # the old mocks exactly; specs assert on them.
         if os.environ.get("PRIMER_TEST_SAFE") == "1":
+            # The suite shares ONE server across every parallel worker, so a
+            # spec that exercised the real quit would take the whole run down
+            # with it — every other spec failing on a dead port, far from the
+            # cause. Refused here; specs assert on the request instead.
+            if path == "/__quit":
+                return self._json(200, {"ok": False, "error":
+                    "blocked in tests — the suite's server stays up"})
             if path in ("/__save", "/__push"):
                 return self._json(200, {"ok": True, "ahead": 0, "message":
                     "blocked in tests — no real save/push happens here"})
@@ -1261,6 +1268,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return
         if path == "/__window":
             return self._new_window(req)
+        if path == "/__quit":
+            return self._quit()
         if path == "/__pull":
             return self._pull_content(req)
         if path == "/__scaffold":
@@ -1683,6 +1692,32 @@ class Handler(SimpleHTTPRequestHandler):
         if r.get("ok"):
             print(f"  rolled back to {r.get('sha')} — restarting")
             self._restart_soon()
+
+    def _quit(self):
+        """Stop the server NOW, from the editor's File menu.
+
+        The idle exit already stops it PRIMER_LINGER seconds after the last
+        window closes, so this is not about tidiness — it is about the two
+        cases waiting does not cover. A force-quit browser sends no pagehide,
+        so its window never says goodbye and the ghost pins the server until
+        the CLIENT_TTL sweep hours later; and a server that has gone wrong
+        (a wedged build, a watcher that died) is exactly when you want it
+        stopped on purpose rather than in two minutes.
+
+        Same shutdown the reaper uses, on another thread a beat later, for the
+        same reason the restart is deferred: a client waiting on a reply that
+        never comes looks like a crash. Localhost-only, like every other
+        endpoint here — and it destroys nothing, since the next open boots a
+        fresh server and every Save is already on disk.
+        """
+        self._json(200, {"ok": True, "stopping": True})
+        print("  quit asked for from the editor — stopping")
+
+        def go():
+            time.sleep(0.4)
+            for srv in SERVERS:
+                threading.Thread(target=srv.shutdown, daemon=True).start()
+        threading.Thread(target=go, daemon=True).start()
 
     def _restart_soon(self):
         """execv on another thread, a beat after the response is on the wire.
