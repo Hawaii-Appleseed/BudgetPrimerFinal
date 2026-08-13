@@ -569,9 +569,11 @@ def style_guide() -> dict:
 def listing() -> list[dict]:
     """What a picker needs, in registry order — no layout payloads. Each
     template's schemes come resolved (id, name, swatch colour), its own
-    default first, so a picker can draw them without knowing SCHEMES."""
+    default first, so a picker can draw them without knowing SCHEMES. The
+    digested palette rides along for the editor's Colors panel."""
     return [{"id": tid, "name": t["name"], "blurb": t["blurb"],
              "page": {"w": t["page"][0], "h": t["page"][1]},
+             "palette": t["palette"],
              "schemes": [{"id": s, **SCHEMES[s]}
                          for s in t.get("schemes", [])]}
             for tid, t in TEMPLATES.items()]

@@ -1003,6 +1003,18 @@
   .icon-tile:hover { background:#EAF3EC; border-color:#95B7A2; }
   .icon-note { font:11px system-ui; color:#7A8E92; margin:8px 0 0; }
   .swgrid { display:grid; grid-template-columns:repeat(5, 26px); gap:6px; }
+  /* The Colors panel's scheme rows: topic swatch, name, Apply at the edge. */
+  .scheme-row { display:flex; align-items:center; gap:9px; margin:7px 0; }
+  .scheme-sw { width:24px; height:24px; border-radius:7px; flex:none;
+        border:1px solid rgba(0,0,0,.16); }
+  .scheme-name { font:12.5px system-ui; color:var(--ink); min-width:0;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .scheme-apply { margin-left:auto; flex:none; font:600 11.5px system-ui;
+        color:var(--ink); background:none; border:1px solid #B9C6BB;
+        border-radius:var(--r-ctl, 8px); padding:4px 9px; cursor:pointer; }
+  .scheme-apply:hover { background:#EAF3EC; border-color:#95B7A2; }
+  .pal-name { font:600 11px system-ui; color:#7A8E92; margin:9px 0 4px;
+        text-transform:none; }
   .sw { width:26px; height:26px; border:1px solid rgba(0,0,0,.16); border-radius:6px;
         cursor:pointer; padding:0; position:relative; }
   .sw:hover { outline:2px solid var(--ink); outline-offset:1px; }
@@ -1688,6 +1700,14 @@
         <rect x="2.6" y="7" width="2.4" height="4.2"/><rect x="6" y="4.2" width="2.4" height="7"/>
         <rect x="9.4" y="1.8" width="2.4" height="9.4"/></svg>
       Chart</button>
+    <button id="colors" aria-label="The report's palette and the published colour schemes">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+        stroke-width="1.4" stroke-linecap="round"><path
+        d="M7 1.8a5.2 5.2 0 1 0 0 10.4c.9 0 1.2-.6.9-1.2-.4-.8-.1-1.7.9-1.7h1.4c1.1 0 2-.9 2-2A5.6 5.6 0 0 0 7 1.8z"/>
+        <circle cx="4.6" cy="5" r=".9" fill="currentColor" stroke="none"/>
+        <circle cx="8.4" cy="4.2" r=".9" fill="currentColor" stroke="none"/>
+        <circle cx="4.2" cy="8.4" r=".9" fill="currentColor" stroke="none"/></svg>
+      Colors</button>
   </nav>
   <!-- The left column is a PANEL host now: whatever the current tool needs a
        lot of room for (colour, today) opens here instead of in a popover that
@@ -3182,6 +3202,170 @@ function fillTargets(id) {
 
 // The screen already holds colours worth reusing — every fill, stroke, box and
 // text colour in layout.json. Offering them saves eyedropping your own work.
+// --- the Colors rail panel ---------------------------------------------------
+// The palette and the published colour schemes, one click from the rail —
+// not buried behind a selection's Fill control. Swatches fill whatever is
+// selected; a scheme's Apply retints the whole report (every use of the
+// current topic colour) in one undo step. Schemes and the digested palettes
+// come from the engine's own /__templates, so they are exactly what "+ New
+// report" offers — a hosted editor without that endpoint just shows the
+// report's own palette.
+let TPL_INFO = null;
+async function templatesInfo() {
+  if (TPL_INFO) return TPL_INFO;
+  try {
+    const j = await (await fetch('/__templates')).json();
+    TPL_INFO = { templates: j.templates || [], style: j.style || null };
+  } catch (e) { TPL_INFO = { templates: [], style: null }; }
+  return TPL_INFO;
+}
+
+// Everywhere a topic colour can live in layout.json: page fills, shape
+// fill/stroke, a text box's panel fill and its type colour, slot type
+// colours. One walk serves both counting and swapping.
+function schemeColorWalk(hex, swapTo) {
+  const H = hex.toUpperCase();
+  let n = 0;
+  const visit = (obj, key) => {
+    const v = obj && obj[key];
+    if (typeof v === 'string' && v.toUpperCase() === H) {
+      n++;
+      if (swapTo) obj[key] = swapTo;
+    }
+  };
+  Object.keys(layout.fill || {}).forEach(k => visit(layout.fill, k));
+  (layout.shapes || []).forEach(s => { visit(s, 'fill'); visit(s, 'stroke'); });
+  (layout.boxes || []).forEach(b => { visit(b, 'fill'); if (b.style) visit(b.style, 'color'); });
+  Object.values(layout.text || {}).forEach(t => visit(t, 'color'));
+  return n;
+}
+
+/** Retint the report to another scheme: every use of the CURRENT topic
+ *  colour (whichever scheme colour the layout uses most) becomes `to`.
+ *  Refuses when no scheme colour is in use — a report that never had a
+ *  topic colour has nothing to swap, and guessing would repaint the wrong
+ *  thing. One history entry; the palette swatch follows for this session. */
+async function applySchemeColor(to) {
+  const info = await templatesInfo();
+  const schemes = (info.style && info.style.schemes) || [];
+  if (!schemes.length) return { ok: false, error: 'no schemes — the server has no /__templates' };
+  const TO = ('#' + String(to).replace('#', '')).toUpperCase();
+  if (!/^#[0-9A-F]{6}$/.test(TO)) return { ok: false, error: `'${to}' is not a hex colour` };
+  let from = null, best = 0;
+  for (const s of schemes) {
+    const c = s.color.toUpperCase();
+    if (c === TO) continue;
+    const uses = schemeColorWalk(c);
+    if (uses > best) { best = uses; from = c; }
+  }
+  if (!from) {
+    return { ok: false, error: schemeColorWalk(TO)
+      ? 'the report is already in that scheme'
+      : 'no scheme colour is in use here — fill the cover pages with one first' };
+  }
+  pushHistory();
+  const swapped = schemeColorWalk(from, TO);
+  const pi = (M.palette || []).findIndex(c => c.toUpperCase() === from);
+  if (pi >= 0) M.palette[pi] = TO;
+  else (M.palette = M.palette || []).unshift(TO);
+  markDirty();
+  await render();
+  paintSel($('out').contentDocument);
+  return { ok: true, from, to: TO, swapped };
+}
+
+async function openColorsPanel() {
+  // The rail button toggles, like every other tool.
+  if (!$('side').hidden && $('side-title').textContent === 'Colors') { closeSide(); return; }
+  undockPanel();
+  sideFillId = null;
+  document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
+  $('side').hidden = false;
+  unfoldSide();
+  $('side-title').textContent = 'Colors';
+  sideColorsPanel = true;
+  $('colors').classList.add('on');
+  const body = $('side-body');
+  body.innerHTML = '';
+  const h4 = text => { const h = document.createElement('h4'); h.textContent = text; body.appendChild(h); return h; };
+  const note = text => { const p = document.createElement('p'); p.className = 'side-note'; p.textContent = text; body.appendChild(p); return p; };
+  const dot = (host, bg, title, onClick) => {
+    const b = document.createElement('button');
+    b.className = 'cdot';
+    b.style.background = bg;
+    b.title = title;
+    b.addEventListener('click', onClick);
+    host.appendChild(b);
+    return b;
+  };
+  // A swatch fills the selection — the panel is reachable with nothing
+  // selected, so say what a click will do rather than silently no-opping.
+  const fillSel = async c => {
+    const ids = [...selIds].filter(id => !isLocked(id));
+    if (!ids.length) {
+      $('stat').textContent = 'select something on the page, then click a swatch to fill it';
+      return;
+    }
+    pushHistory();
+    ids.forEach(id => fillTargets(id).set(c));
+    markDirty();
+    await render();
+    paintSel($('out').contentDocument);
+  };
+
+  h4('Report palette');
+  note('Click a swatch to fill the selection.');
+  const own = document.createElement('div'); own.className = 'cgrid'; body.appendChild(own);
+  (M.palette || []).forEach(c => dot(own, c, c, () => fillSel(c)));
+
+  const info = await templatesInfo();
+  // The panel may have been closed, or repurposed, while the fetch ran.
+  if ($('side').hidden || $('side-title').textContent !== 'Colors') return;
+  const schemes = (info.style && info.style.schemes) || [];
+  if (schemes.length) {
+    h4('Colour schemes');
+    note('The published topic colours. Apply retints the whole report — one undo step.');
+    schemes.forEach(s => {
+      const row = document.createElement('div'); row.className = 'scheme-row';
+      const sw = document.createElement('button');
+      sw.className = 'scheme-sw'; sw.style.background = s.color; sw.title = s.color;
+      sw.addEventListener('click', () => fillSel(s.color));
+      const nm = document.createElement('span'); nm.className = 'scheme-name'; nm.textContent = s.name;
+      const go = document.createElement('button');
+      go.className = 'scheme-apply'; go.textContent = 'Apply';
+      go.title = 'Recolour every use of the current topic colour to ' + s.name;
+      go.addEventListener('click', async () => {
+        const r = await applySchemeColor(s.color);
+        $('stat').textContent = r.ok
+          ? `${s.name}: ${r.swapped} element${r.swapped === 1 ? '' : 's'} retinted — ⌘Z undoes`
+          : r.error;
+        if (r.ok) openColorsPanel_refresh();
+      });
+      row.append(sw, nm, go);
+      body.appendChild(row);
+    });
+  }
+  const withPalettes = (info.templates || []).filter(t => (t.palette || []).length);
+  if (withPalettes.length) {
+    h4('Published palettes');
+    note('Digested from the 2025–26 Hawaiʻi Appleseed reports.');
+    withPalettes.forEach(t => {
+      const nm = document.createElement('p'); nm.className = 'pal-name'; nm.textContent = t.name;
+      body.appendChild(nm);
+      const g = document.createElement('div'); g.className = 'cgrid'; body.appendChild(g);
+      t.palette.forEach(c => dot(g, c, c, () => fillSel(c)));
+    });
+  }
+}
+// Rebuild in place after Apply, so the report-palette swatches show the new
+// topic colour — the title check inside makes this a no-op if the panel went.
+function openColorsPanel_refresh() {
+  if ($('side').hidden || $('side-title').textContent !== 'Colors') return;
+  $('side-title').textContent = '';           // defeat the toggle check
+  openColorsPanel();
+}
+$('colors').onclick = () => openColorsPanel();
+
 function colorsInUse() {
   const set = new Set();
   const add = c => {
@@ -4733,6 +4917,8 @@ function dockPanel(tool, title, opts = {}) {
   }
   undockPanel();
   sideFillId = null;                   // #side is about a tool now, not a colour
+  sideColorsPanel = false;
+  $('colors').classList.remove('on'); // the Colors panel is not pop-based
   document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
   const body = $('side-body');
   body.innerHTML = '';
@@ -7111,7 +7297,7 @@ function arrangeBar(d) {
   // nothing single-selected left for it to be about. A docked TOOL panel does
   // not: placing a shape selects it, and the picker you placed it from must
   // still be there to place the next one.
-  if (!$('side').hidden && !sidePanelTool) {
+  if (!$('side').hidden && !sidePanelTool && !sideColorsPanel) {
     if (canFill) { if (sideFillId !== fillId) openColorPanel(fillId); }
     else if (!selIds.size) closeSide();
   }
@@ -9271,6 +9457,7 @@ const gradOf = (stops, angle) => ({
 });
 
 let sideFillId = null;          // whose colour the panel is editing
+let sideColorsPanel = false;    // #side is the rail's Colors panel
 
 function closeSide() {
   // A docked picker has to go home to #bar BEFORE the panel is emptied — it is
@@ -9279,10 +9466,14 @@ function closeSide() {
   $('side-body').innerHTML = '';
   $('side').hidden = true;
   sideFillId = null;
+  sideColorsPanel = false;
+  $('colors').classList.remove('on');
 }
 
 function openColorPanel(id) {
   undockPanel();
+  $('colors').classList.remove('on');
+  sideColorsPanel = false;
   sideFillId = id;
   $('side').hidden = false;
   unfoldSide();
@@ -15413,6 +15604,18 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     markDirty();
     await render();
     return { ...docsync.api.status(), id, page };
+  },
+
+  /** Retint the report to another colour scheme — every use of the current
+   *  topic colour becomes the named one. Takes a scheme id ('slate') or a
+   *  hex; the same swap the Colors panel's Apply performs, same refusals. */
+  async applyScheme(scheme) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const info = await templatesInfo();
+    const byId = ((info.style && info.style.schemes) || [])
+      .find(s => s.id === String(scheme).toLowerCase());
+    const r = await applySchemeColor(byId ? byId.color : scheme);
+    return r.ok ? { ...docsync.api.status(), ...r } : r;
   },
 
   /** A blank page after `at` (order index) or after the page in view. */
