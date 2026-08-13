@@ -41,5 +41,15 @@
     "#354F52",
     "#2F3E46",
     "#FFFFFF"
+  ],
+  "images": [
+    "appleseed-logo-white.svg",
+    "appleseed-logo.svg",
+    "branch-0.jpg",
+    "branch-1.jpg",
+    "branch-2.jpg",
+    "branch-3.jpg",
+    "hb2296-signing.jpg",
+    "signing.jpg"
   ]
 }

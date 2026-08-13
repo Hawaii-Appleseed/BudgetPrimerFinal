@@ -914,6 +914,20 @@ class Handler(SimpleHTTPRequestHandler):
         pid = (parse_qs(parsed.query).get("project") or [None])[0]
         if clean == "/__ping":
             return self._json(200, self._ping_payload(pid))
+        if clean == "/__templates":
+            # What "+ New report" can start from, beyond the blank canvas.
+            # Read via the same sys.path dance _scaffold uses, so the answer
+            # comes from THIS checkout's engine, not whichever docsync module
+            # was imported first.
+            sys.path.insert(0, str(SELF_ROOT))
+            try:
+                from docsync.templates import listing
+                return self._json(200, {"ok": True, "templates": listing()})
+            except Exception as e:               # noqa: BLE001 — report it
+                return self._json(200, {"ok": False, "error": str(e),
+                                        "templates": []})
+            finally:
+                sys.path.remove(str(SELF_ROOT))
         if clean == "/__oauth/status":
             t = _gh_token()
             return self._json(200, {"ok": True, "connected": bool(t.get("token")),
@@ -1425,6 +1439,7 @@ class Handler(SimpleHTTPRequestHandler):
         and builds it, so "Create" lands in a working editor."""
         slug = str(req.get("slug") or "").strip()
         name = str(req.get("name") or "").strip()
+        template = str(req.get("template") or "").strip()
         size = req.get("size") or {}
         try:
             w = float(size.get("w", 8.5))
@@ -1438,7 +1453,7 @@ class Handler(SimpleHTTPRequestHandler):
             # concurrent scaffolds (parallel test workers, two tabs) cannot
             # lose each other's binding.
             with _host_lock():
-                create(slug, name, w, h, root=SELF_ROOT)
+                create(slug, name, w, h, root=SELF_ROOT, template=template)
         except NewProjectError as e:
             return self._json(200, {"ok": False, "error": str(e)})
         except Exception as e:                   # noqa: BLE001 — report it

@@ -89,15 +89,20 @@ html = f"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <title>{{C.text("title")}}</title>
+{{L.font_link()}}
 <style>
   body {{{{ margin:0; background:#D6E0D2; font:15px/1.5 system-ui, sans-serif;
          color:#2F3E46; }}}}
   /* position:relative is load-bearing: every placed object is absolute
      against its page, so the page must be the containing block or the whole
-     document stacks at the window's origin. */
+     document stacks at the window's origin. isolation:isolate equally so:
+     it makes the page a stacking context, which is what keeps a
+     send-to-back shape (z-index -1) ABOVE the page's own background — on a
+     page with a fill, a plain relative page painted that shape underneath
+     its background, i.e. invisible. */
   .page {{{{ width:{w}in; min-height:{h}in; margin:24px auto; background:#fff;
           box-shadow:0 4px 18px rgba(0,0,0,.12); position:relative;
-          overflow:hidden; box-sizing:border-box; }}}}
+          isolation:isolate; overflow:hidden; box-sizing:border-box; }}}}
   .ds-textbox p {{{{ margin:0 0 .5em; }}}}
   .ds-textbox p:last-child {{{{ margin-bottom:0; }}}}
   .ds-table {{{{ border-collapse:collapse; }}}}
@@ -136,7 +141,7 @@ _CONTENT_MD = """<!--
 """
 
 _BINDING = """
-  # Added by "+ New report" (docsync/new.py) — a blank local project.
+  # Added by "+ New report" (docsync/new.py) — {origin}.
   - id: {slug}
     content: projects/{slug}/content.md
     build: python3 projects/{slug}/render_report.py && python3 -m docsync.stage --id {slug}
@@ -147,9 +152,13 @@ _BINDING = """
       render: projects/{slug}/render_report.py
       out: projects/{slug}/web/index.html
       layout: projects/{slug}/layout.json
-      palette: ["#6B9E78", "#95B7A2", "#CAD2C5", "#E8EDE6", "#D6E0D2", "#52796F", "#354F52", "#2F3E46", "#FFFFFF"]
+      palette: [{palette}]
       page: [{w}, {h}]
 """
+
+# The blank canvas's swatches, exactly as they were before templates existed.
+_DEFAULT_PALETTE = ["#6B9E78", "#95B7A2", "#CAD2C5", "#E8EDE6", "#D6E0D2",
+                    "#52796F", "#354F52", "#2F3E46", "#FFFFFF"]
 
 
 class NewProjectError(Exception):
@@ -158,7 +167,7 @@ class NewProjectError(Exception):
 
 def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
            root: Path = ROOT, pages: int = 1, notices=None,
-           layout: dict | None = None) -> Path:
+           layout: dict | None = None, template: str = "") -> Path:
     """Write the project and register it in docsync.yml. Returns its dir.
 
     Refuses rather than overwrites: an existing binding or directory means
@@ -170,7 +179,37 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     placed. They default to the blank-canvas project this has always made, so
     the hosted "+ New report" path calls this exactly as before — and there is
     still ONE renderer template, which is the point of it living here.
+
+    `template` names an entry in docsync.templates: the SAME scaffold, with
+    the starter layout, palette, page size and asset files coming from the
+    template instead of being blank. A template is data riding the one
+    renderer, never a different renderer.
     """
+    palette = _DEFAULT_PALETTE
+    tpl_assets: list = []
+    content_md = _CONTENT_MD.format(name=name.strip())
+    origin = "a blank local project"
+    if template:
+        if layout is not None:
+            raise NewProjectError("pass a template or a converted layout, not both")
+        from .templates import ASSETS, CONTENT_MD as TPL_CONTENT_MD, TEMPLATES
+        t = TEMPLATES.get(template)
+        if t is None:
+            raise NewProjectError(
+                f"'{template}' is not a template — one of: "
+                + ", ".join(sorted(TEMPLATES)) + ", or none for a blank canvas")
+        # The designed layout was measured against ITS page; a template pick
+        # therefore brings its sheet with it, whatever size the form held.
+        w, h = t["page"]
+        pages = t["pages"]
+        layout = t["layout"]()
+        palette = t["palette"]
+        tpl_assets = [(ASSETS / a, a) for a in t["assets"]]
+        for src, a in tpl_assets:
+            if not src.is_file():
+                raise NewProjectError(f"template asset missing: {a}")
+        content_md = TPL_CONTENT_MD.format(name=name.strip(), label=t["name"])
+        origin = f'from the "{t["name"]}" template'
     if not SLUG_RE.match(slug):
         raise NewProjectError(
             f"'{slug}' is not a usable id — lowercase letters, digits and "
@@ -210,7 +249,7 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     if int(pages) < 1:
         raise NewProjectError("a report needs at least one page")
     proj.mkdir(parents=True)
-    (proj / "content.md").write_text(_CONTENT_MD.format(name=name.strip()))
+    (proj / "content.md").write_text(content_md)
     # json.dumps for both, so a notice carrying an apostrophe or a quote cannot
     # end the Python string it is baked into.
     (proj / "render_report.py").write_text(_RENDERER.format(
@@ -218,11 +257,21 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
         notes=json.dumps([str(m) for m in (notices or [])])))
     (proj / "layout.json").write_text(
         json.dumps(layout if layout is not None else {"positions": {}}, indent=2) + "\n")
+    # Template assets land beside the OUTPUT, where the page's own relative
+    # "assets/…" srcs resolve — the same place /__upload puts a dropped image.
+    if tpl_assets:
+        import shutil
+        adir = proj / "web" / "assets"
+        adir.mkdir(parents=True, exist_ok=True)
+        for src, a in tpl_assets:
+            shutil.copy2(src, adir / a)
     # Append the binding. docsync.yml is a hand-edited file, so this stays an
     # append of well-formed text at the end — never a parse-and-rewrite that
     # would strip its comments.
     with yml.open("a") as f:
-        f.write(_BINDING.format(slug=slug, w=w, h=h))
+        f.write(_BINDING.format(
+            slug=slug, w=w, h=h, origin=origin,
+            palette=", ".join(f'"{c}"' for c in palette)))
     return proj
 
 
@@ -232,9 +281,11 @@ def main(argv=None) -> int:
     ap.add_argument("--name", required=True)
     ap.add_argument("--w", type=float, default=8.5)
     ap.add_argument("--h", type=float, default=11.0)
+    ap.add_argument("--template", default="",
+                    help="start from a docsync.templates entry instead of blank")
     a = ap.parse_args(argv)
     try:
-        proj = create(a.slug, a.name, a.w, a.h)
+        proj = create(a.slug, a.name, a.w, a.h, template=a.template)
     except NewProjectError as e:
         print(f"  new: {e}", file=sys.stderr)
         return 1

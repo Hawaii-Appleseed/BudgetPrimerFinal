@@ -1064,6 +1064,9 @@
         color:#89A093; transition:color .1s; }
   .shp-t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
         white-space:nowrap; text-align:left; }
+  /* An image standing in for a row's icon (the Insert-image picker): same
+     16px box, whole image visible whatever its aspect. */
+  .pop.menu img.shp-i { object-fit:contain; }
   /* Tinted, not filled. A solid sage bar under the pointer is a lot of colour
      for a row you are only passing over on the way to another one — and it
      hid the icon, which is the thing that tells the rows apart at a glance. */
@@ -1662,6 +1665,18 @@
         rx="1.5"/><circle cx="5" cy="5.6" r="1.1" fill="currentColor" stroke="none"/>
         <path d="M2.5 10.5l3-3 2.2 2.2 2-2 1.8 1.8"/></svg>
       Image</button>
+    <!-- Insert image's picker, shown only when the project already carries
+         images (a template's Appleseed logos, past uploads — manifest
+         "images"). Rows are filled in by openImageMenu(); with nothing
+         bundled the button keeps its straight-to-upload behaviour. -->
+    <div class="pop menu" id="imgpop" hidden>
+      <p class="pop-h">In this report</p>
+      <div id="img-list"></div>
+      <button class="shp" id="img-upload"><svg class="shp-i" viewBox="0 0 16 16"
+        ><path d="M8 13.4V6.3"/><path d="M5.1 9.2 8 6.3l2.9 2.9"/><path
+          d="M2.9 4.9V3.6a1 1 0 0 1 1-1h8.2a1 1 0 0 1 1 1v1.3"
+        /></svg><span class="shp-t">Upload from computer…</span></button>
+    </div>
     <button id="table" aria-label="Add a table to the page in view">
       <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
         stroke-width="1.4"><rect x="1.5" y="2" width="11" height="10" rx="1"/>
@@ -4645,7 +4660,7 @@ function togglePop(pop, anchor) {
 // own entries are inside .pop already, and #guides is a plain toggle, not an
 // anchor — listing either would just stop a click there from closing anything.
 const POP_ANCHORS = '#ty-colorbtn, #ty-spacebtn, #text, #shape, #icon, #layers,'
-  + ' #download, #file';
+  + ' #download, #file, #ar-img';
 
 // The rail's PICKERS — the panels that exist to put a new object on the page.
 // They are menus, and a menu closes when you click away from it.
@@ -8950,19 +8965,67 @@ $('ar-del').addEventListener('click', () => deleteSel($('out').contentDocument))
 // is just the image. A box is already movable, resizable, layerable and
 // persisted in layout.json, so the image inherits every behaviour placed
 // text has, and the asset file itself lives with the project (assets dir).
-$('ar-img').addEventListener('click', () => {
+async function placeImageBox(path, name) {
   const d = $('out').contentDocument;
-  uploadImageFile(d, async (path, name) => {
-    pushHistory();
-    const id = freeBoxId();
-    const page = visiblePageId();
-    boxes().push({ id, page, x: placeX(3), y: 1.5, w: 3, z: 2, md: `![${name}](${path})` });
-    setSel(d, ['text.' + id]);
-    markDirty();
-    await render();
-    $('stat').textContent =
-      `${name} placed on page ${page} — drag to move, edges to resize`;
-  });
+  pushHistory();
+  const id = freeBoxId();
+  const page = visiblePageId();
+  boxes().push({ id, page, x: placeX(3), y: 1.5, w: 3, z: 2, md: `![${name}](${path})` });
+  setSel(d, ['text.' + id]);
+  markDirty();
+  await render();
+  $('stat').textContent =
+    `${name} placed on page ${page} — drag to move, edges to resize`;
+}
+
+/** Every image this report already carries: the manifest's listing of its
+ *  assets dir (a template's Appleseed logos, images from past sessions) plus
+ *  anything uploaded THIS session (on disk, but the manifest predates it). */
+function projectImages() {
+  const names = new Set(M.images || []);
+  for (const p of localImages.keys()) {
+    const m = /^assets\/([^/]+)$/.exec(p);
+    if (m) names.add(m[1]);
+  }
+  return [...names].sort();
+}
+
+function openImageMenu() {
+  const host = $('img-list');
+  host.textContent = '';
+  for (const name of projectImages()) {
+    const b = document.createElement('button');
+    b.className = 'shp';
+    // The image IS its own icon — a name like logo-2.svg says far less than
+    // a 16px look at the thing itself.
+    const im = document.createElement('img');
+    im.className = 'shp-i';
+    im.alt = '';
+    im.src = localImages.get('assets/' + name) || withBase('assets/' + name);
+    const t = document.createElement('span');
+    t.className = 'shp-t';
+    t.textContent = name;
+    b.append(im, t);
+    b.onclick = () => { $('imgpop').hidden = true; placeImageBox('assets/' + name, name); };
+    host.appendChild(b);
+  }
+  togglePop($('imgpop'), $('ar-img'));
+}
+
+function startImageUpload() {
+  const d = $('out').contentDocument;
+  uploadImageFile(d, (path, name) => placeImageBox(path, name));
+}
+
+$('ar-img').addEventListener('click', () => {
+  // With nothing already in the project there is nothing to pick from, so
+  // the button keeps its one-click path straight into the file dialog.
+  if (projectImages().length) openImageMenu();
+  else startImageUpload();
+});
+$('img-upload').addEventListener('click', () => {
+  $('imgpop').hidden = true;
+  startImageUpload();
 });
 $('ar-lock').addEventListener('click', () => toggleLockSel($('out').contentDocument));
 $('ar-group').addEventListener('click', () => groupSel($('out').contentDocument));
@@ -14150,14 +14213,32 @@ const slugifyReport = s =>
   s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 async function newReport(intoNewWindow) {
-  const r = await dsForm('New report', [
+  // What this server can start a report FROM. Fetched fresh (it is one tiny
+  // GET) so a template added to the engine appears without a reload; a server
+  // too old to answer just means a blank-only picker, never a broken form.
+  let templates = [];
+  try {
+    templates = (await (await fetch('/__templates')).json()).templates || [];
+  } catch (e) { /* blank canvas is always on offer */ }
+  const fields = [
     { name: 'name', label: 'Title', type: 'text', required: true,
       placeholder: 'My report' },
     { name: 'slug', label: 'Short id (optional — from the title)', type: 'text',
       placeholder: 'my-report' },
-    { name: 'size', label: 'Page size', type: 'select', value: 'letter',
-      options: NEW_REPORT_SIZES },
-  ], { okLabel: 'Create',
+  ];
+  if (templates.length) {
+    // A template is a designed layout measured against ITS page, so picking
+    // one brings its sheet with it — the label says so, and the size select
+    // below is read only for the blank canvas.
+    fields.push({ name: 'template', label: 'Start from', type: 'select',
+      value: '',
+      options: [{ value: '', label: 'Blank canvas' },
+                ...templates.map(t => ({ value: t.id,
+                  label: `${t.name} — ${t.blurb}` }))] });
+  }
+  fields.push({ name: 'size', label: 'Page size (blank canvas)', type: 'select',
+    value: 'letter', options: NEW_REPORT_SIZES });
+  const r = await dsForm('New report', fields, { okLabel: 'Create',
        validate: v => slugifyReport(v.slug || v.name || '')
          ? null : 'a title (or a short id) is needed' });
   if (!r) return;
@@ -14170,7 +14251,8 @@ async function newReport(intoNewWindow) {
     j = await (await fetch('/__scaffold', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, slug, size: { w: size.w, h: size.h } }),
+      body: JSON.stringify({ name, slug, template: r.template || '',
+                             size: { w: size.w, h: size.h } }),
     })).json();
   } catch (e) {
     $('stat').textContent = 'could not create it: ' + e.message;

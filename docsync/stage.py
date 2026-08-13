@@ -75,7 +75,27 @@ def manifest(b: Binding) -> dict:
         "page": {"w": e.page[0], "h": e.page[1]},
         "margins": {"side": e.margins[0], "top": e.margins[1]},
         "palette": e.palette or [],
+        # The images already IN the project — a template's logos, past
+        # uploads — so Insert image can offer them without a trip through
+        # the file picker. Names only; they resolve as "assets/<name>"
+        # relative to the editor's page like every other asset src.
+        "images": _asset_images(b),
     }
+
+
+IMAGE_EXTS = (".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
+def _asset_images(b: Binding) -> list[str]:
+    """Image filenames in the project's assets dir, the same dir /__upload
+    writes into: editor.assets when the binding names one, else assets/
+    beside the built page."""
+    e = b.editor
+    adir = e.assets if e.assets else e.out.parent / "assets"
+    if not adir.is_dir():
+        return []
+    return sorted(p.name for p in adir.iterdir()
+                  if p.suffix.lower() in IMAGE_EXTS and p.is_file())
 
 
 def _origin_slug(root) -> str | None:
@@ -132,6 +152,15 @@ def stage(b: Binding, repo: str = "") -> None:
     (eng / "docsync" / "__init__.py").write_text("")
     (eng / "manifest.json").write_text(json.dumps(m, indent=2) + "\n")
     shutil.copy2(EDITOR, e.dir / "edit.html")
+    # The assets themselves, staged beside the editor: the iframe resolves a
+    # box's "assets/…" src against the editor's page, and for a scaffolded
+    # project nothing else put the files there — a template's logo (or any
+    # upload, after the reload that empties localImages) came back 404.
+    # Reports whose own build already fills <dir>/assets (the primer's make
+    # pub) just get the same bytes copied again.
+    adir = e.assets if e.assets else e.out.parent / "assets"
+    if adir.is_dir():
+        shutil.copytree(adir, e.dir / "assets", dirs_exist_ok=True)
     print(f"  staged {len(m['files'])} files + editor -> {rel(e.dir)}")
 
 

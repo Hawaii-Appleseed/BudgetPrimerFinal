@@ -231,6 +231,11 @@ FONTS = {
     "Rubik":          [300, 400, 500, 600, 700, 800, 900],
     "Cormorant Garamond": [300, 400, 500, 600, 700],
     "Crimson Text":   [400, 600, 700],
+    # The Hawaiʻi Appleseed brand pair (per the 2026 brand guide): Manrope for
+    # headings and display, Poppins for body. Manrope has no true italic on
+    # Google Fonts — the brand's italic accents are set in Poppins italic.
+    "Manrope":        [400, 500, 600, 700, 800],
+    "Poppins":        [300, 400, 500, 600, 700, 800],
 }
 
 # What primer.css already asks Google for. The report needs these whether or not
@@ -2023,7 +2028,12 @@ class Layout:
         """
         want: dict[str, set] = {f: set(ws) for f, ws in BRAND_FONTS.items()}
         ital: dict[str, set] = {f: set(ws) for f, ws in BRAND_ITALICS.items()}
-        for st in self.text.values():
+        # Slot styles AND box styles: a text box carries its style inline
+        # (b["style"]), not in self.text, and skipping those meant a font a
+        # box asked for was silently faked in the published page — right in
+        # the editor (which loads every family), wrong everywhere else.
+        styles = list(self.text.values()) + [b.get("style") or {} for b in self.boxes]
+        for st in styles:
             fam = st.get("font")
             if not fam:
                 continue
