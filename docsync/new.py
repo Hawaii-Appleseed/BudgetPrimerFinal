@@ -167,7 +167,8 @@ class NewProjectError(Exception):
 
 def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
            root: Path = ROOT, pages: int = 1, notices=None,
-           layout: dict | None = None, template: str = "") -> Path:
+           layout: dict | None = None, template: str = "",
+           scheme: str = "") -> Path:
     """Write the project and register it in docsync.yml. Returns its dir.
 
     Refuses rather than overwrites: an existing binding or directory means
@@ -183,27 +184,45 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     `template` names an entry in docsync.templates: the SAME scaffold, with
     the starter layout, palette, page size and asset files coming from the
     template instead of being blank. A template is data riding the one
-    renderer, never a different renderer.
+    renderer, never a different renderer. `scheme` picks one of the
+    template's topic colours (docsync.templates.SCHEMES) — empty means the
+    template's own default; on a blank canvas there is nothing to recolour,
+    so a scheme without a template is refused rather than ignored.
     """
     palette = _DEFAULT_PALETTE
     tpl_assets: list = []
     content_md = _CONTENT_MD.format(name=name.strip())
     origin = "a blank local project"
+    if scheme and not template:
+        raise NewProjectError("a colour scheme needs a template — the blank "
+                              "canvas has nothing to recolour")
     if template:
         if layout is not None:
             raise NewProjectError("pass a template or a converted layout, not both")
-        from .templates import ASSETS, CONTENT_MD as TPL_CONTENT_MD, TEMPLATES
+        from .templates import (ASSETS, CONTENT_MD as TPL_CONTENT_MD, SCHEMES,
+                                TEMPLATES)
         t = TEMPLATES.get(template)
         if t is None:
             raise NewProjectError(
                 f"'{template}' is not a template — one of: "
                 + ", ".join(sorted(TEMPLATES)) + ", or none for a blank canvas")
+        color = None
+        if scheme:
+            if scheme not in t.get("schemes", []):
+                raise NewProjectError(
+                    f"'{scheme}' is not one of this template's schemes — "
+                    + ", ".join(t.get("schemes", [])) + ", or none for its default")
+            color = SCHEMES[scheme]["color"]
         # The designed layout was measured against ITS page; a template pick
         # therefore brings its sheet with it, whatever size the form held.
         w, h = t["page"]
         pages = t["pages"]
-        layout = t["layout"]()
+        # A scheme-less template (the one-pager) takes no colour argument.
+        layout = t["layout"](color) if color else t["layout"]()
         palette = t["palette"]
+        if color:
+            # The scheme's colour leads the swatches, as the default's did.
+            palette = [color] + [c for c in palette if c != color]
         tpl_assets = [(ASSETS / a, a) for a in t["assets"]]
         for src, a in tpl_assets:
             if not src.is_file():
@@ -283,9 +302,13 @@ def main(argv=None) -> int:
     ap.add_argument("--h", type=float, default=11.0)
     ap.add_argument("--template", default="",
                     help="start from a docsync.templates entry instead of blank")
+    ap.add_argument("--scheme", default="",
+                    help="one of the template's colour schemes (see "
+                         "docsync.templates.SCHEMES); default its own")
     a = ap.parse_args(argv)
     try:
-        proj = create(a.slug, a.name, a.w, a.h, template=a.template)
+        proj = create(a.slug, a.name, a.w, a.h, template=a.template,
+                      scheme=a.scheme)
     except NewProjectError as e:
         print(f"  new: {e}", file=sys.stderr)
         return 1

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 1100" preserveAspectRatio="xMidYMid slice">
+  <!-- Translucent white/black layers only: the page's own fill supplies the
+       hue, so one file reads as a duotone over the tax blue, the transit
+       slate and the brief charcoal alike. -->
+  <circle cx="618" cy="332" r="118" fill="#fff" opacity=".10"/>
+  <path d="M0 704 C120 648 236 668 336 616 C446 560 566 626 676 586 C748 560 806 574 850 550 L850 1100 0 1100 Z" fill="#fff" opacity=".07"/>
+  <path d="M0 826 C104 782 224 804 332 752 C462 690 598 762 716 722 C768 706 818 716 850 702 L850 1100 0 1100 Z" fill="#fff" opacity=".12"/>
+  <path d="M0 962 C144 900 262 942 384 890 C520 832 646 902 850 852 L850 1100 0 1100 Z" fill="#000" opacity=".13"/>
+  <g fill="#fff" opacity=".06">
+    <rect x="0" y="1012" width="850" height="6"/>
+    <rect x="0" y="1036" width="850" height="4"/>
+    <rect x="0" y="1058" width="850" height="3"/>
+  </g>
+</svg>

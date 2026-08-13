@@ -1449,6 +1449,10 @@ class Handler(SimpleHTTPRequestHandler):
         slug = str(req.get("slug") or "").strip()
         name = str(req.get("name") or "").strip()
         template = str(req.get("template") or "").strip()
+        # A scheme only means anything on a template; the form may well send
+        # one alongside "Blank canvas" (its select has no reason to reset),
+        # so it is dropped here rather than refused there.
+        scheme = str(req.get("scheme") or "").strip() if template else ""
         size = req.get("size") or {}
         try:
             w = float(size.get("w", 8.5))
@@ -1462,7 +1466,8 @@ class Handler(SimpleHTTPRequestHandler):
             # concurrent scaffolds (parallel test workers, two tabs) cannot
             # lose each other's binding.
             with _host_lock():
-                create(slug, name, w, h, root=SELF_ROOT, template=template)
+                create(slug, name, w, h, root=SELF_ROOT, template=template,
+                       scheme=scheme)
         except NewProjectError as e:
             return self._json(200, {"ok": False, "error": str(e)})
         except Exception as e:                   # noqa: BLE001 — report it

@@ -14235,6 +14235,21 @@ async function newReport(intoNewWindow) {
       options: [{ value: '', label: 'Blank canvas' },
                 ...templates.map(t => ({ value: t.id,
                   label: `${t.name} — ${t.blurb}` }))] });
+    // The topic colours a template can be created in. dsForm has no
+    // conditional rows, and the house schemes are one set shared across the
+    // templates, so a single select serves them all: "Template's own" is the
+    // per-template default, and the server drops a scheme sent alongside the
+    // blank canvas.
+    const schemes = [], seen = new Set();
+    for (const t of templates) for (const s of (t.schemes || [])) {
+      if (!seen.has(s.id)) { seen.add(s.id); schemes.push(s); }
+    }
+    if (schemes.length) {
+      fields.push({ name: 'scheme', label: 'Colour scheme (templates)',
+        type: 'select', value: '',
+        options: [{ value: '', label: "Template's own" },
+                  ...schemes.map(s => ({ value: s.id, label: s.name }))] });
+    }
   }
   fields.push({ name: 'size', label: 'Page size (blank canvas)', type: 'select',
     value: 'letter', options: NEW_REPORT_SIZES });
@@ -14252,6 +14267,7 @@ async function newReport(intoNewWindow) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, slug, template: r.template || '',
+                             scheme: r.scheme || '',
                              size: { w: size.w, h: size.h } }),
     })).json();
   } catch (e) {

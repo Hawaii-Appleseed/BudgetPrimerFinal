@@ -45,6 +45,18 @@ from pathlib import Path
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
+# The topic colours a template can be created IN — the published cycle keys
+# each report to one ("A Fairer Tax Code" blue, "Keiki Ride Free" slate,
+# "Pedestrian Head Start" charcoal; teal is the cycle's chart colour, offered
+# as the light option). A scheme recolours the cover fills and the accents
+# that echo them; the picker offers these beside the template.
+SCHEMES = {
+    "blue": {"name": "Tax blue", "color": "#1E6194"},
+    "slate": {"name": "Transit slate", "color": "#354F52"},
+    "teal": {"name": "Teal", "color": "#4E9685"},
+    "charcoal": {"name": "Charcoal", "color": "#232322"},
+}
+
 # The 2025–26 house palette, sampled from the published PDFs. Topic colours
 # first — swapping a report's colour is one page-fill click plus swatches.
 _HOUSE = {
@@ -104,28 +116,39 @@ CONTENT_MD = """<!--
 """
 
 
-def _report_layout() -> dict:
-    """The full report, as published in 2025–26: topic-blue cover, solid
+def _report_layout(color: str | None = None) -> dict:
+    """The full report, as published in 2025–26: topic-colour cover, solid
     inside cover with mission + contents, and a body page with the
     executive-summary pattern (headline, rule, lead-in, dark callout,
-    pull-quote, figure caption)."""
+    pull-quote, figure caption). `color` is the scheme's topic colour —
+    default the tax blue the 2026 flagship published in."""
     C = _HOUSE
+    topic = color or C["blue"]
     return {
         "positions": {},
-        "fill": {"page.1": C["blue"], "page.2": C["blue"]},
+        "fill": {"page.1": topic, "page.2": topic},
         "shapes": [
             # Body-page hairline, full text width — as on the published
             # "INTRODUCTION" pages.
             {"id": "tpl-rule3", "page": 3, "kind": "rect",
-             "x": 0.7, "y": 1.62, "w": 7.1, "h": 0.02, "fill": C["blue"]},
+             "x": 0.7, "y": 1.62, "w": 7.1, "h": 0.02, "fill": topic},
+            # Short gold accent under TABLE OF CONTENTS.
+            {"id": "tpl-tocrule2", "page": 2, "kind": "rect",
+             "x": 3.65, "y": 6.22, "w": 1.2, "h": 0.035, "fill": C["gold"]},
         ],
         "boxes": [
             # ---- page 1: the cover --------------------------------------
+            # A full-bleed placeholder standing where the published covers
+            # set a duotone photo — translucent white/black layers, so the
+            # page fill tints it and a topic-colour swap re-tints it free.
+            {"id": "tpl-photo", "page": 1, "x": 0, "y": 0, "w": 8.5, "z": 1,
+             "md": "![Cover photo placeholder]"
+                   "(assets/cover-photo-placeholder.svg)"},
             {"id": "tpl-logo", "page": 1, "x": 6.35, "y": 0.6, "w": 1.55, "z": 3,
              "md": "![Hawaiʻi Appleseed](assets/appleseed-logo-white.svg)"},
-            {"id": "tpl-title", "page": 1, "x": 0.7, "y": 1.05, "w": 5.3, "z": 3,
+            {"id": "tpl-title", "page": 1, "x": 0.7, "y": 1.05, "w": 5.9, "z": 3,
              "md": "Your report title here",
-             "style": {"font": "Manrope", "weight": 800, "size": 54,
+             "style": {"font": "Manrope", "weight": 800, "size": 58,
                        "color": "#FFFFFF", "case": "upper", "leading": 1.08}},
             {"id": "tpl-sub", "page": 1, "x": 0.7, "y": 4.7, "w": 3.9, "z": 3,
              "md": "A subtitle in spaced capitals that says what this report "
@@ -136,13 +159,13 @@ def _report_layout() -> dict:
              "md": "MONTH 20XX",
              "style": {"font": "Source Sans 3", "weight": 700, "size": 14,
                        "color": C["gold"], "tracking": 1.5}},
-            {"id": "tpl-covernote", "page": 1, "x": 0.7, "y": 9.75, "w": 4.6,
+            {"id": "tpl-covernote", "page": 1, "x": 0.7, "y": 9.9, "w": 4.8,
              "z": 3,
-             "md": "The published covers set a full-bleed duotone photo over "
-                   "this colour — Insert ▸ Image, size it to the page, "
-                   "send it to back, then delete this note.",
-             "style": {"font": "Source Sans 3", "size": 11.5,
-                       "color": "#A9C8E2", "leading": 1.4}},
+             "md": "The backdrop is a placeholder — swap it for a cover "
+                   "photo (Insert ▸ Image, size to the page, send to back), "
+                   "then delete this note.",
+             "style": {"font": "Source Sans 3", "size": 11,
+                       "color": "#DCE5E9", "leading": 1.4}},
             # ---- page 2: inside cover / contents ------------------------
             {"id": "tpl-logo2", "page": 2, "x": 2.9, "y": 0.85, "w": 2.7, "z": 2,
              "md": "![Hawaiʻi Appleseed](assets/appleseed-logo-white.svg)"},
@@ -156,18 +179,19 @@ def _report_layout() -> dict:
                        "align": "center"}},
             {"id": "tpl-mission2", "page": 2, "x": 0.85, "y": 2.85, "w": 6.8,
              "z": 2, "md": _MISSION_1 + "\n\n" + _MISSION_2,
-             "style": {"font": "Source Sans 3", "size": 13.5,
-                       "color": "#FFFFFF", "align": "center", "leading": 1.5}},
-            {"id": "tpl-tochead2", "page": 2, "x": 0.7, "y": 6.0, "w": 7.1,
+             "style": {"font": "Source Sans 3", "size": 14.5,
+                       "color": "#FFFFFF", "align": "center", "leading": 1.55}},
+            {"id": "tpl-tochead2", "page": 2, "x": 0.7, "y": 5.6, "w": 7.1,
              "z": 2, "md": "TABLE OF CONTENTS",
              "style": {"font": "Manrope", "weight": 800, "size": 30,
                        "color": C["pale"], "align": "center"}},
-            {"id": "tpl-toc2", "page": 2, "x": 1.5, "y": 6.75, "w": 5.5, "z": 2,
+            {"id": "tpl-toc2", "page": 2, "x": 1.5, "y": 6.5, "w": 5.5, "z": 2,
              "md": "Introduction — 3\n\nThe first section — 5\n\n"
                    "The second section — 9\n\nConclusion — 14\n\n"
                    "Endnotes — 15",
-             "style": {"font": "Manrope", "weight": 700, "size": 15,
-                       "color": C["pale"]}},
+             "style": {"font": "Manrope", "weight": 700, "size": 16,
+                       "color": C["pale"], "align": "center",
+                       "leading": 1.55}},
             {"id": "tpl-copy2", "page": 2, "x": 0.7, "y": 9.7, "w": 7.1, "z": 2,
              "md": _COPYRIGHT,
              "style": {"font": "Source Sans 3", "size": 12, "color": "#FFFFFF",
@@ -202,9 +226,14 @@ def _report_layout() -> dict:
             {"id": "tpl-pull3", "page": 3, "x": 0.7, "y": 5.6, "w": 7.1, "z": 2,
              "md": "IN TOTAL, THE HEADLINE FINDING GOES HERE — WITH THE "
                    "NUMBER **IN BOLD**.",
-             "style": {"font": "Source Sans 3", "size": 21, "color": C["blue"],
+             "style": {"font": "Source Sans 3", "size": 21, "color": topic,
                        "leading": 1.35}},
-            {"id": "tpl-fig3", "page": 3, "x": 0.7, "y": 6.9, "w": 7.1, "z": 2,
+            # Ghost chart standing where a real one goes — the caption below
+            # no longer floats over blank paper.
+            {"id": "tpl-chart3", "page": 3, "x": 0.7, "y": 6.45, "w": 7.1,
+             "z": 1,
+             "md": "![Chart placeholder](assets/chart-placeholder.svg)"},
+            {"id": "tpl-fig3", "page": 3, "x": 0.7, "y": 9.5, "w": 7.1, "z": 2,
              "md": "**Figure 1.** A caption for the chart that goes here — "
                    "add one with the Chart tool; the series colours are in "
                    "the swatches.",
@@ -219,20 +248,27 @@ def _report_layout() -> dict:
     }
 
 
-def _brief_layout() -> dict:
+def _brief_layout(color: str | None = None) -> dict:
     """The policy-brief variant (Pedestrian Head Start, Mar 2026): charcoal
     and gold, the title block sitting LOW on the cover, and a body page whose
-    headline carries a short gold rule."""
+    headline carries a short gold rule. `color` recolours the cover field;
+    the gold accents and charcoal body ink stay — they are the brief's
+    identity, not its topic."""
     C = _HOUSE
     return {
         "positions": {},
-        "fill": {"page.1": C["charcoal"]},
+        "fill": {"page.1": color or C["charcoal"]},
         "shapes": [
             {"id": "tpl-rule2", "page": 2, "kind": "rect",
              "x": 0.7, "y": 1.52, "w": 1.2, "h": 0.05, "fill": C["gold"]},
         ],
         "boxes": [
             # ---- page 1: the cover, title block low as published --------
+            # Same tinting placeholder as the report cover — the charcoal
+            # fill shows through the translucent layers.
+            {"id": "tpl-photo", "page": 1, "x": 0, "y": 0, "w": 8.5, "z": 1,
+             "md": "![Cover photo placeholder]"
+                   "(assets/cover-photo-placeholder.svg)"},
             {"id": "tpl-kick", "page": 1, "x": 0.7, "y": 8.0, "w": 3.0, "z": 3,
              "md": "POLICY BRIEF",
              "style": {"font": "Source Sans 3", "weight": 700, "size": 14,
@@ -251,10 +287,10 @@ def _brief_layout() -> dict:
              "md": "![Hawaiʻi Appleseed](assets/appleseed-logo-white.svg)"},
             {"id": "tpl-covernote", "page": 1, "x": 0.7, "y": 0.7, "w": 4.6,
              "z": 3,
-             "md": "The published briefs set a full-bleed photo over this "
-                   "charcoal — Insert ▸ Image, size it to the page, send it "
-                   "to back, then delete this note.",
-             "style": {"font": "Source Sans 3", "size": 11.5,
+             "md": "The backdrop is a placeholder — swap it for a cover "
+                   "photo (Insert ▸ Image, size to the page, send to back), "
+                   "then delete this note.",
+             "style": {"font": "Source Sans 3", "size": 11,
                        "color": "#9C9C98", "leading": 1.4}},
             # ---- page 2: the body pattern -------------------------------
             {"id": "tpl-h2", "page": 2, "x": 0.7, "y": 0.7, "w": 7.1, "z": 2,
@@ -370,7 +406,9 @@ def _onepager_layout() -> dict:
 # What "+ New report" offers beyond the blank canvas. `assets` names files in
 # ASSETS to copy into the new project's assets dir; `page` fixes the sheet
 # (a designed layout is measured against one size, so the size picker stands
-# down when a template is chosen).
+# down when a template is chosen). `schemes` lists the SCHEMES ids the
+# template can be created in, its own default first — the layout callable
+# takes the scheme's colour as its one optional argument.
 TEMPLATES = {
     "appleseed-report": {
         "name": "Hawaiʻi Appleseed report",
@@ -380,7 +418,9 @@ TEMPLATES = {
         "pages": 3,
         "palette": _REPORT_PALETTE,
         "layout": _report_layout,
-        "assets": ["appleseed-logo.svg", "appleseed-logo-white.svg"],
+        "schemes": ["blue", "slate", "teal", "charcoal"],
+        "assets": ["appleseed-logo.svg", "appleseed-logo-white.svg",
+                   "cover-photo-placeholder.svg", "chart-placeholder.svg"],
     },
     "appleseed-brief": {
         "name": "Hawaiʻi Appleseed policy brief",
@@ -390,7 +430,9 @@ TEMPLATES = {
         "pages": 2,
         "palette": _BRIEF_PALETTE,
         "layout": _brief_layout,
-        "assets": ["appleseed-logo.svg", "appleseed-logo-white.svg"],
+        "schemes": ["charcoal", "slate", "blue", "teal"],
+        "assets": ["appleseed-logo.svg", "appleseed-logo-white.svg",
+                   "cover-photo-placeholder.svg"],
     },
     "appleseed-onepager": {
         "name": "Hawaiʻi Appleseed one-pager",
@@ -406,7 +448,11 @@ TEMPLATES = {
 
 
 def listing() -> list[dict]:
-    """What a picker needs, in registry order — no layout payloads."""
+    """What a picker needs, in registry order — no layout payloads. Each
+    template's schemes come resolved (id, name, swatch colour), its own
+    default first, so a picker can draw them without knowing SCHEMES."""
     return [{"id": tid, "name": t["name"], "blurb": t["blurb"],
-             "page": {"w": t["page"][0], "h": t["page"][1]}}
+             "page": {"w": t["page"][0], "h": t["page"][1]},
+             "schemes": [{"id": s, **SCHEMES[s]}
+                         for s in t.get("schemes", [])]}
             for tid, t in TEMPLATES.items()]
