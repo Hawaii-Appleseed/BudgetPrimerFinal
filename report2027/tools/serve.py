@@ -981,8 +981,17 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def _ping_payload(self, pid: str | None) -> dict:
+        # serverStale describes the SERVER, so it belongs in BOTH branches.
+        # The app's launcher greps a bare /__ping — no ?project= — to decide
+        # whether to replace its own out-of-date server, and this early return
+        # answered that ping without the key it looks for. The check therefore
+        # never fired: relaunching the app raised the window over the SAME
+        # stale process, which is the exact "I relaunched and the fix still
+        # is not there" failure the check was added to prevent.
+        stale = _engine_sig() != BOOT_SIG
         if pid not in STATE:
-            return {"ok": True, "v": 0, "ahead": 0, "project": pid}
+            return {"ok": True, "v": 0, "ahead": 0, "project": pid,
+                    "serverStale": stale}
         st = STATE[pid]
         # Stamp WHOSE numbers these are. Tabs relay live events to each other
         # through localStorage, and the key alone used to be the only thing
@@ -1002,7 +1011,7 @@ class Handler(SimpleHTTPRequestHandler):
                    # process is running. Only a relaunch fixes it, so the
                    # editor says exactly that rather than leaving the person
                    # to wonder why a shipped fix has no effect.
-                   "serverStale": _engine_sig() != BOOT_SIG,
+                   "serverStale": stale,
                    # Only ADVERTISED here, never handed out (see _sse). The
                    # leader's own 2s poll is what covers an SSE reconnect gap;
                    # a follower reading this simply never claims.
