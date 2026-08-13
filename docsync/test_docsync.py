@@ -1618,6 +1618,59 @@ except _LE as e:
     if "unknown act 'launch'" not in str(e):
         FAILS.append(f"unknown act refused with the wrong words: {e}")
 
+# --- the style guide IS the template -----------------------------------------
+# style_guide()'s patterns are served to pilots as "the exact styles the
+# reference reports use" — and the report template's placed elements are the
+# ground truth, digested from the published 2025–26 PDFs. If the two drift, a
+# pilot following the guide lands headers that only LOOK close, so every
+# pattern is held equal to the template element it describes, field by field.
+from docsync.templates import SCHEMES, TEMPLATES, style_guide  # noqa: E402
+
+_sg = style_guide()["patterns"]
+_rep = TEMPLATES["appleseed-report"]["layout"]()
+_box = {b["id"]: b for b in _rep["boxes"]}
+_shape = {s["id"]: s for s in _rep["shapes"]}
+_topic = SCHEMES["blue"]["color"]           # the template's default scheme
+
+check_eq("style guide: cover title == the template's",
+         _box["tpl-title"]["style"], _sg["cover_title"]["style"])
+check_eq("style guide: cover title placement == the template's",
+         {k: _box["tpl-title"][k] for k in ("x", "y", "w")},
+         _sg["cover_title"]["at"])
+check_eq("style guide: section heading == the template's page-4 headline",
+         _box["tpl-h4"]["style"], _sg["section_heading"]["style"])
+check_eq("style guide: section heading placement == the template's",
+         {k: _box["tpl-h4"][k] for k in ("x", "y", "w")},
+         _sg["section_heading"]["at"])
+check_eq("style guide: body == the template's page-4 body",
+         _box["tpl-body4a"]["style"], _sg["body"]["style"])
+check_eq("style guide: subheading + topic colour == the template's",
+         _box["tpl-sub4"]["style"],
+         dict(_sg["subheading"]["style"], color=_topic))
+check_eq("style guide: footer == the template's page-4 footer",
+         _box["tpl-foot4"]["style"], _sg["footer"]["style"])
+check_eq("style guide: footer placement == the template's",
+         {k: _box["tpl-foot4"][k] for k in ("x", "y", "w")},
+         _sg["footer"]["at"])
+check_eq("style guide: hairline geometry == the template's page-4 rule",
+         {k: _shape["tpl-rule4"][k] for k in ("kind", "x", "y", "w", "h")},
+         _sg["hairline"]["shape"])
+check_eq("style guide: hairline fill is the topic colour",
+         _shape["tpl-rule4"]["fill"], _topic)
+check_eq("style guide: callout == the template's page-3 panel",
+         _box["tpl-callout3"]["style"], _sg["callout"]["style"])
+check_eq("style guide: callout fill == the template's",
+         _box["tpl-callout3"]["fill"], _sg["callout"]["fill"])
+check_eq("style guide: pull quote + topic colour == the template's",
+         _box["tpl-pull3"]["style"],
+         dict(_sg["pull_quote"]["style"], color=_topic))
+check_eq("style guide: figure caption == the template's",
+         _box["tpl-fig3"]["style"], _sg["figure_caption"]["style"])
+# The two section headlines the template places (executive summary, page 4)
+# must themselves agree — one reference style, not two near-misses.
+check_eq("template: page-3 and page-4 headlines share one style",
+         _box["tpl-h3"]["style"], _box["tpl-h4"]["style"])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

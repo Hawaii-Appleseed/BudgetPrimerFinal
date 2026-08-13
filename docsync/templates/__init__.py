@@ -507,6 +507,14 @@ def style_guide() -> dict:
         "page": {"w": 8.5, "h": 11.0, "margin": 0.7, "text_w": 7.1,
                  "footer_y": 10.55},
         "patterns": {
+            "cover_title": {
+                "at": {"x": 0.7, "y": 1.05, "w": 5.9},
+                "style": {"font": "Manrope", "weight": 800, "size": 58,
+                          "case": "upper", "color": "#FFFFFF",
+                          "leading": 1.08},
+                "note": "white over the cover's topic-colour field; the "
+                        "policy brief sets the same face at 44, low on the "
+                        "page"},
             "section_heading": {
                 "at": {"x": 0.7, "y": 0.7, "w": 7.1},
                 "style": {"font": "Manrope", "weight": 800, "size": 44,
