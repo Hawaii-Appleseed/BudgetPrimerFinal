@@ -26,9 +26,14 @@ Oct 2025, "County Leadership in Combating Food Insecurity" Dec 2025):
     Sans body with a bold-caps lead-in, a dark rounded callout box, topic-
     colour pull-quotes, "Figure 1." captions in #464646, chart teal #4E9685.
 
-The PDFs set Glober and Source Sans Pro. Neither is on Google Fonts; per the
-Appleseed brand guide the web stand-ins are Manrope (≈ Glober) and Source
-Sans 3 (the successor of Source Sans Pro) — both in layout.py's FONTS.
+The PDFs set Glober and Source Sans Pro. Glober is commercial (Fontfabric,
+$39/style — scoped 2026-08); its stand-in here is Barlow (OFL): the same
+DIN-grotesque genre, verified side-by-side against Fontfabric's own
+specimen, and ALREADY the live Budget Primer's display face (layout.py's
+BRAND_FONTS asks Google for Barlow 800/900). Source Sans 3 IS Source Sans
+Pro — Adobe's OFL family, renamed at v3. The one-pager alone keeps the
+website brand pair (Manrope/Poppins per the 2026 brand guide) because the
+web one-pagers it digests are set in it.
 
 The one-pager is digested from the same cycle's web one-pagers (the 2026
 Testimony Analysis; the TFC 2027 priorities brief): kicker, Manrope title,
@@ -150,7 +155,7 @@ def _report_layout(color: str | None = None) -> dict:
              "md": "![Hawaiʻi Appleseed](assets/appleseed-logo-white.svg)"},
             {"id": "tpl-title", "page": 1, "x": 0.7, "y": 1.05, "w": 5.9, "z": 3,
              "md": "Your report title here",
-             "style": {"font": "Manrope", "weight": 800, "size": 58,
+             "style": {"font": "Barlow", "weight": 800, "size": 58,
                        "color": "#FFFFFF", "case": "upper", "leading": 1.08}},
             {"id": "tpl-sub", "page": 1, "x": 0.7, "y": 4.7, "w": 3.9, "z": 3,
              "md": "A subtitle in spaced capitals that says what this report "
@@ -185,13 +190,13 @@ def _report_layout(color: str | None = None) -> dict:
                        "color": "#FFFFFF", "align": "center", "leading": 1.55}},
             {"id": "tpl-tochead2", "page": 2, "x": 0.7, "y": 5.6, "w": 7.1,
              "z": 2, "md": "TABLE OF CONTENTS",
-             "style": {"font": "Manrope", "weight": 800, "size": 30,
+             "style": {"font": "Barlow", "weight": 800, "size": 30,
                        "color": C["pale"], "align": "center"}},
             {"id": "tpl-toc2", "page": 2, "x": 1.5, "y": 6.5, "w": 5.5, "z": 2,
              "md": "Introduction — 3\n\nThe first section — 5\n\n"
                    "The second section — 9\n\nConclusion — 14\n\n"
                    "Endnotes — 15",
-             "style": {"font": "Manrope", "weight": 700, "size": 16,
+             "style": {"font": "Barlow", "weight": 700, "size": 16,
                        "color": C["pale"], "align": "center",
                        "leading": 1.55}},
             {"id": "tpl-copy2", "page": 2, "x": 0.7, "y": 9.7, "w": 7.1, "z": 2,
@@ -200,12 +205,12 @@ def _report_layout(color: str | None = None) -> dict:
                        "align": "center", "leading": 1.4}},
             {"id": "tpl-foot2", "page": 2, "x": 0.55, "y": 10.55, "w": 3.4,
              "z": 2, "md": "2 · YOUR REPORT",
-             "style": {"font": "Manrope", "weight": 700, "size": 12,
+             "style": {"font": "Barlow", "weight": 700, "size": 12,
                        "color": "#FFFFFF", "tracking": 0.8}},
             # ---- page 3: the body pattern -------------------------------
             {"id": "tpl-h3", "page": 3, "x": 0.7, "y": 0.7, "w": 7.1, "z": 2,
              "md": "Executive summary",
-             "style": {"font": "Manrope", "weight": 800, "size": 44,
+             "style": {"font": "Barlow", "weight": 800, "size": 44,
                        "color": C["charcoal"], "case": "upper",
                        "leading": 1.05}},
             {"id": "tpl-body3", "page": 3, "x": 0.7, "y": 1.95, "w": 4.35,
@@ -239,10 +244,10 @@ def _report_layout(color: str | None = None) -> dict:
              "md": "**Figure 1.** A caption for the chart that goes here — "
                    "add one with the Chart tool; the series colours are in "
                    "the swatches.",
-             "style": {"font": "Manrope", "size": 15, "color": C["body"]}},
+             "style": {"font": "Barlow", "size": 15, "color": C["body"]}},
             {"id": "tpl-foot3", "page": 3, "x": 4.9, "y": 10.55, "w": 2.9,
              "z": 2, "md": "3 · YOUR REPORT",
-             "style": {"font": "Manrope", "weight": 700, "size": 12,
+             "style": {"font": "Barlow", "weight": 700, "size": 12,
                        "color": C["body"], "align": "right",
                        "tracking": 0.8}},
             # ---- page 4: the section page, the unit the report repeats ---
@@ -252,7 +257,7 @@ def _report_layout(color: str | None = None) -> dict:
             # style_guide() for a pilot laying out new pages).
             {"id": "tpl-h4", "page": 4, "x": 0.7, "y": 0.7, "w": 7.1, "z": 2,
              "md": "Your first section",
-             "style": {"font": "Manrope", "weight": 800, "size": 44,
+             "style": {"font": "Barlow", "weight": 800, "size": 44,
                        "color": C["charcoal"], "case": "upper",
                        "leading": 1.05}},
             {"id": "tpl-body4a", "page": 4, "x": 0.7, "y": 1.95, "w": 7.1,
@@ -268,7 +273,7 @@ def _report_layout(color: str | None = None) -> dict:
                        "leading": 1.5}},
             {"id": "tpl-sub4", "page": 4, "x": 0.7, "y": 3.7, "w": 7.1,
              "z": 2, "md": "A second-level heading, in the topic colour",
-             "style": {"font": "Manrope", "weight": 700, "size": 22,
+             "style": {"font": "Barlow", "weight": 700, "size": 22,
                        "color": topic}},
             {"id": "tpl-body4b", "page": 4, "x": 0.7, "y": 4.2, "w": 7.1,
              "z": 2,
@@ -281,7 +286,7 @@ def _report_layout(color: str | None = None) -> dict:
                        "leading": 1.5}},
             {"id": "tpl-foot4", "page": 4, "x": 4.9, "y": 10.55, "w": 2.9,
              "z": 2, "md": "4 · YOUR REPORT",
-             "style": {"font": "Manrope", "weight": 700, "size": 12,
+             "style": {"font": "Barlow", "weight": 700, "size": 12,
                        "color": C["body"], "align": "right",
                        "tracking": 0.8}},
         ],
@@ -316,7 +321,7 @@ def _brief_layout(color: str | None = None) -> dict:
                        "color": C["gold"], "tracking": 1.5}},
             {"id": "tpl-title", "page": 1, "x": 0.7, "y": 8.35, "w": 5.2, "z": 3,
              "md": "Your brief title",
-             "style": {"font": "Manrope", "weight": 800, "size": 44,
+             "style": {"font": "Barlow", "weight": 800, "size": 44,
                        "color": "#FFFFFF", "case": "upper", "leading": 1.1}},
             {"id": "tpl-date", "page": 1, "x": 5.6, "y": 8.0, "w": 2.2, "z": 3,
              "md": "MONTH 20XX",
@@ -336,7 +341,7 @@ def _brief_layout(color: str | None = None) -> dict:
             # ---- page 2: the body pattern -------------------------------
             {"id": "tpl-h2", "page": 2, "x": 0.7, "y": 0.7, "w": 7.1, "z": 2,
              "md": "Background",
-             "style": {"font": "Manrope", "weight": 800, "size": 38,
+             "style": {"font": "Barlow", "weight": 800, "size": 38,
                        "color": C["charcoal"], "case": "upper"}},
             {"id": "tpl-body2", "page": 2, "x": 0.7, "y": 1.85, "w": 7.1,
              "z": 2,
@@ -355,7 +360,7 @@ def _brief_layout(color: str | None = None) -> dict:
                        "color": C["charcoal"], "leading": 1.5}},
             {"id": "tpl-foot", "page": 2, "x": 4.9, "y": 10.55, "w": 2.9,
              "z": 2, "md": "2 · YOUR BRIEF",
-             "style": {"font": "Manrope", "weight": 700, "size": 12,
+             "style": {"font": "Barlow", "weight": 700, "size": 12,
                        "color": C["body"], "align": "right",
                        "tracking": 0.8}},
         ],
@@ -497,7 +502,7 @@ def style_guide() -> dict:
     tool, so the recipe travels with the running editor."""
     C = _HOUSE
     return {
-        "fonts": {"display": "Manrope",
+        "fonts": {"display": "Barlow",
                   "body": "Source Sans 3",
                   "note": "the print house fonts are Glober + Source Sans "
                           "Pro; these are the brand guide's web stand-ins"},
@@ -509,7 +514,7 @@ def style_guide() -> dict:
         "patterns": {
             "cover_title": {
                 "at": {"x": 0.7, "y": 1.05, "w": 5.9},
-                "style": {"font": "Manrope", "weight": 800, "size": 58,
+                "style": {"font": "Barlow", "weight": 800, "size": 58,
                           "case": "upper", "color": "#FFFFFF",
                           "leading": 1.08},
                 "note": "white over the cover's topic-colour field; the "
@@ -517,7 +522,7 @@ def style_guide() -> dict:
                         "page"},
             "section_heading": {
                 "at": {"x": 0.7, "y": 0.7, "w": 7.1},
-                "style": {"font": "Manrope", "weight": 800, "size": 44,
+                "style": {"font": "Barlow", "weight": 800, "size": 44,
                           "case": "upper", "color": C["charcoal"],
                           "leading": 1.05}},
             "hairline": {
@@ -525,7 +530,7 @@ def style_guide() -> dict:
                           "h": 0.02},
                 "note": "fill = the report's topic colour (schemes)"},
             "subheading": {
-                "style": {"font": "Manrope", "weight": 700, "size": 22},
+                "style": {"font": "Barlow", "weight": 700, "size": 22},
                 "note": "color = the topic colour"},
             "body": {
                 "at": {"x": 0.7, "w": 7.1},
@@ -544,11 +549,11 @@ def style_guide() -> dict:
                           "leading": 1.35},
                 "note": "color = the topic colour; the number in **bold**"},
             "figure_caption": {
-                "style": {"font": "Manrope", "size": 15, "color": C["body"]},
+                "style": {"font": "Barlow", "size": 15, "color": C["body"]},
                 "note": "starts \"**Figure N.**\"; sits under the chart"},
             "footer": {
                 "at": {"x": 4.9, "y": 10.55, "w": 2.9},
-                "style": {"font": "Manrope", "weight": 700, "size": 12,
+                "style": {"font": "Barlow", "weight": 700, "size": 12,
                           "color": C["body"], "align": "right",
                           "tracking": 0.8},
                 "note": "\"<page> · <REPORT TITLE>\"; white, left-aligned "
