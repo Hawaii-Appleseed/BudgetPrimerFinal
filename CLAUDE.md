@@ -60,6 +60,16 @@ The mechanism, if you need to extend it: `graphic()` wraps the SVG in
 `isGraphic()` in `docsync/editor/edit.html` gives `.ds-graphic` corner
 handles. `tests/editor/graphic.spec.js` (in the primer-editor repo) guards it.
 
+## Downstream consumer: capitol-quest
+
+Commits that touch `docs/js/departments_act175_fy2027.json` or
+`summary_stats_act175_fy2027.json` fire `.git/hooks/post-commit`
+(untracked; installed by `~/capitol-quest/tools/sync_primer.py
+--install-hook`), which mirrors both files into `~/capitol-quest`,
+rebuilds its budget.json, and auto-commits there. Log:
+`~/.config/capitol-quest-sync.log`. After recloning this repo, re-run
+the installer to restore the hook.
+
 ## Repo layout & the editor
 
 - The live editor / engine (`docsync/`, `report2027/tools/serve.py`,
