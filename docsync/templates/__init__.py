@@ -551,10 +551,11 @@ def style_guide() -> dict:
             "'appleseed-report' | 'appleseed-brief', scheme} (or python3 -m "
             "docsync.new --template … --scheme …). Page 4 of the report IS "
             "the section pattern, already placed.",
-            "Each further section: pilot addPage, then ONE batch of "
-            "addTextBox/addShape ops per the patterns above — heading, "
-            "hairline (addShape rect, fill = topic colour, z 2), body "
-            "boxes, footer.",
+            "Each further section: pilot addPage(<current page count>) — "
+            "the argument APPENDS; argless inserts after the page in view — "
+            "then ONE batch of addTextBox/addShape ops per the patterns "
+            "above: heading, hairline (addShape rect, fill = topic colour, "
+            "z 2), body boxes, footer.",
             "Prose into the placed boxes via setBoxText; citations via "
             "addSource + [^id] tokens in the text.",
             "Charts: the editor's Chart tool, where the template's chart "

@@ -2197,8 +2197,39 @@ class Handler(SimpleHTTPRequestHandler):
             rel = str(assets.relative_to(root))
             _git(root, "add", "--", rel)
             paths.append(rel)
-        if subprocess.run(["git", "-C", str(root), "diff", "--quiet", "HEAD", "--",
-                           *paths]).returncode == 0:
+        # A freshly scaffolded project is entirely UNTRACKED, and both the
+        # diff check and a path-scoped commit see tracked files only — so its
+        # first Save answered "already up to date" and committed nothing,
+        # forever. On that first save (its content.md unknown to git), stage
+        # the project's own paths (directory adds skip gitignored content
+        # like docs/<id>/engine) plus the docsync.yml binding — a committed
+        # project whose binding is not committed is not a project on a fresh
+        # clone. Still scoped, so nothing unrelated rides along; saves on an
+        # already-tracked project behave exactly as before.
+        if subprocess.run(
+                ["git", "-C", str(root), "ls-files", "--", paths[0]],
+                capture_output=True, text=True).stdout.strip() == "":
+            # The scaffolded renderer is not among the save's own write
+            # targets, but without it the committed project cannot build on
+            # a fresh clone — it belongs to the same first commit.
+            if b.editor and b.editor.render and b.editor.render.exists():
+                paths.append(str(b.editor.render.relative_to(root)))
+            for rel in paths:
+                if (root / rel).exists():
+                    _git(root, "add", "--", rel)
+            if (root / "docsync.yml").is_file():
+                _git(root, "add", "--", "docsync.yml")
+                paths.append("docsync.yml")
+        # A scaffolded project's editor dir (docs/<id>/) can be ENTIRELY
+        # gitignored — generated copies, nothing tracked — and one pathspec
+        # that matches no file known to git fails the whole commit. Commit
+        # only the paths git knows something under.
+        paths = [rel for rel in paths if subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--", rel],
+            capture_output=True, text=True).stdout.strip()]
+        if not paths or subprocess.run(
+                ["git", "-C", str(root), "diff", "--quiet", "HEAD", "--",
+                 *paths]).returncode == 0:
             return "already up to date"
         _git(root, "commit", "-m", f"{pid}: edit from the live editor (" + ", ".join(wrote) + ")",
              "--", *paths)
