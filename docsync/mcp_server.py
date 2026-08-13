@@ -109,6 +109,11 @@ def t_status(args: dict) -> dict:
     return _get("/__ping", {"project": args["project"]})
 
 
+def t_style_guide(_args: dict) -> dict:
+    """Templates + house style from the running editor's engine."""
+    return _get("/__templates")
+
+
 def t_inventory(args: dict) -> dict:
     """The whole report as data. `elements` costs a render; skip it when the
     question is only about text."""
@@ -205,6 +210,16 @@ TOOLS = [
                     "any build error.",
      "inputSchema": {"type": "object", "required": ["project"], "properties": {
          "project": {"type": "string", "description": "report id, e.g. budget-primer"}}}},
+    {"name": "style_guide", "fn": t_style_guide,
+     "description": "The Hawaiʻi Appleseed report templates and house style as "
+                    "data: the templates on offer (with their colour schemes), "
+                    "fonts, page metrics, and every text/shape pattern — "
+                    "section heading, hairline, body, callout, pull-quote, "
+                    "figure caption, footer — as ready-to-use addTextBox/"
+                    "addShape style dicts, plus the step-by-step recipe for "
+                    "building a properly styled report from a user's text. "
+                    "START HERE when asked to create or extend a report.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "inventory", "fn": t_inventory,
      "description": "The whole report as data: every slot's markdown, every source "
                     "with its citation count, the geometry of everything placed, and "
@@ -233,8 +248,8 @@ TOOLS = [
      "description": "CHANGE a report: run one window.docsync.api verb in the open "
                     "editor. Verbs: inventory, status, audit, getSlot, setSlot, "
                     "setStyle, setBoxText, place, recolor, rotate, lock, group, "
-                    "ungroup, remove, duplicate, addTextBox, addPage, addSource, "
-                    "addEndnotesSection, batch, undo, redo, save. Geometry is in "
+                    "ungroup, remove, duplicate, addTextBox, addShape, addPage, "
+                    "addSource, addEndnotesSection, batch, undo, redo, save. Geometry is in "
                     "page inches. Every verb is ONE undo step, and returns what "
                     "actually happened (a clamped box, a refusal) — so no "
                     "screenshot is needed to know the result. Needs an editor tab "

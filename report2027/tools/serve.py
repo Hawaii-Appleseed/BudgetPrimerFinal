@@ -921,8 +921,11 @@ class Handler(SimpleHTTPRequestHandler):
             # was imported first.
             sys.path.insert(0, str(SELF_ROOT))
             try:
-                from docsync.templates import listing
-                return self._json(200, {"ok": True, "templates": listing()})
+                from docsync.templates import listing, style_guide
+                # style rides along so a pilot building out a report gets the
+                # house patterns from the same fetch the picker makes.
+                return self._json(200, {"ok": True, "templates": listing(),
+                                        "style": style_guide()})
             except Exception as e:               # noqa: BLE001 — report it
                 return self._json(200, {"ok": False, "error": str(e),
                                         "templates": []})

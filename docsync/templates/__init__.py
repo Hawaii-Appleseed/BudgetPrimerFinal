@@ -135,6 +135,8 @@ def _report_layout(color: str | None = None) -> dict:
             # Short gold accent under TABLE OF CONTENTS.
             {"id": "tpl-tocrule2", "page": 2, "kind": "rect",
              "x": 3.65, "y": 6.22, "w": 1.2, "h": 0.035, "fill": C["gold"]},
+            {"id": "tpl-rule4", "page": 4, "kind": "rect",
+             "x": 0.7, "y": 1.62, "w": 7.1, "h": 0.02, "fill": topic},
         ],
         "boxes": [
             # ---- page 1: the cover --------------------------------------
@@ -240,6 +242,45 @@ def _report_layout(color: str | None = None) -> dict:
              "style": {"font": "Manrope", "size": 15, "color": C["body"]}},
             {"id": "tpl-foot3", "page": 3, "x": 4.9, "y": 10.55, "w": 2.9,
              "z": 2, "md": "3 · YOUR REPORT",
+             "style": {"font": "Manrope", "weight": 700, "size": 12,
+                       "color": C["body"], "align": "right",
+                       "tracking": 0.8}},
+            # ---- page 4: the section page, the unit the report repeats ---
+            # Headline over the hairline, bold-caps lead-in, body, a
+            # second-level heading in the topic colour — every style a
+            # build-out needs, placed and copyable (and served as data by
+            # style_guide() for a pilot laying out new pages).
+            {"id": "tpl-h4", "page": 4, "x": 0.7, "y": 0.7, "w": 7.1, "z": 2,
+             "md": "Your first section",
+             "style": {"font": "Manrope", "weight": 800, "size": 44,
+                       "color": C["charcoal"], "case": "upper",
+                       "leading": 1.05}},
+            {"id": "tpl-body4a", "page": 4, "x": 0.7, "y": 1.95, "w": 7.1,
+             "z": 2,
+             "md": "**THE SECTION'S FIRST WORDS, IN BOLD CAPITALS,** open it "
+                   "the way every page of this report does. Source Sans "
+                   "carries the body over the full text width; keep "
+                   "paragraphs to three or four sentences and the argument "
+                   "moving.\n\nThis page is the pattern the rest of the "
+                   "report repeats — headline, hairline, body. Copy its "
+                   "elements onto a new page and replace the words.",
+             "style": {"font": "Source Sans 3", "size": 15, "color": "#1F1F1F",
+                       "leading": 1.5}},
+            {"id": "tpl-sub4", "page": 4, "x": 0.7, "y": 3.7, "w": 7.1,
+             "z": 2, "md": "A second-level heading, in the topic colour",
+             "style": {"font": "Manrope", "weight": 700, "size": 22,
+                       "color": topic}},
+            {"id": "tpl-body4b", "page": 4, "x": 0.7, "y": 4.2, "w": 7.1,
+             "z": 2,
+             "md": "Under a subheading the body simply continues. Numbers "
+                   "that matter can step out into a pull-quote (page 3 shows "
+                   "one), evidence into a chart with a **Figure** caption — "
+                   "every device this report uses is already on these pages, "
+                   "styled and movable.",
+             "style": {"font": "Source Sans 3", "size": 15, "color": "#1F1F1F",
+                       "leading": 1.5}},
+            {"id": "tpl-foot4", "page": 4, "x": 4.9, "y": 10.55, "w": 2.9,
+             "z": 2, "md": "4 · YOUR REPORT",
              "style": {"font": "Manrope", "weight": 700, "size": 12,
                        "color": C["body"], "align": "right",
                        "tracking": 0.8}},
@@ -415,7 +456,7 @@ TEMPLATES = {
         "blurb": "Cover, contents and body page in the published 2025–26 "
                  "house style",
         "page": (8.5, 11.0),
-        "pages": 3,
+        "pages": 4,
         "palette": _REPORT_PALETTE,
         "layout": _report_layout,
         "schemes": ["blue", "slate", "teal", "charcoal"],
@@ -445,6 +486,83 @@ TEMPLATES = {
         "assets": ["appleseed-logo.svg", "appleseed-logo-white.svg"],
     },
 }
+
+
+def style_guide() -> dict:
+    """The house style as DATA, for a pilot — an AI driving the editor, a
+    script — to build out a report that matches the templates. Every "style"
+    dict is exactly what a text box's layout.json "style" (and the pilot's
+    addTextBox({style:…}) / setStyle) accepts; "shape" dicts are addShape()
+    arguments. Served with /__templates and by the MCP server's style_guide
+    tool, so the recipe travels with the running editor."""
+    C = _HOUSE
+    return {
+        "fonts": {"display": "Manrope",
+                  "body": "Source Sans 3",
+                  "note": "the print house fonts are Glober + Source Sans "
+                          "Pro; these are the brand guide's web stand-ins"},
+        "schemes": [{"id": k, **v} for k, v in SCHEMES.items()],
+        "accents": {"gold": C["gold"], "pale": C["pale"], "chart": C["teal"],
+                    "captions": C["body"]},
+        "page": {"w": 8.5, "h": 11.0, "margin": 0.7, "text_w": 7.1,
+                 "footer_y": 10.55},
+        "patterns": {
+            "section_heading": {
+                "at": {"x": 0.7, "y": 0.7, "w": 7.1},
+                "style": {"font": "Manrope", "weight": 800, "size": 44,
+                          "case": "upper", "color": C["charcoal"],
+                          "leading": 1.05}},
+            "hairline": {
+                "shape": {"kind": "rect", "x": 0.7, "y": 1.62, "w": 7.1,
+                          "h": 0.02},
+                "note": "fill = the report's topic colour (schemes)"},
+            "subheading": {
+                "style": {"font": "Manrope", "weight": 700, "size": 22},
+                "note": "color = the topic colour"},
+            "body": {
+                "at": {"x": 0.7, "w": 7.1},
+                "style": {"font": "Source Sans 3", "size": 15,
+                          "color": "#1F1F1F", "leading": 1.5},
+                "note": "a section's first body box opens with a "
+                        "**BOLD CAPITALS** lead-in"},
+            "callout": {
+                "fill": "#303030",
+                "style": {"font": "Source Sans 3", "size": 13,
+                          "color": "#FFFFFF", "leading": 1.45},
+                "note": "dark definitions panel, bulleted, ~2.5in wide "
+                        "beside a narrowed body column"},
+            "pull_quote": {
+                "style": {"font": "Source Sans 3", "size": 21,
+                          "leading": 1.35},
+                "note": "color = the topic colour; the number in **bold**"},
+            "figure_caption": {
+                "style": {"font": "Manrope", "size": 15, "color": C["body"]},
+                "note": "starts \"**Figure N.**\"; sits under the chart"},
+            "footer": {
+                "at": {"x": 4.9, "y": 10.55, "w": 2.9},
+                "style": {"font": "Manrope", "weight": 700, "size": 12,
+                          "color": C["body"], "align": "right",
+                          "tracking": 0.8},
+                "note": "\"<page> · <REPORT TITLE>\"; white, left-aligned "
+                        "at x 0.55 on solid colour pages"},
+        },
+        "recipe": [
+            "Scaffold: POST /__scaffold {name, slug, template: "
+            "'appleseed-report' | 'appleseed-brief', scheme} (or python3 -m "
+            "docsync.new --template … --scheme …). Page 4 of the report IS "
+            "the section pattern, already placed.",
+            "Each further section: pilot addPage, then ONE batch of "
+            "addTextBox/addShape ops per the patterns above — heading, "
+            "hairline (addShape rect, fill = topic colour, z 2), body "
+            "boxes, footer.",
+            "Prose into the placed boxes via setBoxText; citations via "
+            "addSource + [^id] tokens in the text.",
+            "Charts: the editor's Chart tool, where the template's chart "
+            "placeholder sits; caption per figure_caption.",
+            "audit() after laying out a page — it reports overflow, "
+            "off-sheet and overlaps as data; save() when clean.",
+        ],
+    }
 
 
 def listing() -> list[dict]:

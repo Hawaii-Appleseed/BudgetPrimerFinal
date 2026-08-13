@@ -15137,6 +15137,32 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
   return { id: 'text.' + id, page: pid };
 }
 
+// The kinds the Shapes panel offers — a pilot gets the same menu, no more.
+const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow'];
+function _pilotValidateAddShape({ kind = 'rect' } = {}) {
+  if (!PILOT_SHAPE_KINDS.includes(kind))
+    return { ok: false,
+             error: `'${kind}' is not a shape — one of ${PILOT_SHAPE_KINDS.join(', ')}` };
+  return { ok: true };
+}
+function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
+                               stroke, sw, z, rx } = {}) {
+  const pid = page != null ? page : visiblePageId();
+  const id = freeShapeId(kind);
+  // Same defaults as the Shapes panel (solid, on top, sage) so an argless
+  // call lands exactly what a panel click lands.
+  const sh = { id, page: pid, kind,
+               x: x != null ? +x : placeX(w), y: y != null ? +y : 1,
+               w: +w, h: h != null ? +h : (kind === 'line' ? 0 : 1),
+               fill: fill || (kind === 'line' ? 'none' : '#6B9E78'),
+               stroke: stroke || (kind === 'line' ? '#52796F' : 'none'),
+               sw: sw != null ? +sw : 0.02,
+               z: z != null ? +z : 3 };
+  if (rx != null) sh.rx = +rx;
+  layout.shapes.push(sh);
+  return { id, page: pid };
+}
+
 // A slot key styles through layout.text; a 'text.N' key styles the box's own
 // style object — setStyle() already routes both (the same split the type
 // toolbar rides), so the core only decides whether the key names anything.
@@ -15239,6 +15265,7 @@ const PILOT_BATCH_VERBS = {
   place: { validate: id => _pilotValidatePlace(id), apply: (id, o) => _pilotApplyPlace(id, o) },
   recolor: { validate: () => ({ ok: true }), apply: (id, fill) => _pilotApplyRecolor(id, fill) },
   addTextBox: { validate: () => ({ ok: true }), apply: o => _pilotApplyAddTextBox(o) },
+  addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
   addSource: { validate: (id, t, u) => _pilotValidateAddSource(id, t, u),
                apply: (id, t, u) => _pilotApplyAddSource(id, t, u) },
   setStyle: { validate: (k, p) => _pilotValidateSetStyle(k, p), apply: (k, p) => _pilotApplySetStyle(k, p) },
@@ -15373,6 +15400,21 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     return { ...docsync.api.status(), id, page };
   },
 
+  /** A new shape (rect|ellipse|line|triangle|arrow) — what the Shapes panel
+   *  places, addressable to a pilot so a hairline rule or a panel can land
+   *  on ANY page (duplicate() clones onto the same page only). Geometry in
+   *  page inches; fill/stroke/sw/z/rx as layout.json stores them. */
+  async addShape(opts = {}) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateAddShape(opts);
+    if (!v.ok) return v;
+    pushHistory();
+    const { id, page } = _pilotApplyAddShape(opts);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), id, page };
+  },
+
   /** A blank page after `at` (order index) or after the page in view. */
   async addPage(at) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
@@ -15397,8 +15439,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  many small edits, this collapses a multi-round-trip dance into one
    *  call. ops is [{verb, args}], args in the same order as the matching
    *  single-verb call (a bare value or an array of positional args).
-   *  Supported verbs: setSlot, place, recolor, addTextBox, addSource — the
-   *  ones with no side effect beyond source/layout. addPage and
+   *  Supported verbs: setSlot, place, recolor, addTextBox, addShape,
+   *  addSource — the ones with no side effect beyond source/layout. addPage and
    *  addEndnotesSection call shared helpers that already push their own
    *  history and render, so they cannot join a batch; call them singly.
    *
