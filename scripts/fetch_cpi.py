@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Fetch Honolulu CPI-U from BLS and write deflators keyed by fiscal year.
+"""Fetch Urban Hawaii CPI-U from BLS and write deflators keyed by fiscal year.
 
-Hawaii (Honolulu) CPI-U series: CUURS49ASA0
-  - Urban Honolulu, all items, NSA, monthly (M01-M12)
+Hawaii CPI-U series: CUURS49FSA0
+  - Urban Hawaii, all items, NSA (bimonthly: odd months)
   - Public BLS API allows up to 25 series/day with no key
   - The older area code A426 was retired in BLS' 2018 area redesign;
-    S49A is the current Urban Honolulu code.
+    S49F (Urban Hawaii) is the current statewide code. NOTE: the
+    similar-looking CUURS49ASA0 is Los Angeles-Long Beach-Anaheim — this
+    script mistakenly used it until 2026-08-12.
 
 Output: data/processed/cpi_honolulu.json
 {
   "base_fy": 2027,
-  "source": "BLS CUURS49ASA0",
+  "source": "BLS CUURS49FSA0 (Urban Hawaii CPI-U, all items, NSA)",
   "fetched": "2026-04-22",
   "deflators": { "2016": 1.314, ..., "2027": 1.000 }
 }
@@ -37,7 +39,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from budgetprimer.historical import fiscal_years_covered  # noqa: E402
 
 OUTPUT_PATH = PROJECT_ROOT / "data" / "processed" / "cpi_honolulu.json"
-SERIES_ID = "CUURS49ASA0"  # Honolulu CPI-U, all items, NSA (monthly)
+SERIES_ID = "CUURS49FSA0"  # Urban Hawaii CPI-U, all items, NSA (bimonthly)
 BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 DEFAULT_BASE_FY = 2026  # FY2027 needs CY2027 data, not yet available
 
@@ -99,8 +101,8 @@ def fetch_bls_series(series_id: str, start_year: int, end_year: int) -> list[dic
 def calendar_year_average(observations: list[dict]) -> dict[int, float]:
     """Collapse semi-annual or monthly observations to a calendar-year average.
 
-    Honolulu CPI publishes S01 (Jan-Jun) and S02 (Jul-Dec) — averaging the two
-    yields a usable annual index.
+    Averaging whatever periods the series publishes (Urban Hawaii is
+    bimonthly; some series use S01/S02 half-years) yields a usable annual index.
     """
     by_year: dict[int, list[float]] = {}
     for obs in observations:
@@ -149,7 +151,7 @@ def build_deflators(fy_index: dict[int, float], base_fy: int) -> dict[str, float
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Fetch Honolulu CPI-U and write per-FY deflators."
+        description="Fetch Urban Hawaii CPI-U and write per-FY deflators."
     )
     ap.add_argument(
         "--base-fy",
@@ -178,7 +180,7 @@ def main() -> int:
     args = ap.parse_args()
 
     print(
-        f"Fetching BLS series {SERIES_ID} (Urban Honolulu CPI-U) "
+        f"Fetching BLS series {SERIES_ID} (Urban Hawaii CPI-U) "
         f"for {args.start_year}–{args.end_year}..."
     )
     try:
@@ -206,7 +208,7 @@ def main() -> int:
     output = {
         "base_fy": args.base_fy,
         "series_id": SERIES_ID,
-        "source": f"BLS {SERIES_ID} (Urban Honolulu CPI-U, all items, NSA)",
+        "source": f"BLS {SERIES_ID} (Urban Hawaii CPI-U, all items, NSA)",
         "fetched": datetime.now().isoformat(timespec="seconds"),
         "method": "FY = average of H2(prev) + H1(curr); deflator = base_fy / fy_index",
         "fy_index": {str(fy): round(val, 3) for fy, val in fy_index.items()},

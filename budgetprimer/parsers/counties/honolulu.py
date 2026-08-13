@@ -198,6 +198,11 @@ class HonoluluParser(BaseCountyParser):
             logger.warning(f"No Honolulu dataset known for FY{fiscal_year}")
             return []
 
+        # The displayed source must name the year actually parsed — each FY is
+        # its own Socrata dataset, so a static class label mislabels FY2027.
+        self.source_label = f'FY{fiscal_year} Proposed Operating Budget · data.honolulu.gov'
+        self.source_url = f'https://data.honolulu.gov/d/{dataset_id}'
+
         raw_file = raw_dir / f'fy{fiscal_year}_operating_{dataset_id}.json'
         if not raw_file.exists():
             logger.warning(f"Missing raw file {raw_file} — run scripts/fetch_county_budgets.py")

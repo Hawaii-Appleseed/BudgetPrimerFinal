@@ -380,8 +380,17 @@
           "lrb": 4791670,
           "ombudsman": 1744123,
           "ethics": 1755348,
-          "audit_rf_deposit_included_in_auditor": 2800000,
-          "audit_rf_spend_authority": 6800000
+          "audit_rf_spend_authority": 6800000,
+          "audit_rf_deposit_SEPARATE_sec7": 2800000,
+          "vacation_payouts_sec12": {
+            "senate": 295000,
+            "house": 354607,
+            "auditor": 68106,
+            "lrb": 100780,
+            "ombudsman": 84035,
+            "ethics": 16553,
+            "total": 919081
+          }
         },
         "act127_2025_fy27_cost_items": {
           "ethics": 80087,
@@ -392,12 +401,13 @@
           "house": 735235,
           "total": 2030952
         },
-        "total_fy27_published_style": 51899599,
-        "total_fy27_gf_only_no_double_count": 45099599,
-        "methodology_note": "Published-style \u2248 Act1 GF ($43,068,647 incl $2.8M RF deposit) + $6.8M audit RF spend + Act 127 FY27 cost items ($2,030,952). FY26 published $51.63M reproduces to within ~$0.3M under this method (Act1-2025 $44.02M + $6.8M + cost-item subset). DEVIN TO CONFIRM inclusion rules \u2014 RF deposit+spend double-counts $2.8M.",
+        "total_fy27_published_style": 52818680,
+        "total_fy27_gf_only_no_double_count": 46018680,
+        "methodology_note": "VERIFIED 2026-08-12 against enrolled HB2240 HD1 (Act 1, SLH 2026, signed 3/20/2026 GM1101; HD1 final) and HB1439 CD1 (Act 127, FY26-27 column) \u2014 every component matches the bills to the dollar. DECISION (Devin, 2026-08-12): FY27 total INCLUDES Sec 12 accrued-vacation payouts ($919,081) \u2014 they are real GF appropriations in the same act \u2014 and EXCLUDES the $2.8M Sec 7 audit-revolving-fund deposit, counting only the $6.8M Sec 8 RF spend, to avoid the deposit+spend double count. Composition: six agencies $43,068,647 + $6,800,000 RF spend + $919,081 vacation + $2,030,952 Act 127 cost items = $52,818,680. COMPARABILITY CAVEAT: the FY26 published figure ($51.63M, hardcoded in render_report.py) was built differently \u2014 Act 1 SLH 2025 six agencies $41,220,475 + $2.8M RF deposit + $6.8M RF spend + $808,998 vacation = $51,629,473, i.e. it INCLUDED the $2.8M deposit (double count) and NO cost items. Restating it under the FY27 rule would give $49,973,067; left at the published value deliberately. The two years therefore differ by rule as well as by amount \u2014 noted in the report's Act 1 endnote.",
         "urls": [
-          "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2240_HD1_.HTM",
-          "https://data.capitol.hawaii.gov/sessions/session2025/bills/GM1227_.PDF"
+          "https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2240_HD1_.HTM",
+          "https://www.capitol.hawaii.gov/sessions/session2025/bills/HB1439_CD1_.HTM",
+          "https://www.capitol.hawaii.gov/sessions/session2025/bills/HB1440_HD1_.HTM"
         ]
       },
       "oha": {
@@ -408,7 +418,9 @@
           "OHA175_beneficiary_advocacy_T_trust": 3000000
         },
         "one_time_note": "Act 032, SLH 2026 (SB903) additionally makes a one-time $55M public-land-trust transfer to OHA \u2014 listed under one_time_fy2027.featured; FY26 edition kept OHA column at operating $6M only",
-        "url": "https://data.capitol.hawaii.gov/sessions/session2025/bills/GM1351_.PDF"
+        "url": "https://www.capitol.hawaii.gov/sessions/session2025/bills/HB410_CD1_.HTM",
+        "url_act32": "https://www.capitol.hawaii.gov/sessions/session2026/bills/SB903_CD1_.HTM",
+        "verified": "2026-08-12 \u2014 confirmed against primary sources: enrolled HB410 CD1 (OHA175 Beneficiary Advocacy, $3,000,000 A + $3,000,000 T in EACH fiscal year of the 2025\u201327 biennium); the 2026 OHA package report (14 measures, no budget bill \u2014 companion SB269 dead since 2/11/2025), so no 2026 act amends it; and SB903 CD1 = Act 032, signed 5/22/2026 (GM1132), '$55,000,000 \u2026 for fiscal year 2026-2027 \u2026 to the office of Hawaiian affairs as a one-time transfer' from the carry-forward trust holding account. Table 1 OHA column ($6M op + $55M one-time = $61M) is correct as published."
       }
     },
     "emergency_fy2027": [

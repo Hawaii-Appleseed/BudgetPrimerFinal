@@ -339,7 +339,7 @@ def main() -> int:
             "base_fy": base_fy,
             "fy_range": [min(required_fys), max(required_fys)],
             "acts": acts,
-            "cpi_source": cpi.get("source", "BLS Honolulu CPI-U"),
+            "cpi_source": cpi.get("source", "BLS Urban Hawaii CPI-U"),
             "cpi_fetched": cpi.get("fetched"),
             "projected_fys": sorted(projected),
             "bill_notes": bill_notes,

@@ -13,8 +13,20 @@
     "judiciary": {
       "acts": "Act 227, SLH 2025 as amended by Act 178, SLH 2026 (HB2095 CD1, Judiciary Supplemental Appropriations Act of 2026)",
       "operating_fy27": 218767071,
-      "operating_detail": {"A_general": 205984414, "B_special": 12439396, "W_revolving": 343261,
-        "programs": {"JUD101": 9962313, "JUD310": 104429880, "JUD320": 20331034, "JUD330": 25274522, "JUD350": 9291556, "JUD501": 114074, "JUD601": 49363692}},
+      "operating_detail": {
+        "A_general": 205984414,
+        "B_special": 12439396,
+        "W_revolving": 343261,
+        "programs": {
+          "JUD101": 9962313,
+          "JUD310": 104429880,
+          "JUD320": 20331034,
+          "JUD330": 25274522,
+          "JUD350": 9291556,
+          "JUD501": 114074,
+          "JUD601": 49363692
+        }
+      },
       "cip_fy27": 45400000,
       "cip_note": "GO bonds; Act 178 raised biennium CIP from $12.9M to $58.3M ($45.4M is FY27: Kauai chillers $1.2M, Hale Kaulike AC $1.2M, Kaahumanu Hale elevators $15M, lump sum $8M, South Kohala courthouse $20M)",
       "emergency_fy27": 0,
@@ -23,41 +35,86 @@
     },
     "legislature": {
       "acts": "Act 001, SLH 2026 (HB2240 HD1) + Act 127, SLH 2025 (HB1439 CD1) FY27 cost items. NOTE: FY26 primer endnote 5 says 'Act 27' but links GM1227 which is Act 127 — label typo in original.",
-      "act1_2026": {"senate": 13045166, "house": 17808628, "auditor_gf": 3923712, "lrb": 4791670, "ombudsman": 1744123, "ethics": 1755348,
-        "audit_rf_deposit_included_in_auditor": 2800000, "audit_rf_spend_authority": 6800000},
-      "act127_2025_fy27_cost_items": {"ethics": 80087, "auditor": 219447, "lrb": 231876, "ombudsman": 90489, "senate": 673818, "house": 735235, "total": 2030952},
-      "total_fy27_published_style": 51899599,
-      "total_fy27_gf_only_no_double_count": 45099599,
-      "methodology_note": "Published-style ≈ Act1 GF ($43,068,647 incl $2.8M RF deposit) + $6.8M audit RF spend + Act 127 FY27 cost items ($2,030,952). FY26 published $51.63M reproduces to within ~$0.3M under this method (Act1-2025 $44.02M + $6.8M + cost-item subset). DEVIN TO CONFIRM inclusion rules — RF deposit+spend double-counts $2.8M.",
-      "urls": ["https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2240_HD1_.HTM", "https://data.capitol.hawaii.gov/sessions/session2025/bills/GM1227_.PDF"]
+      "act1_2026": {
+        "senate": 13045166,
+        "house": 17808628,
+        "auditor_gf": 3923712,
+        "lrb": 4791670,
+        "ombudsman": 1744123,
+        "ethics": 1755348,
+        "audit_rf_spend_authority": 6800000,
+        "audit_rf_deposit_SEPARATE_sec7": 2800000,
+        "vacation_payouts_sec12": {
+          "senate": 295000,
+          "house": 354607,
+          "auditor": 68106,
+          "lrb": 100780,
+          "ombudsman": 84035,
+          "ethics": 16553,
+          "total": 919081
+        }
+      },
+      "act127_2025_fy27_cost_items": {
+        "ethics": 80087,
+        "auditor": 219447,
+        "lrb": 231876,
+        "ombudsman": 90489,
+        "senate": 673818,
+        "house": 735235,
+        "total": 2030952
+      },
+      "total_fy27_published_style": 52818680,
+      "total_fy27_gf_only_no_double_count": 46018680,
+      "methodology_note": "VERIFIED 2026-08-12 against enrolled HB2240 HD1 (Act 1, SLH 2026, signed 3/20/2026 GM1101; HD1 final) and HB1439 CD1 (Act 127, FY26-27 column) — every component matches the bills to the dollar. DECISION (Devin, 2026-08-12): FY27 total INCLUDES Sec 12 accrued-vacation payouts ($919,081) — they are real GF appropriations in the same act — and EXCLUDES the $2.8M Sec 7 audit-revolving-fund deposit, counting only the $6.8M Sec 8 RF spend, to avoid the deposit+spend double count. Composition: six agencies $43,068,647 + $6,800,000 RF spend + $919,081 vacation + $2,030,952 Act 127 cost items = $52,818,680. COMPARABILITY CAVEAT: the FY26 published figure ($51.63M, hardcoded in render_report.py) was built differently — Act 1 SLH 2025 six agencies $41,220,475 + $2.8M RF deposit + $6.8M RF spend + $808,998 vacation = $51,629,473, i.e. it INCLUDED the $2.8M deposit (double count) and NO cost items. Restating it under the FY27 rule would give $49,973,067; left at the published value deliberately. The two years therefore differ by rule as well as by amount — noted in the report's Act 1 endnote.",
+      "urls": [
+        "https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2240_HD1_.HTM",
+        "https://www.capitol.hawaii.gov/sessions/session2025/bills/HB1439_CD1_.HTM",
+        "https://www.capitol.hawaii.gov/sessions/session2025/bills/HB1440_HD1_.HTM"
+      ]
     },
     "oha": {
       "acts": "Act 248, SLH 2025 (HB410 CD1, OHA Appropriations Act) — FY27 column; NO 2026 act amends it",
       "operating_fy27": 6000000,
-      "operating_detail": {"OHA175_beneficiary_advocacy_A_general": 3000000, "OHA175_beneficiary_advocacy_T_trust": 3000000},
+      "operating_detail": {
+        "OHA175_beneficiary_advocacy_A_general": 3000000,
+        "OHA175_beneficiary_advocacy_T_trust": 3000000
+      },
       "one_time_note": "Act 032, SLH 2026 (SB903) additionally makes a one-time $55M public-land-trust transfer to OHA — listed under one_time_fy2027.featured; FY26 edition kept OHA column at operating $6M only",
-      "url": "https://data.capitol.hawaii.gov/sessions/session2025/bills/GM1351_.PDF"
+      "url": "https://www.capitol.hawaii.gov/sessions/session2025/bills/HB410_CD1_.HTM",
+      "url_act32": "https://www.capitol.hawaii.gov/sessions/session2026/bills/SB903_CD1_.HTM",
+      "verified": "2026-08-12 — confirmed against primary sources: enrolled HB410 CD1 (OHA175 Beneficiary Advocacy, $3,000,000 A + $3,000,000 T in EACH fiscal year of the 2025–27 biennium); the 2026 OHA package report (14 measures, no budget bill — companion SB269 dead since 2/11/2025), so no 2026 act amends it; and SB903 CD1 = Act 032, signed 5/22/2026 (GM1132), '$55,000,000 … for fiscal year 2026-2027 … to the office of Hawaiian affairs as a one-time transfer' from the carry-forward trust holding account. Table 1 OHA column ($6M op + $55M one-time = $61M) is correct as published."
     }
   },
   "emergency_fy2027": [
     {
-      "act": "Act 026, SLH 2026", "bill": "HB2272 CD1", "signed": "2026-05-22",
+      "act": "Act 026, SLH 2026",
+      "bill": "HB2272 CD1",
+      "signed": "2026-05-22",
       "dept": "Budget and Finance (statewide)",
-      "amount_fy27": 2871954, "detail": "FY27: $948,614 general + $1,923,340 special; FY26: $1,373,632",
+      "amount_fy27": 2871954,
+      "detail": "FY27: $948,614 general + $1,923,340 special; FY26: $1,373,632",
       "purpose": "Collective bargaining cost items for Bargaining Unit 11 and excluded counterparts — salaries and health premiums, 2025-27 biennium",
       "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2272_CD1_.HTM"
     }
   ],
   "emergency_fy2026_passed_2026": [
     {
-      "act": "Act 021, SLH 2026 (Part I)", "bill": "HB2310 CD1", "signed": "2026-05-21",
-      "dept": "Human Services", "amount": 14248126, "fy": 2026,
+      "act": "Act 021, SLH 2026 (Part I)",
+      "bill": "HB2310 CD1",
+      "signed": "2026-05-21",
+      "dept": "Human Services",
+      "amount": 14248126,
+      "fy": 2026,
       "purpose": "Backfill DHS general funds redirected to emergency food assistance during the 2025 federal government shutdown",
       "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2310_CD1_.HTM"
     },
     {
-      "act": "Act 033, SLH 2026", "bill": "HB2271 CD1", "signed": "2026-05-26",
-      "dept": "Budget and Finance (statewide)", "amount": 95775309, "fy": 2026,
+      "act": "Act 033, SLH 2026",
+      "bill": "HB2271 CD1",
+      "signed": "2026-05-26",
+      "dept": "Budget and Finance (statewide)",
+      "amount": 95775309,
+      "fy": 2026,
       "purpose": "BU-1 and BU-10 labor grievance cost items incl. DOE temporary hazard pay ($66.8M GF + $28.5M GF DOE + minor funds); extends Act 29 SLH 2025 lapse to 6/30/27",
       "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2271_CD1_.HTM"
     }
@@ -65,80 +122,219 @@
   "one_time_fy2027": {
     "featured": [
       {
-        "act": "Act 099, SLH 2026", "bill": "HB2275 CD2", "signed": "2026-06-05",
-        "dept": "Transportation / B&F / DBEDT", "amount": 700000000,
+        "act": "Act 099, SLH 2026",
+        "bill": "HB2275 CD2",
+        "signed": "2026-06-05",
+        "dept": "Transportation / B&F / DBEDT",
+        "amount": 700000000,
         "detail": "$600M mass transit special fund (county-surcharge disbursements, HRS §248-2); $100M GF to new major disaster fund (+$100M appropriated out); ops: ADC $4,762,987, HTDC $2,592,854, HCDA $984,450",
         "purpose": "Transit funding and disaster recovery/response reserve",
         "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2275_CD2_.HTM"
       },
       {
-        "act": "Act 123, SLH 2026", "bill": "SB2930 CD1", "signed": "2026-06-08",
-        "dept": "AGS / SFA / DOT / DLNR", "amount": 200000000,
+        "act": "Act 123, SLH 2026",
+        "bill": "SB2930 CD1",
+        "signed": "2026-06-08",
+        "dept": "AGS / SFA / DOT / DLNR",
+        "amount": 200000000,
         "detail": "$146M King Kamehameha III Elementary rebuild (contingent on ≥$48M federal match) + $30M offsite infrastructure + $12M roadways + $12M Lahaina small boat harbor — from state risk management revolving fund",
         "purpose": "Distribute 2023 Maui wildfire property/liability insurance proceeds",
         "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/SB2930_CD1_.HTM"
       },
       {
-        "act": "Act 032, SLH 2026", "bill": "SB903 CD1", "signed": "2026-05-22",
-        "dept": "B&F → Office of Hawaiian Affairs", "amount": 55000000,
+        "act": "Act 032, SLH 2026",
+        "bill": "SB903 CD1",
+        "signed": "2026-05-22",
+        "dept": "B&F → Office of Hawaiian Affairs",
+        "amount": 55000000,
         "detail": "Explicit one-time transfer re: public land trust revenues; reconstitutes PLT working group",
         "purpose": "One-time transfer to OHA for public land trust revenues",
         "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/SB903_CD1_.HTM"
       },
       {
-        "act": "Act 184, SLH 2026", "bill": "SB2599 CD1", "signed": "2026-07-06",
-        "dept": "DBEDT / HCDA", "amount": 49500000,
+        "act": "Act 184, SLH 2026",
+        "bill": "SB2599 CD1",
+        "signed": "2026-07-06",
+        "dept": "DBEDT / HCDA",
+        "amount": 49500000,
         "detail": "$49.5M stadium development special fund + $728,927 GF and 3 FTEs",
         "purpose": "Halawa Community Development District / New Aloha Stadium",
         "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/SB2599_CD1_.HTM"
       },
       {
-        "act": "Act 080, SLH 2026", "bill": "HB2339 CD1", "signed": "2026-06-04",
-        "dept": "University of Hawaii", "amount": 28500000,
+        "act": "Act 080, SLH 2026",
+        "bill": "HB2339 CD1",
+        "signed": "2026-06-04",
+        "dept": "University of Hawaii",
+        "amount": 28500000,
         "detail": "Revenue bond proceeds; authorizes new revenue bonds",
         "purpose": "UH student housing capital improvements",
         "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2339_CD1_.HTM"
       },
       {
-        "act": "Act 021, SLH 2026 (Part II)", "bill": "HB2310 CD1", "signed": "2026-05-21",
-        "dept": "Human Services", "amount": 16500000,
+        "act": "Act 021, SLH 2026 (Part II)",
+        "bill": "HB2310 CD1",
+        "signed": "2026-05-21",
+        "dept": "Human Services",
+        "amount": 16500000,
         "detail": "General funds, FY27, effective 7/1/26 (non-emergency part of the act)",
         "purpose": "Supplement premium contributions to health plans for residents losing ACA coverage due to federal policy changes",
         "url": "https://data.capitol.hawaii.gov/sessions/session2026/bills/HB2310_CD1_.HTM"
       },
       {
-        "act": "Act 139, SLH 2025", "bill": "SB1300 CD1 (2025)", "signed": "2025-05-30",
-        "dept": "Education", "amount": 3365000,
+        "act": "Act 139, SLH 2025",
+        "bill": "SB1300 CD1 (2025)",
+        "signed": "2025-05-30",
+        "dept": "Education",
+        "amount": 3365000,
         "detail": "§4 $2,800,000 GF FY27 meal subsidies for students ≤300% FPL (ALICE expansion, 2026-27 school year) + §3 $565,000 FY27 reduced-price-eligible students",
         "purpose": "Free school meals expansion to ALICE households — the FY27 follow-on the FY26 primer teased",
         "url": "https://data.capitol.hawaii.gov/sessions/session2025/bills/SB1300_CD1_.HTM"
       }
     ],
     "mid_size": [
-      {"act": "Act 135, SLH 2026", "bill": "SB2543", "amount": 3034000, "dept": "AGS/DOE", "purpose": "State construction manager pilot"},
-      {"act": "Act 187, SLH 2026", "bill": "SB3320", "amount": 2800000, "dept": "ADC", "purpose": "Food & Product Innovation Network ops"},
-      {"act": "Act 097, SLH 2026", "bill": "SB2756", "amount": 2365000, "dept": "DLNR", "purpose": "DOCARE Hawaii Island patrol vessel + 20 vehicles"},
-      {"act": "Act 078, SLH 2026", "bill": "SB2645", "amount": 2212000, "dept": "State Fire Marshal", "purpose": "Office of the State Fire Marshal (also $2,212,000 in FY26)"},
-      {"act": "Act 206, SLH 2026", "bill": "SB2001", "amount": 2625000, "dept": "HCDA", "purpose": "Banyan Drive district, Hilo ($2M + $625K)"},
-      {"act": "Act 086, SLH 2026", "bill": "SB2934", "amount": 1750000, "dept": "Health", "purpose": "Central Maui ALS ambulance"},
-      {"act": "Act 198, SLH 2026", "bill": "SB3324", "amount": 1700000, "dept": "Human Services", "purpose": "Medicaid home/community-based residential service rates (federal match required)"},
-      {"act": "Act 183, SLH 2026", "bill": "HB2583", "amount": 1500000, "dept": "DBEDT", "purpose": "Micro-lending credit enhancement (special fund)"},
-      {"act": "Act 146, SLH 2026", "bill": "HB2498", "amount": 1000000, "dept": "HI-EMA", "purpose": "Care home resilience pilot, Central/Leeward Oahu"},
-      {"act": "Act 068, SLH 2026", "bill": "HB1707", "amount": 1055200, "dept": "Agriculture & Biosecurity", "purpose": "Local ag transportation reimbursement pilot ($1M + $55,200)"}
+      {
+        "act": "Act 135, SLH 2026",
+        "bill": "SB2543",
+        "amount": 3034000,
+        "dept": "AGS/DOE",
+        "purpose": "State construction manager pilot"
+      },
+      {
+        "act": "Act 187, SLH 2026",
+        "bill": "SB3320",
+        "amount": 2800000,
+        "dept": "ADC",
+        "purpose": "Food & Product Innovation Network ops"
+      },
+      {
+        "act": "Act 097, SLH 2026",
+        "bill": "SB2756",
+        "amount": 2365000,
+        "dept": "DLNR",
+        "purpose": "DOCARE Hawaii Island patrol vessel + 20 vehicles"
+      },
+      {
+        "act": "Act 078, SLH 2026",
+        "bill": "SB2645",
+        "amount": 2212000,
+        "dept": "State Fire Marshal",
+        "purpose": "Office of the State Fire Marshal (also $2,212,000 in FY26)"
+      },
+      {
+        "act": "Act 206, SLH 2026",
+        "bill": "SB2001",
+        "amount": 2625000,
+        "dept": "HCDA",
+        "purpose": "Banyan Drive district, Hilo ($2M + $625K)"
+      },
+      {
+        "act": "Act 086, SLH 2026",
+        "bill": "SB2934",
+        "amount": 1750000,
+        "dept": "Health",
+        "purpose": "Central Maui ALS ambulance"
+      },
+      {
+        "act": "Act 198, SLH 2026",
+        "bill": "SB3324",
+        "amount": 1700000,
+        "dept": "Human Services",
+        "purpose": "Medicaid home/community-based residential service rates (federal match required)"
+      },
+      {
+        "act": "Act 183, SLH 2026",
+        "bill": "HB2583",
+        "amount": 1500000,
+        "dept": "DBEDT",
+        "purpose": "Micro-lending credit enhancement (special fund)"
+      },
+      {
+        "act": "Act 146, SLH 2026",
+        "bill": "HB2498",
+        "amount": 1000000,
+        "dept": "HI-EMA",
+        "purpose": "Care home resilience pilot, Central/Leeward Oahu"
+      },
+      {
+        "act": "Act 068, SLH 2026",
+        "bill": "HB1707",
+        "amount": 1055200,
+        "dept": "Agriculture & Biosecurity",
+        "purpose": "Local ag transportation reimbursement pilot ($1M + $55,200)"
+      }
     ],
     "small": [
-      {"act": "Act 126, SLH 2026", "bill": "HB2094", "amount": 684385, "dept": "Judiciary", "purpose": "Juror pay increase"},
-      {"act": "Act 201, SLH 2026", "bill": "SB3204", "amount": 600000, "dept": "Office of Wellness & Resilience", "purpose": "Family resilience pilot (TANF funds)"},
-      {"act": "Act 179, SLH 2026", "bill": "SB3238", "amount": 375000, "dept": "UH", "purpose": "Language access workforce program"},
-      {"act": "Act 154, SLH 2026", "bill": "SB2802", "amount": 375000, "dept": "UH West Oahu", "purpose": "Agricultural science BA program"},
-      {"act": "Act 145, SLH 2026", "bill": "HB1854", "amount": 300000, "dept": "Health", "purpose": "Community behavioral health clinics certifying office"},
-      {"act": "Act 204, SLH 2026", "bill": "HB1618", "amount": 203750, "dept": "HGIA", "purpose": "Cesspool conversion financing (special fund)"},
-      {"act": "Act 176, SLH 2026", "bill": "SB3029", "amount": 200000, "dept": "DOT", "purpose": "Summer streets pilot, all counties"},
-      {"act": "Act 194, SLH 2026", "bill": "HB1801", "amount": 200000, "dept": "Human Services", "purpose": "Domestic-violence training for CWS investigators"},
-      {"act": "Act 133, SLH 2026", "bill": "HB2443", "amount": 100000, "dept": "HI-EMA", "purpose": "Disability/access-and-functional-needs planner"}
+      {
+        "act": "Act 126, SLH 2026",
+        "bill": "HB2094",
+        "amount": 684385,
+        "dept": "Judiciary",
+        "purpose": "Juror pay increase"
+      },
+      {
+        "act": "Act 201, SLH 2026",
+        "bill": "SB3204",
+        "amount": 600000,
+        "dept": "Office of Wellness & Resilience",
+        "purpose": "Family resilience pilot (TANF funds)"
+      },
+      {
+        "act": "Act 179, SLH 2026",
+        "bill": "SB3238",
+        "amount": 375000,
+        "dept": "UH",
+        "purpose": "Language access workforce program"
+      },
+      {
+        "act": "Act 154, SLH 2026",
+        "bill": "SB2802",
+        "amount": 375000,
+        "dept": "UH West Oahu",
+        "purpose": "Agricultural science BA program"
+      },
+      {
+        "act": "Act 145, SLH 2026",
+        "bill": "HB1854",
+        "amount": 300000,
+        "dept": "Health",
+        "purpose": "Community behavioral health clinics certifying office"
+      },
+      {
+        "act": "Act 204, SLH 2026",
+        "bill": "HB1618",
+        "amount": 203750,
+        "dept": "HGIA",
+        "purpose": "Cesspool conversion financing (special fund)"
+      },
+      {
+        "act": "Act 176, SLH 2026",
+        "bill": "SB3029",
+        "amount": 200000,
+        "dept": "DOT",
+        "purpose": "Summer streets pilot, all counties"
+      },
+      {
+        "act": "Act 194, SLH 2026",
+        "bill": "HB1801",
+        "amount": 200000,
+        "dept": "Human Services",
+        "purpose": "Domestic-violence training for CWS investigators"
+      },
+      {
+        "act": "Act 133, SLH 2026",
+        "bill": "HB2443",
+        "amount": 100000,
+        "dept": "HI-EMA",
+        "purpose": "Disability/access-and-functional-needs planner"
+      }
     ],
     "excluded": [
-      {"act": "Act 001, SLH 2026", "bill": "HB2240", "reason": "Routine annual legislative-agency appropriations (Auditor, LRB, Ombudsman, Ethics) — FY26 primer did not count the 2025 equivalent as one-time; belongs in Legislature branch column instead"}
+      {
+        "act": "Act 001, SLH 2026",
+        "bill": "HB2240",
+        "reason": "Routine annual legislative-agency appropriations (Auditor, LRB, Ombudsman, Ethics) — FY26 primer did not count the 2025 equivalent as one-time; belongs in Legislature branch column instead"
+      }
     ]
   }
 }
