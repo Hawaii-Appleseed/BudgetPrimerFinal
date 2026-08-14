@@ -352,6 +352,27 @@ def _host_lock(timeout: float = 30.0):
 INVENTORY_IDS: dict = {}
 
 
+def _export_bad_args(req: dict) -> str | None:
+    """The message for the first malformed /__export argument, or None if the
+    request is worth building. Pure and side-effect free so both the real
+    handler and the test-safe mock can ask before doing any work."""
+    if (req.get("fmt") or "pdf").lower() not in ("pdf", "png"):
+        return "fmt must be pdf or png"
+    try:
+        float(req.get("scale", 2))
+    except (TypeError, ValueError):
+        return "scale must be a number"
+    want_page = req.get("page")
+    if want_page is not None:
+        try:
+            want_page = int(want_page)
+        except (TypeError, ValueError):
+            return "page must be a number"
+        if want_page < 1:
+            return "page starts at 1"
+    return None
+
+
 def _snapshot(patterns: list[str]) -> dict:
     out = {}
     for pat in patterns:
@@ -557,6 +578,19 @@ def rebuild(pid: str, reason: str = "") -> None:
         return
     st, root, b = STATE[pid], p["root"], p["binding"]
     with st.lock:
+        # Has this exact state already been built while we waited for the lock?
+        # Every Save used to rebuild TWICE — "rebuilt (save) -> v11" followed
+        # immediately by "rebuilt (watch) -> v12" all through the log. The Save
+        # writes the files and rebuilds; the watcher, polling independently,
+        # sees those same writes and queues its own rebuild, which then waits
+        # out the Save's build and runs against bytes that are already built.
+        # Two versions, and each bump costs every open editor a full re-render.
+        # The decision to rebuild is made before the lock; whether it is still
+        # WORTH doing can only be answered after it. Only the watcher's call is
+        # dropped — an explicit trigger (a save, a rollback, an update) means
+        # someone is waiting on the rebuild and must get one.
+        if reason == "watch" and _snapshot(_watch_patterns(root, b)) == st.mtimes:
+            return
         if b.build:
             # Run through a shell, not shlex.split — the registry documents
             # `build` as "a shell command", and rxkids/demo-report's actually
@@ -783,6 +817,10 @@ def watcher():
     patterns = {pid: _watch_patterns(p["root"], p["binding"]) for pid, p in PROJECTS.items()}
     for pid in PROJECTS:
         STATE[pid].mtimes = _snapshot(patterns[pid])
+    # A project's files as they looked on the LAST pass, while they are still
+    # moving. Nothing rebuilds until a pass sees exactly what the pass before
+    # it saw — see the settle rule below.
+    settling: dict[str, dict] = {}
     while True:
         time.sleep(0.4)
         WATCH_BEAT[0] = time.time()
@@ -799,10 +837,38 @@ def watcher():
             # version frozen and no file change producing a rebuild.
             try:
                 now = _snapshot(patterns[pid])
-                if now != STATE[pid].mtimes:
-                    rebuild(pid, "watch")
+                if now == STATE[pid].mtimes:
+                    settling.pop(pid, None)
+                    continue
+                # SETTLE FIRST. This used to rebuild the instant any mtime
+                # moved, which is wrong twice over when the thing doing the
+                # writing is an agent rather than a person saving a file:
+                #
+                #  · A burst of writes became a rebuild PER WRITE. Every
+                #    rebuild bumps the version, and every bump costs each open
+                #    editor a full Pyodide re-render — about a second of frozen
+                #    main thread each. Editing three files in a row froze the
+                #    editor three times; that is the "it freezes while Claude
+                #    is working" report.
+                #  · It built the states a burst PASSED THROUGH, not the one it
+                #    ended in — including the momentarily-truncated file a
+                #    rewrite leaves behind, whose build fails and puts "build
+                #    failed on disk" in every open editor's status row.
+                #
+                # So a change has to STOP for one pass (0.4s) before it counts.
+                # One burst is then one rebuild, and it runs against the file as
+                # the writer left it. This is a coalescing window, not a
+                # validity check: a file left genuinely broken for seconds still
+                # builds and still fails, which is correct — that IS news.
+                # Guarded by tools/test_watch_settle.py.
+                if settling.get(pid) != now:
+                    settling[pid] = now
+                    continue
+                settling.pop(pid, None)
+                rebuild(pid, "watch")
             except Exception as e:
                 # Re-baseline so the same change does not re-fire every 0.4s.
+                settling.pop(pid, None)
                 try:
                     STATE[pid].mtimes = _snapshot(patterns[pid])
                 except Exception:
@@ -1338,7 +1404,15 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ("/__save", "/__push"):
                 return self._json(200, {"ok": True, "ahead": 0, "message":
                     "blocked in tests — no real save/push happens here"})
-            if path == "/__pull":
+            # A spec that built its OWN throwaway origin and clone is exactly
+            # what /__pull is for, and blocking it blocks the only test there
+            # is of the real endpoint. content-update.spec.js used to opt out
+            # with a page-level route that let /__pull continue — powerless
+            # once the block moved server-side, since there is no longer a
+            # browser route to override. So the opt-out moved here with it:
+            # an explicit header, which only exists at all in test-safe mode
+            # and which a spec has to add on purpose.
+            if path == "/__pull" and self.headers.get("X-Primer-Test-Pull") != "1":
                 return self._json(200, {"ok": False, "error":
                     "blocked in tests — no real repo is updated here"})
             if path == "/__upload":
@@ -1346,6 +1420,15 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"ok": True, "src": f"assets/{name}",
                                         "path": f"report2027/web/assets/{name}"})
             if path == "/__export":
+                # Shape-check FIRST. This mock stood in front of the real
+                # handler's argument validation, so every malformed export —
+                # the exact thing pilot-mcp.spec.js asserts is refused before
+                # any build runs — came back as a cheerful 200 with a fake PDF.
+                # A guard that hides the guard under test is worse than no
+                # guard; the checks are cheap and shared.
+                bad = _export_bad_args(req)
+                if bad:
+                    return self._json(400, {"ok": False, "error": bad})
                 body = b"%PDF-1.4 fake export for tests"
                 self.send_response(200)
                 self.send_header("Content-Type", "application/pdf")
@@ -1980,24 +2063,19 @@ class Handler(SimpleHTTPRequestHandler):
         root, b = p["root"], p["binding"]
         if not b.editor:
             return self._json(400, {"ok": False, "error": f"'{pid}' has no editor"})
+        # Shape-check fmt/page/scale BEFORE the build. Everything below this
+        # costs a full render plus a headless Chrome; a malformed argument
+        # should not. Lifted into _export_bad_args so the test-safe mock in
+        # do_POST runs the SAME checks before answering — it used to answer
+        # first, which made every one of them unreachable under test.
+        bad = _export_bad_args(req)
+        if bad:
+            return self._json(400, {"ok": False, "error": bad})
         fmt = (req.get("fmt") or "pdf").lower()
-        if fmt not in ("pdf", "png"):
-            return self._json(400, {"ok": False, "error": "fmt must be pdf or png"})
-        # Shape-check page/scale BEFORE the build. Everything below this costs a
-        # full render plus a headless Chrome; a malformed argument should not.
-        try:
-            scale = float(req.get("scale", 2))
-        except (TypeError, ValueError):
-            return self._json(400, {"ok": False, "error": "scale must be a number"})
-        scale = max(0.1, min(4.0, scale))
+        scale = max(0.1, min(4.0, float(req.get("scale", 2))))
         want_page = req.get("page")
         if want_page is not None:
-            try:
-                want_page = int(want_page)
-            except (TypeError, ValueError):
-                return self._json(400, {"ok": False, "error": "page must be a number"})
-            if want_page < 1:
-                return self._json(400, {"ok": False, "error": "page starts at 1"})
+            want_page = int(want_page)
         content, layout = req.get("content"), req.get("layout")
         if content is None or layout is None:
             return self._json(400, {"ok": False, "error": "content and layout required"})

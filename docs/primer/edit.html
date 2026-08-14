@@ -11504,6 +11504,37 @@ function startLive(onEvent) {
 
 let pulling = false;
 
+// Every kind of open text editor, by the class its host wears WHILE it is
+// open. finish() drops the class (or the whole node) before it returns, so
+// "none of these are in the document" and "nothing is being edited" are the
+// same statement.
+const EDIT_HOST_SEL = '.ds-edit, .ds-cell-edit, .ds-ch-edit, .ds-endnote-edit';
+
+/** `editing` stuck true with no editor anywhere in the live document means an
+ *  open editor stopped existing without its blur/Escape ever running. (The
+ *  route originally blamed — a removed contenteditable firing no blur — is
+ *  closed in current Chromium, which does fire it and does run finish(). This
+ *  is not a claim about how the flag strands; it is what recovers it if it
+ *  ever does, and it costs one querySelector a heartbeat to hold that net.)
+ *  A stranded flag kills the whole text side of
+ *  the editor: edit() refuses to open, every click is swallowed by the
+ *  commit-the-editor path whose host no longer exists, and renders defer
+ *  forever waiting for an edit that ended long ago. That last part is why this
+ *  cannot live in wire() alone, which was its only home: while `editing` is
+ *  stranded no render ever swaps, so wire() never runs, so the net under the
+ *  deferred-swap rule was hung from the very thing the wedge stops. Called
+ *  from the live heartbeat too, where nothing else has to go right first. */
+function healStrandedEditor() {
+  if (!editing) return false;
+  const f = $('out');
+  const d = f && f.contentDocument;
+  if (!d || !d.body || d.querySelector(EDIT_HOST_SEL)) return false;
+  editing = false;
+  richHost = null;
+  syncMarksBar();
+  return true;
+}
+
 /** Adopt a change Claude (or your text editor) made on disk. Prose and layout
  *  are separate files, so a change to one is folded in while your unsaved edits
  *  to the OTHER stay put. Only a genuine same-file overlap asks you to choose. */
@@ -11511,6 +11542,8 @@ let pulling = false;
  *  decide whether the build has been seen: a declined pull must leave the
  *  version unconsumed so the next heartbeat retries it. */
 async function pullFromDisk() {
+  healStrandedEditor();                   // a flag left over from a dead editor
+                                          // must not hold live-reload off forever
   if (editing || pulling) return false;   // never yank the textarea out mid-edit,
   pulling = true;                         // and never let two pulls race a render
   try {
@@ -12312,15 +12345,7 @@ function within(d, roots, sel) {
 function wire(roots) {
   const d = $('out').contentDocument;
   const fresh = !(roots && roots.length);
-  // Self-heal: `editing` true with no editor in THIS document means an open
-  // editor was destroyed without its blur/Escape ever running (a removed
-  // contenteditable fires no blur). The deferred-swap rule above should make
-  // that impossible via renders — this is the net under it, because a stranded
-  // flag kills every text interaction: edit() refuses to open, and the
-  // commit-the-editor click path swallows every click into a dead host.
-  if (editing && !d.querySelector('.ds-edit')) {
-    editing = false; richHost = null; syncMarksBar();
-  }
+  healStrandedEditor();   // see its own comment; wire() is one of two callers
   showLocalImages(d, roots);
   // Native image-drag steals the gesture before the editor's mousemove ever
   // fires — grab a placed photo and a ghost image flies while the box stays
