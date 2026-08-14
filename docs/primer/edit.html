@@ -264,6 +264,13 @@
   #cupd:hover { filter:brightness(1.12); }
   #cupd[disabled] { opacity:.6; cursor:default; }
   #upd[disabled] { opacity:.6; cursor:default; }
+  /* A caution, not an offer — amber rather than #upd/#cupd's inviting sage/
+     blue, since clicking it does not fix anything, only dismisses the notice
+     (checkStage2()). */
+  #s2 { background:#B8863B; color:#fff; border:0; border-radius:99px;
+        padding:4px 12px; font:600 11.5px system-ui; cursor:pointer;
+        white-space:nowrap; transition:filter .12s; }
+  #s2:hover { filter:brightness(1.1); }
   /* one button language everywhere: quiet by default, sage when primary.
      Scoped to the bar's OWN buttons (direct children, plus the zoom segment):
      the .pop popovers are children of #bar too, and a bare "#bar button" (id +
@@ -1294,6 +1301,22 @@
   <button id="upd" hidden aria-label="Install the available update"></button>
   <span id="ver" hidden title=""></span>
   <span id="fit" hidden title="">⚠</span>
+  <!-- A project imported via docsync.scaffold + docsync.propose (an engine
+       file named body.slotted.html is the tell — see checkStage2()) gets its
+       PROSE wired as editable slots automatically, and free-standing images
+       as movable — but everything else in the page (stat cards, poll bars,
+       any structural "content box") stays inert on purpose: turning arbitrary
+       markup into a selectable, draggable element is a judgment call
+       (STAGE2_AUTOMATION.md calls it "not worth automating"), not something
+       propose can safely guess at. Selecting one of those shows no ring and
+       no floating mini toolbar — not a bug, but indistinguishable from one
+       unless something says so. This chip is that something: unconditional
+       for every scaffold-derived project until dismissed per-project
+       (localStorage, boot()), so it survives even a session that skipped
+       reading propose's own console summary. -->
+  <button id="s2" hidden
+    aria-label="This report was imported from a static page — only its text is editable so far">
+    ⚠ content boxes not yet editable</button>
   <!-- Text / Shape / Icon / Table live in the left rail (#leftrail) now.
        Token moved into the File menu. -->
   <!-- Zoom (Fit / 100 / 125 / 150) is hidden for now via CSS (#zoom{display:none}). -->
@@ -9762,6 +9785,41 @@ $('side-fold').addEventListener('click', () => {
 // thumbnails is a standing preference about how you work, not a decision to be
 // retaken every time the editor opens. Per project, since a thirteen-page
 // report and a one-pager do not want the same thing.
+// A project brought in via docsync.scaffold + docsync.propose carries
+// body.slotted.html in its engine list — nothing else produces that file, so
+// its presence is a reliable, structural signal (not a heuristic scanning the
+// document for "does this look wired") that this project's prose is editable
+// but its content BOXES — stat cards, poll bars, anything that is not either
+// a proposed text slot or a free-standing image — are not. Turning arbitrary
+// markup into a selectable, draggable element is a judgment call
+// (STAGE2_AUTOMATION.md: "not worth automating"), so nothing here tries to
+// guess whether that pass has since happened; it fires every time a report
+// like this is opened until a person dismisses it FOR THAT PROJECT, the same
+// standing-preference pattern RAIL_FOLD_KEY uses. Deliberately unconditional
+// rather than trying to detect "is stage two done" — false negatives (an
+// unwired report opens quietly) are the exact failure this exists to close,
+// so an occasional false positive (dismissed once, still true) costs one
+// click and is the safer side to err on.
+const STAGE2_KEY = () => 'primer-s2-seen:' + ((M && M.id) || '');
+function checkStage2() {
+  const scaffolded = Object.keys(M.files || {}).some(u => u.endsWith('/body.slotted.html'));
+  let dismissed = false;
+  try { dismissed = !!localStorage.getItem(STAGE2_KEY()); } catch (e) {}
+  $('s2').hidden = !scaffolded || dismissed;
+  if (!scaffolded) return;
+  $('s2').title = 'This report was imported from a static page. Its text is '
+    + 'editable (double-click), and free-standing images can be dragged — but '
+    + 'anything else (cards, bars, any other visual block) has no selection '
+    + 'ring and no toolbar yet. That needs a follow-up pass wiring it as a '
+    + 'movable element (see docsync/STAGE2_AUTOMATION.md and the '
+    + 'report-editor skill) before treating this report as fully editable.'
+    + '\n\nClick to dismiss for this report.';
+}
+$('s2').addEventListener('click', () => {
+  try { localStorage.setItem(STAGE2_KEY(), '1'); } catch (e) {}
+  $('s2').hidden = true;
+});
+
 const RAIL_FOLD_KEY = () => 'primer-rail-folded:' + ((M && M.id) || '');
 function setRailFolded(folded) {
   $('rail').classList.toggle('folded', folded);
@@ -10970,6 +11028,7 @@ wireTooltips(document);
 async function boot() {
   await loadRegistry();
   M = JSON.parse(await get(withBase('engine/manifest.json')));
+  checkStage2();
   REPO = M.repo || '';
   BRANCH = M.branch || 'main';
   if (M.pages && M.pages.length) EXTRA_PAGES = M.pages;

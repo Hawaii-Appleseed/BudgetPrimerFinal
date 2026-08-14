@@ -540,6 +540,27 @@ def main() -> int:
     print("next: rebuild + restage —")
     print(f"  python3 projects/{args.slug}/render_report.py && "
           f"python3 -m docsync.stage --id {args.slug}")
+    # NOT a courtesy note — read this before calling the project done. Slots
+    # and movable images are everything propose can safely wire; anything
+    # else in the page (stat cards, poll bars, any other structural "content
+    # box") stays completely inert: no selection ring, no floating mini
+    # toolbar, nothing. Deciding what should become a movable element is a
+    # judgment call (STAGE2_AUTOMATION.md calls it "not worth automating"),
+    # not something this script can guess at — a scaffolded+proposed project
+    # was opened, clicked on, and found to do nothing on exactly this gap
+    # (see the tfc-2027-priorities incident this comment postdates), with
+    # nothing anywhere having said that would happen. The editor now carries
+    # its own warning for this (checkStage2() in edit.html — fires on every
+    # project this script touches, since body.slotted.html is the tell), but
+    # that is a net under a human's own inspection, not a reason to skip
+    # doing the wiring pass or saying plainly what remains undone.
+    print()
+    print("STAGE TWO IS NOT DONE. Structural content — cards, bars, anything")
+    print("besides prose and free-standing images — is not selectable or")
+    print("movable yet. Either do that pass now (docsync/blocks.py's")
+    print("graphic()/card(), see the report-editor skill) or tell whoever")
+    print("you're doing this for exactly what remains unwired. Do not")
+    print("report this project as finished/editable without one of those.")
     return 0
 
 
