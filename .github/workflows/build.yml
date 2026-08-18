@@ -52,6 +52,30 @@ jobs:
       - name: Rebuild and publish
         run: make -C report2027 pub
 
+      - name: Did the rebuild change anything?
+        id: changed
+        run: |
+          if [ -n "$(git status --porcelain -- report2027/web docs/primer)" ]; then
+            echo "yes=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "already current — nothing to rebuild"
+          fi
+
+      # The report's "Download PDF" control hands a phone this file instead of
+      # sending it through iOS Safari's print engine, which lays a print job
+      # out at the phone's viewport and shreds the fixed 8.5x11in sheets.
+      #
+      # Not part of `pub`: `pub` also runs on every editor Save, where a
+      # ten-second Chrome render would be felt. Only when the page actually
+      # changed, because a Chrome PDF is not byte-reproducible — rendering it
+      # on every no-op run would commit a fresh 1.3MB binary each time.
+      # continue-on-error so a runner without Chrome can never block the HTML
+      # publish, which is the thing that matters; the step still shows red.
+      - name: Rebuild the downloadable PDF
+        if: steps.changed.outputs.yes == '1'
+        continue-on-error: true
+        run: make -C report2027 pdf-pub
+
       - name: Commit if the build changed anything
         run: |
           git config user.name  "primer-build[bot]"

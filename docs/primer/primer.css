@@ -393,9 +393,19 @@ svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: rou
 .toolbar { display: flex; justify-content: space-between;
            align-items: center; background: var(--forest); color: #fff; padding: 10px 20px;
            font-size: 14px; }
-.toolbar button { background: var(--sage-light); color: var(--forest); border: 0;
-                  padding: 7px 16px; border-radius: 6px; font-weight: 700; cursor: pointer;
-                  font-family: var(--body); }
+.toolbar button, .toolbar .tb-pdf { background: var(--sage-light); color: var(--forest);
+                  border: 0; padding: 7px 16px; border-radius: 6px; font-weight: 700;
+                  cursor: pointer; font-family: var(--body); font-size: 14px;
+                  text-decoration: none; white-space: nowrap; }
+/* The two Download PDF controls: exactly one of them shows. Wide enough to lay
+   the sheet out at its designed width, the button prints the live page — so a
+   desktop PDF is always the newest edit. Below the breakpoint the link to the
+   built PDF takes over; see the comment on the toolbar in render_report.py for
+   why a phone must not be sent through its own print engine.
+   Both selectors are (0,2,0) here and in the media query, so the swap turns on
+   source order and nothing has to reach for !important. */
+.toolbar .tb-print { display: inline-block; }
+.toolbar .tb-pdf { display: none; }
 #tip { position: fixed; pointer-events: none; background: var(--darkest); color: #fff;
        padding: 6px 10px; border-radius: 6px; font-size: 12px; opacity: 0;
        transition: opacity .12s; z-index: 99; max-width: 260px; }
@@ -426,6 +436,8 @@ svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: rou
   .cover .logo-img { max-width: 100%; height: auto; }
   .cover-year { font-size: 32px; white-space: nowrap; }
   .endnotes { columns: 1; }
+  .toolbar .tb-print { display: none; }
+  .toolbar .tb-pdf { display: inline-block; }
 
   /* Releasing what the ENGINE pinned — every element layout.json placed, the
      ds-spacer struts holding their vacated flow slots, images sized in

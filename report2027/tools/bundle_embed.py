@@ -25,6 +25,11 @@ html = html.replace('<script src="primer.js"></script>',
 if len(sys.argv) > 1:
     base = sys.argv[1].rstrip("/") + "/"
     html = re.sub(r'src="assets/', f'src="{base}', html)
+    # The mobile Download PDF link is relative to the published /primer/ page;
+    # inside someone else's site it resolves against their URL instead. Same
+    # rewrite, same base — the built PDF is published beside the assets.
+    html = html.replace('href="Budget-Primer-FY2026-27.pdf"',
+                        f'href="{base}Budget-Primer-FY2026-27.pdf"')
 
 # Squarespace injection: strip the document shell, keep head assets + body.
 body = re.search(r"<body>(.*)</body>", html, re.S).group(1)

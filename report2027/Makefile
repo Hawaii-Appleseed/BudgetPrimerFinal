@@ -1,6 +1,3 @@
-CHROME := /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-PROFILE := $(shell mktemp -d /tmp/primer-pdf.XXXXXX)
-
 all: data html pdf embed
 
 validate:
@@ -37,14 +34,27 @@ render:
 
 html: data render
 
-pdf: html
-	@mkdir -p dist
-	"$(CHROME)" --headless=new --disable-gpu --no-sandbox --no-first-run \
-	  --user-data-dir=$(PROFILE) --virtual-time-budget=12000 \
-	  --no-pdf-header-footer \
-	  --print-to-pdf="$(CURDIR)/dist/Budget-Primer-FY2026-27.pdf" \
-	  "file://$(CURDIR)/web/index.html"
-	rm -rf $(PROFILE)
+# `render`, not `html` — same reasoning as `pub`, and now load-bearing: `html`
+# drags in `data`, which parses the source PDFs and needs PyMuPDF. CI installs
+# pyyaml and nothing else, so a PDF build hanging off `html` would fail there
+# while recomputing figures that have not moved. The numbers are committed.
+pdf: render
+	python3 tools/build_pdf.py
+
+# The PDF the report's own "Download PDF" button hands to a phone.
+#
+# Kept OUT of `pub` on purpose: `pub` is what the editor's Save runs on every
+# keystroke-sized edit, and a Chrome render is ten seconds nobody wants in that
+# loop. CI runs this after `pub` instead (.github/workflows/build.yml), so the
+# published PDF tracks whatever is deployed without slowing the editor down.
+#
+# Why publish a file at all, when the button used to just call window.print():
+# iOS Safari lays a print job out at the phone's viewport, not at the paper, so
+# the 8.5x11in sheets and every inch-positioned element on them spilled out of
+# the print page box — the reader got mostly-blank sheets with fragments
+# scattered over them. A real PDF cannot be mangled by anyone's print engine.
+pdf-pub: pdf
+	cp dist/Budget-Primer-FY2026-27.pdf ../docs/primer/
 
 embed: html
 	python3 tools/bundle_embed.py $(ASSET_BASE)
@@ -58,4 +68,4 @@ preview: html
 live:
 	python3 tools/serve.py
 
-.PHONY: render editor pub live all validate data html pdf embed preview
+.PHONY: render editor pub live all validate data html pdf pdf-pub embed preview

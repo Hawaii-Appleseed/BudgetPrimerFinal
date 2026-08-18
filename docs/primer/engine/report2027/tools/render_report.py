@@ -1409,7 +1409,17 @@ html = f"""<!DOCTYPE html>
  <span>Hawaiʻi Budget Primer FY2026–27</span>
  <span class="tb-actions">
   <a class="tb-link" href="{TRACKER}" target="_blank" rel="noopener">Budget Tracker ↗</a>
-  <button onclick="window.print()">Download PDF</button>
+  <!-- Two controls, one of which is showing (primer.css, .tb-print/.tb-pdf).
+       On a desktop the button prints the live page, so a PDF always reflects
+       the newest edit. A phone gets the built file instead: iOS Safari lays a
+       print job out at the VIEWPORT width rather than the paper, so the fixed
+       8.5x11in sheets and every inch-positioned element spilled out of the
+       print page box and the reader got blank sheets with fragments strewn
+       over them. Relative href — the PDF is published beside this page by
+       `make -C report2027 pdf-pub`; bundle_embed.py rewrites it for the
+       Squarespace bundle, where nothing is relative to /primer/. -->
+  <button class="tb-print" onclick="window.print()">Download PDF</button>
+  <a class="tb-pdf" href="Budget-Primer-FY2026-27.pdf">Download PDF</a>
  </span>
 </div>
 {linkify_footnotes(body)}
