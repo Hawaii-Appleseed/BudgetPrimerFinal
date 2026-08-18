@@ -48,6 +48,11 @@ data/raw/*
 # Committed so scripts/process_county_budgets.py runs offline from a fresh
 # clone, mirroring the HB300 convention above.
 !data/raw/counties/
+# Council on Revenues archive, written by scripts/cor_monitor.py from CI. The
+# index and heartbeat ARE the monitor's state — if they aren't committed it has
+# no memory between runs and reports every document as new each week. Forecast
+# PDFs are ~200KB and arrive about five times a year.
+!data/raw/cor/
 data/processed/*
 !data/processed/budget_parsed*.csv
 !data/processed/budget_allocations*.csv
