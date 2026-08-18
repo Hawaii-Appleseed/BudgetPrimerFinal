@@ -427,29 +427,12 @@ svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: rou
   .cover-year { font-size: 32px; white-space: nowrap; }
   .endnotes { columns: 1; }
 
-  /* ---- placed elements go back into the flow -------------------------
-     layout.json places an element with INLINE position:absolute plus
-     left/top/width in SHEET INCHES. Those coordinates only mean anything
-     while .page is 8.5in wide; once it narrows to the viewport they point
-     off the right edge and land on top of whatever is flowing underneath —
-     and .page's overflow:hidden means the reader can neither scroll to the
-     runaway part nor see what it covered. Release every placed element,
-     whatever it is: this has to be generic, because each new one the user
-     drags in the editor would otherwise need its own rule here (that is how
-     .cover .logo-lockup and .lc below came to exist one at a time). The
-     positioning is inline, so every override needs !important. */
-  .page [style*="position:absolute"] {
-    position: static !important;
-    left: auto !important; right: auto !important;
-    top: auto !important; bottom: auto !important;
-    width: auto !important; max-width: 100% !important;
-    transform: none !important;
-    margin: 0 0 12px !important;
-  }
-  /* Each released element leaves its ds-spacer behind — the strut holding
-     the flow slot it vacated. Back in the flow it occupies that space for
-     real, so the strut is now dead space, and its own width is in inches. */
-  .page .ds-spacer { display: none !important; }
+  /* Releasing what the ENGINE pinned — every element layout.json placed, the
+     ds-spacer struts holding their vacated flow slots, images sized in
+     inches, and a table too wide to reflow — now ships from layout.py's
+     mobile_css(), so it reaches every report rather than being rediscovered
+     one stylesheet at a time. What is left below is this report's own: class
+     names the engine has no way to know about. */
 
   /* .copyright and .folio hang off the BOTTOM of the sheet (bottom:1in /
      .45in), which clears the text only while .page keeps its 11in
@@ -465,10 +448,6 @@ svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: rou
      so the wheel kept its 5.8in and ran off the edge. */
   .lifecycle-wrap { width: 100%; height: auto; }
   .lifecycle-wrap svg { width: 100%; max-width: 100%; height: auto; margin: 8px auto; }
-
-  /* A five-column money table can't reflow to 340px and shouldn't shrink
-     into unreadability — give it its own horizontal scroller instead. */
-  .page table { display: block; width: 100%; overflow-x: auto; }
 }
 
 @page { size: letter; margin: 0; }
