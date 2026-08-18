@@ -37,7 +37,7 @@ env:
   # an interactive browser login. Update this line whenever you regenerate the
   # token; the "token expiry" job below warns 30 days out so it never lapses
   # silently. Set to "unknown" to disable the warning.
-  TOKEN_ISSUED: "2026-08-17"
+  TOKEN_ISSUED: "2026-08-18"
 
 jobs:
   check:
