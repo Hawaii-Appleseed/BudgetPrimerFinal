@@ -474,7 +474,8 @@ moved_para = _content(_layout({"positions": {"para.a.b": {"x": 1, "y": 2, "w": 4
                                                           "reserve": 0.5}}}))
 check("a moved prose block travels in one positioned wrapper",
       moved_para.html("a.b"),
-      '<div style="margin:0;position:absolute;left:1in;top:2in;width:4in;z-index:1"><p>Text.</p></div>')
+      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;width:4in;z-index:1">'
+      '<p>Text.</p></div>')
 check("its vacated flow space stays held", moved_para.html("a.b"),
       '<div class="ds-spacer" style="width:4in;height:0.5in;flex:0 0 auto"')
 os.environ["DOCSYNC_EDIT"] = "1"
@@ -1670,6 +1671,76 @@ check_eq("style guide: figure caption == the template's",
 # must themselves agree — one reference style, not two near-misses.
 check_eq("template: page-3 and page-4 headlines share one style",
          _box["tpl-h3"]["style"], _box["tpl-h4"]["style"])
+
+# ---- placed elements are stamped ---------------------------------------
+# The mobile release keys off data-placed, and the stamp is an explicit opt-in
+# (see PLACED) rather than a match on the inline style, because the shape layer
+# is absolutely positioned and must NEVER be released — it is the page's
+# background, and in the flow it detaches from the page it belongs to. That
+# makes a forgotten stamp on some future emitter the one failure mode worth a
+# test: this renders one of everything this module pins and asserts that every
+# `position:absolute` it produced is either stamped or the shape layer.
+import re as _re                                             # noqa: E402
+
+_placed_all = _layout({
+    "page": {"w": 8.5, "h": 11},
+    "positions": {"el.a": {"x": 1, "y": 1, "w": 2, "reserve": 0.4}},
+    "boxes": [{"id": "b1", "page": 1, "x": 1, "y": 5, "w": 3, "md": "Note"},
+              {"id": "b2", "page": 1, "x": 1, "y": 7, "w": 3, "md": "PDF",
+               "act": "pdf"}],
+    "tables": [{"id": "t1", "page": 1, "x": 1, "y": 9, "w": 3,
+                "rows": [["a", "b"], ["c", "d"]], "header": True}],
+    "shapes": [{"id": "s1", "page": 1, "kind": "rect", "x": 1, "y": 1,
+                "w": 2, "h": 1, "fill": "#6B9E78", "z": "back"}],
+})
+_rendered = (_placed_all.layer(1) + _placed_all.attr("el.a")
+             + _placed_all.text_boxes(1) + _placed_all.tables_html(1))
+# Every tag carrying an inline position:absolute, paired with whether that same
+# tag also carries the stamp. A <style> block's rules are not tags and are not
+# matched — only real elements.
+_pinned = [(t, "data-placed" in t) for t in _re.findall(r"<[a-zA-Z][^>]*>", _rendered)
+           if "position:absolute" in t]
+check_eq("everything pinned by inch is rendered", len(_pinned) > 3, True)
+_unstamped = [t[:70] for t, ok in _pinned if not ok and "shape-layer" not in t]
+check_eq("every pinned element carries the mobile-release stamp", _unstamped, [])
+# The other half of the same contract, and the reason the stamp exists.
+_layers = [t[:70] for t, ok in _pinned if ok and "shape-layer" in t]
+check_eq("the shape layer is never stamped — it is the page's background",
+         _layers, [])
+
+# The release itself: emitted once, keyed to the sheet width, and absent from a
+# report that pinned nothing (this module's byte-for-byte promise).
+# A FRESH layout each time: the emitters are once-per-render, so reusing
+# _placed_all (already rendered above) would test a spent flag and pass for
+# the wrong reason.
+def _fresh():
+    return _layout({"page": {"w": 8.5, "h": 11},
+                    "positions": {"el.a": {"x": 1, "y": 1, "w": 2}}})
+
+
+check("the release rides out with the first layer()",
+      _fresh().layer(1), "@media screen and (max-width:8.5in)")
+check_eq("and once per render, not once per page",
+         (lambda L: L.layer(1).count("@media screen") + L.layer(2).count("@media screen"))(_fresh()),
+         1)
+# The other half of the release: style() positions an element for a renderer
+# and has nowhere to put a stamp, so an inline pin with no stamp must be caught
+# too — and the shape layer, which is exactly that shape, must not be.
+check("an element a renderer pinned itself is released as well",
+      _fresh().mobile_css(), '.page [style*="position:absolute"]:not(.shape-layer)')
+check("the breakpoint is the sheet, not a device width",
+      _layout({"page": {"w": 12.5, "h": None},
+               "positions": {"el.a": {"x": 1, "y": 1}}}).mobile_css(),
+      "max-width:12.5in")
+# The width a report was BUILT at counts as much as one File > Resize wrote.
+# Reading only the override gave a 12.5in web page (rxkids) the 8.5in default,
+# so its sheet stopped fitting at 1200px while the release waited for 816.
+_wide = Layout(Path(_tempfile.mkstemp(suffix=".json")[1]), page=(12.5, 84))
+_wide.positions = {"el.a": {"x": 1, "y": 1}}
+check("a report BUILT wide gets its own breakpoint, with no override written",
+      _wide.mobile_css(), "max-width:12.5in")
+check_eq("a report that pinned nothing emits no release",
+         _layout({"page": {"w": 8.5, "h": 11}}).layer(1).count("@media screen"), 0)
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))

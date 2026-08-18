@@ -44,6 +44,18 @@ PAGE_W_IN, PAGE_H_IN = 8.5, 11.0
 # caller.
 PAGELESS_H = 200.0
 
+# Stamped on everything this module takes out of the flow and pins by inch —
+# placed designed elements, boxes, buttons, tables. It is what mobile_css()
+# releases on a screen too narrow to hold the sheet, and it has to be an
+# explicit opt-in rather than a match on the inline style, because ONE
+# absolutely positioned thing here must never be released: the shape layer,
+# which is the page's background and detaches from the page the moment it
+# joins the flow. Forgetting the stamp on something new leaves it pinned on a
+# phone — visible, and caught by test_docsync's placed-elements-are-stamped
+# check. Guessing from the style attribute instead would silently unpin a
+# background, which is neither.
+PLACED = " data-placed"
+
 # A hidden element is GONE in the editor too, exactly as it is on the published
 # page. It was first drawn as a translucent dashed ghost that kept its box, so
 # the deletion would be visibly reversible — but a half-faded element reads as a
@@ -1374,6 +1386,7 @@ class Layout:
             self.page_w = self.page[0]
             self.page_h = self.page[1] if self.page[1] is not None else PAGELESS_H
         self._page_style_sent = False
+        self._mobile_css_sent = False
         self.positions = raw.get("positions") or {}
         self.shapes = raw.get("shapes") or []
         self.text = raw.get("text") or {}
@@ -1903,6 +1916,8 @@ class Layout:
                 bits.append('data-hidden="1"')
         p = self.positions.get(el_id)
         css = self._style(p) if p else ""
+        if p:
+            bits.append(PLACED.strip())
         # The hide css goes LAST: `extra` routinely carries its own display
         # (graphic() passes display:inline-block), and the later declaration
         # in an inline style is the one that wins. In edit mode a hidden
@@ -2364,7 +2379,7 @@ class Layout:
                 body = (self._fn.endnotes_html(self)
                         if self._fn is not None and self._fn.settled
                         else Footnotes.MOUNT if self._fn is not None else "")
-                out.append(f'<div class="ds-textbox ds-endnotes-sec"{tag}{an} '
+                out.append(f'<div class="ds-textbox ds-endnotes-sec"{tag}{an}{PLACED} '
                            f'style="{full}">'
                            f'{block_html(b["md"])}{body}</div>')
                 continue
@@ -2386,7 +2401,7 @@ class Layout:
                 # once at render time rather than by JS on every click.
                 full_btn = f'{full};--ds-tgl-d:{spd:g}s'
                 out.append(
-                    f'<button type="button" class="ds-actbtn ds-tglbtn"{an} '
+                    f'<button type="button" class="ds-actbtn ds-tglbtn"{an}{PLACED} '
                     f'onclick="__dsTgl(this,[{arr}],{spd:g})" '
                     f'aria-expanded="false" aria-controls="{controls}" '
                     f'style="{full_btn};display:block;border:0;'
@@ -2402,7 +2417,7 @@ class Layout:
                 # is the box's own markdown, collapsed to one line: a button
                 # is a label, not a column of paragraphs.
                 out.append(
-                    f'<button type="button" class="ds-actbtn noprint"{an} '
+                    f'<button type="button" class="ds-actbtn noprint"{an}{PLACED} '
                     f'onclick="window.print()" '
                     f'title="Opens your browser\'s print dialog — choose '
                     f'Save as PDF" '
@@ -2428,7 +2443,7 @@ class Layout:
             # to recolour it. Shut-side (pointing down), because that is the
             # state a reader meets the button in.
             arrow = self.tgl_arrow(b["id"], edit) if act == "toggle" else ""
-            out.append(f'<div class="{klass}"{extra}{tag}{an} '
+            out.append(f'<div class="{klass}"{extra}{tag}{an}{PLACED} '
                        f'style="{tglFull}">'
                        f'{block_html(b["md"])}{arrow}</div>')
         return "".join(out)
@@ -2541,7 +2556,7 @@ class Layout:
                 klass += " ds-tglable"
                 extra = f' id="ds-x-{t["id"]}"'
                 tglSty = f';--ds-tgl-d:{self.toggle_speed.get(t["id"], 0.3):g}s'
-            out.append(f'<table class="{klass}"{extra}{tag}'
+            out.append(f'<table class="{klass}"{extra}{tag}{PLACED}'
                        f'{anim_attrs(t.get("anim"))} '
                        f'style="{css}{";" + style if style else ""}{tglSty}">'
                        f'{colgroup}{body}</table>')
@@ -2585,12 +2600,99 @@ class Layout:
         self._page_style_sent = True
         return self.page_style()
 
+    def mobile_css(self) -> str:
+        """Put everything this module pinned by inch back into the flow, on a
+        screen too narrow to hold the sheet.
+
+        A placed element's left/top/width are inches measured from the corner
+        of a sheet. `.page` keeps `max-width:100%`, so on a phone the sheet
+        narrows but those inches do not — the element stays where an 8.5in page
+        would have put it, which is off the right-hand edge and on top of
+        whatever is flowing underneath. `.page` is `overflow:hidden` by
+        convention, so the reader can neither scroll to the part that ran off
+        nor see what it landed on. Releasing the pin is the only thing that
+        reads: the document becomes one column in DOM order.
+
+        The breakpoint is the SHEET, not a device width — below it the page can
+        no longer show the design at the size it was composed at, which is the
+        actual condition, and it is right for a 12.5in web page as well as a
+        letter one.
+
+        Three things must ride along. `.ds-spacer` struts hold the flow slot a
+        placed element vacated; back in the flow it occupies that space for
+        real, so the strut is now a second copy of it. Page furniture that a
+        report's own CSS hangs off the bottom of the sheet (a folio, a
+        copyright line) lands in the middle of the text once `.page` collapses
+        to its content — the engine cannot know those class names, so it
+        releases what it can reach and the report's stylesheet handles the
+        rest. And a table wide enough to need it gets its own scroller, rather
+        than being clipped by the page or shrunk into unreadability.
+
+        Emitted like page_style(): a <style> in the body, riding out with the
+        first layer(). Note this is a width-conditional @media, so
+        edit.html's exportHtml() resolves it away at VIEW_W — correct, and the
+        reason it is safe to add: a frozen Squarespace fragment is not
+        responsive and must not carry a phone rule into someone else's page.
+        """
+        # page_w, NOT self.page: the latter is only layout.json's override, so
+        # reading it gave rxkids — a 12.5in web page that never used File >
+        # Resize — the 8.5in default, and a phone-sized breakpoint on a sheet
+        # that stops fitting at 1200px. page_w is the width the report is
+        # actually drawn at, whether that came from the renderer or the
+        # override, and it is what print_css() measures too.
+        return (
+            f"<style>@media screen and (max-width:{float(self.page_w):g}in){{"
+            # Two selectors, because there are two ways to get pinned. PLACED
+            # stamps what this module emits itself. But style() exists for
+            # elements a RENDERER positions — it returns a css string with
+            # nowhere to hang an attribute, so a dragged lifecycle callout is
+            # pinned by an inline style carrying no stamp. Matching the style
+            # too is what makes the release complete rather than nearly
+            # complete, and .shape-layer is the one thing it must not reach:
+            # that svg IS the page's background, and in the flow it detaches
+            # from the page it paints.
+            # !important throughout — inline styles outrank class rules.
+            "[data-placed],.page [style*=\"position:absolute\"]:not(.shape-layer)"
+            "{position:static !important;"
+            "left:auto !important;right:auto !important;"
+            "top:auto !important;bottom:auto !important;"
+            "width:auto !important;max-width:100% !important;"
+            "transform:none !important;margin:0 0 12px !important}"
+            ".ds-spacer{display:none !important}"
+            # Images are this module's business too — Insert image places them
+            # and attr() sizes them in inches — and an inch-wide picture is
+            # wider than the phone it is now being read on. Releasing the
+            # wrapper is not enough on its own: the picture inside it keeps
+            # whatever width it was given.
+            ".page img{max-width:100% !important;height:auto}"
+            # max-width, not width: a narrow table keeps its natural size and
+            # only one that genuinely overflows starts scrolling.
+            ".page table{display:block;max-width:100%;overflow-x:auto}"
+            "}</style>")
+
+    def _mobile_css_once(self) -> str:
+        """Rides out with the first layer(), like _page_style_once() and for
+        the same reason.
+
+        NOT conditional on an explicit page size, the way _page_style_once()
+        is: a report that never set one still places elements by inch against
+        the 8.5in default and has exactly the same problem. It IS conditional
+        on something actually being pinned, which keeps this module's promise
+        that with no overrides the published HTML is byte-for-byte what it
+        always was — a report that placed nothing has nothing to release."""
+        if self._mobile_css_sent:
+            return ""
+        if not (self.positions or self.boxes or self.tables):
+            return ""
+        self._mobile_css_sent = True
+        return self.mobile_css()
+
     def layer(self, page: int) -> str:
         """Shapes for one page, grouped into one SVG per layer. Empty when there
         are none, so a report without shapes renders exactly as before — except
         for the page-size override, which has to reach the document even on a
         page that holds no shapes."""
-        head = self._page_style_once()
+        head = self._mobile_css_once() + self._page_style_once()
         mine = [s for s in self.shapes if s.get("page") == page]
         if not mine:
             return head
