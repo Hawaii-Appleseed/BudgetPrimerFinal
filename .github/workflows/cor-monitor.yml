@@ -107,9 +107,16 @@ jobs:
             Write only that one file. Do not commit; a later step handles that.
 
       - name: Commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name  "cor-monitor[bot]"
           git config user.email "cor-monitor@users.noreply.github.com"
+          # The claude-code-action step above swaps in its own GitHub App
+          # installation token for the duration of its run and revokes it
+          # afterward, which leaves origin's credentials pointing at a dead
+          # token. Re-point at the standard Actions token before pushing.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git add -A data/raw/cor
           if git diff --cached --quiet; then
             echo "nothing to commit"
