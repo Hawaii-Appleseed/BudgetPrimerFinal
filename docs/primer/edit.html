@@ -262,6 +262,17 @@
   #cupd { background:#4E7C94; color:#fff; border:0; border-radius:99px;
           font:600 11.5px system-ui; padding:4px 11px; cursor:pointer; flex:none; }
   #cupd:hover { filter:brightness(1.12); }
+  /* An automated editor changed this report. Distinct from #upd and #cupd:
+     those OFFER something, this REPORTS something that already happened, so
+     it reads as a notice rather than a button to press. */
+  /* Two ids, deliberately: "#bar > button" below is (id + type) and outranks
+     a bare "#agentnote", which is why this chip first rendered as ordinary
+     chrome instead of a notice. Same trap the popover comment describes. */
+  #bar > #agentnote { background:#6B5CA5; color:#fff; border:1px solid #7D6DBA;
+               border-radius:99px; padding:5px 13px; font:600 12px system-ui;
+               cursor:pointer; max-width:22rem; overflow:hidden;
+               text-overflow:ellipsis; white-space:nowrap; }
+  #bar > #agentnote:hover { background:#7A6AB6; border-color:#9A8CD0; }
   #cupd[disabled] { opacity:.6; cursor:default; }
   #upd[disabled] { opacity:.6; cursor:default; }
   /* A caution, not an offer — amber rather than #upd/#cupd's inviting sage/
@@ -1288,6 +1299,10 @@
        editor being out of date (#upd). Hidden unless there is something to
        take, so its presence is the alert. -->
   <button id="cupd" hidden aria-label="Bring in newer report content from GitHub"></button>
+  <!-- An agent wrote this report's files directly, so nothing here is dirty
+       and Save is correctly greyed out — which means without this the work
+       would simply appear with no way to tell who did it or undo it. -->
+  <button id="agentnote" hidden aria-label="An automated editor changed this report"></button>
   <span class="bar-sep"></span>
   <!-- Kept, but only shown when it says something the picker does not: which
        DRAFT branch you are on. detectLocal() hides it for the live local
@@ -11260,6 +11275,42 @@ $('cupd').addEventListener('click', async () => {
 // background poll has looked.
 let pushHealth = {};
 
+/** The "an agent changed this" chip. `a` is the live stream's agent field,
+ *  or nothing when the newest change has been rewound or acknowledged. */
+let agentNow = null;
+function setAgentNote(a) {
+  // undefined means this payload did not speak about agent changes at all
+  // (several callers share this handler); null means there is none.
+  if (a === undefined) return;
+  agentNow = a || null;
+  const b = $('agentnote');
+  if (!a) { b.hidden = true; return; }
+  b.hidden = false;
+  b.textContent = a.by + ' edited this';
+  b.title = a.summary + ' — click to rewind or dismiss';
+}
+
+async function agentNoteClick() {
+  const a = agentNow;
+  if (!a) return;
+  const keep = await dsConfirm(
+    a.by + ' changed this report:\n\n' + a.summary
+    + '\n\nRewind the report to how it was before that change?',
+    { okLabel: 'Rewind it', cancelLabel: 'Keep the change', danger: true });
+  const r = await fetch(keep ? '/__agent/undo' : '/__agent/seen', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project: PROJECT }),
+  }).then(x => x.json()).catch(e => ({ ok: false, error: String(e) }));
+  if (!r.ok) { await dsAlert('Could not do that: ' + (r.error || 'unknown')); return; }
+  setAgentNote(null);
+  if (keep) {
+    // The files on disk moved under the draft in memory, so the only honest
+    // thing to show is what is now on disk.
+    $('stat').textContent = r.message || 'rewound';
+    location.reload();
+  }
+}
+
 function setPushState(ahead) {
   if (typeof ahead !== 'number') return;
   const b = $('push');
@@ -11363,7 +11414,7 @@ async function detectLocal() {
     if (await pullFromDisk()) liveVer = v;
   };
   window.__onBump = onBump;            // test hook, like window.__fileSig
-  startLive(d => { pushHealth = d.push || {}; setPushState(d.ahead); watchHealth(d); serverHealth(d); updateHealth(d);
+  startLive(d => { pushHealth = d.push || {}; setPushState(d.ahead); setAgentNote(d.agent); watchHealth(d); serverHealth(d); updateHealth(d);
                    contentHealth(d); onBump(d.v, d.error); });
   $('upd').onclick = installUpdate;
   $('ver').onclick = goBackAVersion;
@@ -14188,6 +14239,7 @@ $('save').onclick = async () => {
 // last Push) to GitHub. Independent of Save's own dirty state on purpose —
 // several local Saves can pile up with nothing currently unsaved in the
 // editor, and this is what sends all of them at once.
+$('agentnote').onclick = agentNoteClick;
 $('push').onclick = async () => {
   $('push').disabled = true;
   $('stat').textContent = 'pushing…';

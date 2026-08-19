@@ -1025,6 +1025,16 @@ class Handler(SimpleHTTPRequestHandler):
         # is missing is still in the user's list, and adopting that slug must
         # still be refused as a duplicate), and every served project appears
         # even if the disk file forgot it.
+        if clean == "/__agent/log":
+            pid = (parse_qs(urlparse(self.path).query).get("project") or
+                   [DEFAULT_PROJECT])[0]
+            if pid not in PROJECTS:
+                return self._json(404, {"ok": False,
+                                        "error": f"unknown project '{pid}'"})
+            root = PROJECTS[pid]["root"]
+            return self._json(200, {"ok": True, "project": pid,
+                                    "events": [e for e in _agent_log_read(root)
+                                               if e.get("project") == pid]})
         if clean.endswith("/projects.json"):
             registry = _default_registry()
             disk = DOCS / clean.lstrip("/")
@@ -1350,6 +1360,16 @@ class Handler(SimpleHTTPRequestHandler):
                 # tab can make, and an atomic pop, so exactly one gets them.
                 with st.cond:
                     payload["pilotWaiting"] = len(st.pilot_pending)
+                # Who last changed this report, if it was not the person
+                # sitting here. Rides the heartbeat so the notice appears
+                # without the editor polling for it.
+                _ev = _agent_pending(root, pid)
+                # ALWAYS present, null when there is nothing to say: the
+                # editor has other callers for this handler, and a missing
+                # key must mean "no news", not "clear the notice".
+                payload["agent"] = ({k: _ev.get(k) for k in
+                                     ("id", "by", "summary", "at", "base")}
+                                    if _ev else None)
                 self.wfile.write(f"data: {json.dumps(payload)}\n\n".encode())
                 self.wfile.flush()
                 seen = v
@@ -1374,6 +1394,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "/__update", "/__rollback", "/__window", "/__quit",
                         "/__scaffold", "/__adopt", "/__connect", "/__pull",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
+                        "/__agent/change", "/__agent/undo", "/__agent/seen",
                         "/__oauth/device/code", "/__oauth/device/token",
                         "/__oauth/save"):
             return self._json(404, {"ok": False, "error": "unknown endpoint"})
@@ -1465,6 +1486,8 @@ class Handler(SimpleHTTPRequestHandler):
         pid = req.get("project") or DEFAULT_PROJECT
         if pid not in PROJECTS:
             return self._json(200, {"ok": False, "error": f"unknown project '{pid}'"})
+        if path in ("/__agent/change", "/__agent/undo", "/__agent/seen"):
+            return self._agent(path, pid, req)
         if path == "/__upload":
             try:
                 return self._json(200, {"ok": True, **self._upload(pid, req)})
@@ -1489,6 +1512,86 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"ok": False, "error": txt,
                                      "project": pid,
                                      "ahead": _ahead(PROJECTS[pid]["root"])})
+
+    # ---- agent provenance: announce, rewind, dismiss ----------------------
+    def _agent(self, path: str, pid: str, req) -> None:
+        root = PROJECTS[pid]["root"]
+        b = PROJECTS[pid]["binding"]
+        events = _agent_log_read(root)
+        now = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+        if path == "/__agent/change":
+            # `base` is the commit the report was on BEFORE the agent worked;
+            # it is what Undo restores to. Announcing before editing gets the
+            # right answer for free, which is why HEAD is the default.
+            try:
+                base = (str(req.get("base") or "").strip()
+                        or _git(root, "rev-parse", "HEAD").strip())
+            except RuntimeError as e:
+                return self._json(200, {"ok": False, "error": str(e)[:300]})
+            ev = {"id": f"a{int(time.time() * 1000)}", "kind": "change",
+                  "project": pid, "by": str(req.get("by") or "Claude")[:40],
+                  "summary": str(req.get("summary") or "changed this report")[:300],
+                  "at": now, "base": base, "undone": False, "dismissed": False}
+            events.append(ev)
+            _agent_log_write(root, events)
+            with STATE[pid].cond:
+                STATE[pid].cond.notify_all()   # surface it in open editors now
+            return self._json(200, {"ok": True, "id": ev["id"], "base": base})
+
+        # Both of the remaining verbs act on the newest un-undone change.
+        target = next((e for e in reversed(events)
+                       if e.get("project") == pid and e.get("kind") == "change"
+                       and not e.get("undone") and not e.get("dismissed")), None)
+        if target is None:
+            return self._json(200, {"ok": False,
+                                    "error": "no agent change to act on"})
+
+        if path == "/__agent/seen":
+            target["dismissed"] = True
+            _agent_log_write(root, events)
+            with STATE[pid].cond:
+                STATE[pid].cond.notify_all()
+            return self._json(200, {"ok": True})
+
+        # ---- rewind ------------------------------------------------------
+        # Restore exactly the files this report owns, from the commit the
+        # agent started at. Path-scoped, like Save: nothing else in the
+        # checkout moves, whatever else happens to be dirty.
+        paths = [str(b.content.relative_to(root))]
+        if b.editor and b.editor.layout:
+            paths.append(str(b.editor.layout.relative_to(root)))
+        if b.editor and b.editor.render and b.editor.render.exists():
+            paths.append(str(b.editor.render.relative_to(root)))
+        paths = [r for r in paths if subprocess.run(
+            ["git", "-C", str(root), "cat-file", "-e", f"{target['base']}:{r}"],
+            capture_output=True).returncode == 0]
+        if not paths:
+            return self._json(200, {"ok": False, "error":
+                "nothing to rewind to — the report's files did not exist at "
+                f"{target['base'][:8]}"})
+        try:
+            _git(root, "checkout", target["base"], "--", *paths)
+        except RuntimeError as e:
+            return self._json(200, {"ok": False, "error": str(e)[:400]})
+        rebuild(pid, "agent-undo")
+        if STATE[pid].error:
+            return self._json(200, {"ok": False, "error":
+                "the rewound files do not build:\n" + STATE[pid].error})
+        if subprocess.run(["git", "-C", str(root), "diff", "--quiet", "HEAD",
+                           "--", *paths]).returncode != 0:
+            _git(root, "commit", "-m",
+                 f"{pid}: rewind {target['by']}'s change", "--", *paths)
+        target["undone"] = True
+        events.append({"id": f"a{int(time.time() * 1000)}", "kind": "rewind",
+                       "project": pid, "by": "the person at the editor",
+                       "summary": f"rewound {target['by']}'s change: "
+                                  f"{target['summary']}",
+                       "at": now, "base": target["base"], "of": target["id"]})
+        _agent_log_write(root, events)
+        return self._json(200, {"ok": True, "v": STATE[pid].version,
+                                "ahead": _ahead(root),
+                                "message": f"rewound {target['by']}'s change"})
 
     def _pull_content(self, req):
         """Fast-forward a report's own repo to what is on GitHub, then rebuild
@@ -2444,6 +2547,45 @@ def _write_atomic(path: Path, text: str) -> None:
             tmp.unlink()
         except OSError:
             pass
+
+
+# ---- agent provenance ------------------------------------------------------
+# Who changed this report, and can it be put back? An automated editor (a
+# Claude session, a script) writes the project's files directly, so from the
+# editor's point of view the work simply appears — no draft, nothing dirty,
+# nothing to Save. The person deserves to be told, to be able to undo it, and
+# the agent deserves to find out when they did. All three hang off one journal
+# on disk, so it survives a server restart and an agent can read it without
+# holding a socket open.
+AGENT_LOG_NAME = ".docsync-agent-log.json"
+
+
+def _agent_log_path(root: Path) -> Path:
+    return root / AGENT_LOG_NAME
+
+
+def _agent_log_read(root: Path) -> list:
+    try:
+        p = _agent_log_path(root)
+        return json.loads(p.read_text()) if p.is_file() else []
+    except (json.JSONDecodeError, OSError):
+        return []                       # a corrupt journal must never wedge a save
+
+
+def _agent_log_write(root: Path, events: list) -> None:
+    # Capped: this is a notice board, not an audit trail.
+    _write_atomic(_agent_log_path(root), json.dumps(events[-200:], indent=1) + "\n")
+
+
+def _agent_pending(root: Path, pid: str):
+    """The most recent agent change to this report that has not been undone
+    and that the person has not dismissed — i.e. what the editor should say."""
+    for e in reversed(_agent_log_read(root)):
+        if e.get("project") == pid and e.get("kind") == "change":
+            if e.get("undone") or e.get("dismissed"):
+                return None
+            return e
+    return None
 
 
 def _git(root: Path, *args, timeout=45):

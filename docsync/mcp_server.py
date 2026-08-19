@@ -201,6 +201,30 @@ def t_pilot(args: dict) -> dict:
     return r.get("result", {"ok": False, "error": "the editor returned nothing"})
 
 
+def t_announce_change(args: dict) -> dict:
+    """Tell the editor (and the person at it) that you changed this report.
+
+    Call this BEFORE editing: `base` defaults to the report's current commit,
+    which is exactly what Undo restores to. Writing a report's files directly
+    leaves nothing dirty in the editor, so without this the work simply
+    appears with no author and no way back.
+    """
+    return _post("/__agent/change", {
+        "project": args["project"],
+        "summary": args.get("summary", "changed this report"),
+        "by": args.get("by", "Claude"),
+        "base": args.get("base", ""),
+    })
+
+
+def t_agent_log(args: dict) -> dict:
+    """What automated changes were announced on this report — and which ones
+    the person REWOUND. Check this before trusting your own last edit: a
+    'rewind' event means your change was undone and the files are back to the
+    commit named in `base`."""
+    return _get("/__agent/log", {"project": args["project"]})
+
+
 TOOLS = [
     {"name": "list_reports", "fn": t_list_reports,
      "description": "List every report the running docsync editor serves.",
@@ -244,6 +268,23 @@ TOOLS = [
      "description": "Sources nothing cites — these block publishing.",
      "inputSchema": {"type": "object", "required": ["project"], "properties": {
          "project": {"type": "string"}}}},
+    {"name": "announce_change", "fn": t_announce_change,
+     "description": "Announce that you (an AI or a script) are about to change "
+                    "a report's files directly. Shows a notice in the open "
+                    "editor and gives the person a one-click rewind. Call it "
+                    "BEFORE editing so the recorded base commit is the state "
+                    "to restore to.",
+     "inputSchema": {"type": "object", "required": ["project"], "properties": {
+         "project": {"type": "string", "description": "report id"},
+         "summary": {"type": "string", "description": "one line, shown to the person"},
+         "by": {"type": "string", "description": "who is editing; defaults to Claude"},
+         "base": {"type": "string", "description": "commit to rewind to; defaults to HEAD now"}}}},
+    {"name": "agent_log", "fn": t_agent_log,
+     "description": "Announced changes and rewinds for a report. A 'rewind' "
+                    "event means the person undid an automated change — read "
+                    "this before assuming your last edit is still in place.",
+     "inputSchema": {"type": "object", "required": ["project"], "properties": {
+         "project": {"type": "string", "description": "report id"}}}},
     {"name": "pilot", "fn": t_pilot,
      "description": "CHANGE a report: run one window.docsync.api verb in the open "
                     "editor. Verbs: inventory, status, audit, getSlot, setSlot, "
