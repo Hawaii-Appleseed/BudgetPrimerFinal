@@ -23,6 +23,8 @@ from docsync.content import paragraph                     # noqa: E402
 from docsync.fragment import extract, inject, to_html     # noqa: E402
 from docsync.normalise import leading_comment, normalise  # noqa: E402
 from docsync.state import State, content_hash            # noqa: E402
+from docsync.check import (check_citations,             # noqa: E402
+                           check_markdown, check_svg_bounds)
 
 FAILS = []
 
@@ -1741,6 +1743,95 @@ check("a report BUILT wide gets its own breakpoint, with no override written",
       _wide.mobile_css(), "max-width:12.5in")
 check_eq("a report that pinned nothing emits no release",
          _layout({"page": {"w": 8.5, "h": 11}}).layer(1).count("@media screen"), 0)
+
+
+# ------------------------------------------------------------ docsync.check
+
+# These guard the invariants two finished one-pagers each broke: an `endnotes`
+# string built and never interpolated, so numbered markers rendered pointing at
+# nothing. Each case below is the real defect, reduced. Every one was confirmed
+# to FAIL against the pre-fix output before being trusted here.
+
+def _errs(fn, html):
+    return [str(p) for p in fn(html) if p.is_error]
+
+
+def _warns(fn, html):
+    return [str(p) for p in fn(html) if not p.is_error]
+
+
+# -- citations
+check("a marker with no anchor anywhere is an error",
+      "\n".join(_errs(check_citations, '<p>x<sup><a href="#en1">1</a></sup></p>')),
+      'no id="en1"')
+check_eq("a marker whose anchor exists is clean",
+         _errs(check_citations,
+               '<p>x<sup><a href="#en1">1</a></sup></p><li id="en1">S</li>'),
+         [])
+check("a link to a missing anchor is an error",
+      "\n".join(_errs(check_citations,
+                      '<li id="en1">S</li><a href="#en9">9</a>'
+                      '<sup><a href="#en1">1</a></sup>')),
+      "#en9, which does not exist")
+# The weaker half: it resolves in print, so it must not fail a build.
+check("a bare, unlinked marker warns rather than failing",
+      "\n".join(_warns(check_citations, '<sup>1</sup><li id="en1">S</li>')),
+      "bare numeral")
+check_eq("...and is not an error",
+         _errs(check_citations, '<sup>1</sup><li id="en1">S</li>'), [])
+# A superscript that is not a footnote marker belongs to the prose.
+check_eq("an ordinal superscript is left alone",
+         check_citations("<p>1<sup>st</sup> reading</p>"), [])
+
+# -- unrendered markdown (C.t where C.html was needed)
+check("bold that never became <b> is caught",
+      "\n".join(_errs(check_markdown, "<p>**Method.** Census PUMS</p>")),
+      "unrendered bold")
+check_eq("rendered bold is clean",
+         _errs(check_markdown, "<p><b>Method.</b> Census PUMS</p>"), [])
+# The NUL-for-tag substitution exists for exactly this: two emphasis runs in a
+# row must not be read as one bold span across the element boundary.
+check_eq("asterisks in adjacent elements do not join",
+         _errs(check_markdown, "<p><i>*</i><i>* not bold *</i><i>*</i></p>"), [])
+check_eq("a url in an attribute is not a markdown link",
+         _errs(check_markdown, '<a href="https://x.test/[a](b)">text</a>'), [])
+check("an unresolved footnote ref is caught",
+      "\n".join(_errs(check_markdown, "<p>see[^model]</p>")), "footnote ref")
+check_eq("markdown inside <code> is a sample, not a defect",
+         _errs(check_markdown, "<code>**bold**</code>"), [])
+
+# -- svg bounds
+_CLIP = ('<svg viewBox="0 0 100 54"><text y="54" font-size="11.5">'
+         'Only the left-hand pool is reachable with federal dollars.'
+         '</text></svg>')
+check("a baseline whose descenders fall off the canvas is caught",
+      "\n".join(_errs(check_svg_bounds, _CLIP)), "descenders are clipped")
+# Without a descending glyph the same baseline is genuinely fine — faulting it
+# would make the check cry wolf on every caption sitting on the last line.
+check_eq("the same baseline with no descender is clean",
+         _errs(check_svg_bounds,
+               '<svg viewBox="0 0 100 54"><text y="54" font-size="11.5">'
+               'months after birth</text></svg>'), [])
+check("a rect past the canvas is caught",
+      "\n".join(_errs(check_svg_bounds,
+                      '<svg viewBox="0 0 100 54"><rect y="50" height="10"/></svg>')),
+      "past the")
+# The regression that made this check unusable at first: a naive non-greedy
+# match paired the OUTER svg's viewBox with an inner icon's coordinates, so the
+# editor's page-sized shape layer reported every 24-unit icon as overflowing.
+check_eq("a nested svg does not report its coordinates against the outer box",
+         check_svg_bounds(
+             '<svg viewBox="0 0 8.5 11"><rect y="1" height="1"/>'
+             '<svg x="1" y="2" viewBox="0 0 24 24" overflow="visible">'
+             '<rect y="4" height="16"/></svg></svg>'),
+         [])
+check_eq("content the editor positions by hand is not policed",
+         check_svg_bounds('<svg class="shape-layer" viewBox="0 0 8.5 11">'
+                          '<rect y="10" height="4"/></svg>'), [])
+check_eq("a transformed svg is skipped rather than guessed at",
+         check_svg_bounds('<svg viewBox="0 0 100 54"><g transform="translate(0,-20)">'
+                          '<rect y="50" height="20"/></g></svg>'), [])
+
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
