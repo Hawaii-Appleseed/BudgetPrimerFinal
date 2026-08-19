@@ -11286,7 +11286,9 @@ function setAgentNote(a) {
   const b = $('agentnote');
   if (!a) { b.hidden = true; return; }
   b.hidden = false;
-  b.textContent = a.by + ' edited this';
+  // The server names the chip: an announced change says who, an unannounced
+  // one can only say that it happened outside the editor.
+  b.textContent = a.label || (a.by + ' edited this');
   b.title = a.summary + ' — click to rewind or dismiss';
 }
 
@@ -11294,7 +11296,7 @@ async function agentNoteClick() {
   const a = agentNow;
   if (!a) return;
   const keep = await dsConfirm(
-    a.by + ' changed this report:\n\n' + a.summary
+    (a.label || a.by) + ':\n\n' + a.summary
     + '\n\nRewind the report to how it was before that change?',
     { okLabel: 'Rewind it', cancelLabel: 'Keep the change', danger: true });
   const r = await fetch(keep ? '/__agent/undo' : '/__agent/seen', {

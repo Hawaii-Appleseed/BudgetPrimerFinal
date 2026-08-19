@@ -283,6 +283,12 @@ class ProjectState:
         self.version = 0
         self.error = None
         self.mtimes: dict[str, float] = {}
+        # The commit this report was on at the last settled build. An agent
+        # that edits without announcing gives us no base to restore to, and by
+        # the time the watcher notices, the change (and maybe its commit) is
+        # already on disk — so the pre-change commit has to be remembered as
+        # we go rather than discovered afterwards.
+        self.head: str | None = None
         self.lock = threading.Lock()
         self.cond = threading.Condition()
         # ---- pilot relay (see _pilot). All THREE fields live under self.cond,
@@ -830,6 +836,7 @@ def watcher():
             if pid not in patterns:
                 patterns[pid] = _watch_patterns(p["root"], p["binding"])
                 STATE[pid].mtimes = _snapshot(patterns[pid])
+        STATE[pid].head = _agent_head(PROJECTS[pid]["root"])
         for pid in list(PROJECTS):
             # One bad pass must never end the loop. An exception here used to
             # kill the thread outright and take live-reload with it for the
@@ -865,7 +872,16 @@ def watcher():
                     settling[pid] = now
                     continue
                 settling.pop(pid, None)
+                # Which paths actually moved, and where the report was before
+                # they did — both are gone once rebuild() re-baselines.
+                _before = STATE[pid].mtimes
+                _changed = [k for k in set(now) | set(_before)
+                            if now.get(k) != _before.get(k)]
+                _prev_head = STATE[pid].head
                 rebuild(pid, "watch")
+                STATE[pid].head = _agent_head(PROJECTS[pid]["root"])
+                if not STATE[pid].error:
+                    _agent_flag_unannounced(pid, _changed, _prev_head or "")
             except Exception as e:
                 # Re-baseline so the same change does not re-fire every 0.4s.
                 settling.pop(pid, None)
@@ -1367,8 +1383,10 @@ class Handler(SimpleHTTPRequestHandler):
                 # ALWAYS present, null when there is nothing to say: the
                 # editor has other callers for this handler, and a missing
                 # key must mean "no news", not "clear the notice".
-                payload["agent"] = ({k: _ev.get(k) for k in
-                                     ("id", "by", "summary", "at", "base")}
+                payload["agent"] = ({**{k: _ev.get(k) for k in
+                                        ("id", "by", "summary", "at", "base")},
+                                     "label": _ev.get("label")
+                                     or f"{_ev.get('by')} edited this"}
                                     if _ev else None)
                 self.wfile.write(f"data: {json.dumps(payload)}\n\n".encode())
                 self.wfile.flush()
@@ -1529,8 +1547,10 @@ class Handler(SimpleHTTPRequestHandler):
                         or _git(root, "rev-parse", "HEAD").strip())
             except RuntimeError as e:
                 return self._json(200, {"ok": False, "error": str(e)[:300]})
+            by = str(req.get("by") or "Claude")[:40]
             ev = {"id": f"a{int(time.time() * 1000)}", "kind": "change",
-                  "project": pid, "by": str(req.get("by") or "Claude")[:40],
+                  "announced": True, "label": f"{by} edited this",
+                  "project": pid, "by": by,
                   "summary": str(req.get("summary") or "changed this report")[:300],
                   "at": now, "base": base, "undone": False, "dismissed": False}
             events.append(ev)
@@ -1591,7 +1611,7 @@ class Handler(SimpleHTTPRequestHandler):
         _agent_log_write(root, events)
         return self._json(200, {"ok": True, "v": STATE[pid].version,
                                 "ahead": _ahead(root),
-                                "message": f"rewound {target['by']}'s change"})
+                                "message": "rewound to before that change"})
 
     def _pull_content(self, req):
         """Fast-forward a report's own repo to what is on GitHub, then rebuild
@@ -2586,6 +2606,61 @@ def _agent_pending(root: Path, pid: str):
                 return None
             return e
     return None
+
+
+def _agent_head(root: Path) -> str:
+    try:
+        return _git(root, "rev-parse", "HEAD").strip()
+    except Exception:                    # noqa: BLE001 — no repo, no base
+        return ""
+
+
+def _unannounced_summary(files: list[str]) -> str:
+    return (", ".join(files) + " changed on disk, not through the editor")
+
+
+def _agent_flag_unannounced(pid: str, changed: list, prev_head: str) -> None:
+    """A report's own source files moved on disk and nobody said so.
+
+    Only the report's OWN sources count: the watcher also follows engine code
+    and asset globs, and an edit to docsync/*.py is not somebody rewriting
+    this report. Bursts coalesce into the one notice, so a script writing
+    three files does not post three."""
+    p = PROJECTS.get(pid)
+    if not p:
+        return
+    root, b = p["root"], p["binding"]
+    own = {str(b.content)}
+    if b.editor:
+        if b.editor.layout:
+            own.add(str(b.editor.layout))
+        if b.editor.render:
+            own.add(str(b.editor.render))
+    hit = sorted({Path(c).name for c in changed if c in own})
+    if not hit:
+        return
+    events = _agent_log_read(root)
+    pending = next((e for e in reversed(events)
+                    if e.get("project") == pid and e.get("kind") == "change"
+                    and not e.get("undone") and not e.get("dismissed")), None)
+    if pending and pending.get("announced"):
+        return                    # an agent already owned up; do not double-report
+    now_s = time.strftime("%Y-%m-%dT%H:%M:%S")
+    if pending:                   # same unannounced burst, still unacknowledged
+        files = sorted(set(pending.get("files", []) + hit))
+        pending.update({"at": now_s, "files": files,
+                        "summary": _unannounced_summary(files)})
+    else:
+        events.append({"id": f"a{int(time.time() * 1000)}", "kind": "change",
+                       "project": pid, "by": "An edit outside the editor",
+                       "label": "Edited outside the editor",
+                       "summary": _unannounced_summary(hit), "at": now_s,
+                       "base": prev_head or _agent_head(root),
+                       "undone": False, "dismissed": False,
+                       "announced": False, "files": hit})
+    _agent_log_write(root, events)
+    with STATE[pid].cond:
+        STATE[pid].cond.notify_all()
 
 
 def _git(root: Path, *args, timeout=45):
