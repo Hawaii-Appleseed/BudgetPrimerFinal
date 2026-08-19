@@ -16076,6 +16076,63 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           issues.push({ kind: 'overlap', page: A.page, ids: [A.id, C.id],
             note: `${Math.round(frac * 100)}% of the smaller element is covered` });
       }
+    // ---- a rule struck through a glyph --------------------------------
+    // The pairwise test above skips grouped elements and anything covering
+    // less than a fifth of its neighbour. Both are right for text sitting on
+    // a card background — and both are blind to the one overlap that is never
+    // intentional: a hairline drawn through a glyph. A card rule that cut
+    // across its own icon scored 0.045 AND shared the icon's group, so it
+    // passed both filters and shipped.
+    //
+    // Judged on what is DRAWN, never on declared geometry. An icon's artwork
+    // is inset in its box (a 0.3in icon inks about 0.2in) and a line of text
+    // sits inside half-leading, so a box-vs-box test calls a collision on
+    // cards that are visually clean — it reported 24 on a layout with none.
+    // SVG nodes return their ink bbox from getBoundingClientRect; text ink
+    // comes from canvas font metrics.
+    const RULE_MAX = 0.04;          // inches; thicker than this is a panel
+    const rules = (layout.shapes || []).filter(s => s.kind === 'rect'
+      && ((s.h <= RULE_MAX && s.w >= 0.3) || (s.w <= RULE_MAX && s.h >= 0.3)));
+    try {
+      const pg0 = d.querySelector('.page');
+      const pxIn = pg0 ? pg0.getBoundingClientRect().width / PAGE_W_IN : 96;
+      const marks = [];
+      (layout.shapes || []).filter(s => s.kind === 'icon').forEach(g => {
+        const n = d.querySelector(`[data-shape="${CSS.escape(g.id)}"]`);
+        if (!n) return;
+        const r = n.getBoundingClientRect();
+        marks.push({ id: g.id, what: 'icon', left: r.left, right: r.right,
+                     top: r.top, bottom: r.bottom });
+      });
+      const cvx = document.createElement('canvas').getContext('2d');
+      d.querySelectorAll('[data-el^="text."]').forEach(tn => {
+        const txt = (tn.textContent || '').trim();
+        if (!txt) return;
+        const cs = getComputedStyle(tn), r = tn.getBoundingClientRect();
+        cvx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const m = cvx.measureText(txt);
+        const fs = parseFloat(cs.fontSize);
+        const lh = parseFloat(cs.lineHeight) || fs * 1.2;
+        const base = r.bottom - (lh - fs) / 2 - (m.fontBoundingBoxDescent || 0);
+        marks.push({ id: tn.getAttribute('data-el'), what: 'text',
+                     left: r.left, right: r.right,
+                     top: base - (m.actualBoundingBoxAscent || 0),
+                     bottom: base + (m.actualBoundingBoxDescent || 0) });
+      });
+      rules.forEach(rl => {
+        const rn = d.querySelector(`[data-shape="${CSS.escape(rl.id)}"]`);
+        if (!rn) return;
+        const rr = rn.getBoundingClientRect();
+        marks.forEach(mk => {
+          if (Math.min(mk.right, rr.right) - Math.max(mk.left, rr.left) <= 1) return;
+          const ov = Math.min(mk.bottom, rr.bottom) - Math.max(mk.top, rr.top);
+          if (ov <= 0) return;
+          issues.push({ kind: 'rule-through-glyph', page: rl.page,
+            ids: [rl.id, mk.id],
+            note: `a rule crosses this ${mk.what} by ${(ov / pxIn).toFixed(3)}in` });
+        });
+      });
+    } catch (e) { /* no metrics available: skip rather than report noise */ }
     (layout.groups || []).forEach(g => g.forEach(m => {
       if (!d.querySelector(`[data-el="${CSS.escape(m)}"], [data-shape="${CSS.escape(m)}"]`))
         issues.push({ kind: 'orphaned-group-member', ids: [m],
