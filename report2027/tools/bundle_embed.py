@@ -30,6 +30,8 @@ if len(sys.argv) > 1:
     # rewrite, same base — the built PDF is published beside the assets.
     html = html.replace('href="Budget-Primer-FY2026-27.pdf"',
                         f'href="{base}Budget-Primer-FY2026-27.pdf"')
+    # Same for the plain-text page in the toolbar, published beside the PDF.
+    html = html.replace('href="text.html"', f'href="{base}text.html"')
 
 # Squarespace injection: strip the document shell, keep head assets + body.
 body = re.search(r"<body>(.*)</body>", html, re.S).group(1)

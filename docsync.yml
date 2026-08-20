@@ -27,6 +27,10 @@ bindings:
       - report2027/tools/*.py
       - report2027/web/primer.css
       - report2027/web/primer.js
+      # The plain-text companion page's own stylesheet and script, hand-edited
+      # like primer.css/.js above and published by the same `pub`.
+      - report2027/web/text.css
+      - report2027/web/text.js
       - report2027/data/*.json
       - report2027/manual/*.json
     # What the draft editor needs to run THIS report in the browser. Naming it

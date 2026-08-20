@@ -1439,6 +1439,12 @@ html = f"""<!DOCTYPE html>
        Squarespace bundle, where nothing is relative to /primer/. -->
   <button class="tb-print" onclick="window.print()">Download PDF</button>
   <a class="tb-pdf" href="Budget-Primer-FY2026-27.pdf">Download PDF</a>
+  <!-- The same report as a page you can copy words out of, for anyone quoting
+       it or pulling figures into slides. Built by tools/build_text_page.py and
+       published beside this page by `make -C report2027 pub`; relative href,
+       so bundle_embed.py rewrites it for the Squarespace bundle the same way
+       the PDF above is rewritten. -->
+  <a class="tb-link" href="text.html">Plain text</a>
  </span>
 </div>
 {linkify_footnotes(body)}

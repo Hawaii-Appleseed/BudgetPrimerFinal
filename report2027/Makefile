@@ -15,10 +15,11 @@ editor: render
 # Publish the built report + editor into docs/, which GitHub Pages serves. This
 # is the ONE build command — the local live server, the save endpoint, and CI
 # all run it, so the deployed page is always exactly what a build here produces.
-pub: editor
+pub: editor text
 	cp web/index.html ../docs/primer/
 	cp web/primer.css ../docs/primer/
 	cp web/primer.js ../docs/primer/
+	cp web/text.html web/text.css web/text.js ../docs/primer/
 	mkdir -p ../docs/primer/assets && cp -R web/assets/. ../docs/primer/assets/
 
 data:
@@ -56,21 +57,24 @@ pdf: render
 pdf-pub: pdf
 	cp dist/Budget-Primer-FY2026-27.pdf ../docs/primer/
 
-# The report as plain text, for everyone downstream of the finished page: a
-# colleague cutting social copy, a reviewer checking a figure, anyone pasting a
-# passage into an email. Copying out of the PDF is not the same thing — chart
-# values live in SVG geometry, so they come out of a text layer as a scattered
-# pile of numbers with no labels attached. docsync.text walks the DOM instead
+# The report as plain text, in two forms, for everyone downstream of the
+# finished page: a colleague cutting social copy, a reviewer checking a figure,
+# anyone quoting a passage. web/text.html is the readable page, linked from the
+# report's own toolbar; the .md is the same content for a text editor.
+#
+# Copying out of the PDF is not the same thing, which is the point of both: a
+# chart's values live in SVG geometry, so they come out of a text layer as a
+# scattered pile of numbers with no labels attached. docsync.text walks the DOM
 # and writes them as label/value pairs.
 #
-# `render`, not `html`, for the same reason as `pdf`: it reads the rendered
-# HTML, so recomputing figures that have not moved is beside the point (and
-# would drag PyMuPDF into a target that does not need it).
+# `render`, not `html`: it reads the rendered HTML, so recomputing figures that
+# have not moved is beside the point (and would drag PyMuPDF in with it).
 #
-# Writes report2027/web/budget-primer-text.md. The engine module is generic —
+# The extraction is engine code and knows nothing about this report --
 # `python3 -m docsync.text` with no arguments does every report in docsync.yml.
 text: render
 	cd .. && python3 -m docsync.text --id budget-primer
+	python3 tools/build_text_page.py
 
 embed: html
 	python3 tools/bundle_embed.py $(ASSET_BASE)
