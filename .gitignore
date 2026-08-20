@@ -86,3 +86,9 @@ local_settings.py
 # Project specific
 budget_processing.log
 .import-lab/
+
+# Plain-text version of the report (`make -C report2027 text`). A working
+# output like report2027/dist/, not a published one: `pub` deliberately does
+# not build it, so a tracked copy would go stale on every editor save. One
+# command regenerates it from the committed HTML.
+report2027/web/*-text.md

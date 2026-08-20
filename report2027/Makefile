@@ -56,6 +56,22 @@ pdf: render
 pdf-pub: pdf
 	cp dist/Budget-Primer-FY2026-27.pdf ../docs/primer/
 
+# The report as plain text, for everyone downstream of the finished page: a
+# colleague cutting social copy, a reviewer checking a figure, anyone pasting a
+# passage into an email. Copying out of the PDF is not the same thing — chart
+# values live in SVG geometry, so they come out of a text layer as a scattered
+# pile of numbers with no labels attached. docsync.text walks the DOM instead
+# and writes them as label/value pairs.
+#
+# `render`, not `html`, for the same reason as `pdf`: it reads the rendered
+# HTML, so recomputing figures that have not moved is beside the point (and
+# would drag PyMuPDF into a target that does not need it).
+#
+# Writes report2027/web/budget-primer-text.md. The engine module is generic —
+# `python3 -m docsync.text` with no arguments does every report in docsync.yml.
+text: render
+	cd .. && python3 -m docsync.text --id budget-primer
+
 embed: html
 	python3 tools/bundle_embed.py $(ASSET_BASE)
 
@@ -68,4 +84,4 @@ preview: html
 live:
 	python3 tools/serve.py
 
-.PHONY: render editor pub live all validate data html pdf pdf-pub embed preview
+.PHONY: render editor pub live all validate data html pdf pdf-pub text embed preview
