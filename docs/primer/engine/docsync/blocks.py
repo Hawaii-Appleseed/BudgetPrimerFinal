@@ -126,6 +126,97 @@ def print_css(L, pad: str = "", link_ink: str = "") -> str:
         f"{links}}}</style>")
 
 
+# The floor a chart's smallest label must clear on screen, in CSS px. Kept in
+# step with tests/editor/text-legibility.spec.js FLOOR.screen, which is what
+# fails a build when a chart drops under it, and a shade above it so a chart
+# sitting exactly on the line does not fail on a rounding difference.
+CHART_MIN_LABEL_PX = 10.5
+
+
+def _viewbox_w(svg: str) -> float | None:
+    """The design width an SVG's own viewBox declares, or None."""
+    m = re.search(r'viewBox="\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)', svg)
+    return float(m.group(1)) if m and float(m.group(1)) > 0 else None
+
+
+def chart_scroll(svg: str, *, smallest_label: float = 11.5,
+                 floor_px: float = CHART_MIN_LABEL_PX) -> str:
+    """A chart that stays LEGIBLE on a phone, by scrolling instead of shrinking.
+
+    The asymmetry this exists for: `.page` keeps `max-width:100%`, so on a
+    375px screen an 8.5in sheet renders at about 0.42x. HTML text does not
+    shrink with it — a px is a px — but an SVG with a viewBox does, and its
+    text goes down with everything else it draws. The primer's chart labels
+    measured 4.8px to 9px on a phone while the prose beside them was fine, and
+    nothing in the design looked wrong at the desk it was designed at.
+
+    Growing the labels instead is the obvious fix and the wrong one: they are
+    positioned in the same user units, so a chart dense enough to need the help
+    (twenty-four department rows) is exactly the one whose labels collide when
+    they get it. Scrolling changes no geometry at all.
+
+    So: below the sheet's own width the chart stops shrinking and its wrapper
+    scrolls, the way layout.py's mobile_css() already handles a table too wide
+    to fit. `smallest_label` is the smallest font-size the chart uses in ITS
+    user units — the one that hits the floor first — and the stopping point
+    falls out of it, so a chart with generous labels shrinks further before it
+    starts scrolling and never scrolls further than it must. Pair with one
+    chart_scroll_css() anywhere in the document.
+    """
+    w = _viewbox_w(svg)
+    if w is None:
+        # No viewBox means no scaling to reason about (and nothing to compute a
+        # stopping point from). Hand it back untouched rather than wrap it in a
+        # scroller whose min-width would be a guess.
+        return svg
+    return (f'<div class="ds-chart-scroll" style="--ds-chart-min:'
+            f'{w * floor_px / smallest_label:.0f}px">{svg}</div>')
+
+
+def chart_scroll_css(breakpoint_in: float = 8.5) -> str:
+    """The one rule chart_scroll()'s wrappers need. Emit once, anywhere.
+
+    A <style> in the body, like print_css() and layout.py's page_style(): it
+    rides along with a call the renderer is already making rather than needing
+    a line added to a <head> the engine does not own.
+
+    The breakpoint is the SHEET, not a device — below its own width the page
+    can no longer show the design at the size it was composed at, which is the
+    actual condition, and it is the same test mobile_css() makes.
+
+    A report whose pages are not white sets `--ds-chart-bg` to the page colour
+    on the wrapper (or anywhere above it); the scroll shadows are drawn over
+    that colour, so a wrong value shows as a pale seam at the chart's edges.
+    """
+    return (
+        f"<style>@media screen and (max-width:{_in(breakpoint_in)}){{"
+        ".ds-chart-scroll{overflow-x:auto;overscroll-behavior-x:contain;"
+        "-webkit-overflow-scrolling:touch;"
+        # A shadow at whichever edge still has content behind it, and none at
+        # an edge that doesn't. Without it a clipped figure just looks broken —
+        # a bar chart running off the right reads as "there is more", but a
+        # circular diagram cut down its side reads as a rendering fault, and a
+        # phone shows no persistent scrollbar to say otherwise. The two `local`
+        # layers are the page background painting over the shadow when the
+        # scroller is at that end; the two `scroll` layers are the shadows
+        # themselves, fixed to the frame. Pure CSS — no scroll listener.
+        "background:"
+        "linear-gradient(to right,var(--ds-chart-bg,#fff) 30%,"
+        "rgba(255,255,255,0)) left/22px 100% no-repeat local,"
+        "linear-gradient(to left,var(--ds-chart-bg,#fff) 30%,"
+        "rgba(255,255,255,0)) right/22px 100% no-repeat local,"
+        "radial-gradient(farthest-side at 0 50%,rgba(47,62,70,.17),"
+        "rgba(47,62,70,0)) left/11px 100% no-repeat scroll,"
+        "radial-gradient(farthest-side at 100% 50%,rgba(47,62,70,.17),"
+        "rgba(47,62,70,0)) right/11px 100% no-repeat scroll}"
+        # min-width beats width:100% whatever the report's own stylesheet says,
+        # which is what stops the sheet from scaling the chart any further. The
+        # margin moves to the wrapper so a scrolled chart keeps its spacing
+        # without the scrollbar sitting inside it.
+        ".ds-chart-scroll>svg{min-width:var(--ds-chart-min);margin:0}"
+        "}</style>")
+
+
 def pdf_button(L, label: str = "Download PDF", *, bg: str = "#2F3E46",
                ink: str = "#FFFFFF", top: str = "18px", right: str = "18px",
                pad: str = "", link_ink: str = "", css: bool = True) -> str:

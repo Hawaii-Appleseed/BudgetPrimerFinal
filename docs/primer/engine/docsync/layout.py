@@ -339,6 +339,52 @@ EFFECT_PARAMS = {
     "neon":   ["intensity", "color"],
 }
 
+# --- legibility floors -------------------------------------------------------
+#
+# Text that is too small to read is the failure this engine kept shipping, and
+# it kept shipping because the three places a size can be set are measured in
+# three different units and only ONE of them is what a reader actually sees:
+#
+#   * CSS px on a page whose inches are real inches -> 1px = 0.75pt on paper.
+#   * SVG user units in the page's INCH coordinate system (every chart) ->
+#     1 unit = 72pt. A 0.07in floor is 5pt type. It read as "a small number".
+#   * A screen zoom (.page{zoom:1.25}) that flatters everything on a desktop
+#     and applies to neither the PDF nor a phone.
+#
+# So the floors are stated once, in POINTS — the unit the reader's eye is in —
+# and every unit conversion hangs off them. Raising a floor here raises it for
+# charts, for placed text, for the editor's stepper and for docsync.check.
+PT_PER_IN = 72.0
+PX_PER_PT = 96.0 / PT_PER_IN
+
+# The hard floor is written in px because that is the unit the person setting
+# it works in — 7.875pt rather than a round 8 so it lands on a step the
+# editor's half-px stepper can actually reach. Enforcing a round 8pt would
+# mean 10.67px, which fails documents already sitting on the smallest size the
+# UI offers, for a twentieth of a point.
+MIN_TEXT_PX = 10.5
+MIN_TEXT_PT = MIN_TEXT_PX / PX_PER_PT     # nothing, anywhere, ever, below this
+MIN_LABEL_PT = 10.0          # a chart's primary labels: axis ticks, legend
+MIN_SUBLABEL_PT = 9.0        # labels DERIVED from those (bar values, slices)
+
+# The chart floors in the inches a chart is actually drawn in.
+MIN_LABEL_IN = MIN_LABEL_PT / PT_PER_IN            # 0.1389in
+MIN_SUBLABEL_IN = MIN_SUBLABEL_PT / PT_PER_IN      # 0.125in
+
+
+def _lfs(size_in: float) -> float:
+    """A chart label's font-size in inches, floored at the legibility minimum.
+
+    Every derived label in this module used to be a bare multiple of `fs`
+    (x0.75, x0.78, x0.8...). Those multipliers are still what sets the visual
+    hierarchy — they just cannot take a label below the point where the reader
+    stops being able to read it. Wrapping the multiplication rather than
+    shrinking the multipliers keeps a large chart looking exactly as it did
+    and only bites on the small ones, which are the ones that were broken.
+    """
+    return max(float(size_in), MIN_SUBLABEL_IN)
+
+
 ALIGNS = ("left", "center", "right", "justify")
 CASES = ("none", "upper", "lower", "title")
 
@@ -369,7 +415,11 @@ def text_css(st: dict) -> str:
         # markup. Family names are allowlisted, so no apostrophe can appear.
         out.append(f"font-family:'{st['font']}'")
     if st.get("size"):
-        out.append(f'font-size:{st["size"]}px')
+        # validate_style() already refuses anything below the floor, so this
+        # only catches a style that reached CSS without being validated —
+        # a Pyodide live-preview of a slider mid-drag, say. Clamping (rather
+        # than raising) is right HERE: a preview must not throw.
+        out.append(f'font-size:{max(float(st["size"]), MIN_TEXT_PX):g}px')
     if st.get("weight"):
         out.append(f'font-weight:{int(st["weight"])}')
     if st.get("italic"):
@@ -425,6 +475,16 @@ def _check_text(st: dict, where: str) -> None:
     for k in ("size", "tracking", "leading"):
         if st.get(k) is not None:
             _num(st[k], f"{where}.{k}")
+    # Refused, not clamped. A style is authored by a person — through the
+    # editor's stepper or a pilot verb — and silently enlarging what they
+    # asked for teaches them nothing, while silently HONOURING it ships type
+    # no reader can read. Saying no names the floor and the unit it is in.
+    if st.get("size") is not None and float(st["size"]) < MIN_TEXT_PX:
+        raise LayoutError(
+            f"{where}.size: {float(st['size']):g}px is "
+            f"{float(st['size']) * 0.75:.1f}pt in print — below the {MIN_TEXT_PT:g}pt "
+            f"legibility floor. The smallest size this engine will set is "
+            f"{MIN_TEXT_PX:g}px.")
     # `is not None`, not truthiness: an empty effect object is falsy, so a bare
     # "effect": {} would skip every check below and pass as a no-op rather than
     # as the malformed thing it is.
@@ -711,12 +771,17 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
     c_label = c.get("labelColor") or "#52796F"
     c_axis = c.get("axisColor") or "#7A8E92"
     c_grid = c.get("gridColor") or "#E4EBE6"
-    fs = max(0.07, min(0.13, h * 0.055))            # label size tracks the box
+    # Label size tracks the box, but never below the point where a reader
+    # stops being able to read it. The old floor was 0.07in — five-point type
+    # on paper, and the sub-label multipliers took it to under four. The cap
+    # rises with the floor: 0.13in sat BELOW MIN_LABEL_IN, so a floored size
+    # would have been clamped straight back down by its own ceiling.
+    fs = max(MIN_LABEL_IN, min(0.2, h * 0.055))
     parts = []
     top = y
     if title:
         parts.append(f'<text x="{x + w / 2:.4f}" y="{y + fs * 1.1:.4f}" '
-                     f'text-anchor="middle" font-size="{fs * 1.25:.4f}" '
+                     f'text-anchor="middle" font-size="{_lfs(fs * 1.25):.4f}" '
                      f'font-weight="700" fill="{c_title}"'
                      f'{_ch_hook(c, "title")}>{_xml(title)}</text>')
         top = y + fs * 2.0
@@ -764,7 +829,7 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
                          f'width="{fs * 0.72:.4f}" height="{fs * 0.72:.4f}" rx="{fs * 0.16:.4f}" '
                          f'fill="{k["color"]}"/>')
             parts.append(f'<text x="{kx + fs:.4f}" y="{ly - fs * 0.12:.4f}" '
-                         f'font-size="{fs * 0.85:.4f}" fill="{c_label}"'
+                         f'font-size="{_lfs(fs * 0.85):.4f}" fill="{c_label}"'
                          f'{_ch_hook(c, k["hook"])}>{_xml(k["name"])}</text>')
     return "".join(parts)
 
@@ -814,13 +879,13 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                 parts.append(f'<line x1="{gx:.4f}" y1="{py:.4f}" x2="{gx:.4f}" '
                              f'y2="{py + ph:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
                 parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
-                             f'font-size="{fs * 0.8:.4f}" fill="{ink["axis"]}">{_fmt_num(val)}</text>')
+                             f'font-size="{_lfs(fs * 0.8):.4f}" fill="{ink["axis"]}">{_fmt_num(val)}</text>')
             else:
                 gy = py + ph - ph * t
                 parts.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
                              f'y2="{gy:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
-                             f'text-anchor="end" font-size="{fs * 0.8:.4f}" '
+                             f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
                              f'fill="{ink["axis"]}">{_fmt_num(val)}</text>')
 
     slot = (ph if horizontal else pw) / n
@@ -845,7 +910,7 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                     run += frac
                 if show_vals and not stacked:
                     parts.append(f'<text x="{px + blen + fs * 0.22:.4f}" '
-                                 f'y="{by + bw * 0.62:.4f}" font-size="{fs * 0.78:.4f}" '
+                                 f'y="{by + bw * 0.62:.4f}" font-size="{_lfs(fs * 0.78):.4f}" '
                                  f'fill="{ink["label"]}">{_fmt_num(v)}</text>')
             else:
                 bh = ph * frac
@@ -860,17 +925,17 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                 if show_vals and not stacked:
                     parts.append(f'<text x="{bx + bw * 0.43:.4f}" '
                                  f'y="{py + ph - bh - fs * 0.22:.4f}" text-anchor="middle" '
-                                 f'font-size="{fs * 0.78:.4f}" fill="{ink["label"]}">{_fmt_num(v)}</text>')
+                                 f'font-size="{_lfs(fs * 0.78):.4f}" fill="{ink["label"]}">{_fmt_num(v)}</text>')
         name = labels[gi] if gi < len(labels) else ""
         if name:
             if horizontal:
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" '
                              f'y="{base + inner / 2 + fs * 0.3:.4f}" text-anchor="end" '
-                             f'font-size="{fs * 0.82:.4f}" fill="{ink["label"]}"'
+                             f'font-size="{_lfs(fs * 0.82):.4f}" fill="{ink["label"]}"'
                              f'{_ch_hook(c, f"label:{gi}")}>{_xml(name)}</text>')
             else:
                 parts.append(f'<text x="{base + inner / 2:.4f}" y="{py + ph + fs:.4f}" '
-                             f'text-anchor="middle" font-size="{fs * 0.82:.4f}" '
+                             f'text-anchor="middle" font-size="{_lfs(fs * 0.82):.4f}" '
                              f'fill="{ink["label"]}"{_ch_hook(c, f"label:{gi}")}'
                              f'>{_xml(name)}</text>')
     # the axis itself, last so it sits over the gridlines
@@ -895,7 +960,7 @@ def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
             parts.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
                          f'y2="{gy:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
             parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
-                         f'text-anchor="end" font-size="{fs * 0.8:.4f}" '
+                         f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
                          f'fill="{ink["axis"]}">{_fmt_num(vmin + (vmax - vmin) * t)}</text>')
     if xlabels is not None:
         for i, name in enumerate(xlabels):
@@ -903,14 +968,14 @@ def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
                 continue
             gx = px + (pw * (i + 0.5) / len(xlabels) if len(xlabels) else 0)
             parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
-                         f'font-size="{fs * 0.82:.4f}" fill="{ink["label"]}"'
+                         f'font-size="{_lfs(fs * 0.82):.4f}" fill="{ink["label"]}"'
                          f'{_ch_hook({}, f"label:{i}")}>{_xml(name)}</text>')
     elif xmin is not None:
         for i in range(5):
             t = i / 4
             gx = px + pw * t
             parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
-                         f'font-size="{fs * 0.8:.4f}" '
+                         f'font-size="{_lfs(fs * 0.8):.4f}" '
                          f'fill="{ink["axis"]}">{_fmt_num(xmin + (xmax - xmin) * t)}</text>')
     parts.append(f'<line x1="{px:.4f}" y1="{py + ph:.4f}" x2="{px + pw:.4f}" '
                  f'y2="{py + ph:.4f}" stroke="{ink["axis"]}" stroke-width="0.008"/>')
@@ -978,7 +1043,7 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
                          f'fill="{s["color"]}"/>')
             if show_vals:
                 parts.append(f'<text x="{cx:.4f}" y="{cy - fs * 0.45:.4f}" '
-                             f'text-anchor="middle" font-size="{fs * 0.75:.4f}" '
+                             f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
                              f'fill="{ink["label"]}">{_fmt_num(v)}</text>')
     return "".join(parts)
 
@@ -1014,7 +1079,7 @@ def _histogram_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> s
                      f'fill="{_slice_color(c, i)}"{bar_anim_attrs(anim, i)}/>')
         if c.get("values") and ct:
             parts.append(f'<text x="{px + i * bw + bw / 2:.4f}" y="{py + ph - bh - fs * 0.22:.4f}" '
-                         f'text-anchor="middle" font-size="{fs * 0.75:.4f}" '
+                         f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
                          f'fill="{ink["label"]}">{ct}</text>')
     return "".join(parts)
 
@@ -1054,7 +1119,7 @@ def _radar_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         lx, ly = cx + (r + fs * 0.7) * math.cos(ang(i)), cy + (r + fs * 0.7) * math.sin(ang(i))
         anchor = "middle" if abs(math.cos(ang(i))) < 0.3 else ("start" if math.cos(ang(i)) > 0 else "end")
         parts.append(f'<text x="{lx:.4f}" y="{ly + fs * 0.3:.4f}" text-anchor="{anchor}" '
-                     f'font-size="{fs * 0.8:.4f}" fill="{ink["label"]}"'
+                     f'font-size="{_lfs(fs * 0.8):.4f}" fill="{ink["label"]}"'
                      f'{_ch_hook(c, f"label:{i}")}>{_xml(labels[i])}</text>')
     return "".join(parts)
 
@@ -1081,7 +1146,7 @@ def _funnel_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         txt = f"{_xml(name)}" + (f"  {_fmt_num(v)}" if c.get("values") else "")
         if name or c.get("values"):
             parts.append(f'<text x="{cx:.4f}" y="{(y0 + y1) / 2 + fs * 0.3:.4f}" '
-                         f'text-anchor="middle" font-size="{fs * 0.8:.4f}" fill="#fff" '
+                         f'text-anchor="middle" font-size="{_lfs(fs * 0.8):.4f}" fill="#fff" '
                          f'font-weight="600"{_ch_hook(c, f"label:{i}")}>{txt}</text>')
     return "".join(parts)
 
@@ -1116,9 +1181,14 @@ def _packed_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         parts.append(f'<circle cx="{cx + r:.4f}" cy="{cy + r:.4f}" r="{r:.4f}" '
                      f'fill="{_slice_color(c, i)}"/>')
         name = labels[i] if i < len(labels) else ""
-        if name and r > fs * 1.1:
+        # Sized by the floor, not by the circle: a bubble too small to hold
+        # legible type now goes UNLABELLED rather than carrying four-point
+        # text nobody can read. `min(fs * 0.8, r * 0.5)` used to shrink the
+        # label to fit, which is the same bug in a more considerate voice.
+        lab = _lfs(fs * 0.8)
+        if name and r > lab * 1.4:
             parts.append(f'<text x="{cx + r:.4f}" y="{cy + r + fs * 0.28:.4f}" '
-                         f'text-anchor="middle" font-size="{min(fs * 0.8, r * 0.5):.4f}" '
+                         f'text-anchor="middle" font-size="{lab:.4f}" '
                          f'fill="#fff" font-weight="600"'
                          f'{_ch_hook(c, f"label:{i}")}>{_xml(name)}</text>')
         cx += 2 * r
@@ -1156,7 +1226,7 @@ def _treemap_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         name = labels[i] if i < len(labels) else ""
         if name and bw2 > fs * 2 and bh2 > fs * 1.2:
             parts.append(f'<text x="{bx + fs * 0.35:.4f}" y="{by + fs * 1.0:.4f}" '
-                         f'font-size="{fs * 0.78:.4f}" fill="#fff" font-weight="600"'
+                         f'font-size="{_lfs(fs * 0.78):.4f}" fill="#fff" font-weight="600"'
                          f'{_ch_hook(c, f"label:{i}")}>{_xml(name)}</text>')
         rest -= v
         idx += 1
@@ -1200,7 +1270,7 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
             tx, ty = cx + lr * math.cos(mid), cy + lr * math.sin(mid)
             pct = v / total * 100
             parts.append(f'<text x="{tx:.4f}" y="{ty + fs * 0.3:.4f}" text-anchor="middle" '
-                         f'font-size="{fs * 0.8:.4f}" fill="#fff" font-weight="600">'
+                         f'font-size="{_lfs(fs * 0.8):.4f}" fill="#fff" font-weight="600">'
                          f'{pct:.0f}%</text>')
         ang = a2
     return "".join(parts)

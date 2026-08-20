@@ -38,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from docsync import layout                                     # noqa: E402
 from docsync.registry import ROOT, RegistryError, load_registry   # noqa: E402
 
 
@@ -266,7 +267,130 @@ def check_svg_bounds(html: str) -> list[Problem]:
     return problems
 
 
-CHECKS = (check_citations, check_markdown, check_svg_bounds)
+# --- 4. text a reader can actually read --------------------------------------
+#
+# The recurring bug this catches: type that is fine on the screen it was
+# designed on and unreadable everywhere else. Three units feed one page and
+# only one of them is what the reader sees, so a "small number" in the source
+# is not obviously small type:
+#
+#   * CSS px, on a page whose inches are real inches  -> pt = px * 0.75
+#   * SVG user units, in the page's INCH coordinates  -> pt = units * 72
+#     (a chart label at 0.07 was five-point type, and read as a rounding knob)
+#   * .page{zoom:1.25} on a wide screen, which flatters every desktop review
+#     and applies to neither the PDF nor a phone.
+#
+# So this check converts everything to POINTS ON PAPER and judges it there.
+# The floors come from docsync.layout, so the renderer's clamps and this
+# check can never disagree about where the line is.
+#
+# What it deliberately does NOT do: resolve a class to a size. A stylesheet
+# is a separate file with a cascade, and guessing at it would either miss
+# most of the document or invent failures. tests/editor/text-legibility.spec.js
+# measures COMPUTED sizes in a real browser, at the four viewports that
+# matter, and is where that half of the coverage lives.
+
+MIN_TEXT_PT = layout.MIN_TEXT_PT
+MIN_LABEL_PT = layout.MIN_LABEL_PT
+MIN_SUBLABEL_PT = layout.MIN_SUBLABEL_PT
+
+_STYLE_BLOCK = re.compile(r"(?is)<style\b[^>]*>(.*?)</style\s*>")
+_INLINE_STYLE = re.compile(r'(?is)style="([^"]*)"')
+_FONT_SIZE_PX = re.compile(r"font-size\s*:\s*([\d.]+)px")
+_SVG_WIDTH_IN = re.compile(r'(?is)(?:\bwidth="\s*([\d.]+)in"|width\s*:\s*([\d.]+)in)')
+_TEXT_FS = re.compile(r'(?is)<text\b([^>]*)>(.*?)</text\s*>')
+
+
+def _svg_in_per_unit(attrs: str) -> float | None:
+    """Inches per SVG user unit, or None when it cannot be known honestly.
+
+    Only a width stated in INCHES is usable. A percentage width (the common
+    responsive chart) means the answer depends on the viewport, which is a
+    browser's question, not a regex's -- so this stands down and lets the
+    Playwright spec have it.
+    """
+    vb = _VIEWBOX.search(attrs)
+    if not vb:
+        return None
+    vbw = float(vb.group(1))
+    if vbw <= 0:
+        return None
+    m = _SVG_WIDTH_IN.search(attrs)
+    if not m:
+        return None
+    return float(m.group(1) or m.group(2)) / vbw
+
+
+def _size_problem(check: str, pt: float, what: str,
+                  can_fail: bool = True,
+                  target: float = MIN_LABEL_PT) -> Problem | None:
+    """One judgement, so the callers cannot drift apart on the threshold.
+
+    `can_fail=False` for sizes this module cannot prove are page CONTENT. A
+    <style> block in a published report holds the sheet's typography and the
+    surrounding site's chrome in the same list of rules — a nav brand tag and
+    a dropdown chevron are 9px on purpose, and failing a build over them would
+    train everyone to stop reading this check. Those report as warnings;
+    text-legibility.spec.js, which can see what is actually inside .page,
+    is what fails a build over them.
+    """
+    if pt < MIN_TEXT_PT and can_fail:
+        return Problem(check, f"{what} renders at {pt:.1f}pt on paper — below the "
+                              f"{MIN_TEXT_PT:g}pt floor; no reader can read it")
+    if pt < target:
+        under = ("below the floor" if pt < MIN_TEXT_PT
+                 else f"under the {target:g}pt target for text at this size")
+        return Problem(check, f"{what} renders at {pt:.1f}pt on paper — {under}",
+                       level="warn")
+    return None
+
+
+def check_text_size(html: str) -> list[Problem]:
+    """No text on the page is smaller than a person can read.
+
+    Two sources, because the two ways this engine sets a size fail
+    differently. An SVG label is sized in inches and shrinks with its box, so
+    it goes wrong quietly as a chart is resized. A CSS px size is authored
+    once and goes wrong loudly, in a stylesheet nobody re-reads.
+    """
+    problems: list[Problem] = []
+
+    for attrs, inner in iter_svgs(html):
+        per_unit = _svg_in_per_unit(attrs)
+        if per_unit is None:
+            continue
+        label = (re.search(r'aria-label="([^"]{0,60})', attrs) or [None, "svg"])[1]
+        for tag, body in _TEXT_FS.findall(inner):
+            fs = _attr(tag, "font-size")
+            if fs is None:                   # inherited from CSS; not ours to judge
+                continue
+            txt = re.sub(r"(?s)<[^>]*>", "", body).strip()
+            pr = _size_problem("text-size", fs * per_unit * 72.0,
+                               f'"{label}": chart text {txt[:40]!r}',
+                               target=MIN_SUBLABEL_PT)
+            if pr:
+                problems.append(pr)
+
+    # CSS px, from <style> blocks and from style="" attributes. Everything the
+    # engine itself writes lands in one of these two; a report's own linked
+    # stylesheet is the browser spec's job.
+    # Inline style="" is the engine's own writing on a real page element, so a
+    # size there is content and can fail the build. A <style> block is the
+    # report's stylesheet AND whatever site chrome ships beside it, so it can
+    # only advise. Same threshold either way — different consequence.
+    for css, can_fail in ([(c, False) for c in _STYLE_BLOCK.findall(html)]
+                          + [(c, True) for c in _INLINE_STYLE.findall(html)]):
+        for px in _FONT_SIZE_PX.findall(css):
+            pr = _size_problem("text-size", float(px) * 0.75,
+                               f"font-size:{px}px", can_fail)
+            if pr:
+                problems.append(pr)
+
+    return problems
+
+
+CHECKS = (check_citations, check_markdown, check_svg_bounds,
+          check_text_size)
 
 
 def check_html(html: str) -> list[Problem]:

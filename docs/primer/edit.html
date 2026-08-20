@@ -1492,7 +1492,7 @@
   <select id="ty-weight" title="Weight"></select>
   <span class="ty-step" title="Size (px)">
     <button id="ty-down" aria-label="Smaller">−</button><input id="ty-size" type="number"
-      min="6" max="200" step="0.5"><button id="ty-up" aria-label="Bigger">+</button>
+      min="10.5" max="200" step="0.5"><button id="ty-up" aria-label="Bigger">+</button>
   </span>
   <span class="ty-seg" id="ty-marks" hidden title="Formatting — applies to the selected words">
     <button id="ty-mb" aria-label="Bold the selection"><b>B</b></button>
@@ -6880,7 +6880,12 @@ function wireType() {
   const step = dir => async () => {
     const st = styleOf(selected);
     const cur = st.size ?? computedType(selected).size;
-    const next = Math.max(6, Math.min(200, Math.round((cur + dir) * 2) / 2));
+    // 10.5px is layout.MIN_TEXT_PX — 7.9pt in print, the smallest size this
+    // engine will render. The stepper stops there rather than letting someone
+    // walk a caption down to four-point type one press at a time; the same
+    // floor is enforced in _check_text(), so a hand-edited layout.json or a
+    // pilot verb cannot get under it either.
+    const next = Math.max(10.5, Math.min(200, Math.round((cur + dir) * 2) / 2));
     setStyle(selected, { size: next });
     markDirty(); await render(); showType(selected);
   };

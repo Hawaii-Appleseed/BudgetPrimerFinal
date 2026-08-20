@@ -495,8 +495,40 @@ check_eq("a slot that rendered an element is styleable", "a.b" in c.styleable(),
 check_eq("a style aimed at a slot that never rendered one is reported",
          nostyle.unknown_text_keys({"a.b"}), [])
 check_eq("a style aimed at an unstyleable slot is reported",
-         _layout({"text": {"cip.body": {"size": 9}}}).unknown_text_keys({"a.b"}),
+         _layout({"text": {"cip.body": {"size": 12}}}).unknown_text_keys({"a.b"}),
          ["cip.body"])
+
+# ------------------------------------------------------- legibility floors
+from docsync.layout import (MIN_TEXT_PX, MIN_TEXT_PT, MIN_SUBLABEL_IN,   # noqa: E402
+                            chart_svg, text_css, _check_text)
+
+# The floor is REFUSED at load, not clamped: a size a person authored is worth
+# an error naming the unit it went wrong in. Clamping it silently would ship a
+# document that disagrees with the layout.json beside it.
+try:
+    _check_text({"size": MIN_TEXT_PX - 0.5}, "text 'x'")
+    check_eq("a size under the floor is refused", "no error", "LayoutError")
+except LayoutError as e:
+    check_eq("a size under the floor names the print size",
+             f"{MIN_TEXT_PT:g}pt" in str(e) and "px" in str(e), True)
+check_eq("a size exactly on the floor is allowed",
+         _check_text({"size": MIN_TEXT_PX}, "text 'x'"), None)
+# text_css clamps rather than raising: it is also the live-preview path, and a
+# slider mid-drag must not throw.
+check_eq("text_css clamps a size that reached CSS unvalidated",
+         text_css({"size": 4}), f"font-size:{MIN_TEXT_PX:g}px")
+
+# Charts size their labels in INCHES, so they shrink with the box. The floor is
+# what stops a short chart from writing four-point type — the bug that shipped.
+_short = chart_svg({"type": "bar", "labels": ["a"], "values": True, "legend": True,
+                    "title": "T", "series": [{"name": "s", "data": [1]}]},
+                   0.5, 0.5, 4.0, 0.8)
+_sizes = [float(v) for v in re.findall(r'font-size="([\d.]+)"', _short)]
+check_eq("no chart label is drawn below the sub-label floor",
+         [v for v in _sizes if v < MIN_SUBLABEL_IN - 1e-9], [])
+check_eq("a chart squeezed flat still labels at 9pt",
+         round(min(_sizes) * 72, 1), 9.0)
+
 
 # ----------------------------------------------------------------- effects
 from docsync.layout import EFFECTS, EFFECT_PARAMS                # noqa: E402
