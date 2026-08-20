@@ -61,6 +61,7 @@ h3.sub2 { font-family: var(--body); font-weight: 600; font-size: 19px;
    pages 6 and 11). A figure's OWN note (.fig-note) is excluded — it belongs to
    the figure and stays tight against it; the gap goes below the note instead. */
 .chart + p:not(.fig-note), .pie-row + p:not(.fig-note),
+.ds-chart-scroll + p:not(.fig-note),
 .lifecycle-wrap + p:not(.fig-note), .legend + p:not(.fig-note) { margin-top: 12px; }
 
 /* Images placed in prose via ![alt](assets/…). Bounded by the text column so
@@ -322,6 +323,11 @@ ul.approp-brief li > b:first-child { color: var(--dark); margin-right: 2px; }
 
 /* charts */
 .chart { width: 100%; height: auto; display: block; margin: 4px 0; }
+/* blocks.py's chart_scroll() wraps a chart so it can scroll rather than
+   shrink its labels away on a phone. The wrapper owns the spacing; the
+   chart inside it must not add its own or a scrolled chart sits low. */
+.ds-chart-scroll { margin: 4px 0; }
+.ds-chart-scroll > .chart { margin: 0; }
 /* Pie figures bleed slightly past the text column, as they do in the original,
    so the discs can reach their reference diameters (Fig 3 4.06in, Fig 4 4.39in,
    Fig 5 3.82in) with the legend still beside them. Widths are disc/0.79, the
@@ -357,10 +363,13 @@ svg .ph { font-size: 12px; font-family: var(--body); }
    Scoped to direct children of .page so it never captures .pie-row legends. */
 /* Margins kept tight: Figure 2 is 6.2in tall, so page 6 has almost no room
    between the chart and the folio. */
-.page > .chart + .legend { flex-direction: row; flex-wrap: wrap;
+.page > .chart + .legend,
+.page > .ds-chart-scroll + .legend { flex-direction: row; flex-wrap: wrap;
                            justify-content: center; margin: 5px 0 7px; }
-.page > .chart + .legend .lg { font-size: 15px; }
-.page > .chart + .legend .sw { width: 22px; height: 22px; }
+.page > .chart + .legend .lg,
+.page > .ds-chart-scroll + .legend .lg { font-size: 15px; }
+.page > .chart + .legend .sw,
+.page > .ds-chart-scroll + .legend .sw { width: 22px; height: 22px; }
 
 /* Lifecycle callouts. Positions are computed in render_report.py from each
    bracket's stub endpoint and emitted as inline left/top; these classes only
