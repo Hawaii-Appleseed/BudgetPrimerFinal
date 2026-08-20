@@ -23,6 +23,7 @@ from docsync.content import paragraph                     # noqa: E402
 from docsync.fragment import extract, inject, to_html     # noqa: E402
 from docsync.normalise import leading_comment, normalise  # noqa: E402
 from docsync.state import State, content_hash            # noqa: E402
+from docsync import text as dtext                       # noqa: E402
 from docsync.check import (check_citations,             # noqa: E402
                            check_markdown, check_svg_bounds)
 
@@ -1863,6 +1864,156 @@ check_eq("content the editor positions by hand is not policed",
 check_eq("a transformed svg is skipped rather than guessed at",
          check_svg_bounds('<svg viewBox="0 0 100 54"><g transform="translate(0,-20)">'
                           '<rect y="50" height="20"/></g></svg>'), [])
+
+
+# ------------------------------------------------------------- docsync.text
+#
+# Every rule in text.py keys off document STRUCTURE, never a project's class
+# names — nine reports share this engine and each styles itself with its own
+# prefix. So each case below is written as the shape it recognises, with class
+# names that deliberately mean nothing, to keep it that way.
+
+def _md(html, **kw):
+    return dtext.extract(f"<section class=\"page\">{html}</section>", **kw)
+
+
+def _blocks(html, variant=None):
+    return dtext.pages_of(f'<section class="page">{html}</section>', variant)[0]
+
+
+# -- the page is the unit
+check_eq("each <section class='page'> is its own page",
+         len(dtext.pages_of('<section class="page">a</section>'
+                            '<section class="page">b</section>')), 2)
+# A fragment or a web-only one-pager has no page sections. That is a shape to
+# handle, not an error: the body is the page.
+check_eq("a report with no page sections still yields its text",
+         len(dtext.pages_of("<body><p>loose</p></body>")), 1)
+check("...and keeps the text",
+      dtext.extract("<body><p>loose prose</p></body>"), "loose prose")
+
+# -- prose
+check("headings keep their level", _md("<h3>Taxes</h3>"), "### Taxes")
+check("bold survives as markdown", _md("<p><b>GET</b> is a tax</p>"), "**GET** is a tax")
+check("list items become bullets", _md("<ul><li>one</li><li>two</li></ul>"), "- one\n- two")
+check("ordered lists keep their numbers",
+      _md("<ol><li>first</li><li>second</li></ol>"), "1. first\n2. second")
+check("table rows are pipe-separated",
+      _md("<table><tr><td>Total</td><td>$25.85 billion</td></tr></table>"),
+      "Total | $25.85 billion")
+# A footnote marker is a reference the reader may want to chase; an ordinal is
+# part of the sentence. Same tag, so the digits have to decide.
+check("a footnote marker is kept as a reference", _md("<p>x<sup>9</sup></p>"), "x[^9]")
+check_eq("an ordinal superscript stays in the prose",
+         _blocks("<p>1<sup>st</sup> reading</p>")[0]["text"], "1st reading")
+# Regression: <br> became "\n" and the following text kept its indent, so a
+# caption came out with a stray leading space on its second line.
+check_eq("a line break does not leave a leading space",
+         _blocks("<p>Figure 2.<br>\n   click a department</p>")[0]["text"],
+         "Figure 2.\nclick a department")
+
+# -- charts
+# The numbers live in data-tip: the visible <text> of a bar chart is axis ticks
+# and bare figures with nothing to attach them to.
+check_eq("a chart is read from its tips, not its axis ticks",
+         _blocks('<svg><text>$0B</text><rect data-tip="Transportation: $2.7B"/>'
+                 '<text>$2,691</text></svg>')[0]["data"],
+         [("Transportation", "$2.7B")])
+# The tip doubles as the hover string, so it carries an instruction no reader
+# of a text file can act on.
+check_eq("an on-screen instruction is stripped from the value",
+         _blocks('<svg><rect data-tip="Health: $203M · click for tracker link"/></svg>'
+                 )[0]["data"], [("Health", "$203M")])
+check_eq("a chart drawn without tips falls back to its labels",
+         _blocks("<svg><text>JAN</text><text>FEB</text></svg>")[0]["labels"],
+         ["JAN", "FEB"])
+# <svg><title> is the accessible name of a picture, not a chart to mine.
+check_eq("a named graphic is a picture, not a chart",
+         _blocks("<svg><title>Appleseed logo</title><path/></svg>")[0],
+         {"t": "img", "alt": "Appleseed logo"})
+
+# -- variants
+# A report that offers the reader two years renders both. Text has no toggle,
+# so the picker's first option — the current year — wins.
+_FY = ('<p><select><option value="2027">FY2027</option>'
+       '<option value="2026">FY2026</option></select></p>'
+       '<p data-fy="2027">new money</p><p data-fy="2026">old money</p>'
+       '<p>always</p>')
+check("the current year is kept", _md(_FY), "new money")
+check_eq("...and the other year is dropped",
+         "old money" in _md(_FY), False)
+check("--fy picks the other year", _md(_FY, variant="2026"), "old money")
+check("prose outside the toggle is never dropped", _md(_FY, variant="2026"), "always")
+check("the picker itself collapses to the chosen year", _md(_FY), "FY2027")
+
+# -- furniture
+# A folio restates the page number in a few words at the page's edge. All three
+# have to hold, or an ordinary short line gets eaten.
+_FOLIO = ('<section class="page" data-page="6"><p>Real prose here.</p>'
+          '<div>BUDGET PRIMER • 6</div></section>'
+          '<section class="page" data-page="7"><p>More prose.</p>'
+          '<div>BUDGET PRIMER • 7</div></section>')
+check_eq("a running head that repeats across pages is dropped",
+         "BUDGET PRIMER" in dtext.extract(_FOLIO), False)
+check("...and the prose it sat under is kept",
+      dtext.extract(_FOLIO), "Real prose here.")
+# Recurrence IS the rule, so a lone page has nothing that has proven itself
+# furniture — and guessing there would eat a real line.
+check("a one-page report keeps its short edge line",
+      dtext.extract('<section class="page" data-page="7"><p>Prose.</p>'
+                    '<div>BUDGET PRIMER • 7</div></section>'), "BUDGET PRIMER")
+check("a short line mid-page survives even with the page number in it",
+      dtext.extract('<section class="page" data-page="7"><p>lead</p>'
+                    '<p>Act 7 passed</p><div>BUDGET PRIMER • 7</div></section>'),
+      "Act 7 passed")
+check("a long line at the edge is prose, not a folio",
+      dtext.extract('<section class="page" data-page="3">'
+                    '<p>Consists of the State Senate and House of Representatives, '
+                    'the Office of the Auditor, and 3 more bodies besides.</p>'
+                    '</section>'), "State Senate")
+
+# -- shapes that would otherwise come out as orphaned lines
+# A badge beside a heading is often the figure a reader most wants; stacked on
+# its own line it reads as a stray fragment.
+check("a numbered heading keeps its number and its badge",
+      _md('<div><span>1</span><h4>Tax investment profits</h4>'
+          '<span>Up to $132M a year</span></div>'),
+      "#### 1. Tax investment profits  [Up to $132M a year]")
+# A legend: each child led by an empty inline element, the colour chip.
+check("a chart key is joined onto one line",
+      _md('<div><div><span></span>General Funds</div>'
+          '<div><span></span>Special Funds</div></div>'),
+      "KEY: General Funds | Special Funds")
+# A label and the sentence it labels are one line on the page.
+check("a label and its sentence stay together",
+      _md("<div><span>DEC</span>The governor submits the budget.</div>"),
+      "DEC — The governor submits the budget.")
+check("a row of cells is joined, not stacked",
+      _md("<div><span>Budget Basics</span><span>3</span></div>"),
+      "Budget Basics  —  3")
+# Regression: the logo sat in a wrapper div, so the img rule never saw it as a
+# direct child and the picture vanished from the text entirely.
+check("a picture inside a wrapper is still named",
+      _md('<div class="lockup"><img src="logo.svg" alt="Appleseed logo"></div>'),
+      "[image: Appleseed logo]")
+check_eq("a decorative picture with no alt stays silent",
+         _blocks('<div><img src="rule.svg" alt=""></div>'), [])
+
+# -- what the reader only sees on screen
+check("an expandable section is labelled and kept",
+      _md("<details><summary>View all appropriations</summary>"
+          "<p>$700M transit</p></details>"),
+      'shown on the web version: "View all appropriations"')
+check("...along with everything inside it",
+      _md("<details><summary>More</summary><p>$700M transit</p></details>"),
+      "$700M transit")
+check_eq("script and style never reach the text",
+         "hidden" in _md("<style>.x{color:hidden}</style>"
+                         "<script>var hidden=1</script><p>shown</p>"), False)
+
+# Real renderers are well-formed, but a text dump is not worth crashing over.
+check("a stray close tag does not derail the walk",
+      _md("<p>first</p></div><p>second</p>"), "second")
 
 
 if FAILS:
