@@ -96,7 +96,16 @@
   /* A thin rule between the history/commit group and the rest. */
   .bar-sep { flex:none; width:1px; height:20px; background:var(--line); margin:0 3px; }
   #stat { flex:1 1 40px; min-width:40px; opacity:.9; overflow:hidden;
-          text-overflow:ellipsis; white-space:nowrap; }
+          text-overflow:ellipsis; white-space:nowrap;
+          transition:opacity .5s ease; }
+  /* The idle sentence is read once and is then permanent furniture: it says
+     the same thing on every render, for the whole session. It fades back
+     rather than being deleted, because it IS the answer to "is this live?" —
+     it just does not need to be as loud as a message about the thing you did
+     a second ago. Any other status text cancels the fade (see the observer),
+     and passing over the bar brings it back. */
+  #stat.idle:not(.err) { opacity:.34; }
+  #bar:hover #stat.idle:not(.err) { opacity:.9; }
   #bar > button, #bar > span:not(#stat) { flex:none; }
   /* Zoom (Fit / 100 / 125 / 150) hidden for now — kept in the DOM so wiring
      stays intact. !important beats the later #zoom{display:inline-flex} rule;
@@ -222,8 +231,22 @@
   #stat.err { opacity:1; color:#FFD9D4; font-weight:600; cursor:help; }
   .ds-id { font:11.5px ui-monospace,monospace; color:var(--dim);
            background:rgba(255,255,255,.07); padding:2px 8px; border-radius:99px; }
-  #fit { background:#C0392B; color:#fff; padding:3px 10px; border-radius:99px;
-         font:12px system-ui; cursor:help; }
+  /* Was a filled #C0392B pill: the most saturated thing in the window, held
+     there permanently by a condition you fix when you get to it. A standing
+     alarm stops being read — the same argument docsync/check.py makes about
+     warnings that can never be got to green. Outlined and muted here; the
+     page it is ABOUT carries the mark, which is the part that was missing. */
+  #fit { background:rgba(192,57,43,.14); color:#F0B4AC; padding:3px 10px;
+         border:1px solid rgba(240,180,172,.42); border-radius:99px;
+         font:12px system-ui; cursor:help;
+         transition:background .14s, color .14s, border-color .14s; }
+  #fit:hover { background:#C0392B; color:#fff; border-color:#C0392B; }
+  /* The corner mark on the page chip whose content is cut. Sits opposite the
+     number so the two never collide. */
+  .chip.cut .chip-thumb { border-color:#C0392B; }
+  .chip-cut { position:absolute; right:0; bottom:0; z-index:2; padding:1px 4px 1px 5px;
+          border-radius:5px 0 4px 0; background:#C0392B; color:#fff;
+          font:700 10px/1.35 system-ui; pointer-events:none; }
   /* What a conversion had to decide. A strip under the bar rather than a chip
      in it: these are sentences, not a word, and they are read once. Dismissable
      for the same reason — a notice that cannot be got rid of becomes furniture
@@ -407,8 +430,14 @@
      TO push is independent of whether the editor currently has unsaved
      words in it (#save's own dirty state). .pending only lights up once
      there is a real commit sitting here that GitHub does not have. */
-  #push.pending { background:#3B6FA0; border-color:#3B6FA0; color:#fff; font-weight:600; }
-  #push.pending:hover { background:#2F5A85; border-color:#2F5A85; }
+  /* Outlined, not filled. Filled #3B6FA0 made the highest-chroma object in the
+     window a STANDING state — unpushed commits sit there until you deal with
+     them, which is not the same as asking to be dealt with now. Save earns the
+     filled treatment because it is transient and frequent; this earns being
+     legible. Fills in on hover, when you are actually reaching for it. */
+  #push.pending { background:rgba(59,111,160,.16); border-color:#6F93B8;
+          color:#CFE0EF; font-weight:600; }
+  #push.pending:hover { background:#3B6FA0; border-color:#3B6FA0; color:#fff; }
   /* A Push the server has already determined would fail. Amber, not red, and
      still clickable: this is a prediction from the last background check, and
      a stale one must never be what stops someone pushing. */
@@ -447,10 +476,40 @@
      away from the click that hit it. align-items:flex-end pins everything to
      the bottom edge, which is the one edge the strip has in common with
      itself open and closed. */
-  #rail { flex:none; display:flex; align-items:flex-end; gap:10px;
-          overflow-x:auto; overflow-y:hidden; background:var(--chrome);
-          border-top:1px solid var(--line); scrollbar-width:thin;
-          padding:10px 12px; }
+  /* The strip FLOATS in both states now, not just folded. Expanded it used to
+     be a flex child: an opaque 106px band, the highest-contrast object on
+     screen, holding 12% of the window open to show something you look at
+     between tasks rather than during one. Translucent over the canvas it
+     stops being the thing your eye goes to, and the document gets the height
+     back. That reverses the earlier call recorded in chrome-float.spec.js —
+     made when the only options were "opaque bar" or "gone", with translucency
+     not on the table. Pass over the strip and it comes back to full strength;
+     the dim is idle state, never a state you are working in. */
+  #rail { position:absolute; left:0; right:0; bottom:0; z-index:6;
+          display:flex; align-items:flex-end; gap:10px;
+          overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
+          padding:10px 12px;
+          background:rgba(51,64,73,.68);
+          -webkit-backdrop-filter:blur(16px) saturate(1.15);
+          backdrop-filter:blur(16px) saturate(1.15);
+          border-top:1px solid rgba(255,255,255,.09);
+          opacity:.6;
+          transition:opacity .16s ease, background-color .16s ease;
+          /* The band passes clicks; only the CONTROLS in it take them. Floating
+             an opaque-behaviour bar over the canvas would swallow every click
+             on the bottom inch of the page — the exact objection the folded
+             state records, and it is no less true of a translucent bar. Same
+             none/auto split #context uses for the contextual card. */
+          pointer-events:none; }
+  #rail > * { pointer-events:auto; }
+  /* :focus-within as well as :hover — reaching the strip by keyboard has to
+     bring it up too, or Tab lands you on a control you cannot see. */
+  #rail:hover, #rail:focus-within, #rail.dragging {
+          opacity:1; background:rgba(51,64,73,.86); }
+  /* Nobody wants a fade mid-drag: a chip dragged across a dimming strip
+     reads as the drop target going away. Set by the same drag handlers that
+     already track the reorder. */
+  @media (prefers-reduced-motion:reduce) { #rail { transition:none; } }
   #rail-list { display:flex; align-items:flex-start; gap:2px; }
   /* Insert point between two pages: a hit strip that shows a small + and a
      guide line only on hover, so thirteen of them add no standing noise. It
@@ -499,9 +558,13 @@
      would have landed on dark ground. The rail stops after its last button
      now, so the corner is free and the control that opens the strip belongs
      in it. */
-  #rail.folded { position:absolute; left:0; right:0; bottom:0; z-index:6;
-          background:transparent; border-top-color:transparent;
-          pointer-events:none; }
+  /* Folded keeps the float it now shares with the expanded state, and only
+     turns off what it does not want: the ground, the blur, the dim (there is
+     nothing left to dim but a word and a chevron) and the clicks. */
+  #rail.folded { background:transparent; border-top-color:transparent;
+          -webkit-backdrop-filter:none; backdrop-filter:none;
+          opacity:1; pointer-events:none; }
+  #rail.folded:hover, #rail.folded:focus-within { background:transparent; }
   #rail.folded #rail-list, #rail.folded #rail-add { display:none; }
   #rail.folded #rail-head, #rail.folded #rail-fold { pointer-events:auto; }
   #rail.folded #rail-fold { transform:rotate(180deg); }
@@ -540,9 +603,6 @@
           border-radius:0 5px 0 4px; background:rgba(47,62,70,.72); color:#fff;
           font:700 10px ui-monospace,monospace; line-height:1.35;
           pointer-events:none; }
-  .chip-lab { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-          text-align:center; font-size:9.5px; line-height:1.3; color:var(--dim); }
-  .chip.on .chip-lab { color:var(--txt); }
   /* Controls ride on the preview's top-right and only on hover — Canva keeps
      a page thumbnail clean until you reach for it. */
   .chip-x, .chip-eye { position:absolute; top:2px; right:2px; z-index:3;
@@ -4838,12 +4898,35 @@ function reportFit(d) {
   const bad = fitCheck(d);
   paintCut(d, bad);
   lastFit = bad;
-  if (!bad.length) { $('fit').hidden = true; return; }
+  if (!bad.length) { $('fit').hidden = true; markCutChips([]); return; }
   const pages = [...new Set(bad.map(b => b.page))];
   $('fit').hidden = false;
   $('fit').textContent = `⚠ ${pages.length} page${pages.length > 1 ? 's' : ''} cut in print: `
                        + pages.join(', ');
   $('fit').title = bad.map(b => `page ${b.page}: ${b.who} is ${b.over}in past the cut`).join('\n');
+  markCutChips(pages);
+}
+
+/** Put the warning ON the pages it is about.
+ *
+ *  The bar can only say "8" and leave you to find page 8; the strip is where
+ *  you would look for it. Cheap enough to redo wholesale on every fit check —
+ *  there are a dozen chips, and tracking which ones changed would be more
+ *  code than re-stamping all of them. */
+function markCutChips(pages) {
+  const want = new Set((pages || []).map(String));
+  document.querySelectorAll('#rail-list .chip').forEach(c => {
+    // The chip is keyed by page id; a blank page's id is a string and is never
+    // in `pages`, which fitCheck reports by NUMBER.
+    const on = want.has(String(c.dataset.pid));
+    c.classList.toggle('cut', on);
+    const had = c.querySelector('.chip-cut');
+    if (on && !had) {
+      const m = document.createElement('span');
+      m.className = 'chip-cut'; m.textContent = '!';
+      c.querySelector('.chip-thumb').appendChild(m);
+    } else if (!on && had) { had.remove(); }
+  });
 }
 
 // -------------------------------------------------------------- text boxes
@@ -8117,6 +8200,11 @@ function railRender() {
   // renders nothing for it. The button used to sit there on every report and
   // quietly do nothing — the one case worse than not offering it.
   $('rail-add').hidden = !pagesDeclared;
+  // The chips were just rebuilt from scratch, so any print-cut marks went with
+  // them. reportFit() runs on its own schedule and often BEFORE this — its
+  // marks would find no chips to land on — so the last known result is
+  // re-stamped here. lastFit is the same list reportFit() works from.
+  markCutChips([...new Set((lastFit || []).map(b => b.page))]);
   railThumbs();
   railSyncActive();
 }
@@ -8324,14 +8412,21 @@ function chip(pid, pos, label, isHidden) {
   c.dataset.pid = pid;
   c.draggable = !isHidden && pagesDeclared;
   const name = isBlank ? 'blank page' : (label || 'page ' + pid);
-  c.title = isHidden ? name + ' — hidden from the report' : name;
+  // The name is a TOOLTIP, not a caption under the thumbnail. Rendered, it was
+  // "Budget B…", "How Mon…", "Spending…" — twelve ellipsised strings that
+  // identify nothing the preview and the number do not already, in the one
+  // piece of chrome meant to be glanced at. data-tip so it uses the editor's
+  // own tooltip rather than the OS one; aria-label so it is still the chip's
+  // accessible name, which the caption used to be.
+  const full = isHidden ? name + ' — hidden from the report' : name;
+  c.dataset.tip = full;
+  c.setAttribute('aria-label', full);
   // .chip-view is the SHADOW HOST and nothing else: a host renders its shadow
   // tree INSTEAD of its own children, so the number would vanish the moment a
   // preview landed if it lived in there. The frame holds both as siblings.
   c.innerHTML = `<span class="chip-thumb empty"><span class="chip-view"></span>`
-    + `<span class="chip-n"></span></span><span class="chip-lab"></span>`;
+    + `<span class="chip-n"></span></span>`;
   c.querySelector('.chip-n').textContent = isHidden ? '—' : pos;
-  c.querySelector('.chip-lab').textContent = name;
   // Show/hide (designed only) or delete (blank).
   if (isBlank) {
     const x = document.createElement('button');
@@ -8411,12 +8506,20 @@ function chip(pid, pos, label, isHidden) {
   });
   // Drag to reorder — only where an order is honoured.
   if (!isHidden && pagesDeclared) {
-    c.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(pid)); });
+    // .dragging pins the strip at full strength for the whole drag: a chip
+    // dragged across a strip that is fading back out reads as the drop target
+    // going away under the cursor.
+    c.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', String(pid));
+      $('rail').classList.add('dragging');
+    });
+    c.addEventListener('dragend', () => $('rail').classList.remove('dragging'));
     c.addEventListener('dragover', e => { e.preventDefault(); c.classList.add('drag-over'); });
     c.addEventListener('dragleave', () => c.classList.remove('drag-over'));
     c.addEventListener('drop', async e => {
       e.preventDefault();
       c.classList.remove('drag-over');
+      $('rail').classList.remove('dragging');
       const from = e.dataTransfer.getData('text/plain');
       const fromPid = /^\d+$/.test(from) ? +from : from;
       if (fromPid === pid) return;
@@ -8747,7 +8850,21 @@ function applyZoom(recompute = true) {
   // the layout edges back to the visual size, both axes, both directions
   // (s>1 extends them, keeping a zoomed canvas's real scroll range).
   out.style.marginRight = (frameW * (s - 1)) + 'px';
-  out.style.marginBottom = ((stage.clientHeight / s) * (s - 1)) + 'px';
+  // The floating strip covers the bottom of the canvas, and unlike the folded
+  // one it takes clicks, so anything under it is not merely dim but out of
+  // reach. Extra room BELOW the iframe (not padding inside the report — that
+  // is the document itself) lets the last page scroll clear of it. Measured,
+  // not a constant: the strip's height changes with the fold.
+  const rail = $('rail');
+  const railClear = rail && !rail.classList.contains('folded')
+    ? Math.round(rail.getBoundingClientRect().height) : 0;
+  // The existing term compensates for the transform and goes slightly NEGATIVE
+  // whenever the fit scale is under 1 — which quietly ate 2px of the strip's
+  // clearance. Floored at the strip's own height so the guarantee is exact
+  // rather than nearly. Folded (railClear 0) keeps the bare term, unchanged.
+  const zoomAdj = (stage.clientHeight / s) * (s - 1);
+  out.style.marginBottom =
+    (railClear ? Math.max(railClear, zoomAdj + railClear) : zoomAdj) + 'px';
   if (before && s !== wasScale) restoreCentre(before, s);
   // Keep whatever gets scrolled into view clear of the floating #context card.
   // The report scrolls inside the IFRAME, so the padding belongs to the
@@ -8911,6 +9028,20 @@ new ResizeObserver(() => {
   clearTimeout(stageT);
   stageT = setTimeout(stageRefit, 60);
 }).observe($('stage'));
+// The floating strip's height is not fixed — it grows when the hidden run
+// appears, and it settles a couple of pixels once the chips have their
+// previews. applyZoom sizes the canvas's bottom clearance from that height, so
+// a measurement taken before it settled left the last page two pixels short of
+// clear. Watch the strip and re-run the sizing whenever it actually changes.
+// Same timer-not-rAF reasoning as the stage observer above.
+let railH = 0, railT = null;
+new ResizeObserver(() => {
+  const h = Math.round($('rail').getBoundingClientRect().height);
+  if (h === railH) return;
+  railH = h;
+  clearTimeout(railT);
+  railT = setTimeout(() => applyZoom(false), 60);
+}).observe($('rail'));
 // Belt and braces for work the hidden tab deferred: rendering pipelines (and
 // with them ResizeObserver delivery) suspend while hidden, so refit once on
 // every reveal rather than trusting the deferred delivery to arrive.
@@ -11002,6 +11133,12 @@ function wireTooltips(doc) {
   doc.body.appendChild(chip);
   let target = null, timer = null;
   const shortLabel = s => { const i = s.indexOf(' — '); return i === -1 ? s : s.slice(0, i); };
+  // A button's aria-label is written for a screen reader and often ends in a
+  // clause the tooltip trims. data-tip is written to BE the tooltip, so it is
+  // shown exactly as given — which is how a page chip keeps its
+  // "— hidden from the report" while a toolbar button loses its explanation.
+  const TIP_SEL = 'button[aria-label], [data-tip]';
+  const tipText = el => el.dataset.tip || shortLabel(el.getAttribute('aria-label') || '');
 
   function place() {
     const r = target.getBoundingClientRect();
@@ -11016,7 +11153,7 @@ function wireTooltips(doc) {
   }
   function show() {
     if (!target) return;
-    chip.textContent = shortLabel(target.getAttribute('aria-label') || '');
+    chip.textContent = tipText(target);
     chip.hidden = false;
     place();
   }
@@ -11025,7 +11162,7 @@ function wireTooltips(doc) {
     chip.hidden = true;
   }
   doc.addEventListener('mouseover', e => {
-    const b = e.target.closest('button[aria-label]');
+    const b = e.target.closest(TIP_SEL);
     if (b === target) return;
     hide();
     if (b) { target = b; timer = setTimeout(show, 400); }
@@ -11036,7 +11173,7 @@ function wireTooltips(doc) {
   // same mousedown had just dismissed. Keyboard (Tab) focus is the case
   // this exists for.
   doc.addEventListener('focusin', e => {
-    const b = e.target.closest('button[aria-label]');
+    const b = e.target.closest(TIP_SEL);
     if (b && b.matches(':focus-visible')) { target = b; show(); }
   });
   doc.addEventListener('focusout', hide);
@@ -11044,6 +11181,39 @@ function wireTooltips(doc) {
   win.addEventListener('resize', () => { if (!chip.hidden) place(); });
 }
 wireTooltips(document);
+
+/** Fade the ONE status message that never changes, and only that one.
+ *
+ *  #stat is written from about forty places, nearly all of them transient
+ *  ("page 3 copied", "cover.logo -> 125%"). The exception is the live-mode
+ *  sentence, re-written on every render, identical every time — so it is the
+ *  only one that becomes furniture. Watching the text rather than touching
+ *  forty call sites keeps that a property of the MESSAGE, not a flag every
+ *  future caller has to remember to pass.
+ *
+ *  The fade waits, so a render does not blink the line at you; a real message
+ *  cancels it outright.
+ */
+const IDLE_STAT = 'live — edits here and from Claude land in the same files';
+(function watchStat() {
+  const el = $('stat');
+  let timer = null;
+  const sync = () => {
+    clearTimeout(timer); timer = null;
+    if (el.textContent === IDLE_STAT) {
+      // Already faded? Leave it — re-arming on every render would restart the
+      // delay forever and the line would never actually settle.
+      if (!el.classList.contains('idle')) {
+        timer = setTimeout(() => el.classList.add('idle'), 6000);
+      }
+    } else {
+      el.classList.remove('idle');
+    }
+  };
+  new MutationObserver(sync).observe(el, { childList: true, characterData: true,
+                                           subtree: true });
+  sync();
+})();
 
 async function boot() {
   await loadRegistry();
