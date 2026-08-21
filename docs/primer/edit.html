@@ -12692,6 +12692,20 @@ function wire(roots) {
   // a thing you can plainly see. So before the marquee gets it, the click is
   // hit-tested against the placed elements by geometry, and the topmost one
   // under the point takes the gesture — select and drag, like any direct hit.
+  // Links never navigate the CANVAS. The report is full of real anchors —
+  // citation URLs above all — and this iframe is the editing surface: a
+  // click that swaps it for the cited website silently destroys any open
+  // inline editor with it. (Endnotes hit this for real: their mousedown
+  // handler prevents the DRAG default, but navigation is the CLICK's
+  // default, so the frame still sailed off to the citation's URL whenever
+  // the next render lost the race to the site's response — reproduced at
+  // DS_CPU_THROTTLE=6.) Pure-hash anchors (footnote markers → #enN) still
+  // scroll; the published page's links are untouched — this binds in edit
+  // wiring only.
+  d.addEventListener('click', e => {
+    const a = e.target.closest('a[href]');
+    if (a && !(a.getAttribute('href') || '').startsWith('#')) e.preventDefault();
+  }, true);
   within(d, roots, 'section.page').forEach(pg => {
     pg.addEventListener('mousedown', e => {
       if (e.button !== 0 || editing) return;
