@@ -457,7 +457,10 @@ class _Coverage(HTMLParser):
         self.stack.append((tag, hook, tag == "svg", page))
         if tag in _OPAQUE_TAGS:
             self.opaque += 1
-        if tag == "text":              # svg text element; aggregate its tspans
+        if tag == "text" and "data-slot" not in a:
+            # An svg text element; aggregate its tspans for the prose test.
+            # One CARRYING data-slot (C.slot_attr on the <text> tag — the
+            # report2027 placeholder pattern) is editable, hence exempt.
             self._svg_text = []
 
     def handle_endtag(self, tag):
