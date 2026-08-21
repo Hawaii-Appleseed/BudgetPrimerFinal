@@ -144,6 +144,10 @@ _BINDING = """
   # Added by "+ New report" (docsync/new.py) — {origin}.
   - id: {slug}
     content: projects/{slug}/content.md
+    # Editability findings (dead text / frozen prose) are build ERRORS for
+    # this project — see docsync.check. Name deliberate exceptions in an
+    # editability_ok list rather than downgrading to warn.
+    editability: strict
     build: python3 projects/{slug}/render_report.py && python3 -m docsync.stage --id {slug}
     outputs:
       - projects/{slug}/web/index.html

@@ -512,6 +512,13 @@ def check_editability(binding) -> list[Problem]:
     ed = binding.editor
     if ed is None or not ed.render:
         return []
+    # "strict" makes findings ERRORS (CI fails): the generators write it into
+    # every new project, so future ingestions cannot ship uneditable text
+    # silently. Deliberate exceptions are named in editability_ok — an exact
+    # string per line, a reviewable decision in the diff.
+    strict = binding.editability == "strict"
+    level = "error" if strict else "warn"
+    accepted = set(binding.editability_ok)
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "edit.html"
         env = {**os.environ, "DOCSYNC_EDIT": "1", "DOCSYNC_OUT": str(out)}
@@ -523,27 +530,32 @@ def check_editability(binding) -> list[Problem]:
                 "editability",
                 f"edit-mode build failed ({tail[-1] if tail else 'no output'})"
                 " — the draft editor cannot open what this check cannot build",
-                "warn")]
+                level)]
         html = out.read_text(encoding="utf-8")
 
     cov = _Coverage()
     cov.feed(html)
     problems: list[Problem] = []
-    dead = cov.dead_paged if cov.saw_page else cov.dead_all
+    dead = [t for t in (cov.dead_paged if cov.saw_page else cov.dead_all)
+            if t not in accepted]
+    frozen = [s for s in cov.frozen_prose if s not in accepted]
+    hint = ("Wire them (C.html / C.slot_attr / L.attr) or list each in this "
+            "binding's editability_ok" if strict else
+            "Wire them (C.html / C.slot_attr / L.attr) or accept them as "
+            "chrome knowingly")
     if dead:
         problems.append(Problem(
             "editability",
             f"{len(dead)} visible text string(s) carry no edit hook — not a "
-            f"slot, not movable: {_samples(dead)}. Wire them (C.html / "
-            f"C.slot_attr / L.attr) or accept them as chrome knowingly",
-            "warn"))
-    if cov.frozen_prose:
+            f"slot, not movable: {_samples(dead)}. {hint}",
+            level))
+    if frozen:
         problems.append(Problem(
             "editability",
-            f"{len(cov.frozen_prose)} sentence(s) drawn inside a graphic, so "
-            f"only the renderer can change them: {_samples(cov.frozen_prose)}. "
+            f"{len(frozen)} sentence(s) drawn inside a graphic, so "
+            f"only the renderer can change them: {_samples(frozen)}. "
             f"Captions belong in a slot beside the SVG, not in it",
-            "warn"))
+            level))
     return problems
 
 
@@ -649,13 +661,16 @@ def main(argv: list[str] | None = None) -> int:
         if b.editor is not None and b.editor.render:
             checked += 1
             eprobs = check_editability(b)
-            if eprobs:
+            if any(pr.is_error for pr in eprobs):
+                failed += 1
+                print(f"FAIL {b.id}: edit-mode draft (editability: strict)")
+            elif eprobs:
                 warned += 1
                 print(f"warn {b.id}: edit-mode draft")
-                for pr in eprobs:
-                    print(f"     {pr}")
             else:
                 print(f"  ok {b.id}: edit-mode draft")
+            for pr in eprobs:
+                print(f"     {pr}")
 
     tail = f", {warned} with warnings" if warned else ""
     print(f"\n{checked} file(s) checked, {failed} failing{tail}")

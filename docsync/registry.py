@@ -58,6 +58,18 @@ class Binding:
     # but a rebuild should still react to.
     watch: list[str] = field(default_factory=list)
     editor: Editor | None = None       # None: this binding has no draft editor
+    # How docsync.check treats editability findings (dead text / frozen prose
+    # in the edit-mode draft). "strict": they are ERRORS and fail CI — the
+    # generators write this into every new project, so an ingestion cannot
+    # ship uneditable text silently. "warn": legacy default for bindings that
+    # predate the check. "wip" (kept as written, behaves like warn): a
+    # scaffolded page parked between STAGE ONE and STAGE TWO — greppable
+    # intent, flipped to strict when the wiring pass is done.
+    editability: str = "warn"
+    # Exact visible strings a strict binding accepts as deliberately inert
+    # (page-number chrome, a data-frozen label). Each entry is a reviewable
+    # decision in the diff; anything not listed still fails.
+    editability_ok: list[str] = field(default_factory=list)
 
     @property
     def state_file(self) -> Path:
@@ -106,6 +118,14 @@ def load_registry(path: Path = REGISTRY) -> list[Binding]:
         if mode == "fragment" and not target:
             raise RegistryError(f"{where}: fragment mode requires 'target'")
 
+        edi = str(b.get("editability", "warn"))
+        if edi not in ("warn", "strict", "wip"):
+            raise RegistryError(
+                f"{where}: editability '{edi}' must be warn, strict or wip")
+        edi_ok = b.get("editability_ok") or []
+        if not all(isinstance(s, str) for s in edi_ok):
+            raise RegistryError(f"{where}: editability_ok must be strings")
+
         out.append(Binding(
             id=bid,
             doc=b.get("doc", ""),
@@ -118,6 +138,8 @@ def load_registry(path: Path = REGISTRY) -> list[Binding]:
             outputs=list(b.get("outputs") or []),
             watch=list(b.get("watch") or []),
             editor=_editor(b.get("editor"), where),
+            editability=edi,
+            editability_ok=[str(s) for s in edi_ok],
         ))
     return out
 

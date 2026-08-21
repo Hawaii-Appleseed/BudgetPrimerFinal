@@ -243,6 +243,10 @@ _YML_BINDING = '''
   # no-clip default for a scrolling web page; trim once visible.
   - id: {slug}
     content: projects/{slug}/content.md
+    # STAGE ONE is expected to be full of unwired text, so editability
+    # findings only warn for now. Flip to `editability: strict` when the
+    # STAGE TWO wiring pass is done — that is what "done" means.
+    editability: wip
     build: python3 projects/{slug}/render_report.py
     outputs:
       - projects/{slug}/index.html
