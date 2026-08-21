@@ -30,10 +30,13 @@ catches a stale or hand-edited index.html that no longer matches its renderer.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -393,6 +396,154 @@ CHECKS = (check_citations, check_markdown, check_svg_bounds,
           check_text_size)
 
 
+# --- editability coverage ----------------------------------------------------
+# Why this exists: the rxkids-fiscal one-pager passed every check above and the
+# editor's own audit, yet a reader of the page in the editor found "so many
+# elements uneditable" — because everything those nets measure is the wiring
+# that EXISTS (slots resolve, sources anchor), never the text that was left
+# with no wiring at all. Two failure shapes, both invisible until now:
+#
+#   * DEAD TEXT — a visible string with no data-slot and no data-el anywhere
+#     above it. Not editable, not movable, invisible to the audit because the
+#     audit walks hooks. The classic source is an ingested page whose widget
+#     markup was carried over verbatim.
+#   * FROZEN PROSE — a full sentence drawn INSIDE an SVG graphic. The graphic
+#     is movable (data-el on the wrapper), so coverage looks fine, but the
+#     sentence itself can only be changed by editing the renderer. Data marks
+#     ("$20.7M", axis ticks) belong in the drawing; sentences are captions and
+#     belong in a slot beside it.
+#
+# Both are warnings, never errors: a model-driven chart deliberately freezes
+# its numbers (retyping "$52.1M" by hand would make the chart lie), and chrome
+# outside the sheet is not content. The point is that the choice shows up in
+# the check output instead of surprising the person editing the page.
+
+# Tags that never wrap content and never come back down through handle_endtag.
+_VOID = frozenset("area base br col embed hr img input link meta source track "
+                  "wbr".split())
+_OPAQUE_TAGS = frozenset(("script", "style", "head", "title", "template"))
+# Words = runs with a letter or digit; two alnum chars = worth a look.
+_ALNUM2 = re.compile(r"[^\W_].*[^\W_]", re.S)
+_SENT_END = re.compile(r"[.!?:;]\s*$")
+
+
+class _Coverage(HTMLParser):
+    """Classify every visible text node of an EDIT-MODE build.
+
+    dead: no data-slot/data-el ancestor, outside any SVG.
+    frozen_prose: sentence-shaped text inside an <svg>.
+    Text outside the sheet (no `page`-classed ancestor) is chrome, not content
+    — kept separately so a document with no .page container still gets a
+    best-effort pass over everything.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, bool, bool, bool]] = []  # tag, hook, svg, page
+        self.opaque = 0
+        self.dead_paged: list[str] = []
+        self.dead_all: list[str] = []
+        self.saw_page = False
+        self._svg_text: list[str] | None = None
+        self.frozen_prose: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _VOID:
+            return
+        a = dict(attrs)
+        hook = "data-slot" in a or "data-el" in a
+        page = "page" in (a.get("class") or "").split()
+        self.saw_page = self.saw_page or page
+        self.stack.append((tag, hook, tag == "svg", page))
+        if tag in _OPAQUE_TAGS:
+            self.opaque += 1
+        if tag == "text":              # svg text element; aggregate its tspans
+            self._svg_text = []
+
+    def handle_endtag(self, tag):
+        if tag in _VOID:
+            return
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
+        if tag in _OPAQUE_TAGS:
+            self.opaque = max(0, self.opaque - 1)
+        if tag == "text" and self._svg_text is not None:
+            whole = " ".join(t for t in self._svg_text if t).strip()
+            if len(whole.split()) >= 5 and _SENT_END.search(whole):
+                self.frozen_prose.append(whole)
+            self._svg_text = None
+
+    def handle_data(self, data):
+        if self.opaque:
+            return
+        t = " ".join(data.split())
+        if not t or not _ALNUM2.search(t):
+            return
+        in_svg = any(s for _, _, s, _ in self.stack)
+        if in_svg:
+            if self._svg_text is not None:
+                self._svg_text.append(t)
+            return
+        if any(h for _, h, _, _ in self.stack):
+            return
+        self.dead_all.append(t)
+        if any(p for _, _, _, p in self.stack):
+            self.dead_paged.append(t)
+
+
+def _samples(strings: list[str], n: int = 4) -> str:
+    out = ", ".join(repr(s[:50]) for s in strings[:n])
+    more = len(strings) - n
+    return out + (f" … and {more} more" if more > 0 else "")
+
+
+def check_editability(binding) -> list[Problem]:
+    """Build the binding's EDIT-mode draft and measure what a user can touch.
+
+    Runs the report's own renderer with DOCSYNC_EDIT=1 into a temp file — the
+    same build the browser editor makes — because the committed output is the
+    PUBLISH build, which strips every hook this check exists to count.
+    """
+    ed = binding.editor
+    if ed is None or not ed.render:
+        return []
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "edit.html"
+        env = {**os.environ, "DOCSYNC_EDIT": "1", "DOCSYNC_OUT": str(out)}
+        r = subprocess.run([sys.executable, str(ed.render)], env=env, cwd=ROOT,
+                           capture_output=True, text=True, timeout=180)
+        if r.returncode or not out.exists():
+            tail = (r.stderr.strip() or r.stdout.strip()).splitlines()
+            return [Problem(
+                "editability",
+                f"edit-mode build failed ({tail[-1] if tail else 'no output'})"
+                " — the draft editor cannot open what this check cannot build",
+                "warn")]
+        html = out.read_text(encoding="utf-8")
+
+    cov = _Coverage()
+    cov.feed(html)
+    problems: list[Problem] = []
+    dead = cov.dead_paged if cov.saw_page else cov.dead_all
+    if dead:
+        problems.append(Problem(
+            "editability",
+            f"{len(dead)} visible text string(s) carry no edit hook — not a "
+            f"slot, not movable: {_samples(dead)}. Wire them (C.html / "
+            f"C.slot_attr / L.attr) or accept them as chrome knowingly",
+            "warn"))
+    if cov.frozen_prose:
+        problems.append(Problem(
+            "editability",
+            f"{len(cov.frozen_prose)} sentence(s) drawn inside a graphic, so "
+            f"only the renderer can change them: {_samples(cov.frozen_prose)}. "
+            f"Captions belong in a slot beside the SVG, not in it",
+            "warn"))
+    return problems
+
+
 def check_html(html: str) -> list[Problem]:
     """Every invariant, over one rendered document."""
     return [p for fn in CHECKS for p in fn(html)]
@@ -489,6 +640,19 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"     {pr}" + (f"  (x{n})" if n > 1 else ""))
             if len(errors) + len(warns) > 20:
                 print(f"     … and {len(errors) + len(warns) - 20} more")
+
+        # The editability pass builds its own (edit-mode) document, so it is
+        # per binding, not per committed output file.
+        if b.editor is not None and b.editor.render:
+            checked += 1
+            eprobs = check_editability(b)
+            if eprobs:
+                warned += 1
+                print(f"warn {b.id}: edit-mode draft")
+                for pr in eprobs:
+                    print(f"     {pr}")
+            else:
+                print(f"  ok {b.id}: edit-mode draft")
 
     tail = f", {warned} with warnings" if warned else ""
     print(f"\n{checked} file(s) checked, {failed} failing{tail}")
