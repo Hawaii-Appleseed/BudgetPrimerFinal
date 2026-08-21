@@ -426,6 +426,28 @@ _OPAQUE_TAGS = frozenset(("script", "style", "head", "title", "template"))
 _ALNUM2 = re.compile(r"[^\W_].*[^\W_]", re.S)
 _SENT_END = re.compile(r"[.!?:;]\s*$")
 
+# data-el namespaces whose TEXT is edited through a dedicated editor panel
+# rather than click-to-edit in place: layout text boxes and tables (their
+# words live in layout.json), and endnote entries (the Sources panel). A
+# data-el in any other namespace makes an element movable and nothing more,
+# so prose inside one with no data-slot is the C() trap — the skill's
+# "#1 why-can't-I-edit-this cause": the paragraph drags, the words are
+# frozen, and hook-counting coverage looks perfect.
+_PANEL_EDITED = ("text.", "table.", "endnote.")
+
+
+def _prose(t: str, loose: bool = False) -> bool:
+    """Sentence-shaped: what a person would expect to retype.
+
+    Data marks ("$20.7M", "ITEP: +$83M — rates only") stay under the word
+    threshold or lack sentence punctuation. `loose` also accepts long
+    unpunctuated runs — headings hit the C() trap without ever ending in a
+    period, but an SVG's multi-word annotations should not be flagged for
+    length alone.
+    """
+    n = len(t.split())
+    return (n >= 5 and bool(_SENT_END.search(t))) or (loose and n >= 8)
+
 
 class _Coverage(HTMLParser):
     """Classify every visible text node of an EDIT-MODE build.
@@ -439,10 +461,13 @@ class _Coverage(HTMLParser):
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.stack: list[tuple[str, bool, bool, bool]] = []  # tag, hook, svg, page
+        # Per ancestor: tag, data-slot, any data-el, TRAP data-el (movable,
+        # not panel-edited), is-svg, is-.page.
+        self.stack: list[tuple[str, bool, bool, bool, bool, bool]] = []
         self.opaque = 0
         self.dead_paged: list[str] = []
         self.dead_all: list[str] = []
+        self.trapped: list[str] = []      # movable wrapper, no slot: C() trap
         self.saw_page = False
         self._svg_text: list[str] | None = None
         self.frozen_prose: list[str] = []
@@ -451,13 +476,17 @@ class _Coverage(HTMLParser):
         if tag in _VOID:
             return
         a = dict(attrs)
-        hook = "data-slot" in a or "data-el" in a
-        page = "page" in (a.get("class") or "").split()
+        classes = (a.get("class") or "").split()
+        slot = "data-slot" in a
+        el = "data-el" in a
+        trap = (el and not (a.get("data-el") or "").startswith(_PANEL_EDITED)
+                and "ds-textbox" not in classes)
+        page = "page" in classes
         self.saw_page = self.saw_page or page
-        self.stack.append((tag, hook, tag == "svg", page))
+        self.stack.append((tag, slot, el, trap, tag == "svg", page))
         if tag in _OPAQUE_TAGS:
             self.opaque += 1
-        if tag == "text" and "data-slot" not in a:
+        if tag == "text" and not slot:
             # An svg text element; aggregate its tspans for the prose test.
             # One CARRYING data-slot (C.slot_attr on the <text> tag — the
             # report2027 placeholder pattern) is editable, hence exempt.
@@ -474,7 +503,7 @@ class _Coverage(HTMLParser):
             self.opaque = max(0, self.opaque - 1)
         if tag == "text" and self._svg_text is not None:
             whole = " ".join(t for t in self._svg_text if t).strip()
-            if len(whole.split()) >= 5 and _SENT_END.search(whole):
+            if _prose(whole):
                 self.frozen_prose.append(whole)
             self._svg_text = None
 
@@ -484,15 +513,22 @@ class _Coverage(HTMLParser):
         t = " ".join(data.split())
         if not t or not _ALNUM2.search(t):
             return
-        in_svg = any(s for _, _, s, _ in self.stack)
-        if in_svg:
+        if any(svg for *_, svg, _ in self.stack):
             if self._svg_text is not None:
                 self._svg_text.append(t)
             return
-        if any(h for _, h, _, _ in self.stack):
+        if any(slot for _, slot, *_ in self.stack):
+            return
+        if any(el for _, _, el, *_ in self.stack):
+            # Movable, not slotted. Short strings ride along with their
+            # graphic legitimately; a sentence (or a long heading) is the
+            # C() trap. Panel-edited namespaces never reach here as traps.
+            if (any(trap for _, _, _, trap, *_ in self.stack)
+                    and _prose(t, loose=True)):
+                self.trapped.append(t)
             return
         self.dead_all.append(t)
-        if any(p for _, _, _, p in self.stack):
+        if any(page for *_, page in self.stack):
             self.dead_paged.append(t)
 
 
@@ -539,6 +575,7 @@ def check_editability(binding) -> list[Problem]:
     dead = [t for t in (cov.dead_paged if cov.saw_page else cov.dead_all)
             if t not in accepted]
     frozen = [s for s in cov.frozen_prose if s not in accepted]
+    trapped = [t for t in cov.trapped if t not in accepted]
     hint = ("Wire them (C.html / C.slot_attr / L.attr) or list each in this "
             "binding's editability_ok" if strict else
             "Wire them (C.html / C.slot_attr / L.attr) or accept them as "
@@ -555,6 +592,14 @@ def check_editability(binding) -> list[Problem]:
             f"{len(frozen)} sentence(s) drawn inside a graphic, so "
             f"only the renderer can change them: {_samples(frozen)}. "
             f"Captions belong in a slot beside the SVG, not in it",
+            level))
+    if trapped:
+        problems.append(Problem(
+            "editability",
+            f"{len(trapped)} sentence(s) inside a movable (data-el) wrapper "
+            f"with no data-slot — draggable, words frozen (the C() trap): "
+            f"{_samples(trapped)}. Give the text a slot: C.html / C.slot_span "
+            f"/ C.slot_attr",
             level))
     return problems
 

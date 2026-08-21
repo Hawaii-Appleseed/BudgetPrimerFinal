@@ -2016,6 +2016,163 @@ check("a stray close tag does not derail the walk",
       _md("<p>first</p></div><p>second</p>"), "second")
 
 
+# ------------------------------------------------- editability coverage
+
+# The classifier behind docsync.check's edit-mode pass. Three findings, each
+# with a way OUT that must not be flagged: dead text (out: any hook), frozen
+# SVG prose (out: data-slot on the <text> — the report2027 placeholder
+# pattern), and the C() trap — prose in a movable wrapper with no slot (out:
+# a data-slot anywhere above, or a panel-edited data-el namespace).
+from docsync.check import _Coverage, check_editability     # noqa: E402
+from docsync.registry import (Binding, Editor,             # noqa: E402
+                              RegistryError, load_registry)
+import tempfile                                            # noqa: E402
+
+
+def _cov(html):
+    c = _Coverage()
+    c.feed(html)
+    return c
+
+
+_c = _cov('<section class="page"><p>Dead orphan sentence here.</p></section>')
+check_eq("unhooked text in the sheet is dead",
+         _c.dead_paged, ["Dead orphan sentence here."])
+check_eq("slotted text is not dead",
+         _cov('<section class="page"><p data-slot="k">Fine slotted sentence '
+              'here.</p></section>').dead_paged, [])
+# The one that bit rxkids-fiscal for real: page chrome must not drown the
+# signal — with a .page present, only its inside is content.
+_c = _cov('<div class="bar">Download the PDF right now please</div>'
+          '<section class="page"><p data-slot="k">x y</p></section>')
+check_eq("chrome outside the sheet is not dead", _c.dead_paged, [])
+check_eq("...but a page-less document is scanned whole",
+         _cov("<div><p>Loose sentence outside any sheet.</p></div>").dead_all,
+         ["Loose sentence outside any sheet."])
+check_eq("style and script text never count",
+         _cov('<section class="page"><style>.x{color:red}</style>'
+              '<script>var a=1</script><p data-slot="k">ok</p>'
+              "</section>").dead_paged, [])
+# Void-tag regression: an <img data-el> must not bless the text after it —
+# HTMLParser never sends an endtag for a void element, so pushing it would
+# leave its hook on the stack for the rest of the document.
+_c = _cov('<section class="page"><img data-el="cover.logo">'
+          "<p>Orphan sentence after the image.</p></section>")
+check_eq("a void tag's hook does not leak onto later text",
+         _c.dead_paged, ["Orphan sentence after the image."])
+
+# SVG: data marks stay silent, sentences are frozen prose, a slotted <text>
+# is editable and exempt.
+check_eq("an svg data label is not frozen prose",
+         _cov('<svg viewBox="0 0 8 2"><text font-size="12">$20.7M</text>'
+              "</svg>").frozen_prose, [])
+check_eq("an svg sentence is frozen prose",
+         _cov('<svg viewBox="0 0 8 2"><text>Only the left pool is reachable '
+              "today.</text></svg>").frozen_prose,
+         ["Only the left pool is reachable today."])
+check_eq("a slotted svg text is editable, not frozen",
+         _cov('<svg viewBox="0 0 8 2"><text data-slot="why">Only the left '
+              "pool is reachable today.</text></svg>").frozen_prose, [])
+check_eq("tspans are judged as one sentence",
+         _cov('<svg viewBox="0 0 8 2"><text><tspan>Only the left pool</tspan>'
+              "<tspan>is reachable today.</tspan></text></svg>").frozen_prose,
+         ["Only the left pool is reachable today."])
+
+# The C() trap: movable wrapper, frozen words.
+check_eq("prose in a movable wrapper with no slot is trapped",
+         _cov('<section class="page"><div data-el="who.p1"><p>The governor '
+              "submits the budget in December.</p></div></section>").trapped,
+         ["The governor submits the budget in December."])
+check_eq("a long unpunctuated heading is trapped too",
+         len(_cov('<section class="page"><h1 data-el="hero.h1">Seven word '
+                  "heading without any period here yes</h1></section>")
+             .trapped), 1)
+check_eq("...but a short movable label is not",
+         _cov('<section class="page"><div data-el="badge">Fiscal estimate '
+              "2028</div></section>").trapped, [])
+check_eq("a slot inside the wrapper clears the trap (C.html pattern)",
+         _cov('<section class="page"><div data-el="para.k"><p data-slot="k">'
+              "The governor submits the budget in December.</p></div>"
+              "</section>").trapped, [])
+for ns, what in (("text.b12", "a layout text box"),
+                 ("table.t3", "a table"),
+                 ("endnote.model", "an endnote entry")):
+    check_eq(f"{what} is panel-edited, never trapped",
+             _cov(f'<section class="page"><div data-el="{ns}">The words here '
+                  "are edited through their own panel.</div></section>")
+             .trapped, [])
+check_eq("the ds-textbox class is exempt whatever its id",
+         _cov('<section class="page"><div class="ds-textbox" data-el="x.y">'
+              "The words here are edited through their own panel.</div>"
+              "</section>").trapped, [])
+
+# ------------------------------------------------- editability registry
+
+with tempfile.TemporaryDirectory() as _td:
+    _reg = Path(_td) / "docsync.yml"
+    _reg.write_text(
+        "bindings:\n"
+        "  - id: t-strict\n"
+        "    content: content.md\n"
+        "    editability: strict\n"
+        '    editability_ok: ["chrome bit"]\n'
+        "  - id: t-plain\n"
+        "    content: content.md\n")
+    _bs = {b.id: b for b in load_registry(_reg)}
+    check_eq("editability parses", _bs["t-strict"].editability, "strict")
+    check_eq("editability_ok parses", _bs["t-strict"].editability_ok,
+             ["chrome bit"])
+    check_eq("editability defaults to warn", _bs["t-plain"].editability,
+             "warn")
+    _reg.write_text("bindings:\n  - id: t-bad\n    content: c.md\n"
+                    "    editability: loose\n")
+    try:
+        load_registry(_reg)
+        FAILS.append("a bad editability value must not load")
+    except RegistryError as e:
+        check("a bad editability value names its options", str(e),
+              "must be warn, strict or wip")
+
+# ------------------------------------------------- check_editability, live
+
+# End to end: a real subprocess build of a tiny renderer, classified and
+# levelled exactly as docsync.check would for a registered binding.
+_DIRTY = ('<section class="page"><p>Sad unwired sentence sits here.</p>'
+          '<p data-slot="k">fine</p></section>')
+
+
+def _binding(html, editability="warn", ok=(), broken=False):
+    td = Path(tempfile.mkdtemp(prefix="ds-editability-"))
+    r = td / "render.py"
+    r.write_text("import os, pathlib, sys\n"
+                 + ("sys.exit(1)\n" if broken else "")
+                 + f"pathlib.Path(os.environ['DOCSYNC_OUT'])"
+                 f".write_text({html!r})\n")
+    return Binding(id="t", content=td / "c.md", editability=editability,
+                   editability_ok=list(ok),
+                   editor=Editor(render=r, engine=[], out=td / "out.html",
+                                 dir=td))
+
+
+_p = check_editability(_binding(_DIRTY))
+check_eq("a warn binding warns", [(pr.level, pr.check) for pr in _p],
+         [("warn", "editability")])
+check("the finding names the string", str(_p[0]), "Sad unwired sentence")
+_p = check_editability(_binding(_DIRTY, "strict"))
+check_eq("a strict binding errors", [pr.is_error for pr in _p], [True])
+check("...and points at editability_ok", str(_p[0]), "editability_ok")
+check_eq("an accepted string is not a finding",
+         check_editability(_binding(_DIRTY, "strict",
+                                    ok=["Sad unwired sentence sits here."])),
+         [])
+_p = check_editability(_binding(_DIRTY, "strict", broken=True))
+check_eq("a broken edit build fails a strict binding",
+         [(pr.is_error, "build failed" in str(pr)) for pr in _p],
+         [(True, True)])
+check_eq("a binding with no editor has nothing to check",
+         check_editability(Binding(id="t", content=Path("c.md"))), [])
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")
