@@ -214,6 +214,14 @@
               align-items:stretch; gap:4px; padding:9px 5px; overflow:visible;
               border-radius:0 var(--r-edge) var(--r-edge) 0;
               box-shadow:var(--shadow-edge); }
+  /* While one of the rail's own popovers is open it must outrank EVERYTHING —
+     the rail's z-index:2 is a stacking context, so the .pop's z-index:1000
+     only counts inside it, and the page strip (#rail, z-index:6) was eating
+     clicks on any popover row that overlapped it: on CI's font metrics that
+     was insert-image's "Upload from computer…", intercepted by a page chip
+     ("chip-view intercepts pointer events") on every run. Scoped to open,
+     undocked pops so normal layering returns the moment the menu closes. */
+  #leftrail:has(.pop:not(.docked):not([hidden])) { z-index:7; }
   /* Below the buttons there is NOTHING — not a veil, not a tint. The rail is
      the tools and stops there; the canvas owns the rest of that column, which
      is what frees the bottom-left corner for the page strip's own control. */
@@ -4957,6 +4965,13 @@ function togglePop(pop, anchor) {
   pop.style.top = (r.bottom + 6) + 'px';
   pop.style.left = Math.max(8, Math.min(r.left,
     document.documentElement.clientWidth - pop.offsetWidth - 16)) + 'px';
+  // Clamped to the viewport like `left` is, or a short window put a tall
+  // picker's bottom rows (the image popover's "Upload from computer…" above
+  // all) below the fold with no way to reach them. The floor keeps a pop
+  // opened NEAR the bottom usable rather than one row tall.
+  pop.style.maxHeight = Math.max(120,
+    document.documentElement.clientHeight - r.bottom - 18) + 'px';
+  pop.style.overflowY = 'auto';
 }
 // Anything whose own handler already toggles: clicking one of these must not
 // be treated as "outside", or the close would race the open and the menu would
