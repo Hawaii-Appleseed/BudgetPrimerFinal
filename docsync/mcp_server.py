@@ -320,8 +320,9 @@ INSTRUCTIONS = (
     "and lands in the document the human is looking at. Nothing here writes a "
     "file behind the editor's back — with no editor tab open, pilot says so.\n\n"
     "Prefer batch for several related edits (one undo entry, one render), and "
-    "audit() over screenshots for anything mechanical: overlaps, off-sheet "
-    "elements, print overflow, uncited sources. Every verb returns geometry in "
+    "audit() over screenshots for anything mechanical: overlaps, a placed "
+    "element parked on flow content (covers-flow), off-sheet elements, print "
+    "overflow, uncited sources. Every verb returns geometry in "
     "page inches, so read the RESULT rather than looking at the page. Push "
     "stays with the human."
 )

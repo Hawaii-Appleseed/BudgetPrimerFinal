@@ -16219,7 +16219,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  Kinds: print-overflow (lastFit — would be cut in print, blocks save()),
    *  off-sheet (a placed element past the page edge), overlap (two placed
    *  movables sharing >20% of the smaller's area, same page, not grouped
-   *  together — grouped overlap is composition, not collision), orphaned-
+   *  together — grouped overlap is composition, not collision), covers-flow
+   *  (a placed text box, table or dragged designed element parked on flow
+   *  prose or a flow graphic — the clash a reader sees first), orphaned-
    *  group-member (a group naming an id that no longer exists), uncited-
    *  source (declared, never referenced — publish refuses these). */
   audit() {
@@ -16280,6 +16282,59 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           issues.push({ kind: 'overlap', page: A.page, ids: [A.id, C.id],
             note: `${Math.round(frac * 100)}% of the smaller element is covered` });
       }
+    // ---- a placed element parked on designed flow content -------------
+    // The pairwise test above judges placed movables against each other
+    // and leaves the FLOW alone — backgrounds, cards and columns overlap
+    // by design. But a text box, table or dragged designed element
+    // sitting ON flow prose or a flow chart is the clash a reader sees
+    // first, and it was invisible here: flow never appears in `items`.
+    // Judged one-directionally (placed over flow) with the same 20% rule.
+    // Skipped: DOM containment (a slot inside a pinned card is its
+    // content, not a collision), grouped pairs, empty flow elements, and
+    // shapes entirely — a rect behind a heading is composition. Pages
+    // match via data-page where a renderer stamps it, else the ds-mount
+    // marker every edit-mode page carries.
+    try {
+      const pageOfEl = el => {
+        const sec = el.closest('section[data-page]');
+        if (sec) return sec.dataset.page;
+        const mt = el.closest('section.page');
+        const mount = mt && mt.querySelector('.ds-mount');
+        return mount ? mount.dataset.dsMount : null;
+      };
+      const flow = [];
+      d.querySelectorAll('section.page [data-el]').forEach(el => {
+        const id = el.getAttribute('data-el');
+        if (items.some(it => it.id === id)) return;      // placed: judged above
+        if (!(el.textContent || '').trim() && !el.querySelector('svg, img'))
+          return;                                        // nothing visible to cover
+        const m = _pilotMeasure(id);
+        if (!m) return;
+        flow.push({ id, el, page: pageOfEl(el), b: m });
+      });
+      const placed = items.filter(it => /^(text|table)\./.test(it.id)
+        || (layout.positions || {})[it.id]);
+      placed.forEach(P => {
+        const pEl = d.querySelector(`[data-el="${CSS.escape(P.id)}"], `
+          + `[data-shape="${CSS.escape(P.id)}"]`);
+        flow.forEach(F => {
+          if (P.page != null && F.page != null
+              && String(P.page) !== String(F.page)) return;
+          if (P.page == null || F.page == null) return;  // unplaceable: no verdict
+          if (sameGroup(P.id, F.id)) return;
+          if (pEl && (pEl.contains(F.el) || F.el.contains(pEl))) return;
+          const w = Math.min(P.b.x + P.b.w, F.b.x + F.b.w) - Math.max(P.b.x, F.b.x);
+          const h = Math.min(P.b.y + P.b.h, F.b.y + F.b.h) - Math.max(P.b.y, F.b.y);
+          if (w <= 0 || h <= 0) return;
+          const smaller = Math.min(P.b.w * P.b.h, F.b.w * F.b.h) || 1e-9;
+          const frac = (w * h) / smaller;
+          if (frac > 0.2)
+            issues.push({ kind: 'covers-flow', page: P.page, ids: [P.id, F.id],
+              note: `${Math.round(frac * 100)}% overlap with flow content — `
+                + 'move the placed element to clear space' });
+        });
+      });
+    } catch (e) { /* measurement unavailable: skip rather than guess */ }
     // ---- a rule struck through a glyph --------------------------------
     // The pairwise test above skips grouped elements and anything covering
     // less than a fifth of its neighbour. Both are right for text sitting on
