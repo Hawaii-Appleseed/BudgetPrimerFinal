@@ -518,7 +518,13 @@ class _Coverage(HTMLParser):
         if self.opaque:
             return
         t = " ".join(data.split())
-        if not t or not _ALNUM2.search(t):
+        # The 2-char floor exists to keep icon-font glyphs and stray bullet
+        # characters (a single letter or symbol) out of the dead-text count.
+        # A bare digit needs no such exemption — "7" is exactly as dead as
+        # "71" — so it clears the gate on its own. Found by hand, not by this
+        # check: tfc-2027-priorities had two single-digit stats ("7", "3")
+        # sitting unwired while every prior run called the page clean.
+        if not t or not (_ALNUM2.search(t) or t.isdigit()):
             return
         if any(svg for *_, svg, _ in self.stack):
             if self._svg_text is not None:

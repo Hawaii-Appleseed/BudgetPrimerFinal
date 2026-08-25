@@ -2035,6 +2035,11 @@ def _cov(html):
     return c
 
 
+check_eq("a bare digit is not exempt by length — it is exactly as dead as a longer number",
+         _cov('<section class="page"><p>7</p></section>').dead_paged, ["7"])
+check_eq("...but a single non-digit glyph (icon font, bullet) stays exempt",
+         _cov('<section class="page"><i>&#9660;</i></section>').dead_paged, [])
+
 _c = _cov('<section class="page"><p>Dead orphan sentence here.</p></section>')
 check_eq("unhooked text in the sheet is dead",
          _c.dead_paged, ["Dead orphan sentence here."])
