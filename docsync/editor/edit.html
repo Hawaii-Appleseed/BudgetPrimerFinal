@@ -12720,6 +12720,14 @@ function wire(roots) {
   d.addEventListener('click', e => {
     const a = e.target.closest('a[href]');
     if (a && !(a.getAttribute('href') || '').startsWith('#')) e.preventDefault();
+    // A DERIVED value (C.derived in a renderer) answers instead of ignoring
+    // the click. Silence is what makes a tally read as "broken" rather than
+    // "not yours to type": the renderer named the command that remakes it,
+    // so say so, in the one place the editor already talks.
+    const fx = e.target.closest('[data-fixed]');
+    if (fx) $('stat').textContent =
+      'this figure is derived, not typed — it changes by re-running: '
+      + fx.getAttribute('data-fixed');
   }, true);
   within(d, roots, 'section.page').forEach(pg => {
     pg.addEventListener('mousedown', e => {

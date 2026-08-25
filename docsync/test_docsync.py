@@ -2101,6 +2101,50 @@ for ns, what in (("text.b12", "a layout text box"),
              _cov(f'<section class="page"><div data-el="{ns}">The words here '
                   "are edited through their own panel.</div></section>")
              .trapped, [])
+# data-fixed (C.derived): a declared tally is covered, not dead — and the
+# declaration survives a re-tally, which an editability_ok string cannot.
+check_eq("a declared derived value is not dead text",
+         _cov('<section class="page"><span data-fixed="python -m x stats">'
+              "71</span></section>").dead_paged, [])
+check_eq("...nor trapped inside a movable wrapper",
+         _cov('<section class="page"><div data-el="row.1">'
+              '<span data-fixed="python -m x stats">Eleven submissions on '
+              "four bills.</span></div></section>").trapped, [])
+check_eq("...but an undeclared sibling in the same row still counts",
+         _cov('<section class="page"><span data-fixed="m">71</span>'
+              "<span>Undeclared label sitting here.</span></section>")
+         .dead_paged, ["Undeclared label sitting here."])
+# The one thing it must NOT excuse: a sentence drawn inside a graphic is a
+# caption wherever its numbers came from, so frozen-prose still fires.
+check_eq("a declared sentence inside an svg is still frozen prose",
+         _cov('<svg viewBox="0 0 8 2"><text data-fixed="m">Only the left '
+              "pool is reachable today.</text></svg>").frozen_prose,
+         ["Only the left pool is reachable today."])
+
+# Content.derived() is edit-mode scaffolding: the published build must carry
+# none of it, exactly like slot_attr.
+def _derived_attr(edit: bool) -> str:
+    import tempfile as _tf
+    from docsync.content import Content as _C
+    with _tf.TemporaryDirectory() as td:
+        p = Path(td) / "content.md"
+        p.write_text("[[k]]\nx\n\n[[sources]]\n[s]: t — https://e.com\n")
+        was = os.environ.get("DOCSYNC_EDIT")
+        if edit:
+            os.environ["DOCSYNC_EDIT"] = "1"
+        else:
+            os.environ.pop("DOCSYNC_EDIT", None)
+        try:
+            return _C(p).derived("python -m testimony stats")
+        finally:
+            os.environ.pop("DOCSYNC_EDIT", None)
+            if was is not None:
+                os.environ["DOCSYNC_EDIT"] = was
+
+check("derived() names its source in edit mode",
+      _derived_attr(True), 'data-fixed="python -m testimony stats"')
+check_eq("derived() is silent in a published build", _derived_attr(False), "")
+
 check_eq("the ds-textbox class is exempt whatever its id",
          _cov('<section class="page"><div class="ds-textbox" data-el="x.y">'
               "The words here are edited through their own panel.</div>"

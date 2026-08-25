@@ -457,6 +457,34 @@ class Content:
         slot = f' data-slot="{key}"' if os.environ.get("DOCSYNC_EDIT") else ""
         return slot + self._style(key)
 
+    def derived(self, source: str) -> str:
+        """Mark a span whose text is DERIVED DATA, not editable prose.
+
+        A tally, a rank, a computed share: text a person must not retype,
+        because the number's authority comes from whatever produced it and a
+        hand-edit would only make the page disagree with its own source.
+
+        This is the third answer to "why can't I edit this?", beside
+        data-slot (you can) and data-el (you can move it). Without it such
+        text is indistinguishable from text somebody forgot to wire, which
+        is exactly how it reads to docsync.check's editability pass — and
+        the alternative, naming every value in a binding's editability_ok,
+        goes stale the moment the numbers are regenerated.
+
+        `source` is how the value is REMADE — the command, script or model
+        that prints it — so the answer travels with the markup instead of
+        living in a comment nobody reads. The editor shows it when someone
+        clicks the number.
+
+        Edit-mode only: the published page carries no scaffolding, exactly
+        like slot_attr().
+        """
+        if not os.environ.get("DOCSYNC_EDIT"):
+            return ""
+        safe = (str(source).replace("&", "&amp;").replace('"', "&quot;")
+                .replace("<", "&lt;"))
+        return f' data-fixed="{safe}"'
+
     def slot_span(self, key: str, inner: str) -> str:
         """Wrap markup the CALLER built in the editor's slot span.
 

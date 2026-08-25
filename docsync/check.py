@@ -452,8 +452,9 @@ def _prose(t: str, loose: bool = False) -> bool:
 class _Coverage(HTMLParser):
     """Classify every visible text node of an EDIT-MODE build.
 
-    dead: no data-slot/data-el ancestor, outside any SVG.
-    frozen_prose: sentence-shaped text inside an <svg>.
+    dead: no data-slot/data-fixed/data-el ancestor, outside any SVG.
+    frozen_prose: sentence-shaped text inside an <svg> — judged on data-slot
+    alone, because a caption is prose wherever its numbers came from.
     Text outside the sheet (no `page`-classed ancestor) is chrome, not content
     — kept separately so a document with no .page container still gets a
     best-effort pass over everything.
@@ -461,8 +462,8 @@ class _Coverage(HTMLParser):
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        # Per ancestor: tag, data-slot, any data-el, TRAP data-el (movable,
-        # not panel-edited), is-svg, is-.page.
+        # Per ancestor: tag, COVERED (data-slot or data-fixed), any data-el,
+        # TRAP data-el (movable, not panel-edited), is-svg, is-.page.
         self.stack: list[tuple[str, bool, bool, bool, bool, bool]] = []
         self.opaque = 0
         self.dead_paged: list[str] = []
@@ -477,13 +478,19 @@ class _Coverage(HTMLParser):
             return
         a = dict(attrs)
         classes = (a.get("class") or "").split()
+        # data-fixed (C.derived) is a DECLARATION: this text is a tally or a
+        # computed value, named with the command that remakes it. It answers
+        # the same question data-slot answers, so it clears dead text and the
+        # C() trap alike. It does NOT excuse a sentence drawn inside an SVG —
+        # a caption is prose wherever its numbers came from.
         slot = "data-slot" in a
+        covered = slot or "data-fixed" in a
         el = "data-el" in a
         trap = (el and not (a.get("data-el") or "").startswith(_PANEL_EDITED)
                 and "ds-textbox" not in classes)
         page = "page" in classes
         self.saw_page = self.saw_page or page
-        self.stack.append((tag, slot, el, trap, tag == "svg", page))
+        self.stack.append((tag, covered, el, trap, tag == "svg", page))
         if tag in _OPAQUE_TAGS:
             self.opaque += 1
         if tag == "text" and not slot:
@@ -576,10 +583,11 @@ def check_editability(binding) -> list[Problem]:
             if t not in accepted]
     frozen = [s for s in cov.frozen_prose if s not in accepted]
     trapped = [t for t in cov.trapped if t not in accepted]
-    hint = ("Wire them (C.html / C.slot_attr / L.attr) or list each in this "
-            "binding's editability_ok" if strict else
-            "Wire them (C.html / C.slot_attr / L.attr) or accept them as "
-            "chrome knowingly")
+    hint = ("Wire them (C.html / C.slot_attr / L.attr), declare derived "
+            "values with C.derived('<how to remake it>'), or list each in "
+            "this binding's editability_ok" if strict else
+            "Wire them (C.html / C.slot_attr / L.attr), declare derived "
+            "values with C.derived(…), or accept them as chrome knowingly")
     if dead:
         problems.append(Problem(
             "editability",
