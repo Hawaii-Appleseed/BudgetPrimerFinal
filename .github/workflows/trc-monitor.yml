@@ -1,0 +1,161 @@
+name: Tax Review Commission monitor
+
+# Watches https://tax.hawaii.gov/stats/tax-review-commission/ for new material.
+#
+# The 2025-2027 Commission meets roughly monthly and posts, per meeting: a
+# notice, a video, draft then final minutes, and any presentations given. Its
+# recommendations feed straight into the tax debate Appleseed works in, so new
+# minutes or a new presentation are worth knowing about the week they land
+# rather than the next time someone thinks to open the page.
+#
+# Weekly, not monthly: meeting dates are irregular (April 1 and April 20 were
+# three weeks apart) and a quiet run costs seconds. Thursday rather than the
+# COR monitor's Monday, to keep the two apart.
+#
+# Same structure as cor-monitor.yml, including the CLAUDE_CODE_OAUTH_TOKEN
+# expiry warning that job already carries — see it for the renewal steps.
+
+on:
+  schedule:
+    - cron: "0 17 * * 4"   # Thursdays 17:00 UTC = 07:00 HST
+  workflow_dispatch:
+    inputs:
+      force_narrative:
+        description: "Summarize the newest material even if nothing changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: trc-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.monitor.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet pdfplumber
+
+      - name: Check the TRC page
+        id: monitor
+        run: |
+          set +e
+          python3 scripts/trc_monitor.py
+          code=$?
+          set -e
+          case "$code" in
+            0)  echo "changed=false" >> "$GITHUB_OUTPUT" ;;
+            10) echo "changed=true"  >> "$GITHUB_OUTPUT" ;;
+            # Exit 1 means the fetch failed or the page markup changed enough
+            # that we indexed nothing. Fail loudly — a monitor that silently
+            # stops noticing is the failure mode this job exists to avoid.
+            *)  echo "::error::trc_monitor.py failed (exit $code)"; exit 1 ;;
+          esac
+
+      - name: Summarize what changed
+        if: steps.monitor.outputs.changed == 'true' || inputs.force_narrative
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: '--allowedTools "Read,Write,Glob,Bash(ls:*),Bash(cat:*),Bash(git status:*)" --max-turns 15'
+          prompt: |
+            New material was posted by the Hawaii Tax Review Commission.
+
+            Read the newest packet in data/raw/trc/changes/ (the file with the
+            most recent date in its name). It lists what appeared and includes
+            the extracted text of any new minutes or presentation.
+
+            Write a summary to data/raw/trc/changes/<same-date>-trc-summary.md
+            for a tax policy analyst at Hawaii Appleseed who follows this
+            Commission closely. Cover:
+
+            1. What the Commission actually discussed or decided — the specific
+               proposals, studies commissioned, or positions taken. Name the
+               commissioners where the minutes attribute a view.
+            2. Anything bearing on tax fairness or regressivity: who a proposal
+               would help or hurt, and by how much if the documents say.
+            3. What it implies for work already published — the Budget Primer,
+               the RETITC analysis, the millionaire's tax report.
+            4. What happens next, and when, if a date was given.
+
+            Lead with the single most important sentence. Use the real numbers
+            and the real names. If the material is purely procedural — a notice
+            of the next meeting, a video posted, minutes approved with no
+            discussion — say so in two lines and stop. Do not manufacture
+            significance.
+
+            Write only that one file. Do not commit; a later step handles that.
+
+      - name: Commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name  "trc-monitor[bot]"
+          git config user.email "trc-monitor@users.noreply.github.com"
+          # claude-code-action swaps in its own installation token for the
+          # duration of its run and revokes it afterward, leaving origin's
+          # credentials dead. Re-point at the Actions token before pushing.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git add -A data/raw/trc
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          if [ "${{ steps.monitor.outputs.changed }}" = "true" ]; then
+            git commit -m "TRC: new material detected $(date -u +%Y-%m-%d)"
+          else
+            # Not busywork: GitHub disables scheduled workflows after 60 days
+            # of repo inactivity, and the Commission goes quiet between meetings.
+            git commit -m "TRC: checked $(date -u +%Y-%m-%d), no change"
+          fi
+          git pull --rebase --autostash origin main || true
+          git push origin HEAD:main
+
+      - name: Report
+        if: steps.monitor.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          summary="data/raw/trc/changes/${today}-trc-summary.md"
+          packet="data/raw/trc/changes/${today}-trc-change.md"
+          body=$(mktemp)
+          if [ -f "$summary" ]; then
+            cat "$summary" >> "$body"
+          else
+            # No narrative means the Claude step failed or was skipped. The
+            # packet still lists the new documents and carries their text.
+            echo "_No narrative was generated this run — the raw change packet is below._" >> "$body"
+            echo >> "$body"
+            head -c 40000 "$packet" >> "$body"
+          fi
+          printf '\n\n---\nSource: %s\nPacket: `%s`\n' \
+            "https://tax.hawaii.gov/stats/tax-review-commission/" "$packet" >> "$body"
+
+          url=$(gh issue create --title "Tax Review Commission update — ${today}" \
+                  --body-file "$body" --label "trc-update" 2>/dev/null) || \
+          url=$(gh issue create --title "Tax Review Commission update — ${today}" \
+                  --body-file "$body")
+          echo "issue: $url"
+
+          if [ -n "${NTFY_TOPIC:-}" ]; then
+            msg=$(printf '%s\n%s' "$(head -c 300 "$body" | tr '\n' ' ')" "$url")
+            curl -s -m 10 -H "Title: TRC posted new material" \
+              -H "Priority: default" -d "$msg" \
+              "https://ntfy.sh/$NTFY_TOPIC" >/dev/null 2>&1 || true
+          fi

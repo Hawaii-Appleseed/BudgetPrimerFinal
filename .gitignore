@@ -53,6 +53,11 @@ data/raw/*
 # no memory between runs and reports every document as new each week. Forecast
 # PDFs are ~200KB and arrive about five times a year.
 !data/raw/cor/
+# Tax Review Commission archive, written by scripts/trc_monitor.py from CI.
+# Same reasoning as the COR archive above: trc_index.json IS the monitor's
+# memory between runs. Minutes and presentations are small and arrive about
+# monthly; notices and videos are indexed but never downloaded.
+!data/raw/trc/
 data/processed/*
 !data/processed/budget_parsed*.csv
 !data/processed/budget_allocations*.csv
