@@ -1,0 +1,10 @@
+# Paths exempt from the ʻokina lint (~/.config/git-hooks/okina-lint.py).
+#
+# All of these carry verbatim upstream text or are generated from it. The
+# whole point of data/raw/cor/extracted/ is that it matches the archived PDF
+# byte-for-byte; docs/js/*.json regenerates from source and would just drift
+# again.
+
+data/raw/cor/extracted/*
+docs/js/county_budgets.json
+docs/js/program_purposes.json
