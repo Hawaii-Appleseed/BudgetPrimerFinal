@@ -374,8 +374,17 @@ svg .ph { font-size: 12px; font-family: var(--body); }
 /* Lifecycle callouts. Positions are computed in render_report.py from each
    bracket's stub endpoint and emitted as inline left/top; these classes only
    say how the block anchors to that point. */
-.lifecycle-wrap { position: relative; width: 6.9in; height: 6.45in; margin: 0 auto; }
-.lifecycle-wrap svg { width: 5.8in; margin: .28in auto; display: block; }
+.lifecycle-wrap { position: relative; width: 6.9in; height: 6.45in; margin: 0 auto;
+                  display: flow-root; }
+/* The wheel now ships inside chart_scroll()'s wrapper, whose
+   `.ds-chart-scroll > .chart { margin: 0 }` outweighs any `.lifecycle-wrap svg`
+   rule — which left the wheel flush at the wrap's TOP-LEFT while every callout
+   is placed in inches against a wheel centred with a .28in top margin
+   (LC_MARGIN_IN / LC_SVG_IN in render_report.py). So size and centre the
+   WRAPPER, and let the svg fill it; flow-root above keeps that .28in from
+   collapsing out through the wrap and taking the wheel up with it. */
+.lifecycle-wrap .ds-chart-scroll { width: 5.8in; margin: .28in auto; }
+.lifecycle-wrap .ds-chart-scroll > .chart { width: 100%; margin: 0; display: block; }
 .lc { position: absolute; width: 1.58in; font-size: 13.5px; line-height: 1.35; }
 .lc-mo { display: block; font-weight: 700; font-size: 11px; letter-spacing: .8px;
          color: var(--dark); margin-bottom: 2px; }
@@ -464,11 +473,14 @@ svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: rou
                      margin-top: 22px; text-align: left; }
 
   /* .lifecycle-wrap is an inch-sized canvas the callouts were positioned
-     against; with them released it only needs to hold the wheel. The svg
-     rule at .lifecycle-wrap svg is (0,0,2) and beat .chart's width:100%,
-     so the wheel kept its 5.8in and ran off the edge. */
+     against; with them released it only needs to hold the wheel. The desktop
+     rules above pin the wheel to 5.8in, so without releasing them here it
+     kept that width and ran off the edge. Release the WRAPPER too — it is
+     the scroller on a phone, and chart_scroll_css() gives the svg inside it
+     the min-width that makes the wheel scroll rather than shrink. */
   .lifecycle-wrap { width: 100%; height: auto; }
-  .lifecycle-wrap svg { width: 100%; max-width: 100%; height: auto; margin: 8px auto; }
+  .lifecycle-wrap .ds-chart-scroll { width: 100%; margin: 8px auto; }
+  .lifecycle-wrap .ds-chart-scroll > .chart { max-width: 100%; height: auto; }
 }
 
 @page { size: letter; margin: 0; }
