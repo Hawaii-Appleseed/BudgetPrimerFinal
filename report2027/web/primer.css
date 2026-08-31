@@ -390,7 +390,7 @@ svg .ph { font-size: 12px; font-family: var(--body); }
          color: var(--dark); margin-bottom: 2px; }
 svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: round; }
 .lc-right, .lc-left { transform: translateY(-50%); }
-.lc-left { text-align: right; }
+.lc-left, .lc-bottom-left { text-align: right; }
 .lc-top { transform: translateY(-100%); }
 
 /* photo page */

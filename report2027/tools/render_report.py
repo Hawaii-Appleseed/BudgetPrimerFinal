@@ -419,7 +419,7 @@ LIFECYCLE_SPANS = [
      C(f"process.lifecycle.{k}.text"), side)
     for k, m0, m1, side in [
         ("dec", 11, 11, "top"), ("jan", 0, 3, "right"), ("may", 4, 4, "right"),
-        ("jun", 5, 5, "bottom"), ("jul", 6, 6, "left"), ("aug", 7, 8, "left"),
+        ("jun", 5, 5, "bottom"), ("jul", 6, 6, "bottom-left"), ("aug", 7, 8, "left"),
         ("oct", 9, 10, "left"),
     ]
 ]
@@ -433,8 +433,15 @@ LC_MARGIN_IN = 0.28         # svg's vertical margin inside the wrap
 LC_STUB_U = 178 + 13        # bracket radius + stub length, in user units
 LC_CALLOUT_IN = 1.58        # .lc width
 LC_PAD_IN = 0.12            # gap past the stub end, measured along the stub
-LC_TOP_PAD_IN = 0.38        # DEC grows upward into the wheel; give it more room
 LC_EDGE_IN = 0.16           # top/bottom blocks overhang their stub by this much
+# Two callouts need more reach than the rest, for reasons that are about the
+# BLOCK, not the wheel — so they live here rather than in the geometry above.
+# DEC hangs upward off its stub and would otherwise sit on the ring. MAY is the
+# one four-line block on a diagonal stub: a left/right block is centred on its
+# stub's height, so on a diagonal it is the block's top CORNER, not its edge,
+# that reaches back toward the bracket — and a tall block's corner reaches far
+# enough to cross it. The short diagonal blocks (AUG-SEP, OCT-NOV) do not.
+LC_PAD_OVERRIDE = {"dec": 0.38, "may": 0.30}
 
 
 def lifecycle_callouts():
@@ -451,13 +458,20 @@ def lifecycle_callouts():
     for key, lab, m0, m1, txt, side in LIFECYCLE_SPANS:
         amid = (m0 * 30 + 2 + (m1 + 1) * 30 - 2) / 2
         rad = math.radians(amid - 90)
-        pad = LC_TOP_PAD_IN if side == "top" else LC_PAD_IN
+        pad = LC_PAD_OVERRIDE.get(key, LC_PAD_IN)
         r = LC_STUB_U * unit + pad
         x, y = cx + r * math.cos(rad), cy + r * math.sin(rad)
         if side == "right":
             style = f"left:{x:.2f}in;top:{y:.2f}in"
         elif side == "left":                       # text is right-aligned to x
             style = f"left:{x - LC_CALLOUT_IN:.2f}in;top:{y:.2f}in"
+        elif side == "bottom-left":
+            # JUL's stub points DOWN (195 degrees), not left: hang the block
+            # below the wheel like JUN's, mirrored — right-aligned to the stub.
+            # Centring it on the stub's height instead, as a "left" callout,
+            # lifted half the block back up under the ring, which is what put
+            # its month label on the bracket.
+            style = f"left:{x - LC_CALLOUT_IN + LC_EDGE_IN:.2f}in;top:{y:.2f}in"
         else:
             # top/bottom text is left-aligned, so start the block at the stub
             # rather than centring the box on it — a centred box puts its visual
