@@ -292,3 +292,35 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fnHide(); });
   window.addEventListener('scroll', fnHide, {passive: true});
 })();
+
+/* The lifecycle wheel opens centred in its scroller.
+
+   chart_scroll() gives the wheel a min-width so it scrolls on a phone rather
+   than shrinking its labels away, and a scroller starts flush-left — which put
+   DEC through APR on screen and left MAY through NOV to be discovered by
+   swiping. The wheel is symmetric and reads as a whole, so an even clip on both
+   sides shows more of it at a glance, and both edge shadows are then visible to
+   say it scrolls at all.
+
+   Scoped to this figure on purpose: centring is right for a disc, and wrong for
+   the bar charts, whose labels run down their left edge.
+
+   A reader who scrolls it themselves owns the position from then on, rotation
+   included. That is tested by comparing against the offset we last set rather
+   than by listening for scroll events — a scroll listener cannot tell the
+   reader's swipe from the browser echoing our own assignment back. */
+(function () {
+  var sc = document.querySelector('.lifecycle-wrap .ds-chart-scroll');
+  if (!sc) return;
+  var ours = null;                 // the offset we put there, or null before we have
+
+  function centre() {
+    var mid = (sc.scrollWidth - sc.clientWidth) / 2;
+    if (mid <= 0) return;                                   // it fits; nothing to centre
+    if (ours !== null && Math.abs(sc.scrollLeft - ours) > 2) return;   // reader moved it
+    sc.scrollLeft = ours = mid;
+  }
+
+  centre();
+  window.addEventListener('resize', centre);
+})();
