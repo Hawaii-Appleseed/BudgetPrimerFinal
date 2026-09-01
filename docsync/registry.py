@@ -45,7 +45,10 @@ class Editor:
 class Binding:
     id: str
     content: Path              # the committed source the report reads
-    doc: str = ""              # a Google Doc id, if this binding syncs to one
+    # The Google Doc this report was DRAFTED in, if any. One-way and manual:
+    # File ▸ Import text from the Doc reads it (docsync.docimport) and proposes
+    # where each section lands. Nothing writes back to the doc.
+    doc: str = ""
     mode: str = "slots"        # slots | fragment (only meaningful with a doc)
     build: str = ""            # shell command to rebuild after an edit
     target: Path | None = None  # fragment mode: page to inject into

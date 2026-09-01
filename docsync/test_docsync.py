@@ -2222,6 +2222,158 @@ check_eq("a binding with no editor has nothing to check",
          check_editability(Binding(id="t", content=Path("c.md"))), [])
 
 
+# ------------------------------------------------------ docsync.docimport
+
+from docsync import docimport as di                        # noqa: E402
+
+# ---- the link itself -------------------------------------------------------
+
+check_eq("a doc URL yields its id",
+         di.parse_doc_id("https://docs.google.com/document/d/1AbC_dEfG-hIjKlMnOp/edit#heading=h.x"),
+         "1AbC_dEfG-hIjKlMnOp")
+check_eq("a copy link yields the same id",
+         di.parse_doc_id("https://docs.google.com/document/d/1AbC_dEfG-hIjKlMnOp/edit?usp=sharing"),
+         "1AbC_dEfG-hIjKlMnOp")
+check_eq("a bare id is taken as one",
+         di.parse_doc_id("1AbC_dEfG-hIjKlMnOp"), "1AbC_dEfG-hIjKlMnOp")
+
+
+def _link_error(name, fn, expect):
+    try:
+        fn()
+    except di.DocLinkError as e:
+        if expect not in str(e):
+            FAILS.append(f"{name}\n  want error containing: {expect!r}\n  got: {e}")
+        return
+    FAILS.append(f"{name}\n  expected DocLinkError containing {expect!r}, none raised")
+
+
+_link_error("a spreadsheet URL with no /d/ is refused",
+            lambda: di.parse_doc_id("https://docs.google.com/spreadsheets"),
+            "no /d/<id>")
+_link_error("random text is refused rather than fetched",
+            lambda: di.parse_doc_id("my report"), "does not look like")
+_link_error("an empty link is refused", lambda: di.parse_doc_id(""), "no link given")
+
+_YML = """# a comment that must survive
+bindings:
+  - id: alpha
+    content: projects/alpha/content.md
+    # alpha's own note
+    build: make alpha
+  - id: beta
+    doc: OLDDOCID_0123456789
+    content: projects/beta/content.md
+"""
+
+
+def _yml(text=_YML):
+    td = Path(tempfile.mkdtemp(prefix="ds-doclink-"))
+    f = td / "docsync.yml"
+    f.write_text(text)
+    return f
+
+
+_f = _yml()
+di.set_doc("alpha", "NEWDOCID_0123456789", _f)
+_out = _f.read_text()
+check("linking inserts doc: under the id", _out,
+      "  - id: alpha\n    doc: NEWDOCID_0123456789\n    content:")
+check("...and leaves the comments alone", _out, "# a comment that must survive")
+check("...and alpha's own note", _out, "# alpha's own note")
+check("...and does not touch the other binding", _out, "doc: OLDDOCID_0123456789")
+
+di.set_doc("beta", "REPLACED_0123456789", _f)
+check("linking an already-linked binding replaces its line", _f.read_text(),
+      "  - id: beta\n    doc: REPLACED_0123456789\n")
+check_eq("...and does not add a second doc: line",
+         _f.read_text().count("doc:"), 2)
+
+di.set_doc("beta", "", _f)
+check_eq("unlinking removes the line", _f.read_text().count("doc: REPLACED"), 0)
+check("...and beta is still a binding", _f.read_text(), "- id: beta")
+di.set_doc("beta", "", _f)          # idempotent: unlinking twice is not an error
+check_eq("unlinking an unlinked binding is a no-op",
+         _f.read_text().count("doc:"), 1)
+
+_link_error("linking an id that is not in the registry is refused",
+            lambda: di.set_doc("gamma", "X" * 20, _f), "no binding with id 'gamma'")
+
+# ---- reading a doc ---------------------------------------------------------
+
+check_eq("Docs' punctuation escapes are undone",
+         di.clean("The 60\\-40 split \\(roughly\\)"), "The 60-40 split (roughly)")
+check_eq("a doc with markers reports them",
+         di.markers("[[a.p1]]\nfirst\n\n[[a.p2]]\nsecond"),
+         {"a.p1": "first", "a.p2": "second"})
+check_eq("prose reports no markers", di.markers("# Heading\n\nWords."), {})
+check_eq("blocks split at headings",
+         [(b["heading"], b["level"]) for b in di.blocks("Lead in.\n\n# One\n\na\n\n## Two\n\nb")],
+         [("", 0), ("One", 1), ("Two", 2)])
+check_eq("a bulleted list stays one paragraph",
+         di.paragraphs("- one\n- two\n\nAfter."), ["- one\n- two", "After."])
+
+# ---- what would land where -------------------------------------------------
+
+_SLOTS = {
+    "cover.title": "A Fairer Tax Code",
+    "whopays.title": "Who pays",
+    "whopays.p1": "old first",
+    "whopays.p2": "old second",
+    "fix.title": "What would fix it",
+    "fix.p1": "old fix",
+}
+
+_p = di.proposals(
+    "# A Fairer Tax Code\n\n"
+    "## Who pays?\n\nThe bottom fifth pay most.\n\nThe top one percent pay least.\n\n"
+    "## What would fix it\n\nA refundable credit.\n\n"
+    "## An unrelated aside\n\nOrphan words.\n", _SLOTS)
+check_eq("prose is matched by heading", _p["mode"], "prose")
+_by = {r["key"]: r["md"] for r in _p["rows"] if r["key"]}
+check_eq("a heading lands in its section's title slot",
+         _by["whopays.title"], "Who pays?")
+check_eq("the first paragraph lands in the first prose slot",
+         _by["whopays.p1"], "The bottom fifth pay most.")
+check_eq("the second lands in the second",
+         _by["whopays.p2"], "The top one percent pay least.")
+check_eq("the doc's own H1 finds the cover title",
+         _by["cover.title"], "A Fairer Tax Code")
+check_eq("a section matching nothing is reported, not dropped",
+         [(r["how"], "Orphan words." in r["md"]) for r in _p["rows"] if not r["key"]],
+         [("none", True)])
+
+# Two headings sharing a word must not let the first one claim the other's
+# slots — the pairing is taken best-first, not in document order.
+_p = di.proposals("## What would fix it\n\nA credit.\n\n## Who pays\n\nThe bottom fifth.\n",
+                  _SLOTS)
+_by = {r["key"]: r["md"] for r in _p["rows"] if r["key"]}
+check_eq("each heading claims its own group", _by["fix.p1"], "A credit.")
+check_eq("...and the other claims its own", _by["whopays.p1"], "The bottom fifth.")
+
+# A group's last slot soaks up the paragraphs that are left, so a section that
+# grew in the doc arrives whole rather than truncated at the slot count.
+_p = di.proposals("## Who pays\n\none\n\ntwo\n\nthree\n\nfour\n", _SLOTS)
+_by = {r["key"]: r["md"] for r in _p["rows"] if r["key"]}
+check_eq("extra paragraphs join the last slot of the group",
+         _by["whopays.p2"], "two\n\nthree\n\nfour")
+
+_p = di.proposals("[[whopays.p1]]\nfrom a marker\n\n[[nope.p9]]\nnowhere\n", _SLOTS)
+check_eq("a doc with markers uses them", _p["mode"], "markers")
+check_eq("...writing the slot each names",
+         [(r["key"], r["md"], r["how"]) for r in _p["rows"]],
+         [("whopays.p1", "from a marker", "marker")])
+check_eq("...and naming the keys this report does not have",
+         _p["unknown"], ["nope.p9"])
+
+_p = di.proposals("Just prose.\n\nNo headings at all.\n", _SLOTS)
+check_eq("a doc with no headings falls back to position",
+         [r["how"] for r in _p["rows"]][:2], ["position", "position"])
+check_eq("...skipping the title slots, which position cannot know about",
+         [r["key"] for r in _p["rows"]][:2], ["whopays.p1", "whopays.p2"])
+check_eq("an empty doc proposes nothing", di.proposals("   \n", _SLOTS)["rows"], [])
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

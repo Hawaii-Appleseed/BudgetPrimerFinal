@@ -1102,6 +1102,11 @@ class Handler(SimpleHTTPRequestHandler):
                    # until the background poll has looked once.
                    "push": PUSH_HEALTH.get(str(PROJECTS[pid]["root"]), {}),
                    "watchAge": round(time.time() - WATCH_BEAT[0], 1),
+                   # The Google Doc this project draws its prose from, if any.
+                   # Published on the poll rather than baked into the staged
+                   # manifest so linking one shows up in every open tab at
+                   # once, without a re-stage and without a reload.
+                   "doc": PROJECTS[pid]["binding"].doc or "",
                    # True once the code on disk has moved past what this
                    # process is running. Only a relaunch fixes it, so the
                    # editor says exactly that rather than leaving the person
@@ -1411,6 +1416,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path not in ("/__save", "/__push", "/__export", "/__upload",
                         "/__update", "/__rollback", "/__window", "/__quit",
                         "/__scaffold", "/__adopt", "/__connect", "/__pull",
+                        "/__doc", "/__doc/import",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
                         "/__agent/change", "/__agent/undo", "/__agent/seen",
                         "/__oauth/device/code", "/__oauth/device/token",
@@ -1485,6 +1491,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._scaffold(req)
         if path == "/__connect":
             return self._connect(req)
+        if path in ("/__doc", "/__doc/import"):
+            return self._doc(path, req)
         if path == "/__adopt":
             return self._adopt(req)
         if path.startswith("/__oauth/"):
@@ -1874,6 +1882,94 @@ class Handler(SimpleHTTPRequestHandler):
             tmp.replace(reg)
         _default_registry.cache_clear()
         return self._json(200, {"ok": True, "repo": slug, "remote": remote_note})
+
+    # ---- the Google Doc a project draws its prose from -------------------
+    def _doc(self, path: str, req):
+        """Link a project to a Google Doc, and read that doc's text.
+
+        The link is a `doc:` line in the project's own docsync.yml — committed
+        with the project, so it survives a re-stage, a clone and a colleague.
+        Reading is one-way and writes nothing: the doc is the draft, the
+        project is the document, and the editor applies the proposals a person
+        approved through the pilot's batch. Nothing here touches content.md.
+        """
+        pid = str(req.get("project") or "").strip()
+        if pid not in PROJECTS:
+            return self._json(200, {"ok": False, "error": f"unknown project '{pid}'"})
+        p = PROJECTS[pid]
+        root, b = p["root"], p["binding"]
+        # The same sys.path dance /__templates and _scaffold use: serve.py runs
+        # from report2027/tools, so the engine package is only importable with
+        # the checkout root on the path — and the path is dropped again so a
+        # foreign project's own vendored copy is not shadowed by ours for the
+        # rest of the process. The matcher is repo-agnostic and set_doc is
+        # given the registry path outright, so THIS checkout's copy is the
+        # right one to use whichever repo the project lives in.
+        sys.path.insert(0, str(SELF_ROOT))
+        try:
+            from docsync import docimport                  # noqa: PLC0415
+            from docsync import fetch as dfetch            # noqa: PLC0415
+            from docsync.content import parse_content      # noqa: PLC0415
+        except ImportError as e:                           # noqa: BLE001
+            return self._json(200, {"ok": False, "error": f"docsync engine: {e}"})
+        finally:
+            sys.path.remove(str(SELF_ROOT))
+
+        if path == "/__doc":
+            url = str(req.get("url") or "").strip()
+            try:
+                doc = docimport.parse_doc_id(url) if url else ""
+                # Under the host lock like every other docsync.yml write: a
+                # second server (the user's app beside a test run) reading and
+                # rewriting the same file at the same moment is how a binding
+                # goes missing.
+                with _host_lock():
+                    docimport.set_doc(pid, doc, root / "docsync.yml")
+            except Exception as e:                         # noqa: BLE001 — report it
+                return self._json(200, {"ok": False, "error": str(e)})
+            # The in-memory Binding is what the poll reports and what the next
+            # import reads, so it moves with the file or the editor keeps
+            # showing the old link until a restart.
+            b.doc = doc
+            return self._json(200, {"ok": True, "doc": doc,
+                                    "url": docimport.doc_url(doc)})
+
+        # ---- /__doc/import: fetch the doc, propose where its text goes ----
+        # An explicit `doc` reads a one-off document without linking it — the
+        # editor never sends one, but a script or a spec wanting to look before
+        # committing to a link should not have to write the registry first.
+        doc = str(req.get("doc") or "").strip() or b.doc
+        if not doc:
+            return self._json(200, {"ok": False, "error":
+                "this report is not linked to a Google Doc yet"})
+        # The suite must exercise the real matcher without reaching Google.
+        # Same shape as the other test-safe opt-ins: only possible in test
+        # mode, and only when a spec supplies the markdown on purpose.
+        stub = (str(req["md"]) if os.environ.get("PRIMER_TEST_SAFE") == "1"
+                and req.get("md") is not None else None)
+        key = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY", "").strip()
+        try:
+            tok = dfetch.access_token(key) if key and stub is None else None
+            md = stub if stub is not None else dfetch.fetch_markdown(doc, tok)
+        except Exception as e:                             # noqa: BLE001 — report it
+            # The overwhelmingly common cause is a doc nobody outside the
+            # owner can read, and the fix is one menu away in Docs — so say
+            # that rather than repeating an HTTP status the person cannot act
+            # on. Anything else is passed through as-is.
+            msg = str(e)
+            if "sign-in page" in msg or "HTTP 40" in msg:
+                msg = ("Google would not hand over that doc. In the doc, use "
+                       "Share ▸ General access ▸ Anyone with the link ▸ Viewer, "
+                       "then try again.")
+            return self._json(200, {"ok": False, "error": msg})
+        try:
+            slots = parse_content(b.content)
+        except Exception as e:                             # noqa: BLE001 — report it
+            return self._json(200, {"ok": False, "error":
+                f"could not read this report's slots: {e}"})
+        out = docimport.proposals(md, slots)
+        return self._json(200, {"ok": True, "doc": doc,
+                                "url": docimport.doc_url(doc), **out})
 
     def _oauth(self, path, req):
         """The device flow, proxied — and the token, kept for git.

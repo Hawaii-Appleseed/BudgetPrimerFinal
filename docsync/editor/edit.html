@@ -1250,6 +1250,27 @@
   .dsdlg-ok:hover { background:var(--deep) !important; border-color:var(--deep) !important; }
   .dsdlg-ok.danger { background:#C0392B !important; border-color:#C0392B !important; }
   .dsdlg-ok.danger:hover { background:#A93226 !important; border-color:#A93226 !important; }
+  /* The Google Doc import review. Wider than a form dialog because the whole
+     point is to READ what would land where before it lands — a 440px column
+     would truncate exactly the text being judged. The list scrolls; the
+     buttons never do, so Import is reachable however long the doc is. */
+  .dsdlg.wide { width:min(760px, 94vw); }
+  .dsimp { display:flex; flex-direction:column; gap:0; max-height:56vh;
+        overflow:auto; border:1px solid #E1E9E3; border-radius:8px; }
+  .dsimp-row { display:grid; grid-template-columns:22px 150px 1fr; gap:10px;
+        padding:9px 11px; border-bottom:1px solid #EEF3EF; align-items:start; }
+  .dsimp-row:last-child { border-bottom:0; }
+  .dsimp-row.off { opacity:.45; }
+  .dsimp-row > input[type=checkbox] { margin:3px 0 0; }
+  .dsimp-row select { font:12px system-ui; color:var(--ink); padding:4px 6px;
+        border:1px solid #C9D6CD; border-radius:6px; background:#fff; width:100%;
+        box-sizing:border-box; }
+  .dsimp-new { font:13px/1.45 system-ui; color:var(--ink); margin:0;
+        white-space:pre-wrap; overflow-wrap:anywhere; }
+  .dsimp-old { font:12px/1.4 system-ui; color:#84968D; margin:3px 0 0; }
+  .dsimp-how { font:11px system-ui; color:#84968D; margin:2px 0 0; }
+  .dsimp-how.guess { color:#B7791F; }
+  .dsimp-note { font:12px/1.5 system-ui; color:#5B6E66; margin:0; }
 </style>
 </head>
 <body>
@@ -1309,6 +1330,23 @@
       ><path d="M9.6 2.6h3.8v3.8M13.4 2.6 9.6 6.4"/><path
         d="M6.4 13.4H2.6V9.6M2.6 13.4l3.8-3.8"/></svg
       ><span class="shp-t">Resize…</span></button>
+    <!-- Where this report's prose was DRAFTED. Most writing here starts in a
+         Google Doc, with comments and three colleagues in it, and only becomes
+         a report once the words settle. These two rows are that hand-off: one
+         records which doc (a `doc:` line in docsync.yml, committed with the
+         project, so it survives a clone and a colleague), the other reads it
+         and proposes where each section lands. One-way, always — the doc is
+         never written to, so an import is something you can simply undo.
+         Local only: the fetch is the server's job, because a browser cannot
+         read docs.google.com cross-origin. -->
+    <button class="shp" id="file-doc" hidden><svg class="shp-i" viewBox="0 0 16 16"
+      ><path d="M4 1.9h5l3.1 3.1v9H4z"/><path d="M8.9 1.9v3.2h3.2"/><path
+        d="M6.1 8.2h4M6.1 10.6h4"/></svg
+      ><span class="shp-t">Google Doc…</span></button>
+    <button class="shp" id="file-docimport" hidden><svg class="shp-i" viewBox="0 0 16 16"
+      ><path d="M8 2.4v7"/><path d="M5.1 6.5 8 9.4l2.9-2.9"/><path
+        d="M2.9 11.4v1.2a1 1 0 0 0 1 1h8.2a1 1 0 0 0 1-1v-1.2"/></svg
+      ><span class="shp-t">Import text from the Doc…</span></button>
     <!-- Download and Token MOVED here from the bar. Same ids and the same
          handlers: nothing about either flow changed, only where it is
          reached from. -->
@@ -1870,6 +1908,10 @@ if (pyodideBoot) pyodideBoot.catch(() => {});
 
 let M = null;                          // the manifest
 let REPO = '';                         // owner/name we save to
+// The Google Doc this report draws its prose from, '' when none. Published on
+// every /__ping rather than baked into the staged manifest, so linking one in
+// this tab shows up in the others within a heartbeat and needs no re-stage.
+let DOC = '';
 let BRANCH = 'main';                    // the deploy branch drafts fork from and publish to
 // The live server now hosts more than one project (each possibly its own repo
 // on disk), so every /__ping, /__events, /__save, /__push, /__export call has
@@ -11551,6 +11593,7 @@ async function detectLocal() {
       // warning standing over a checkout it no longer describes.
       pushHealth = j.push || {};
       setPushState(j.ahead);
+      if (j.doc != null) DOC = j.doc;
       contentHealth(j);        // the first ping already knows; don't wait for SSE
     } catch (e) {} }
   } catch (e) { local = false; }
@@ -11572,6 +11615,9 @@ async function detectLocal() {
   // Same for signing THIS COMPUTER in: the server holds the credential and
   // does the pushing, so the row only means something when there is one.
   $('file-ghconn').hidden = $('file-gh-h').hidden = false;
+  // Reading a Google Doc is the server's job — docs.google.com serves no CORS
+  // headers, so a hosted editor could not fetch one however it was linked.
+  $('file-doc').hidden = false;
   fetch('/__oauth/status').then(r => r.json()).then(j => {
     if (j && j.ok) {
       serverOauth = j;
@@ -11607,6 +11653,7 @@ async function detectLocal() {
   };
   window.__onBump = onBump;            // test hook, like window.__fileSig
   startLive(d => { pushHealth = d.push || {}; setPushState(d.ahead); setAgentNote(d.agent); watchHealth(d); serverHealth(d); updateHealth(d);
+                   if (d.doc != null) DOC = d.doc;
                    contentHealth(d); onBump(d.v, d.error); });
   $('upd').onclick = installUpdate;
   $('ver').onclick = goBackAVersion;
@@ -14663,6 +14710,18 @@ $('file').onclick = () => {
       ? 'Saves and Pushes go to github.com/' + REPO + ' — click to change'
       : 'This report has no GitHub repo yet — click to connect or create one';
   }
+  if (local) {
+    // Named, not just "linked": which doc is exactly the thing worth checking
+    // before pulling text out of it, and the id is the only part that differs
+    // between two docs with the same name.
+    rowLabel('file-doc', DOC ? 'Google Doc: linked' : 'Google Doc…');
+    $('file-doc').title = DOC
+      ? 'Drafted in docs.google.com/document/d/' + DOC + ' — click to change or unlink'
+      : 'Link the Google Doc this report is drafted in';
+    // Nothing to import from until there is a doc, and a row that refuses is
+    // worse than a row that isn't there.
+    $('file-docimport').hidden = !DOC;
+  }
   const h = (layout.hidden || []).length;
   $('file-restore').hidden = !h;
   // No "(0)" — the count only means something when there IS something.
@@ -14979,6 +15038,187 @@ async function ensureAuthForRepo(slug) {
   const was = REPO;
   REPO = slug;                     // so the token prompt names the right repo
   try { return await ensureAuth(); } finally { REPO = was; }
+}
+
+/** Record WHICH Google Doc this report is drafted in.
+ *
+ *  The link is a `doc:` line in the project's own docsync.yml — committed with
+ *  the project rather than kept in browser storage, so it survives a re-stage,
+ *  a clone, and being handed to a colleague. Clearing the field unlinks. */
+$('file-doc').onclick = async () => {
+  $('filepop').hidden = true;
+  const r = await dsForm('Google Doc', [
+    { name: 'url', label: 'Paste the doc’s link (empty to unlink)', type: 'text',
+      value: DOC ? 'https://docs.google.com/document/d/' + DOC + '/edit' : '',
+      placeholder: 'https://docs.google.com/document/d/…' },
+  ], { okLabel: DOC ? 'Update' : 'Link' });
+  if (!r) return;
+  let j;
+  try { j = await postLocal('/__doc', { project: M.id, url: r.url.trim() }); }
+  catch (e) { $('stat').textContent = 'could not save the link: ' + e.message; return; }
+  if (!j.ok) { $('stat').textContent = j.error || 'could not save the link'; return; }
+  DOC = j.doc || '';
+  $('stat').textContent = DOC
+    ? 'linked — File ▸ Import text from the Doc brings its words in'
+    : 'unlinked from its Google Doc';
+};
+
+/** Bring the linked doc's text in.
+ *
+ *  The server reads the doc and works out where each section would land; this
+ *  shows that as a list you approve row by row, and applies the approved rows
+ *  as ONE pilot batch — so the whole import is a single undo step, validated
+ *  exactly as typing the text would be. Nothing is written until Import is
+ *  pressed, and the doc itself is never written to at all. */
+$('file-docimport').onclick = async () => {
+  $('filepop').hidden = true;
+  if (editing) { $('stat').textContent = 'close the open text editor first'; return; }
+  $('stat').textContent = 'reading the Google Doc…';
+  let j;
+  // 60s, not the default 30: this waits on Google, not on a local build.
+  try { j = await postLocal('/__doc/import', { project: M.id }, 60000); }
+  catch (e) { $('stat').textContent = 'could not read the doc: ' + e.message; return; }
+  if (!j.ok) { $('stat').textContent = j.error || 'could not read the doc'; return; }
+  if (!(j.rows || []).length) {
+    await dsAlert(j.mode === 'empty'
+      ? 'That doc is empty.'
+      : 'Nothing in that doc matched a slot in this report. Give its sections '
+        + 'headings that match the report’s own, or write it with [[slot]] '
+        + 'markers, and try again.');
+    return;
+  }
+  const picked = await docImportReview(j);
+  if (!picked || !picked.length) return;
+
+  const res = await docsync.api.batch(
+    picked.map(r => ({ verb: 'setSlot', args: [r.key, r.md] })));
+  if (!res.ok) { $('stat').textContent = 'nothing was imported: ' + res.error; return; }
+  $('stat').textContent = 'imported ' + picked.length + ' section'
+    + (picked.length === 1 ? '' : 's') + ' from the Google Doc — ⌘Z undoes it';
+};
+
+/** The review list: one row per proposed slot write, each one skippable and
+ *  re-aimable. Resolves the approved rows, or null on cancel.
+ *
+ *  Every row is shown, including the ones that matched nothing — text that
+ *  silently failed to land is the failure mode this dialog exists to prevent.
+ *  Guesses (matched by position, or unmatched) start unticked: an import
+ *  should never do something the person did not look at. */
+function docImportReview(j) {
+  const keys = j.slots || [];
+  const rows = j.rows || [];
+  return dsModal((dlg, done) => {
+    dlg.classList.add('wide');
+    const form = document.createElement('form');
+    form.method = 'dialog';
+    form.className = 'dsdlg-form';
+
+    const h = document.createElement('p');
+    h.className = 'dsdlg-title';
+    h.textContent = 'Import text from the Google Doc';
+    form.appendChild(h);
+
+    const note = document.createElement('p');
+    note.className = 'dsimp-note';
+    note.textContent = j.mode === 'markers'
+      ? 'This doc is written with [[slot]] markers, so each block goes to the '
+        + 'slot it names.'
+      : 'Sections were matched to slots by their headings. Check each one — '
+        + 'unticked rows are left alone.';
+    if ((j.unknown || []).length) {
+      note.textContent += ' Ignored, because this report has no such slot: '
+        + j.unknown.join(', ') + '.';
+    }
+    form.appendChild(note);
+
+    const list = document.createElement('div');
+    list.className = 'dsimp';
+    const state = [];
+    rows.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'dsimp-row';
+      const on = document.createElement('input');
+      on.type = 'checkbox';
+      // A guess is offered, never applied unlooked-at.
+      on.checked = !!r.key && r.how !== 'position' && r.how !== 'none';
+      on.setAttribute('aria-label', 'Import this section');
+      const sel = document.createElement('select');
+      const skip = document.createElement('option');
+      skip.value = ''; skip.textContent = '— pick a slot —';
+      sel.appendChild(skip);
+      keys.forEach(k => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = k;
+        sel.appendChild(o);
+      });
+      sel.value = r.key || '';
+      const cell = document.createElement('div');
+      const nw = document.createElement('p');
+      nw.className = 'dsimp-new';
+      nw.textContent = r.md.length > 320 ? r.md.slice(0, 320) + '…' : r.md;
+      cell.appendChild(nw);
+      if (r.was && r.was !== r.md) {
+        const was = document.createElement('p');
+        was.className = 'dsimp-old';
+        was.textContent = 'replaces: '
+          + (r.was.length > 120 ? r.was.slice(0, 120) + '…' : r.was);
+        cell.appendChild(was);
+      }
+      const how = document.createElement('p');
+      how.className = 'dsimp-how'
+        + (r.how === 'position' || r.how === 'none' ? ' guess' : '');
+      how.textContent = r.note || ({
+        marker: 'from its [[slot]] marker',
+        heading: 'matched by heading',
+        position: 'matched by position only — check it',
+        none: 'no slot matched this section',
+      })[r.how] || '';
+      if (how.textContent) cell.appendChild(how);
+      row.append(on, sel, cell);
+      const sync = () => row.classList.toggle('off', !on.checked || !sel.value);
+      on.onchange = sync;
+      // Aiming an unmatched row at a slot is the whole reason the dropdown is
+      // there, so choosing one ticks it rather than making you tick it too.
+      sel.onchange = () => { if (sel.value) on.checked = true; sync(); };
+      sync();
+      list.appendChild(row);
+      state.push({ on, sel, md: r.md });
+    });
+    form.appendChild(list);
+
+    const err = document.createElement('p');
+    err.className = 'dsdlg-err';
+    form.appendChild(err);
+
+    const btns = document.createElement('div');
+    btns.className = 'dsdlg-btns';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'dsdlg-cancel';
+    cancel.textContent = 'Cancel';
+    const ok = document.createElement('button');
+    ok.type = 'submit'; ok.className = 'dsdlg-ok';
+    ok.textContent = 'Import';
+    btns.append(cancel, ok);
+    form.appendChild(btns);
+    cancel.onclick = () => done(null);
+    form.onsubmit = e => {
+      e.preventDefault();
+      const picked = state.filter(x => x.on.checked && x.sel.value)
+        .map(x => ({ key: x.sel.value, md: x.md }));
+      if (!picked.length) { err.textContent = 'Nothing is ticked.'; return; }
+      // Two rows aimed at one slot means one of them silently wins, and which
+      // one is an implementation detail. Refuse and say which slot.
+      const seen = new Set(), dup = picked.find(r => seen.size === seen.add(r.key).size);
+      if (dup) {
+        err.textContent = 'Two sections are aimed at ' + dup.key
+          + ' — only one can land there.';
+        return;
+      }
+      done(picked);
+    };
+    dlg.appendChild(form);
+    setTimeout(() => ok.focus(), 0);
+  });
 }
 
 $('open-all').onclick = () => { location.href = 'start.html'; };
