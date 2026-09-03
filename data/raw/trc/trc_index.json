@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-08-27T23:44:27+00:00",
+  "checked_at": "2026-09-03T19:40:07+00:00",
   "documents": {
     "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-01-15-TRC_Presentation-DOTAX-TRP.pdf": {
       "doc_type": "presentation",
@@ -55,6 +55,13 @@
       "doc_type": "presentation",
       "meeting_date": "2026-08-11",
       "title": "UHERO Research Proposal"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-09-01-Solar-credit-dollar-by-dollar.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-09-01",
+      "pdf": "data/raw/trc/pdfs/2026-09-01-Solar-credit-dollar-by-dollar.pdf",
+      "text": "data/raw/trc/extracted/2026-09-01-Solar-credit-dollar-by-dollar.txt",
+      "title": "Dylan Moore (UHERO) Presentation on Interim Findings 2026-09-01"
     },
     "https://files.hawaii.gov/tax/stats/trc/docs2025/HCR _82.pdf": {
       "doc_type": "presentation",
@@ -151,10 +158,12 @@
       "meeting_date": "2026-08-11",
       "title": "August 11, 2026 at 2:00 P.M."
     },
-    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc08-11_min-draft.pdf": {
-      "doc_type": "minutes_draft",
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc08-11_min.pdf": {
+      "doc_type": "minutes_final",
       "meeting_date": "2026-08-11",
-      "title": "August 11, 2026 \u2013 Draft"
+      "pdf": "data/raw/trc/pdfs/2026trc08-11_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc08-11_min.txt",
+      "title": "August 11, 2026"
     },
     "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-01.pdf": {
       "doc_type": "notice",
@@ -205,7 +214,12 @@
       "doc_type": "video",
       "meeting_date": "2026-07-14",
       "title": "July 14, 2026 VIDEO"
+    },
+    "https://youtu.be/v7zeavWffq4": {
+      "doc_type": "video",
+      "meeting_date": "2026-09-01",
+      "title": "September 1, 2026 VIDEO"
     }
   },
-  "page_last_updated": "August 25, 2026"
+  "page_last_updated": "September 2, 2026"
 }
