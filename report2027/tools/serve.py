@@ -1389,7 +1389,7 @@ class Handler(SimpleHTTPRequestHandler):
                 # editor has other callers for this handler, and a missing
                 # key must mean "no news", not "clear the notice".
                 payload["agent"] = ({**{k: _ev.get(k) for k in
-                                        ("id", "by", "summary", "at", "base")},
+                                        ("id", "by", "summary", "at", "base", "announced")},
                                      "label": _ev.get("label")
                                      or f"{_ev.get('by')} edited this"}
                                     if _ev else None)

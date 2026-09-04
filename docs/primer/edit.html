@@ -289,6 +289,14 @@
   #collab.can-click { cursor:pointer; text-decoration:underline dotted; opacity:.9; }
   #collab i { display:inline-block; width:8px; height:8px; border-radius:50%;
               margin-left:5px; vertical-align:middle; }
+  /* The AI at work: shown while an automated editor is changing this report
+     — through this tab (pilot ops), through a collaborator's, or on disk
+     after announcing itself. Same purple as #agentnote, which is the SAME
+     actor after the fact; this one is the present tense, and it pulses. */
+  #agentlive { font:600 11px system-ui; color:#fff; background:#6B5CA5; border-radius:99px;
+               padding:3px 10px; white-space:nowrap; letter-spacing:.2px; cursor:default;
+               animation:agentlive 1.6s ease-in-out infinite; }
+  @keyframes agentlive { 0%,100% { opacity:1; } 50% { opacity:.55; } }
   /* An update, on the other hand, IS news — but it is never urgent, and it
      must not read like an error. Sage (the primary colour used elsewhere for
      Save) says "there is something good here" without demanding the click. */
@@ -1433,6 +1441,9 @@
        configured (collab/README.md). Hidden otherwise: an editor that is not
        shared has nothing to say here. -->
   <span id="collab" hidden title=""></span>
+  <!-- Present tense: an automated editor is changing this report right now
+       (see agentTouch). Lives in every mode; a live session relays it. -->
+  <span id="agentlive" hidden title=""></span>
   <span id="ver" hidden title=""></span>
   <span id="fit" hidden title="">⚠</span>
   <!-- A project imported via docsync.scaffold + docsync.propose (an engine
@@ -11611,6 +11622,7 @@ function collabWire(d) {
     d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
   }
   if (collab) collabPaintPeers(d);
+  else agentPaint();
 }
 
 // --- presence (Phase 3) ------------------------------------------------
@@ -11642,9 +11654,11 @@ function collabPresence() {
   // A collaborator's caret is a position into text this editor may be
   // changing: repaint it as the words move, not only when they move it.
   if (collabPeers.some(p => p.cursor)) collabPaintCarets($('out').contentDocument);
+  const ag = agentActive();
   return {
     sel: [...selIds], page: selPage, slot: collabEditTarget(),
     drag: !!(collabPointerAt && selIds.size), cursor,
+    agent: ag ? { by: ag.by, what: ag.what, target: ag.target } : null,
   };
 }
 
@@ -11925,6 +11939,7 @@ function collabPaintPeers(d) {
     }
   }
   collabPaintCarets(d);
+  agentPaint();
 }
 
 /** Opening an inline editor on something a collaborator is already typing
@@ -12073,7 +12088,8 @@ async function startCollab() {
     onPeers: peers => {
       collabPeers = peers;
       collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, color: p.color, sel: p.sel, slot: p.slot,
-                                                              cursor: collab ? collab.resolveCursor(p.cursor) : null })) };
+                                                              cursor: collab ? collab.resolveCursor(p.cursor) : null,
+                                                              agent: p.agent })) };
       const d = $('out') && $('out').contentDocument;
       if (d) collabPaintPeers(d);
       collabChip();
@@ -12206,6 +12222,14 @@ function setAgentNote(a) {
   // (several callers share this handler); null means there is none.
   if (a === undefined) return;
   agentNow = a || null;
+  // A fresh announcement is an agent at work NOW (it announces before it
+  // edits): the present-tense chip, for as long as changes keep landing.
+  if (a && a.announced && a.id && a.id !== agentSeenId) {
+    agentSeenId = a.id;
+    const t = Date.parse(a.at || '');
+    if (!t || Date.now() - t < 120_000)
+      agentTouch({ by: a.by, what: a.summary, hold: AGENT_DISK_HOLD_MS });
+  }
   const b = $('agentnote');
   if (!a) { b.hidden = true; return; }
   b.hidden = false;
@@ -12421,6 +12445,10 @@ async function claimPilotOps() {
 
 async function runPilotOps(ops) {
   for (const op of ops) {
+    // A pilot op IS an automated editor at work: say so, here and to the room,
+    // naming what it is touching when the first argument names a thing.
+    agentTouch({ by: 'Claude', what: op.verb + (typeof (op.args || [])[0] === 'string' ? ' ' + op.args[0] : ''),
+                 target: typeof (op.args || [])[0] === 'string' ? op.args[0] : null });
     let result;
     try {
       const fn = docsync.api[op.verb];
@@ -12438,8 +12466,81 @@ async function runPilotOps(ops) {
         body: JSON.stringify({ project: M && M.id, id: op.id, result }),
       });
     } catch (e) { /* the caller's own timeout reports this */ }
+    agentTouch();                 // done with this one; the chip lingers a moment
   }
 }
+
+// --- the AI at work -----------------------------------------------------------
+// #agentnote (above) is the past tense: "Claude edited this", with a rewind.
+// This is the present tense: an automated editor is changing the report RIGHT
+// NOW, and a person looking at it — in this tab, or in a collaborator's —
+// should not have to guess why words are moving. Three sources feed it:
+//   · a pilot op running in this tab (runPilotOps), which names its verb and
+//     what it touches — the touched paragraph or element is tagged on the page
+//     the way a collaborator's typing spot is;
+//   · an agent that announced itself to the local server (POST /__agent/change
+//     — setAgentNote sees the event within a heartbeat) and every disk change
+//     adopted while that announcement is fresh;
+//   · a collaborator's editor doing either of the above: presence carries
+//     `agent`, and the room paints "via <login>".
+// It clears itself: a pilot op is over quickly, so a few seconds after the
+// last one; an announced agent works longer, so longer after its last change.
+let agentLive = null;          // {by, what, target, at, hold}
+const AGENT_COLOR = '#6B5CA5';
+const AGENT_PILOT_HOLD_MS = 4000, AGENT_DISK_HOLD_MS = 20000;
+let agentSeenId = null;        // the announced event already turned into a touch
+
+/** Note an automated editor at work. With no argument: still the same one,
+ *  refresh its clock. */
+function agentTouch(info) {
+  if (info) {
+    agentLive = { by: info.by || 'Claude', what: info.what || '', target: info.target || null,
+                  hold: info.hold || AGENT_PILOT_HOLD_MS, at: Date.now() };
+  } else if (agentLive) agentLive.at = Date.now();
+  agentPaint();
+}
+/** The agent at work through THIS tab, or null once it has gone quiet. */
+function agentActive() {
+  return agentLive && Date.now() - agentLive.at < agentLive.hold ? agentLive : null;
+}
+/** Everyone's: this tab's, then each collaborator's (with who it is via). */
+function agentsAtWork() {
+  const mine = agentActive();
+  const theirs = (collabPeers || []).filter(p => p.agent).map(p => ({ ...p.agent, via: p.login || 'someone' }));
+  return mine ? [{ ...mine }, ...theirs] : theirs;
+}
+/** The chip, and a tag on whatever is being touched. Idempotent; runs after
+ *  every render, every awareness change, and once a second while it shows. */
+function agentPaint() {
+  const all = agentsAtWork();
+  const c = $('agentlive');
+  if (c) {
+    c.hidden = !all.length;
+    if (all.length) {
+      const a = all[0];
+      c.textContent = `✦ ${a.by} is editing${a.via ? ' · via ' + a.via : ''}…`;
+      c.title = all.map(x => `${x.by} is editing this report${x.what ? ' (' + x.what + ')' : ''}`
+                            + (x.via ? ` through ${x.via}'s editor` : ' through this editor')).join('\n')
+        + '\nWords may move while it works. Undo and Discard behave as usual.';
+    }
+  }
+  const d = $('out') && $('out').contentDocument;
+  if (!d || !d.body) return;
+  d.querySelectorAll('.ds-agent').forEach(el => {
+    el.classList.remove('ds-agent', 'ds-peer-typing');
+    el.removeAttribute('data-peer');
+    el.style.removeProperty('--peer');
+  });
+  for (const a of all) {
+    if (!a.target) continue;
+    const el = d.querySelector(`[data-slot="${CSS.escape(a.target)}"], [data-el="${CSS.escape(a.target)}"]`);
+    if (!el || el.classList.contains('ds-peer-typing')) continue;   // a person's tag stays
+    el.classList.add('ds-peer-typing', 'ds-agent');
+    el.style.setProperty('--peer', AGENT_COLOR);
+    el.dataset.peer = '✦ ' + a.by + ' · editing';
+  }
+}
+setInterval(() => { if (agentLive || (collabPeers || []).some(p => p.agent)) agentPaint(); }, 1000);
 
 function startLive(onEvent) {
   // Scoped by project id: two projects' edit.html tabs open at once must not
@@ -12931,6 +13032,10 @@ async function _pull() {
   try { engineMoved = await refreshEngineFiles(); } catch (e) { engineOk = false; }
   if (engineMoved) engineDirty = true;   // next render re-imports the engine
   if (engineOk && !clash) {
+    if (took && agentNow && agentNow.announced) {
+      // Its change just landed: still at work, keep saying so.
+      agentTouch({ by: agentNow.by, what: agentNow.summary, hold: AGENT_DISK_HOLD_MS });
+    }
     if (took || engineMoved) {
       await render();
       $('stat').textContent = took ? 'updated from disk' : 'reloaded';
@@ -16813,6 +16918,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // off / connecting / signin / error / live / offline; `peers` counts
       // every editor in the room including this one.
       collab: { ...collabInfo, baseSha: collab ? collab.baseSha() : null, branch: draftBranch },
+      // An automated editor at work right now — through this tab, or a
+      // collaborator's (`via`). Null when none.
+      agent: agentsAtWork()[0] || null,
     };
   },
 
