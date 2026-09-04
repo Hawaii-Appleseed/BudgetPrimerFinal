@@ -10208,6 +10208,7 @@ async function restore(json) {
 async function undo() {
   if (collab) {
     if (!collab.canUndo()) { $('stat').textContent = 'nothing to undo'; return; }
+    collabNoteCaret();
     await collabAdopt(collab.undo(), 'undo');
     syncHistoryButtons();
     $('stat').textContent = 'undone';
@@ -10222,6 +10223,7 @@ async function undo() {
 async function redo() {
   if (collab) {
     if (!collab.canRedo()) { $('stat').textContent = 'nothing to redo'; return; }
+    collabNoteCaret();
     await collabAdopt(collab.redo(), 'redo');
     syncHistoryButtons();
     $('stat').textContent = 'redone';
@@ -11578,9 +11580,24 @@ async function collabTicket(relay, room) {
 }
 
 /** True while a remote change must NOT be painted over what the person is
- *  doing. A pointer held for more than 15s is a lost pointerup, not a drag. */
+ *  doing: a dialog up, a pointer held (a drag; more than 15s is a lost
+ *  pointerup, not a drag), or an inline editor whose words live in
+ *  layout.json (a text box, a table cell, a chart label) — there a remote
+ *  edit is a whole-string replace, and it waits. An open PARAGRAPH editor is
+ *  NOT busy (Phase 4): its slot is a Y.Text, so a collaborator's edit to that
+ *  very paragraph merges into the open editor (collabRefreshHost), and an
+ *  edit to anything else lands in `source`/`layout` now and paints when the
+ *  paragraph closes. */
 function collabBusy() {
-  return editing || modalOpen || (collabPointerAt && Date.now() - collabPointerAt < 15000);
+  return (editing && !collabParaOpen()) || modalOpen
+    || (collabPointerAt && Date.now() - collabPointerAt < 15000);
+}
+/** The content.md slot whose paragraph editor is open here, or null. The
+ *  sources slot is excluded: writeSlot() validates it line by line at the
+ *  commit, and a half-typed line must not reach the room. */
+function collabParaOpen() {
+  const key = editing && richHost && richHost.isConnected && richHost.dataset.slot;
+  return key && key !== 'sources' ? key : null;
 }
 /** Called from wire() for every report document: a drag starts inside the
  *  iframe, whose events never reach this window — and a fresh document has
@@ -11611,11 +11628,243 @@ function collabEditTarget() {
   if (editing && typeof cellSel !== 'undefined' && cellSel && cellSel.id) return cellSel.id;
   return null;
 }
+/** Polled by the session 4×/s. Also the tick for the open paragraph: its
+ *  words go into the document (collabLiveFlush) and its caret rides along as
+ *  a relative position, so the two are never out of step. */
 function collabPresence() {
+  collabLiveFlush();
+  const key = collabParaOpen();
+  let cursor = null;
+  if (key) {
+    const i = collabHostCaretIndex();
+    if (i != null) cursor = collab.cursorAt(key, i);
+  }
+  // A collaborator's caret is a position into text this editor may be
+  // changing: repaint it as the words move, not only when they move it.
+  if (collabPeers.some(p => p.cursor)) collabPaintCarets($('out').contentDocument);
   return {
     sel: [...selIds], page: selPage, slot: collabEditTarget(),
-    drag: !!(collabPointerAt && selIds.size),
+    drag: !!(collabPointerAt && selIds.size), cursor,
   };
+}
+
+// --- the open paragraph (Phase 4) ------------------------------------------
+// While a paragraph editor is open its words live in a contenteditable, not
+// in `source`, and the room would not see them until the commit. So they are
+// flushed LIVE from the presence tick: the host's DOM through the same
+// htmlToMd() the commit uses, overlaid on `source` at that slot, diffed into
+// the document like any other edit. That is what lets a collaborator's edit
+// to the SAME paragraph merge in while both are typing — Yjs merges the two
+// diffs as concurrent operations — and it is why an open paragraph is not
+// `busy`. Escape still means "keep nothing": what was flushed is undone.
+let collabLastLive = null;      // the host markdown last flushed
+let collabLiveDirty = false;    // whether anything was flushed since the editor opened
+let collabCaretBefore = null;   // this editor's caret, as a relative position, before the document moves
+let collabComposing = false;    // an IME composition is in progress: hands off the host
+let collabPendingRefresh = null;
+let collabMovedUnderPara = false; // a remote change landed while a paragraph was open
+
+/** A paragraph's words as markdown, or null when it cannot say. */
+function collabHostMd(host = richHost) {
+  if (!host) return null;
+  const inline = host.dataset.richMode === 'inline';
+  try {
+    return richOpts.allowMd === false
+      ? (inline ? host.textContent : host.innerText)
+      : htmlToMd(host, { allowLists: !!richOpts.allowLists, inline });
+  } catch (e) { return null; }
+}
+/** What the editor holds, with the open paragraph's live words overlaid. */
+function collabLiveFiles() {
+  const key = collabParaOpen();
+  const md = key ? collabHostMd() : null;
+  if (md == null) return { content: source, layout };
+  return { content: source.replace(slotRe(key), (m, head) => head + md.trim() + '\n'), layout };
+}
+/** edit() opened a paragraph: the typing to come is its own undo step. */
+function collabParaOpened() {
+  collabLastLive = null; collabLiveDirty = false; collabPendingRefresh = null;
+  if (collab) collab.mark();
+}
+function collabParaClosed() {
+  collabLastLive = null; collabLiveDirty = false; collabPendingRefresh = null; collabComposing = false;
+  // patchPages() trusts that an edit's own page is the one that changed, and
+  // rebuilds the document in full only when NOTHING did — which is how a
+  // cancelled edit's dead host gets cleared. A remote change that landed
+  // under the open paragraph breaks that: some OTHER page changed, so the
+  // patch would replace it and leave the host standing on this one. Forget
+  // the last render, and the next one swaps the whole document.
+  if (collabMovedUnderPara) { collabMovedUnderPara = false; lastHtml = null; }
+}
+/** Push the open paragraph's words into the document when they changed. */
+function collabLiveFlush() {
+  if (!collab || !collabParaOpen() || collabComposing) return;
+  const md = collabHostMd();
+  if (md == null || md === collabLastLive) return;
+  collabLastLive = md;
+  try { if (collab.flush(collabLiveFiles())) collabLiveDirty = true; }
+  catch (e) { console.warn('[collab] live flush refused:', e); }
+}
+/** Escape on a paragraph that was flushed live: take those words back — an
+ *  undo of this editor's step, which leaves a collaborator's edits to the
+ *  same paragraph standing. The caller renders. */
+function collabDiscardLive() {
+  if (!collab || !collabLiveDirty) return false;
+  collabLiveDirty = false; collabLastLive = null;
+  if (!collab.canUndo()) return false;
+  const f = collab.undo();
+  source = f.content;
+  layout = f.layout;
+  layout.positions = layout.positions || {};
+  layout.shapes = layout.shapes || [];
+  layout.sections = layout.sections || {};
+  markDirty();
+  return true;
+}
+/** Before the document moves under an open paragraph (a collaborator's
+ *  update, an undo): flush its words, and remember where the caret is as a
+ *  relative position — a character, not an offset — so it can be put back
+ *  after the words around it have changed. The session calls this as
+ *  `beforeRemote`. */
+function collabNoteCaret() {
+  collabCaretBefore = null;
+  const key = collabParaOpen();
+  if (!key) return;
+  collabLiveFlush();
+  const i = collabHostCaretIndex();
+  if (i != null) collabCaretBefore = collab.cursorAt(key, i);
+}
+
+const CARET_MARK = '\uE000';   // private use: never in prose; htmlToMd/mdToHtml pass it through
+const nodePath = (root, node) => {
+  const p = [];
+  for (let n = node; n && n !== root; n = n.parentNode) p.unshift([...n.parentNode.childNodes].indexOf(n));
+  return p;
+};
+const nodeAt = (root, path) => { let n = root; for (const i of path) n = n && n.childNodes[i]; return n || null; };
+
+/** This editor's caret as an offset into the open paragraph's markdown: the
+ *  selection's focus is marked in a CLONE of the host and found again after
+ *  the same DOM→markdown pass the commit uses. Null when there is no caret
+ *  in the host, or the mark fell somewhere words are not (a link's URL). */
+function collabHostCaretIndex() {
+  if (!richHost) return null;
+  const d = richHost.ownerDocument, sel = d.getSelection();
+  if (!sel || !sel.rangeCount || !richHost.contains(sel.focusNode)) return null;
+  const clone = richHost.cloneNode(true);
+  const n = sel.focusNode === richHost ? clone : nodeAt(clone, nodePath(richHost, sel.focusNode));
+  if (!n) return null;
+  const off = sel.focusOffset;
+  if (n.nodeType === Node.TEXT_NODE) n.data = n.data.slice(0, off) + CARET_MARK + n.data.slice(off);
+  else n.insertBefore(d.createTextNode(CARET_MARK), n.childNodes[off] || null);
+  const md = collabHostMd(clone);
+  if (md == null) return null;
+  const i = md.indexOf(CARET_MARK);
+  if (i < 0) return null;
+  return i - (md.length - md.trimStart().length);   // the flush trims what it sends
+}
+
+/** Rebuild the open paragraph from `md` — a collaborator's edit merged with
+ *  what was typed here — and put the caret back: the markdown is rendered
+ *  with a mark at the caret's offset, the mark's text node found in the
+ *  fresh DOM, and removed. Mid-composition it waits for compositionend. */
+function collabRefreshHost(md, index) {
+  if (!richHost) return;
+  if (collabComposing) { collabPendingRefresh = { md, index }; return; }
+  const d = richHost.ownerDocument;
+  const inline = richHost.dataset.richMode === 'inline';
+  const focused = d.activeElement === richHost;
+  const i = index == null || !focused ? null : Math.max(0, Math.min(index, md.length));
+  const marked = i == null ? md : md.slice(0, i) + CARET_MARK + md.slice(i);
+  const paint = text => {
+    if (richOpts.allowMd === false) richHost.textContent = text;
+    else richHost.innerHTML = mdToHtml(text, { allowLists: !!richOpts.allowLists, inline, fnLabels: richOpts.fnLabels });
+  };
+  paint(marked);
+  let node = null, at = -1;
+  if (i != null) {
+    const w = d.createTreeWalker(richHost, NodeFilter.SHOW_TEXT);
+    for (let t; (t = w.nextNode()); ) { const k = t.data.indexOf(CARET_MARK); if (k >= 0) { node = t; at = k; break; } }
+    if (node) node.data = node.data.slice(0, at) + node.data.slice(at + 1);
+    else paint(md);                     // the mark landed in an attribute: no caret to keep
+  }
+  if (focused) {
+    const r = d.createRange();
+    if (node) r.setStart(node, at); else r.selectNodeContents(richHost);
+    r.collapse(!!node ? true : false);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  collabLastLive = collabHostMd();      // what the document holds now; nothing to flush
+  syncMarksBar();
+}
+
+/** Visible characters in a run of markdown: syntax carries no glyphs. */
+function mdVisibleLength(md) {
+  return md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[\^[^\]]+\]/g, '')
+    .replace(/\[([^\]]*)\]\((?:https?:)?[^)]*\)/g, '$1')
+    .replace(/\*\*|__|\*/g, '')
+    .replace(/(^|\n)[ \t]*(?:[-*]\s+|\d+[.)]\s+|#+\s+)/g, '$1')
+    .replace(/[ \t]*\n[ \t]*\n\s*/g, '')
+    .replace(/[ \t]*\n[ \t]*/g, ' ')
+    .length;
+}
+/** The DOM spot for an offset into a slot's markdown, by visible characters:
+ *  the paragraph's text nodes in order, a footnote chip skipped (it shows a
+ *  number the markdown does not have). In this editor's own open paragraph
+ *  the walk is over the host; otherwise over the slot's rendered blocks.
+ *  Close enough for a caret; a guess past the end lands at the end. */
+function collabCaretDom(d, key, index) {
+  const own = collabParaOpen() === key && richHost;
+  const roots = own ? [richHost] : [...d.querySelectorAll(`[data-slot="${CSS.escape(key)}"]`)];
+  if (!roots.length) return null;
+  const md = own ? collabHostMd() : (slotRe(key).test(source) ? readSlot(key) : null);
+  if (md == null) return null;
+  let want = mdVisibleLength(md.slice(0, Math.max(0, Math.min(index, md.length))));
+  let last = null;
+  for (const root of roots) {
+    const w = d.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: t =>
+      t.parentElement && t.parentElement.closest('sup') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    for (let t; (t = w.nextNode()); ) {
+      if (want <= t.data.length) return { node: t, offset: want };
+      want -= t.data.length; last = t;
+    }
+  }
+  return last ? { node: last, offset: last.data.length } : null;
+}
+/** Every collaborator's caret, as a bar in their colour at the spot their
+ *  relative position resolves to in THIS editor's copy of the paragraph —
+ *  drawn in the page overlay, like a shape's selection ring, so nothing in
+ *  the prose is touched. */
+function collabPaintCarets(d) {
+  if (!d || !d.body) return;
+  d.querySelectorAll('.ds-peer-caret').forEach(el => el.remove());
+  if (!collab) return;
+  for (const p of collabPeers) {
+    const c = p.cursor && collab.resolveCursor(p.cursor);
+    if (!c) continue;
+    const pos = collabCaretDom(d, c.slot, c.index);
+    if (!pos || !pos.node.parentElement) continue;
+    const page = pos.node.parentElement.closest('section.page');
+    if (!page) continue;
+    const r = d.createRange(); r.setStart(pos.node, pos.offset); r.collapse(true);
+    let rect = r.getClientRects()[0] || r.getBoundingClientRect();
+    if (!rect || !rect.height) {
+      const pr = pos.node.parentElement.getBoundingClientRect();
+      rect = { left: rect && rect.left ? rect.left : pr.left, top: pr.top, height: pr.height };
+    }
+    const px = DPI * zoomOf(page), pr = page.getBoundingClientRect();
+    const el = d.createElement('div');
+    el.className = 'ds-peer-caret';
+    el.dataset.peer = p.login || 'someone';
+    el.dataset.slot = c.slot;
+    el.style.setProperty('--peer', p.color);
+    el.style.left = ((rect.left - pr.left) / px).toFixed(3) + 'in';
+    el.style.top = ((rect.top - pr.top) / px).toFixed(3) + 'in';
+    el.style.height = (rect.height / px).toFixed(3) + 'in';
+    page.appendChild(el);
+  }
 }
 
 const PEER_CSS = [
@@ -11627,6 +11876,11 @@ const PEER_CSS = [
   '[data-el].ds-sel.ds-peer { outline-style:double !important; }',
   '.ds-peer-typing { box-shadow:inset 3px 0 0 var(--peer); position:relative; }',
   'section.page.ds-peer-page { box-shadow:0 0 0 3px var(--peer); }',
+  '.ds-peer-caret { position:absolute; width:2px; margin-left:-1px; background:var(--peer);',
+  '  pointer-events:none; z-index:9998; }',
+  '.ds-peer-caret::after { content:attr(data-peer); position:absolute; left:-1px; bottom:100%;',
+  '  font:600 9px/1.3 system-ui,sans-serif; color:#fff; background:var(--peer); padding:0 4px;',
+  '  border-radius:3px 3px 3px 0; white-space:nowrap; }',
 ].join('\n');
 
 /** Paint every collaborator's selection and typing spot onto the report
@@ -11670,6 +11924,7 @@ function collabPaintPeers(d) {
       mark(pg, 'ds-peer-page', name);
     }
   }
+  collabPaintCarets(d);
 }
 
 /** Opening an inline editor on something a collaborator is already typing
@@ -11684,15 +11939,18 @@ function collabWarnShared(id, what) {
 window.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
 window.addEventListener('blur', () => { collabPointerAt = 0; });
 
-/** Local -> document. One transaction; nothing if nothing changed. */
+/** Local -> document. One transaction; nothing if nothing changed. With a
+ *  paragraph open, its live words ride along — a flush of `source` alone
+ *  would read as deleting them. */
 function collabFlush() {
-  try { collab.flush({ content: source, layout }); }
+  try { collab.flush(collabLiveFiles()); }
   catch (e) { console.warn('[collab] flush refused:', e); }
 }
 
 /** Document -> local, then paint. `why` is adopt (joined), remote (someone
  *  else's edit), undo or redo. */
 async function collabAdopt(files, why) {
+  const para = why !== 'adopt' && collabParaOpen();
   source = files.content;
   layout = files.layout;
   layout.positions = layout.positions || {};
@@ -11700,6 +11958,24 @@ async function collabAdopt(files, why) {
   layout.sections = layout.sections || {};
   syncPageSize();
   markDirty();
+  if (para) {
+    // The paragraph editor stays open. If the document's words for its slot
+    // changed — a collaborator's edit to the same paragraph, merged with what
+    // was typed here, or an undo — the host is rebuilt in place with the
+    // caret kept. Everything else waits for the editor to close, when
+    // finish() renders: a render now would only build a twin that waits on
+    // the editor anyway, to be superseded by the next keystroke.
+    collabMovedUnderPara = true;
+    if (slotRe(para).test(source)) {
+      const md = readSlot(para), live = collabHostMd();
+      if (live != null && md !== live.trim()) {
+        const c = collabCaretBefore && collab.resolveCursor(collabCaretBefore);
+        collabRefreshHost(md, c && c.slot === para ? c.index : null);
+      }
+    }
+    collabPaintPeers($('out').contentDocument);
+    return;
+  }
   await render();
   if (why === 'adopt' && collabInfo.status === 'live') {
     renderSays(collabInfo.peers > 1
@@ -11777,12 +12053,15 @@ async function startCollab() {
   // served) is named here in words rather than as a silent socket failure.
   try { await collabTicket(relay, room); }
   catch (e) { fail(e.message); return; }
+  const baseSha = await collabLoadedSha();
   collab = new collabMod.CollabSession({
     host: relay, room, login: collabInfo.login,
     files: { content: source, layout },
-    baseSha: null,
+    baseSha,
     ticket: () => collabTicket(relay, room),
     busy: collabBusy,
+    beforeRemote: collabNoteCaret,
+    onBaseSha: collabSaved,
     onFiles: (files, why) => { collabAdopt(files, why); },
     onStatus: st => {
       collabInfo = { ...collabInfo, status: st.status, phase: st.phase, peers: st.peers,
@@ -11793,7 +12072,8 @@ async function startCollab() {
     presence: collabPresence,
     onPeers: peers => {
       collabPeers = peers;
-      collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, color: p.color, sel: p.sel, slot: p.slot })) };
+      collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, color: p.color, sel: p.sel, slot: p.slot,
+                                                              cursor: collab ? collab.resolveCursor(p.cursor) : null })) };
       const d = $('out') && $('out').contentDocument;
       if (d) collabPaintPeers(d);
       collabChip();
@@ -11805,6 +12085,60 @@ async function startCollab() {
   past.length = 0; future.length = 0;
   syncHistoryButtons();
   window.addEventListener('pagehide', () => { if (collab) collab.close(); });
+}
+
+// --- the branch underneath (Phase 4) -----------------------------------------
+// The room records the commit its document was built from — `meta.baseSha`,
+// set by whoever seeded it and by every Save since — and in a shared project
+// everyone saves to the one shared draft branch. Save compares the branch
+// tip with that commit: if they differ, something landed OUTSIDE the session
+// (a push from a laptop, a docsync tool, an editor that was not in the room),
+// and a plain fast-forward would silently replace it with what the room
+// holds. Nothing is merged: the two are whole files, and the room's copy is
+// what everyone has been looking at — so it is said, and the person chooses.
+
+/** The commit the files on screen came from — the room's baseSha when this
+ *  editor seeds it. Only a shared, hosted editor with a token can ask; anyone
+ *  else seeds null, and Save then skips the check. */
+async function collabLoadedSha() {
+  if (!collabShared() || !localStorage.getItem('docsync-pat')) return null;
+  try { return (await gh(`git/ref/heads/${draftBranch || BRANCH}`)).object.sha || null; }
+  catch (e) { return null; }
+}
+
+/** @returns {boolean} go ahead and save */
+async function collabBranchStillOurs() {
+  if (!collab || !collabShared()) return true;
+  const base = collab.baseSha();
+  if (!base) return true;
+  let tip;
+  try { tip = (await gh(`git/ref/heads/${draftBranch}`)).object.sha; } catch (e) { return true; }
+  if (tip === base) return true;
+  const ok = await dsConfirm(
+    'The shared draft changed outside this session.\n\n'
+    + `The branch is at ${tip.slice(0, 7)}; this session was built from ${base.slice(0, 7)}. `
+    + 'Saving replaces that change with what everyone here sees.\n\n'
+    + `To keep it instead, cancel and look at github.com/${REPO}/commits/${draftBranch} first.`,
+    { okLabel: 'Save over it', danger: true });
+  if (!ok) $('stat').textContent = 'not saved — the shared draft changed outside this session';
+  return ok;
+}
+
+/** A collaborator saved: their commit holds this document (to within a
+ *  keystroke), so from here "unsaved changes" means changed since THEIR
+ *  save — and the room's draft branch exists now, whoever created it. */
+function collabSaved(sha) {
+  if (!collab || !sha) return;
+  const f = collab.files();
+  original = f.content; layoutOrig = f.layoutText;
+  if (collabShared() && !draftBranch) {
+    draftBranch = sharedDraftBranch();
+    history.replaceState(null, '', draftUrl());
+    showDraftBadge();
+  }
+  clearDraftCache();
+  markDirty();
+  $('stat').textContent = 'a collaborator saved the shared draft — it holds what is on screen';
 }
 
 // ---------------------------------------------------------------- live mode
@@ -14093,13 +14427,14 @@ function edit(d, key) {
   collabWarnShared(key, 'paragraph');
 
   const raw = readSlot(key);
+  let fnLabels = null;
   if (!allowMd) {
     host.style.whiteSpace = 'pre-wrap';   // preserve cover.title's <br> lines
     host.textContent = raw;
   } else {
     // blocks still hold their rendered numbers here — read before replaceWith
     // below discards blocks[0] and the rest are dropped outright.
-    const fnLabels = fnRenderedLabels(blocks, raw);
+    fnLabels = fnRenderedLabels(blocks, raw);
     host.innerHTML = mdToHtml(raw, { allowLists, inline, fnLabels });
     if (!inline && extraClass.length)
       host.querySelectorAll(':scope > p').forEach(p => p.classList.add(...extraClass));
@@ -14114,7 +14449,8 @@ function edit(d, key) {
   blocks[0].replaceWith(host);
   blocks.slice(1).forEach(b => b.remove());
   richHost = host;
-  richOpts = { allowLists, allowMd };
+  richOpts = { allowLists, allowMd, fnLabels };
+  collabParaOpened();
   // The chrome type row is where B/I/lists live now — raise it no matter how
   // this editor was opened. The click path already did (showType before
   // edit()), but a section fresh from "+ Section" opened via pendingEdit with
@@ -14158,9 +14494,18 @@ function edit(d, key) {
         $('save').classList.toggle('dirty', dirty);
       }
       settleEndnotesSection();
+    } else {
+      collabDiscardLive();   // words flushed live to the room come back out
     }
+    collabParaClosed();
     await render();
   };
+  host.addEventListener('compositionstart', () => { collabComposing = true; });
+  host.addEventListener('compositionend', () => {
+    collabComposing = false;
+    const p = collabPendingRefresh; collabPendingRefresh = null;
+    if (p && richHost === host) collabRefreshHost(p.md, p.index);
+  });
   host.addEventListener('blur', () => {
     // A modal dialog (right-click Cite → new source, ⌘K link) steals focus
     // while it is open; committing the edit under it would act on a detached
@@ -14610,17 +14955,31 @@ function tokenWhy(e) {
 // the git underneath stays out of sight.
 let draftBranch = new URLSearchParams(location.search).get('draft') || null;
 
+/** In a shared project — one with a collaboration relay (collab/README.md,
+ *  Phase 4) — the draft is ONE branch for the whole room: everyone in the
+ *  session edits one document, so they save it to one place, and a Save by
+ *  anyone is a Save for everyone. Otherwise a draft is yours alone. */
+const collabShared = () => !local && !!collabRelay();
+const sharedDraftBranch = () => `draft/${M.id}`;
+const draftBranchFor = user => collabShared() ? sharedDraftBranch() : `draft/${M.id}/${user}`;
+
 // The one thing the pill is still for: you are editing a DRAFT, not the live
 // report. Un-hides it — detectLocal() hides it for the plain local case.
 const showDraftBadge = () => {
-  $('title').textContent = M.id + ' · draft: ' + draftBranch.split('/').pop();
+  $('title').textContent = M.id + (draftBranch === sharedDraftBranch()
+    ? ' · shared draft' : ' · draft: ' + draftBranch.split('/').pop());
   $('title').hidden = false;
 };
 const draftUrl = () => location.origin + pageUrl({ draft: draftBranch });
 
 async function resolveDraft() {
   if (local) { draftBranch = null; return; }
-  if (!draftBranch) {
+  if (!draftBranch && collabShared() && localStorage.getItem('docsync-pat')) {
+    // A shared project's one draft, if anyone in the room has saved yet.
+    try { await gh(`git/ref/heads/${sharedDraftBranch()}`); draftBranch = sharedDraftBranch(); }
+    catch (e) { /* none yet — the first Save creates it */ }
+  }
+  if (!draftBranch && !collabShared()) {
     // No link in the URL, but this browser saved a draft before? Pick it up
     // rather than silently showing main — "my edits vanished" is the scariest
     // bug an editor can have.
@@ -14664,14 +15023,16 @@ async function ghUser() {
   return u;
 }
 
+/** @returns {boolean} whether the branch had to be created */
 async function ensureBranch(branch) {
-  try { await gh(`git/ref/heads/${branch}`); return; }
+  try { await gh(`git/ref/heads/${branch}`); return false; }
   catch (e) { if (!String(e.message).match(/404/)) throw e; }
   // Fork from the project's own deploy branch, not a hardcoded main — a repo
   // this project lives in may deploy from gh-pages, production, or any name.
   const src = await gh(`git/ref/heads/${BRANCH}`);
   await gh('git/refs', { method: 'POST',
     body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: src.object.sha }) });
+  return true;
 }
 
 /** One commit for everything that changed — prose and layout land together or
@@ -14704,7 +15065,7 @@ async function commitToBranch(branch, files, message) {
  *  make sure the draft exists and the URL points at it. */
 async function draftForUpload() {
   const user = await ghUser();
-  if (!draftBranch) draftBranch = `draft/${M.id}/${user}`;
+  if (!draftBranch) draftBranch = draftBranchFor(user);
   await ensureBranch(draftBranch);
   history.replaceState(null, '', draftUrl());
   showDraftBadge();
@@ -14717,8 +15078,12 @@ async function saveDraft() {
   $('stat').textContent = 'saving your draft…';
   try {
     const user = await ghUser();
-    if (!draftBranch) draftBranch = `draft/${M.id}/${user}`;
-    await ensureBranch(draftBranch);
+    if (!draftBranch) draftBranch = draftBranchFor(user);
+    const created = await ensureBranch(draftBranch);
+    // A branch that already existed may have moved since this session was
+    // built from it — see collabBranchStillOurs. One just created from the
+    // deploy branch cannot have.
+    if (!created && !await collabBranchStillOurs()) { markDirty(); return false; }
     const layoutText = JSON.stringify(layout, null, 2) + '\n';
     const files = [];
     if (source !== original) files.push({ path: M.content, content: source });
@@ -14910,7 +15275,10 @@ $('revert').onclick = async () => {
   // and go back to the live report. (With unsaved edits it stays what it
   // always was — throw away what you typed since the last save.)
   if (!dirty && draftBranch && !local) {
-    if (!await dsConfirm('Throw away this saved draft?\n\nThe live report is untouched. '
+    const shared = draftBranch === sharedDraftBranch() && collab;
+    if (!await dsConfirm((shared
+               ? 'Throw away the shared draft?\n\nEveryone in this session loses it. The live report is untouched. '
+               : 'Throw away this saved draft?\n\nThe live report is untouched. ')
                + 'This cannot be undone.', { okLabel: 'Throw away', danger: true })) return;
     if (!await ensureAuth()) return;
     try { await gh(`git/refs/heads/${draftBranch}`, { method: 'DELETE' }); } catch (e) {}
@@ -16444,7 +16812,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // Live collaboration, when this project has a relay: status is one of
       // off / connecting / signin / error / live / offline; `peers` counts
       // every editor in the room including this one.
-      collab: { ...collabInfo },
+      collab: { ...collabInfo, baseSha: collab ? collab.baseSha() : null, branch: draftBranch },
     };
   },
 
