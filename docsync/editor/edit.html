@@ -287,6 +287,8 @@
             white-space:nowrap; cursor:default; }
   #collab.live { color:#2E7D4F; opacity:.9; }
   #collab.can-click { cursor:pointer; text-decoration:underline dotted; opacity:.9; }
+  #collab i { display:inline-block; width:8px; height:8px; border-radius:50%;
+              margin-left:5px; vertical-align:middle; }
   /* An update, on the other hand, IS news — but it is never urgent, and it
      must not read like an error. Sage (the primary colour used elsewhere for
      Save) says "there is something good here" without demanding the click. */
@@ -6695,6 +6697,8 @@ function editBox(d, el) {
   host.contentEditable = 'true';
   host.className = 'ds-edit';
   host.dataset.richMode = 'block';
+  host.dataset.el = b.id;       // presence reads this: "ada is typing in this box"
+  collabWarnShared(b.id, 'text box');
   host.innerHTML = mdToHtml(b.md, { allowLists: true, fnLabels });
   // Just the words — no toolbar or hint row under them (they added height and
   // shoved the page around; see edit()). Chrome bar has B/I/lists, ⌘K links,
@@ -11547,7 +11551,11 @@ function collabToken() {
   const tok = localStorage.getItem('docsync-pat');
   if (tok) return tok;
   if (local && /^https?:\/\/(localhost|127\.0\.0\.1)/.test(collabRelay() || '')) {
-    return 'dev:' + ((serverOauth && serverOauth.login) || 'local');
+    // ?collabas=<name> names this editor in a dev room (two local tabs would
+    // otherwise both be "local"). Local only, like the rest of the dev path.
+    const as = new URLSearchParams(location.search).get('collabas');
+    return 'dev:' + ((as && /^[A-Za-z0-9-]{1,39}$/.test(as) ? as : null)
+                     || (serverOauth && serverOauth.login) || 'local');
   }
   return null;
 }
@@ -11574,14 +11582,104 @@ async function collabTicket(relay, room) {
 function collabBusy() {
   return editing || modalOpen || (collabPointerAt && Date.now() - collabPointerAt < 15000);
 }
-/** Called from wire() for every fresh report document: a drag starts inside
- *  the iframe, whose events never reach this window. */
+/** Called from wire() for every report document: a drag starts inside the
+ *  iframe, whose events never reach this window — and a fresh document has
+ *  no peer marks on it yet. */
 function collabWire(d) {
-  if (!d || d.__collabWired) return;
-  d.__collabWired = true;
-  d.addEventListener('pointerdown', () => { collabPointerAt = Date.now(); }, true);
-  d.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
-  d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
+  if (!d) return;
+  if (!d.__collabWired) {
+    d.__collabWired = true;
+    d.addEventListener('pointerdown', () => { collabPointerAt = Date.now(); }, true);
+    d.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
+    d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
+  }
+  if (collab) collabPaintPeers(d);
+}
+
+// --- presence (Phase 3) ------------------------------------------------
+// What each editor publishes, ~4×/s and only when it changed: its selection,
+// the page it selected, the slot or box its inline editor is open on, and
+// whether a pointer is down on a selection (a drag). What it paints for
+// everyone else: a coloured ring and a name tag on whatever they have
+// selected, a "typing" tag on the paragraph they are in. Colours hash off
+// the login, so a person keeps theirs from one day to the next.
+let collabPeers = [];
+
+/** The slot key or element id whose inline editor is open here, if any. */
+function collabEditTarget() {
+  if (richHost && richHost.dataset) return richHost.dataset.slot || richHost.dataset.el || null;
+  if (editing && typeof cellSel !== 'undefined' && cellSel && cellSel.id) return cellSel.id;
+  return null;
+}
+function collabPresence() {
+  return {
+    sel: [...selIds], page: selPage, slot: collabEditTarget(),
+    drag: !!(collabPointerAt && selIds.size),
+  };
+}
+
+const PEER_CSS = [
+  '[data-el].ds-peer { outline:2px solid var(--peer) !important; outline-offset:3px; position:relative; }',
+  '.ds-peer::after, .ds-peer-typing::after { content:attr(data-peer); position:absolute;',
+  '  left:-2px; top:-1.55em; font:600 10px/1.4 system-ui,sans-serif; letter-spacing:.2px;',
+  '  color:#fff; background:var(--peer); padding:0 6px; border-radius:99px 99px 99px 2px;',
+  '  white-space:nowrap; pointer-events:none; z-index:9997; }',
+  '[data-el].ds-sel.ds-peer { outline-style:double !important; }',
+  '.ds-peer-typing { box-shadow:inset 3px 0 0 var(--peer); position:relative; }',
+  'section.page.ds-peer-page { box-shadow:0 0 0 3px var(--peer); }',
+].join('\n');
+
+/** Paint every collaborator's selection and typing spot onto the report
+ *  document. Idempotent: clears its own marks first, so it can run after
+ *  every render and every awareness change. */
+function collabPaintPeers(d) {
+  if (!d || !d.body) return;
+  if (!d.getElementById('ds-peer-css')) {
+    const s = d.createElement('style'); s.id = 'ds-peer-css'; s.textContent = PEER_CSS;
+    d.head.appendChild(s);
+  }
+  d.querySelectorAll('.ds-peer, .ds-peer-typing, .ds-peer-page').forEach(el => {
+    el.classList.remove('ds-peer', 'ds-peer-typing', 'ds-peer-page');
+    el.removeAttribute('data-peer');
+    el.style.removeProperty('--peer');
+  });
+  for (const p of collabPeers) {
+    const name = p.login || 'someone';
+    const mark = (el, cls, label) => {
+      if (!el) return;
+      el.classList.add(cls);
+      el.style.setProperty('--peer', p.color);
+      // First to claim an element names it; a second person on the same one
+      // is in the tooltip rather than a second tag over the first.
+      if (!el.dataset.peer) el.dataset.peer = label;
+      else if (!el.dataset.peer.includes(name)) el.dataset.peer += ', ' + label;
+    };
+    for (const id of p.sel) {
+      // Rings go on HTML elements only: an outline on an SVG child paints
+      // around the whole page-sized viewport (see paintSel's overlay note).
+      mark(d.querySelector(`[data-el="${CSS.escape(id)}"]`), 'ds-peer',
+           name + (p.drag ? ' · moving' : ''));
+    }
+    if (p.slot) {
+      const el = d.querySelector(`[data-slot="${CSS.escape(p.slot)}"]`)
+        || d.querySelector(`[data-el="${CSS.escape(p.slot)}"]`);
+      mark(el, 'ds-peer-typing', name + ' · typing');
+    }
+    if (p.page != null && !p.sel.length) {
+      const pg = [...d.querySelectorAll('section.page')].find(s => String(s.dataset.page) === String(p.page));
+      mark(pg, 'ds-peer-page', name);
+    }
+  }
+}
+
+/** Opening an inline editor on something a collaborator is already typing
+ *  in: say so. Both edits merge (that is what the CRDT is for), but a person
+ *  should know they are not alone in the sentence. */
+function collabWarnShared(id, what) {
+  if (!collab) return;
+  const who = collabPeers.filter(p => p.slot === id).map(p => p.login || 'someone');
+  if (!who.length) return;
+  $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'are' : 'is'} also editing this ${what} — both of your edits will be kept`;
 }
 window.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
 window.addEventListener('blur', () => { collabPointerAt = 0; });
@@ -11642,6 +11740,16 @@ function collabChip() {
       title = 'Connecting to the collaboration relay.';
   }
   c.textContent = text;
+  // One dot per collaborator, in their colour — the same colour as the ring
+  // around whatever they have selected on the page, so the two read as one.
+  if (s.status === 'live') {
+    for (const p of collabPeers) {
+      const dot = document.createElement('i');
+      dot.style.background = p.color;
+      dot.title = (p.login || 'someone') + (p.slot ? ' · typing' : '');
+      c.appendChild(dot);
+    }
+  }
   c.title = title;
   c.classList.toggle('live', s.status === 'live');
   c.classList.toggle('can-click', s.status === 'signin');
@@ -11682,6 +11790,14 @@ async function startCollab() {
       collabChip();
     },
     onHistory: syncHistoryButtons,
+    presence: collabPresence,
+    onPeers: peers => {
+      collabPeers = peers;
+      collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, color: p.color, sel: p.sel, slot: p.slot })) };
+      const d = $('out') && $('out').contentDocument;
+      if (d) collabPaintPeers(d);
+      collabChip();
+    },
     debug: !!localStorage.getItem('collab-debug'),
   });
   // The snapshot stack is meaningless from here on: its entries predate the
@@ -13972,7 +14088,9 @@ function edit(d, key) {
   host.contentEditable = 'true';
   host.className = inline ? 'ds-edit ds-inline' : 'ds-edit';
   host.dataset.richMode = inline ? 'inline' : 'block';
+  host.dataset.slot = key;      // presence reads this: "ada is typing in [[key]]"
   if (extraClass.length) host.classList.add(...extraClass);
+  collabWarnShared(key, 'paragraph');
 
   const raw = readSlot(key);
   if (!allowMd) {
