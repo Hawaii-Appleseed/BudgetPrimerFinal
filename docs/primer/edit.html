@@ -280,6 +280,13 @@
   /* Only when there is somewhere to go back TO. A chip that looks clickable
      and does nothing is worse than one that looks like the label it is. */
   #ver.can-undo { cursor:pointer; text-decoration:underline dotted; opacity:.85; }
+  /* The collaboration chip: whether this editor is in a live session, and
+     how many others are. As quiet as #ver — it is a state, not news — except
+     when it asks for a sign-in, which is the one time it is a control. */
+  #collab { font:11px system-ui; color:var(--dim); opacity:.75; letter-spacing:.2px;
+            white-space:nowrap; cursor:default; }
+  #collab.live { color:#2E7D4F; opacity:.9; }
+  #collab.can-click { cursor:pointer; text-decoration:underline dotted; opacity:.9; }
   /* An update, on the other hand, IS news — but it is never urgent, and it
      must not read like an error. Sage (the primary colour used elsewhere for
      Save) says "there is something good here" without demanding the click. */
@@ -1420,6 +1427,10 @@
        support conversation guesswork. The button appears only when there is
        an update this checkout can actually take, and names what is in it. -->
   <button id="upd" hidden aria-label="Install the available update"></button>
+  <!-- Live collaboration state — only when this project has a relay
+       configured (collab/README.md). Hidden otherwise: an editor that is not
+       shared has nothing to say here. -->
+  <span id="collab" hidden title=""></span>
   <span id="ver" hidden title=""></span>
   <span id="fit" hidden title="">⚠</span>
   <!-- A project imported via docsync.scaffold + docsync.propose (an engine
@@ -10167,10 +10178,17 @@ const snapshot = () => JSON.stringify({ source, layout });
 // from the keyboard when a button is momentarily out of sync).
 function syncHistoryButtons() {
   const u = $('undo'), r = $('redo');
-  if (u) u.disabled = !past.length;
-  if (r) r.disabled = !future.length;
+  if (u) u.disabled = !(collab ? collab.canUndo() : past.length);
+  if (r) r.disabled = !(collab ? collab.canRedo() : future.length);
 }
+// In a live session the snapshot stack gives way to the document's own
+// Y.UndoManager (collab/client/session.mjs): a snapshot restore would put
+// back a collaborator's edit along with ours, and it cannot express "undo
+// mine, keep theirs". pushHistory() keeps its meaning exactly — it is the
+// boundary between undo steps — it just marks one in the document instead of
+// copying the state; the state itself lands at the next render's flush.
 function pushHistory() {
+  if (collab) { collab.mark(); syncHistoryButtons(); return; }
   past.push(snapshot());
   if (past.length > 60) past.shift();
   future.length = 0;
@@ -10184,6 +10202,13 @@ async function restore(json) {
   await render();
 }
 async function undo() {
+  if (collab) {
+    if (!collab.canUndo()) { $('stat').textContent = 'nothing to undo'; return; }
+    await collabAdopt(collab.undo(), 'undo');
+    syncHistoryButtons();
+    $('stat').textContent = 'undone';
+    return;
+  }
   if (!past.length) { $('stat').textContent = 'nothing to undo'; return; }
   future.push(snapshot());
   await restore(past.pop());
@@ -10191,6 +10216,13 @@ async function undo() {
   $('stat').textContent = 'undone';
 }
 async function redo() {
+  if (collab) {
+    if (!collab.canRedo()) { $('stat').textContent = 'nothing to redo'; return; }
+    await collabAdopt(collab.redo(), 'redo');
+    syncHistoryButtons();
+    $('stat').textContent = 'redone';
+    return;
+  }
   if (!future.length) { $('stat').textContent = 'nothing to redo'; return; }
   past.push(snapshot());
   await restore(future.pop());
@@ -11436,6 +11468,10 @@ async function boot() {
   $('guides').classList.toggle('on', guidesOn);
   await restoreCachedDraft();   // adopt this browser's unsaved edits before the first paint
   await render();
+  // Only now, with the files settled and painted: if this project has a
+  // collaboration relay, join its room (seeding it from what is on screen if
+  // nobody has yet). Not awaited — the editor is usable while it connects.
+  startCollab();
   if (!local) $('share').disabled = $('publish').disabled = false;
   // Buttons start disabled in the HTML and only markDirty() flips them — run
   // it once now so a resumed draft's Discard is live before the first edit.
@@ -11448,6 +11484,211 @@ async function boot() {
   if (local && !renderFailed) $('stat').textContent = 'live — edits here and from Claude land in the same files';
   else if (cachedRestored) $('stat').textContent =
     'restored unsaved edits from this browser — Save to keep them, or Discard to drop them';
+}
+
+// ------------------------------------------------------------ collaboration
+// Phase 2 of collab/README.md. A project whose registry entry (projects.json)
+// or manifest carries `"collab": {"url": "https://….workers.dev"}` is shared:
+// this editor joins a room for it on the primer-collab Worker, and everyone in
+// the room edits ONE document.
+//
+// The editor's own state model is untouched. `source` and `layout` stay the
+// values every handler in this file mutates; the session in collab-client.js
+// (built from collab/client/session.mjs) MIRRORS them:
+//   · out: renderOnce() calls collabFlush() first, so each local edit becomes
+//     one document transaction — a text diff per slot, a key per layout move;
+//   · in: the session calls collabAdopt() with the whole document when a
+//     collaborator's change lands — never while `busy()` (an inline editor
+//     open, a drag in progress), so nobody's caret is pulled out from under
+//     them; the change waits and lands at the next quiet moment;
+//   · undo: the snapshot stack yields to the document's Y.UndoManager (see
+//     pushHistory()), scoped to THIS editor's own edits.
+// The room is the live workspace; git stays the record. Save still commits
+// what is on screen, which is now what everyone sees.
+let collab = null;           // the CollabSession, once joined
+let collabMod = null;        // the imported client module
+let collabInfo = { on: false, status: 'off', phase: null, peers: 0, here: [],
+                   login: null, error: null };
+let collabPointerAt = 0;     // when a pointer went down inside the report
+
+/** The relay URL for this project, or null when it is not shared.
+ *  `?collab=<url>` overrides it — LOCAL mode only, and only to a loopback
+ *  relay (wrangler dev): the page POSTs the GitHub token to whatever this
+ *  names, so a hosted editor must never take it from a link. `?collab=0`
+ *  opens the project alone. */
+function collabRelay() {
+  if (local) {
+    const o = new URLSearchParams(location.search).get('collab');
+    if (o === '0') return null;
+    if (o && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(o)) return o.replace(/\/+$/, '');
+  }
+  const reg = REGISTRY && PROJECT && REGISTRY[PROJECT] && REGISTRY[PROJECT].collab;
+  const cfg = reg || (M && M.collab) || null;
+  return cfg && cfg.url ? String(cfg.url).replace(/\/+$/, '') : null;
+}
+
+/** owner~repo~project (collab/src/auth.js parseRoom). `?collabroom=<tag>`
+ *  suffixes the project — local only — so two test runs never share a room. */
+function collabRoom() {
+  const [owner, repo] = (REPO || '').split('/');
+  if (!owner || !repo || !M || !M.id) return null;
+  let project = M.id;
+  if (local) {
+    const tag = new URLSearchParams(location.search).get('collabroom');
+    if (tag && /^[A-Za-z0-9._-]{1,40}$/.test(tag)) project += '--' + tag;
+  }
+  return `${owner}~${repo}~${project}`;
+}
+
+/** What to show the relay's /auth. The same token Save uses; a local editor
+ *  talking to a loopback relay has none and needs none — the Worker accepts
+ *  `dev:<login>` only under its development secret. */
+function collabToken() {
+  const tok = localStorage.getItem('docsync-pat');
+  if (tok) return tok;
+  if (local && /^https?:\/\/(localhost|127\.0\.0\.1)/.test(collabRelay() || '')) {
+    return 'dev:' + ((serverOauth && serverOauth.login) || 'local');
+  }
+  return null;
+}
+
+let collabTicketCache = null;   // {ticket, exp} — the provider asks again on every reconnect
+async function collabTicket(relay, room) {
+  const now = Math.floor(Date.now() / 1000);
+  if (collabTicketCache && collabTicketCache.exp - now > 30) return collabTicketCache.ticket;
+  const token = collabToken();
+  if (!token) throw new Error('sign in to collaborate');
+  const r = await fetch(relay + '/auth', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ room, token }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `relay answered ${r.status}`);
+  if (j.login) collabInfo.login = j.login;
+  collabTicketCache = { ticket: j.ticket, exp: j.exp || now + 60 };
+  return j.ticket;
+}
+
+/** True while a remote change must NOT be painted over what the person is
+ *  doing. A pointer held for more than 15s is a lost pointerup, not a drag. */
+function collabBusy() {
+  return editing || modalOpen || (collabPointerAt && Date.now() - collabPointerAt < 15000);
+}
+/** Called from wire() for every fresh report document: a drag starts inside
+ *  the iframe, whose events never reach this window. */
+function collabWire(d) {
+  if (!d || d.__collabWired) return;
+  d.__collabWired = true;
+  d.addEventListener('pointerdown', () => { collabPointerAt = Date.now(); }, true);
+  d.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
+  d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
+}
+window.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
+window.addEventListener('blur', () => { collabPointerAt = 0; });
+
+/** Local -> document. One transaction; nothing if nothing changed. */
+function collabFlush() {
+  try { collab.flush({ content: source, layout }); }
+  catch (e) { console.warn('[collab] flush refused:', e); }
+}
+
+/** Document -> local, then paint. `why` is adopt (joined), remote (someone
+ *  else's edit), undo or redo. */
+async function collabAdopt(files, why) {
+  source = files.content;
+  layout = files.layout;
+  layout.positions = layout.positions || {};
+  layout.shapes = layout.shapes || [];
+  layout.sections = layout.sections || {};
+  syncPageSize();
+  markDirty();
+  await render();
+  if (why === 'adopt' && collabInfo.status === 'live') {
+    renderSays(collabInfo.peers > 1
+      ? `joined the live session — ${collabInfo.peers - 1} other${collabInfo.peers > 2 ? 's' : ''} here`
+      : 'live session — edits here are shared as you make them');
+  }
+}
+
+function collabChip() {
+  const c = $('collab');
+  if (!c) return;
+  const s = collabInfo;
+  c.hidden = !s.on;
+  if (!s.on) return;
+  const others = s.here.filter(Boolean);
+  const who = others.length ? ' with ' + others.join(', ') : '';
+  let text = '', title = '';
+  switch (s.status) {
+    case 'live':
+      text = '● live' + (s.peers > 1 ? ' · ' + s.peers : '');
+      title = (s.peers > 1 ? `${s.peers} editors in this session${who}.` : 'Live session — nobody else here yet.')
+        + ' Edits are shared as you make them.';
+      break;
+    case 'offline':
+      text = '○ offline';
+      title = 'The collaboration relay is unreachable. Keep working — edits are kept and sent when it is back.';
+      break;
+    case 'error':
+      text = '⚠ not shared';
+      title = 'Collaboration unavailable: ' + (s.error || 'unknown error');
+      break;
+    case 'signin':
+      text = 'Sign in to collaborate';
+      title = 'This project is shared. Sign in with GitHub to join the live session.';
+      break;
+    default:
+      text = '… joining';
+      title = 'Connecting to the collaboration relay.';
+  }
+  c.textContent = text;
+  c.title = title;
+  c.classList.toggle('live', s.status === 'live');
+  c.classList.toggle('can-click', s.status === 'signin');
+}
+$('collab').onclick = async () => {
+  if (collabInfo.status !== 'signin') return;
+  if (await ensureAuth()) startCollab();
+};
+
+async function startCollab() {
+  const relay = collabRelay();
+  if (!relay || collab) return;
+  const room = collabRoom();
+  if (!room) return;
+  const fail = (error) => { collabInfo = { ...collabInfo, status: 'error', error }; collabChip(); };
+  collabInfo = { ...collabInfo, on: true, status: 'connecting' };
+  collabChip();
+  if (!collabToken()) { collabInfo = { ...collabInfo, status: 'signin' }; collabChip(); return; }
+  try {
+    // Beside this page, wherever it was staged; location.href rather than a
+    // bare relative specifier so a switched project's <base> can't move it.
+    collabMod = collabMod || await import(new URL('collab-client.js', location.href).href);
+  } catch (e) { fail('collab-client.js did not load — ' + e.message); return; }
+  // One ticket up front, so a refusal (no push access, relay down, repo not
+  // served) is named here in words rather than as a silent socket failure.
+  try { await collabTicket(relay, room); }
+  catch (e) { fail(e.message); return; }
+  collab = new collabMod.CollabSession({
+    host: relay, room, login: collabInfo.login,
+    files: { content: source, layout },
+    baseSha: null,
+    ticket: () => collabTicket(relay, room),
+    busy: collabBusy,
+    onFiles: (files, why) => { collabAdopt(files, why); },
+    onStatus: st => {
+      collabInfo = { ...collabInfo, status: st.status, phase: st.phase, peers: st.peers,
+                     here: st.here, error: st.error };
+      collabChip();
+    },
+    onHistory: syncHistoryButtons,
+    debug: !!localStorage.getItem('collab-debug'),
+  });
+  // The snapshot stack is meaningless from here on: its entries predate the
+  // shared document and a restore would clobber everyone.
+  past.length = 0; future.length = 0;
+  syncHistoryButtons();
+  window.addEventListener('pagehide', () => { if (collab) collab.close(); });
 }
 
 // ---------------------------------------------------------------- live mode
@@ -12413,6 +12654,10 @@ async function renderOnce() {
   // Unconditional: this one ANNOUNCES the render, and claims the row for the
   // pair of writes that follow.
   $('stat').textContent = statFromRender = 'rendering…';
+  // Every mutation in this file ends in a render, so this is the one place a
+  // local edit becomes a document transaction the room can see. Idempotent:
+  // a render that follows an adopted remote change finds nothing to write.
+  if (collab) collabFlush();
   py.globals.set('SRC', source);
   py.globals.set('LAYOUT', JSON.stringify(layout, null, 2));
   py.globals.set('CONTENT', M.content);
@@ -12703,6 +12948,7 @@ function wire(roots) {
     if (i.closest('section.page')) i.draggable = false;
   });
   dragify(d, roots);
+  collabWire(d);
   contextify(d, roots);
   wireSections(d, roots);
   deafenStickyChrome(d);
@@ -14359,7 +14605,11 @@ async function saveDraft() {
     const files = [];
     if (source !== original) files.push({ path: M.content, content: source });
     if (M.layout && layoutText !== layoutOrig) files.push({ path: M.layout, content: layoutText });
-    if (files.length) await commitToBranch(draftBranch, files, `${M.id}: draft by ${user}`);
+    let sha = null;
+    if (files.length) sha = await commitToBranch(draftBranch, files, `${M.id}: draft by ${user}`);
+    // The live document now knows which commit it matches; Phase 4 of
+    // collab/README.md reads this to notice the branch moving underneath.
+    if (sha && collab) collab.setBaseSha(sha);
     original = source; layoutOrig = layoutText;
     clearDraftCache();        // it's on the branch now — the local cache is stale
     markDirty();
@@ -16073,6 +16323,10 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
               pageless: !!(layout.page && layout.page.h == null) },
       overflow: [...new Set(lastFit.map(b => b.page))],
       selected: [...selIds], selectedPage: selPage,
+      // Live collaboration, when this project has a relay: status is one of
+      // off / connecting / signin / error / live / offline; `peers` counts
+      // every editor in the room including this one.
+      collab: { ...collabInfo },
     };
   },
 

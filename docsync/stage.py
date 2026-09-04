@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from docsync.registry import ROOT, Binding, RegistryError, get, load_registry  # noqa: E402
 
 EDITOR = Path(__file__).resolve().parent / "editor" / "edit.html"
+COLLAB_CLIENT = EDITOR.parent / "collab-client.js"
 # Every docsync module a project renderer may import, copied into Pyodide's
 # filesystem. Unlike vendor.py — where the package genuinely IS the manifest —
 # this list is explicit, so a new shared module has to be added here too or the
@@ -152,6 +153,12 @@ def stage(b: Binding, repo: str = "") -> None:
     (eng / "docsync" / "__init__.py").write_text("")
     (eng / "manifest.json").write_text(json.dumps(m, indent=2) + "\n")
     shutil.copy2(EDITOR, e.dir / "edit.html")
+    # The real-time collaboration client (collab/build-client.mjs bundles it
+    # from collab/client/session.mjs). The editor import()s it beside itself
+    # only when a project has a collab relay configured, so it costs nothing
+    # to stage everywhere and saves a "where does this file come from" hunt.
+    if COLLAB_CLIENT.is_file():
+        shutil.copy2(COLLAB_CLIENT, e.dir / "collab-client.js")
     # The assets themselves, staged beside the editor: the iframe resolves a
     # box's "assets/…" src against the editor's page, and for a scaffolded
     # project nothing else put the files there — a template's logo (or any
