@@ -1263,8 +1263,21 @@
         border:1px solid #C9D6CD; border-radius:7px; background:#fff; width:100%;
         box-sizing:border-box; }
   .dsdlg-field > textarea { resize:vertical; min-height:64px; }
+  /* Share, as Docs lays it out: the link first, then who has access, each
+     with a face - the owner, the named people, everyone on the hub. */
+  .hub-share-link { display:grid; grid-template-columns:1fr auto; gap:6px; align-items:center; }
+  .hub-share-link > input { font:12px ui-monospace, SFMono-Regular, Menlo, monospace; padding:7px 9px; border:1px solid #C9D6CD;
+    border-radius:var(--r-ctl, 8px); background:#F8FAF8; color:var(--ink); min-width:0; text-overflow:ellipsis; }
+  .hub-share-copy { font:600 12px system-ui; padding:7px 12px; border:1px solid #2D5A3D; border-radius:var(--r-ctl, 8px);
+    background:#2D5A3D; color:#fff; cursor:pointer; white-space:nowrap; }
+  .hub-share-copy:hover { background:#24492F; }
   .hub-share-people { display:flex; flex-direction:column; gap:6px; }
-  .hub-share-row { display:grid; grid-template-columns: 1fr auto auto; gap:6px; align-items:center; }
+  .hub-share-row { display:grid; grid-template-columns: 28px 1fr auto auto; gap:6px; align-items:center; }
+  .hub-share-row.hub-share-owner, .hub-share-row.hub-share-everyone { grid-template-columns: 28px 1fr auto; padding-right:34px; }
+  .hub-share-av { flex:none; }
+  .hub-share-all { background:#E1E8E3 !important; color:#5B6E66; font-size:14px; }
+  .hub-share-name { font:13px system-ui; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hub-share-role { font:12px system-ui; color:#5B6E66; padding:6px 0; }
   .hub-share-row > input, .hub-share-row > select, .hub-share-default {
     font:13px system-ui; padding:6px 8px; border:1px solid #C9D6CD; border-radius:6px; background:#fff; color:var(--ink); }
   .hub-share-rm { font:16px/1 system-ui; padding:4px 8px; border:0; background:none; color:#5B6E66; cursor:pointer; border-radius:6px; }
@@ -16728,6 +16741,15 @@ function suggestMenu() {
  *  a viewer sees the record and cannot change it. Sharing with someone
  *  outside the staff domains is not a row here — it is a change to the
  *  Access application, and the dialog says so. */
+/** The document's own address on the hub: what a colleague pastes into Slack
+ *  and what opens straight to it. Without the passing parts of this page's
+ *  URL (a comment, a tab) - the link is to the document, not to a moment. */
+function hubDocLink() {
+  const u = new URL(location.href);
+  for (const k of [...u.searchParams.keys()]) if (k !== 'project') u.searchParams.delete(k);
+  u.hash = '';
+  return u.href;
+}
 async function hubShareDialog() {
   const url = hubShareUrl();
   if (!url) return;
@@ -16751,34 +16773,69 @@ async function hubShareDialog() {
     const title = document.createElement('h2'); title.className = 'dsdlg-title';
     title.textContent = 'Share — ' + ((REGISTRY && REGISTRY[PROJECT] && REGISTRY[PROJECT].name) || M.id);
     form.appendChild(title);
+
+    // The link first, as Docs has it: the document's own address, which
+    // anyone signed in to the hub can open straight to this document.
+    const linkRow = document.createElement('div'); linkRow.className = 'hub-share-link';
+    const link = document.createElement('input'); link.type = 'text'; link.readOnly = true; link.value = hubDocLink();
+    link.setAttribute('aria-label', 'Link to this document');
+    link.onfocus = () => link.select();
+    const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'hub-share-copy'; copy.textContent = 'Copy link';
+    copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(link.value); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy link'; }, 1500); $('stat').textContent = 'link copied — anyone signed in to the hub opens straight to this document'; }
+      catch (e) { link.focus(); link.select(); $('stat').textContent = 'select the link and copy it — the clipboard was not allowed'; }
+    };
+    linkRow.append(link, copy); form.appendChild(linkRow);
+
     const msg = document.createElement('p'); msg.className = 'dsdlg-msg';
     msg.textContent = canChange
       ? 'Everyone signed in to the hub gets the default; the people below get what their row says.'
       : 'You can see who this document is shared with, but not change it.';
     form.appendChild(msg);
 
-    const def = document.createElement('label'); def.className = 'dsdlg-field';
-    def.append('Everyone on the hub');
-    const defSel = roleSelect(rec.default, 'hub-share-default');
-    def.appendChild(defSel); form.appendChild(def);
-
+    // Who has access, each with a face: the owner (a label, not a lock), then
+    // the named people, then everyone else on the hub.
     const list = document.createElement('div'); list.className = 'hub-share-people';
+    const avatar = email => {
+      const av = document.createElement('span'); av.className = 'cmt-avatar hub-share-av';
+      const paint = () => { av.style.setProperty('--av', email() ? hubAvatarColor(email()) : '#C9D6CD'); av.textContent = email() ? hubInitial(hubNameOf(email())) : '?'; av.title = email() ? hubNameOf(email()) : ''; };
+      paint(); av.repaint = paint; return av;
+    };
+    if (rec.owner) {
+      const row = document.createElement('div'); row.className = 'hub-share-row hub-share-owner';
+      const who = document.createElement('span'); who.className = 'hub-share-name';
+      who.textContent = hubNameOf(rec.owner) + (hubIsMe(rec.owner) ? ' (you)' : ''); who.title = rec.owner;
+      const tag = document.createElement('span'); tag.className = 'hub-share-role'; tag.textContent = 'Owner';
+      row.append(avatar(() => rec.owner), who, tag); list.appendChild(row);
+    }
+    // Names from the roster offered as you type, the way Docs suggests people.
+    const dl = document.createElement('datalist'); dl.id = 'hub-share-roster';
+    hubRosterLoad().then(roster => { for (const s of roster) { const o = document.createElement('option'); o.value = s.email; o.label = s.name; dl.appendChild(o); } });
+    form.appendChild(dl);
+    // Everyone on the hub closes the list; people added later go above it.
+    const def = document.createElement('div'); def.className = 'hub-share-row hub-share-everyone';
+    const all = document.createElement('span'); all.className = 'cmt-avatar hub-share-av hub-share-all'; all.textContent = '☺'; all.title = 'Everyone signed in to the hub';
+    const allName = document.createElement('span'); allName.className = 'hub-share-name'; allName.textContent = 'Everyone on the hub';
+    const defSel = roleSelect(rec.default, 'hub-share-default');
+    def.append(all, allName, defSel); list.appendChild(def);
     const rows = [];
     const addRow = (email, role) => {
       const row = document.createElement('div'); row.className = 'hub-share-row';
       const inp = document.createElement('input');
       inp.type = 'email'; inp.placeholder = 'name@hiappleseed.org'; inp.value = email || '';
-      inp.disabled = !canChange; inp.spellcheck = false; inp.autocomplete = 'off';
+      inp.disabled = !canChange; inp.spellcheck = false; inp.autocomplete = 'off'; inp.setAttribute('list', 'hub-share-roster');
+      const av = avatar(() => inp.value.trim().toLowerCase());
+      inp.addEventListener('input', av.repaint); inp.addEventListener('change', av.repaint);
       const sel = roleSelect(role || 'editor');
       const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'hub-share-rm';
       rm.textContent = '×'; rm.setAttribute('aria-label', 'Remove this person'); rm.disabled = !canChange;
       rm.onclick = () => { row.remove(); rows.splice(rows.indexOf(r), 1); };
       const r = { inp, sel };
       rows.push(r);
-      row.append(inp, sel, rm); list.appendChild(row);
+      row.append(av, inp, sel, rm); list.insertBefore(row, def);
       return r;
     };
-    for (const [email, role] of Object.entries(rec.people || {})) addRow(email, role);
+    for (const [email, role] of Object.entries(rec.people || {})) if (email !== rec.owner) addRow(email, role);
     form.appendChild(list);
     if (canChange) {
       const add = document.createElement('button'); add.type = 'button'; add.className = 'hub-share-add';
