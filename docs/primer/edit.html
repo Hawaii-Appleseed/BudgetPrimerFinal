@@ -1255,6 +1255,15 @@
         border:1px solid #C9D6CD; border-radius:7px; background:#fff; width:100%;
         box-sizing:border-box; }
   .dsdlg-field > textarea { resize:vertical; min-height:64px; }
+  .hub-share-people { display:flex; flex-direction:column; gap:6px; }
+  .hub-share-row { display:grid; grid-template-columns: 1fr auto auto; gap:6px; align-items:center; }
+  .hub-share-row > input, .hub-share-row > select, .hub-share-default {
+    font:13px system-ui; padding:6px 8px; border:1px solid #C9D6CD; border-radius:6px; background:#fff; color:var(--ink); }
+  .hub-share-rm { font:16px/1 system-ui; padding:4px 8px; border:0; background:none; color:#5B6E66; cursor:pointer; border-radius:6px; }
+  .hub-share-rm:hover { background:#E8EDE6; }
+  .hub-share-add { align-self:flex-start; font:12px system-ui; padding:5px 10px; border:1px dashed #C9D6CD; border-radius:6px; background:none; color:#5B6E66; cursor:pointer; }
+  .hub-share-note { font-size:11.5px; color:#5B6E66; }
+  .dsdlg-err { font:12px system-ui; color:#B3412F; margin:0; min-height:14px; }
   .dsdlg-field > input:focus, .dsdlg-field > select:focus, .dsdlg-field > textarea:focus {
         outline:none; border-color:var(--sage); box-shadow:0 0 0 3px rgba(107,158,120,.18); }
   .dsdlg-err { font:12px system-ui; color:#C0392B; margin:0; min-height:0; }
@@ -3244,6 +3253,7 @@ async function uploadImageFile(d, onDone) {
   // Local mode needs no token: the dev server writes the file into the
   // checkout's assets dir, and the next Save's path-scoped commit takes it
   // along. Only the hosted (GitHub API) path authenticates.
+  if (hubViewOnly()) { $('stat').textContent = 'view only — this document is shared with you to read'; return; }
   if (!local && !docStore()) {
     const tok = await ensureAuth();
     if (!tok) return;
@@ -10927,7 +10937,7 @@ function layoutSaid(o) {
 function markDirty() {
   dirty = source !== original
        || layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}'));
-  $('save').disabled = !dirty;
+  $('save').disabled = !dirty || hubViewOnly();
   // Discard stays live while a saved draft exists: with nothing unsaved it
   // offers to throw the whole draft away (see its handler).
   $('revert').disabled = !dirty && !(draftBranch && !local);
@@ -12042,14 +12052,17 @@ function collabChip() {
   const s = collabInfo;
   c.hidden = !s.on;
   if (!s.on) return;
-  const others = s.here.filter(Boolean);
+  // Who else is here, by name when the door knows one (the hub's roster).
+  const others = collabPeers.length ? collabPeers.map(p => p.name || p.login).filter(Boolean)
+                                    : s.here.filter(Boolean);
   const who = others.length ? ' with ' + others.join(', ') : '';
   let text = '', title = '';
   switch (s.status) {
     case 'live':
-      text = '● live' + (s.peers > 1 ? ' · ' + s.peers : '');
+      text = '● live' + (s.peers > 1 ? ' · ' + s.peers : '') + (hubRole === 'viewer' ? ' · view only' : '');
       title = (s.peers > 1 ? `${s.peers} editors in this session${who}.` : 'Live session — nobody else here yet.')
-        + ' Edits are shared as you make them.';
+        + (hubRole === 'viewer' ? ' You can watch; this document is shared with you to view, not to change.'
+                                : ' Edits are shared as you make them.');
       break;
     case 'offline':
       text = '○ offline';
@@ -12074,7 +12087,7 @@ function collabChip() {
     for (const p of collabPeers) {
       const dot = document.createElement('i');
       dot.style.background = p.color;
-      dot.title = (p.login || 'someone') + (p.slot ? ' · typing' : '');
+      dot.title = (p.name || p.login || 'someone') + (p.slot ? ' · typing' : '');
       c.appendChild(dot);
     }
   }
@@ -12092,13 +12105,13 @@ $('collab').onclick = async () => {
  *  the header the door set on the socket, and trusts nothing the client says
  *  about itself. */
 async function collabWhoAmI(door) {
-  if (!door.me) return null;
+  if (!door.me) return { email: null, name: null };
   try {
     const r = await fetch(door.me, { cache: 'no-store' });
-    if (!r.ok) return null;
+    if (!r.ok) return { email: null, name: null };
     const j = await r.json();
-    return (j && j.email) || null;
-  } catch (e) { return null; }
+    return { email: (j && j.email) || null, name: (j && j.name) || null };
+  } catch (e) { return { email: null, name: null }; }
 }
 
 async function startCollab() {
@@ -12130,11 +12143,13 @@ async function startCollab() {
     // named here, or every document on the hub would share one.
     host = location.origin;
     path = `${door.path}/${room}`;
-    collabInfo.login = await collabWhoAmI(door);
+    const me = await collabWhoAmI(door);
+    collabInfo.login = me.email;
+    collabInfo.name = me.name;
   }
   const baseSha = await collabLoadedSha();
   collab = new collabMod.CollabSession({
-    host, room, login: collabInfo.login,
+    host, room, login: collabInfo.login, name: collabInfo.name || null,
     ...(path ? { path } : {}),
     ...(ticket ? { ticket } : {}),
     files: { content: source, layout },
@@ -12152,7 +12167,7 @@ async function startCollab() {
     presence: collabPresence,
     onPeers: peers => {
       collabPeers = peers;
-      collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, color: p.color, sel: p.sel, slot: p.slot,
+      collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, name: p.name, color: p.color, sel: p.sel, slot: p.slot,
                                                               cursor: collab ? collab.resolveCursor(p.cursor) : null,
                                                               agent: p.agent })) };
       const d = $('out') && $('out').contentDocument;
@@ -15150,13 +15165,162 @@ function docStoreDecide() {
   const room = door && door.docs && collabRoom();
   docStoreBase = room ? `${door.docs}/${room}` : null;
   if (!docStoreBase) return;
-  // Share is a draft-branch link; there is none. Publish stays: it is one
-  // commit of the saved document to git (docStorePublish), off the hot path.
-  $('share').hidden = true;
+  // Publish stays: it is one commit of the saved document to git
+  // (docStorePublish), off the hot path. Share is the share LIST here, not
+  // a draft-branch link: who may open this document, and as what.
   $('publish').disabled = false;
   $('publish').setAttribute('aria-label', 'Commit the saved document to its repository');
   $('publish').title = 'One commit of this document, as saved, on its hub/ branch';
+  $('share').hidden = false;
+  $('share').disabled = false;
+  $('share').textContent = 'Share…';
+  $('share').setAttribute('aria-label', 'Who may open this document, and as what');
+  $('share').title = 'Who may open this document, and as what';
   $('save').textContent = 'Save';
+  hubShareLoad();
+}
+
+// --- who may open this document (the hub's share list, step 06) ----------
+// The door's share record (functions/api/collab/share/) decides the role
+// the ROOM gives this person — a viewer's socket is read-only there, and
+// the store refuses their Save — so the editor only has to say so, not
+// enforce it. It reads the record once at boot to know what to say, and
+// again after the dialog changes it.
+let hubRole = null;           // 'owner' | 'editor' | 'viewer' | null (not on the hub, or unknown)
+let hubShare = null;          // the record as the door reports it
+const hubShareUrl = () => {
+  const door = collabDoor();
+  const room = collabRoom();
+  return door && door.path && room ? `${door.path}/share/${room}` : null;
+};
+async function hubShareLoad() {
+  const url = hubShareUrl();
+  if (!url) return;
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return;
+    hubShare = await r.json();
+    hubRole = (hubShare.you && hubShare.you.role) || null;
+  } catch (e) { return; }
+  if (hubRole === 'viewer') {
+    // Watch, do not change: the room drops a viewer's writes and the store
+    // refuses their Save, so say it up front rather than at the first click.
+    $('save').disabled = true;
+    $('publish').disabled = true;
+    $('stat').textContent = 'view only — this document is shared with you to read; edits here are not kept';
+  }
+  collabChip();
+}
+const hubViewOnly = () => hubRole === 'viewer';
+
+/** The share dialog: a default for everyone through Access, and named
+ *  exceptions. Anyone who can edit can re-share (assets/collab.js canShare);
+ *  a viewer sees the record and cannot change it. Sharing with someone
+ *  outside the staff domains is not a row here — it is a change to the
+ *  Access application, and the dialog says so. */
+async function hubShareDialog() {
+  const url = hubShareUrl();
+  if (!url) return;
+  await hubShareLoad();
+  const rec = hubShare || { default: 'editor', people: {}, you: {} };
+  const canChange = !!(rec.you && rec.you.canShare);
+  const ROLES = [['editor', 'can edit'], ['viewer', 'view only'], ['none', 'no access']];
+  const roleSelect = (value, cls) => {
+    const sel = document.createElement('select');
+    sel.className = cls || '';
+    for (const [v, label] of ROLES) {
+      const o = document.createElement('option'); o.value = v; o.textContent = label; sel.appendChild(o);
+    }
+    sel.value = ROLES.some(([v]) => v === value) ? value : 'editor';
+    sel.disabled = !canChange;
+    return sel;
+  };
+  const result = await dsModal((dlg, done) => {
+    const form = document.createElement('form');
+    form.method = 'dialog'; form.className = 'dsdlg-form hub-share';
+    const title = document.createElement('h2'); title.className = 'dsdlg-title';
+    title.textContent = 'Share — ' + ((REGISTRY && REGISTRY[PROJECT] && REGISTRY[PROJECT].name) || M.id);
+    form.appendChild(title);
+    const msg = document.createElement('p'); msg.className = 'dsdlg-msg';
+    msg.textContent = canChange
+      ? 'Everyone signed in to the hub gets the default; the people below get what their row says.'
+      : 'You can see who this document is shared with, but not change it.';
+    form.appendChild(msg);
+
+    const def = document.createElement('label'); def.className = 'dsdlg-field';
+    def.append('Everyone on the hub');
+    const defSel = roleSelect(rec.default, 'hub-share-default');
+    def.appendChild(defSel); form.appendChild(def);
+
+    const list = document.createElement('div'); list.className = 'hub-share-people';
+    const rows = [];
+    const addRow = (email, role) => {
+      const row = document.createElement('div'); row.className = 'hub-share-row';
+      const inp = document.createElement('input');
+      inp.type = 'email'; inp.placeholder = 'name@hiappleseed.org'; inp.value = email || '';
+      inp.disabled = !canChange; inp.spellcheck = false; inp.autocomplete = 'off';
+      const sel = roleSelect(role || 'editor');
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'hub-share-rm';
+      rm.textContent = '×'; rm.setAttribute('aria-label', 'Remove this person'); rm.disabled = !canChange;
+      rm.onclick = () => { row.remove(); rows.splice(rows.indexOf(r), 1); };
+      const r = { inp, sel };
+      rows.push(r);
+      row.append(inp, sel, rm); list.appendChild(row);
+      return r;
+    };
+    for (const [email, role] of Object.entries(rec.people || {})) addRow(email, role);
+    form.appendChild(list);
+    if (canChange) {
+      const add = document.createElement('button'); add.type = 'button'; add.className = 'hub-share-add';
+      add.textContent = '+ Add a person';
+      add.onclick = () => { const r = addRow('', 'editor'); r.inp.focus(); };
+      form.appendChild(add);
+    }
+    const note = document.createElement('p'); note.className = 'dsdlg-msg hub-share-note';
+    note.textContent = 'Only people who can already sign in to the hub can be named here. '
+      + 'Someone outside the staff domains needs adding to the hub\'s sign-in first.';
+    form.appendChild(note);
+    const err = document.createElement('p'); err.className = 'dsdlg-err'; form.appendChild(err);
+
+    const btns = document.createElement('div'); btns.className = 'dsdlg-btns';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'dsdlg-cancel';
+    cancel.textContent = canChange ? 'Cancel' : 'Close';
+    btns.appendChild(cancel);
+    let ok = null;
+    if (canChange) {
+      ok = document.createElement('button'); ok.type = 'submit'; ok.className = 'dsdlg-ok'; ok.textContent = 'Save';
+      btns.appendChild(ok);
+    }
+    form.appendChild(btns);
+    cancel.onclick = () => done(null);
+    form.onsubmit = e => {
+      e.preventDefault();
+      if (!canChange) { done(null); return; }
+      const people = {};
+      for (const r of rows) {
+        const email = r.inp.value.trim().toLowerCase();
+        if (!email) continue;
+        if (!/^[^\s@]+@[^\s@]+$/.test(email)) { err.textContent = `not an email address: ${email}`; r.inp.focus(); return; }
+        people[email] = r.sel.value;
+      }
+      done({ default: defSel.value, people });
+    };
+    dlg.appendChild(form);
+    setTimeout(() => (ok || cancel).focus(), 0);
+  });
+  if (!result) return;
+  try {
+    const r = await fetch(url, { method: 'PUT', headers: { 'content-type': 'application/json' },
+                                 body: JSON.stringify(result) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
+    const named = Object.keys(result.people).length;
+    $('stat').textContent = `sharing saved — everyone ${result.default === 'none' ? 'is kept out' : result.default === 'viewer' ? 'may view' : 'may edit'}`
+      + (named ? `, ${named} named` : '');
+    await hubShareLoad();
+  } catch (e) {
+    $('stat').textContent = 'sharing not saved: ' + e.message;
+  }
 }
 
 /** Publish, on the store path: the hub asks the relay Worker to commit the
@@ -15416,6 +15580,7 @@ async function saveDraft() {
 }
 
 $('share').onclick = async () => {
+  if (docStore()) return hubShareDialog();
   if (dirty || !draftBranch) { if (!await saveDraft()) return; }
   const url = draftUrl();
   try {
