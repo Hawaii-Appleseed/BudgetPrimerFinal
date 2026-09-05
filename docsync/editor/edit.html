@@ -533,7 +533,18 @@
      whole iframe is SCALED to the pane, never reflowed. A narrow pane would
      otherwise fire the report's mobile media queries, and a drag would record
      the phone layout's geometry into layout.json as if it were the page. */
-  #stage { flex:1; min-height:0; overflow:auto; position:relative; background:var(--canvas); }
+  #stage { flex:1; min-height:0; overflow:auto; position:relative; background:var(--canvas);
+        /* The REPORT is the scroller — the iframe holds the whole document and
+           carries its own bar. The stage's own vertical range is only the
+           clearance applyZoom leaves below the iframe so the last page can be
+           lifted clear of the floating page strip (90-odd px, 154 in the
+           comments gutter), and painting a bar for it put a second, nearly
+           full-height scrollbar hard against the real one — two side by side,
+           which is what the comments panel made impossible to miss. The RANGE
+           stays, so a wheel still clears the strip; only the duplicate chrome
+           goes. */
+        scrollbar-width:none; }
+  #stage::-webkit-scrollbar { display:none; }
   /* #ds-warm is the warm-boot preview: the last render, painted into its OWN
      overlay iframe while Pyodide compiles, and removed by the first real
      swap. Its own frame and not #out, so that "#out has a page in it" keeps
@@ -1479,7 +1490,13 @@
   #cpanel.margin .cpanel-tab { padding:3px 8px; font-size:11.5px; }
   #cpanel.margin #cpanel-list { position:relative; overflow:hidden; padding:0; display:block; }
   #cpanel.margin #cpanel-list > * { position:absolute; left:12px; right:12px; top:0; margin:0; box-sizing:border-box; }
-  #cpanel.margin #cpanel-list.anim > * { transition:top .16s ease; }
+  /* Placed by transform, not `top`: a transform costs a composite, `top` a
+     layout of the gutter, and the cards move on every scrolled frame. A card
+     placed for the first time takes its place at once; only a card that was
+     already somewhere glides. */
+  #cpanel.margin #cpanel-list.anim > * { transition:transform .16s ease; }
+  #cpanel.margin #cpanel-list.anim > .fresh { transition:none; }
+  .cmt.pending { opacity:.72; }
   #cpanel.margin .cmt { box-shadow:0 1px 3px rgba(30,44,50,.10); }
   #cpanel.margin .cmt.active { z-index:2; box-shadow:0 4px 16px rgba(194,112,58,.24); }
   #cpanel.margin .cmt-empty { top:12px; }
@@ -16143,16 +16160,20 @@ function hubCommentsMode() {
  *  with them, as in Docs. 0 for the document itself; Infinity when the
  *  anchor is gone. */
 function hubMarginWant(d, c, f, z, listTop, pageTop) {
-  if (!c || !c.anchor) return { y: 0, onPage: true };
-  if (!d) return { y: Infinity, onPage: false };
+  if (!c || !c.anchor) return { y: 0, onPage: true, rect: null };
+  if (!d) return { y: Infinity, onPage: false, rect: null };
   const hit = hubCommentRanges.find(h => h.id === c.id);
   const t = hit ? hit.range : hubCommentEl(d, c.anchor);
-  if (!t) return { y: Infinity, onPage: false };
+  if (!t) return { y: Infinity, onPage: false, rect: null };
   const r = t.getBoundingClientRect();
   const screenY = f.top + r.top * z;
   const onPage = screenY >= pageTop;
   const y = screenY - listTop;
-  return { y: onPage ? Math.max(0, y) : y, onPage };
+  return { y: onPage ? Math.max(0, y) : y, onPage, rect: r };
+}
+/** A card leaving the list: the height watcher lets go of it. */
+function hubMarginForget(el) {
+  if (hubMarginRO && el && el.__dsRO) { hubMarginRO.unobserve(el); el.__dsRO = false; }
 }
 function hubMarginLayout(animate = false) {
   const panel = $('cpanel'), list = $('cpanel-list');
@@ -16162,23 +16183,33 @@ function hubMarginLayout(animate = false) {
   list.classList.toggle('anim', !!animate);
   const out = $('out');
   const d = out && out.contentDocument;
+  // This runs on every scrolled frame, so: every READ first, then every
+  // write. A write between two reads makes the browser lay the page out
+  // again for the second read - twice a frame, that was the lag the cards
+  // had behind the page.
   const f = out.getBoundingClientRect();
   const z = f.width / (out.clientWidth || f.width);
   const listTop = list.getBoundingClientRect().top;
   const pageTop = $('work') ? $('work').getBoundingClientRect().top : 0;
+  const panelBox = panel.getBoundingClientRect();
   const GAP = 8;
   // A card taller than the gutter scrolls inside itself rather than being
-  // cut off at the bottom edge.
+  // cut off at the bottom edge. Written only when the room changes, and a
+  // card so written is measured afresh.
   const room = list.clientHeight - 2 * GAP;
-  for (const el of items) el.style.maxHeight = room > 80 ? room + 'px' : '';
+  const roomPx = room > 80 ? room + 'px' : '';
+  for (const el of items) if (el.__dsRoom !== roomPx) { el.style.maxHeight = roomPx; el.__dsRoom = roomPx; el.__dsH = null; }
   const want = items.map(el => {
     const cmt = el.classList.contains('cmt');
     const composer = el.id === 'cpanel-composer';
     const c = cmt ? hubComments.find(x => x.id === el.dataset.id)
             : composer ? { anchor: hubCommentAnchor() } : null;
     const w = (cmt && !el.classList.contains('resolved')) || composer
-      ? hubMarginWant(d, c, f, z, listTop, pageTop) : { y: Infinity, onPage: false };
-    return { el, y: w.y, onPage: w.onPage, h: el.offsetHeight, composer };
+      ? hubMarginWant(d, c, f, z, listTop, pageTop) : { y: Infinity, onPage: false, rect: null };
+    // A card's height comes from the ResizeObserver once it has seen the
+    // card; one it has not seen yet is measured here, the once.
+    if (el.__dsH == null) el.__dsH = el.offsetHeight;
+    return { el, y: w.y, onPage: w.onPage, rect: w.rect, h: el.__dsH, composer, fresh: el.__dsTop == null };
   });
   // In the order the render gave them (as the document reads), each below the
   // one before; a trailing item (gone, resolved, a separator) follows the last.
@@ -16213,48 +16244,60 @@ function hubMarginLayout(animate = false) {
     }
     stack(ai + 1, prev);
   }
-  want.forEach((w, i) => { w.el.style.top = Math.round(tops[i]) + 'px'; });
-  hubMarginLeader(want, tops, f, z, pageTop);
+  // The writes. A card is moved by transform, not `top`: a transform costs a
+  // composite, `top` a layout of the gutter. A card placed for the first
+  // time goes straight to its place - no glide from the top of the gutter,
+  // which read as the cards reshuffling on every click.
+  let fresh = false;
+  want.forEach((w, i) => {
+    const t = Math.round(tops[i]);
+    if (w.fresh) { w.el.classList.add('fresh'); fresh = true; }
+    if (w.el.__dsTop !== t) { w.el.__dsTop = t; w.el.style.transform = `translateY(${t}px)`; }
+  });
+  if (fresh) requestAnimationFrame(() => { for (const w of want) w.el.classList.remove('fresh'); });
+  hubMarginLeader(want, tops, { f, z, listTop, panelBox, pageTop });
   // A card that changes height (a reply box opening, a message edited)
   // restacks the rest. Observing fires once on its own for every element
   // observed, so only a height that DIFFERS from the one last seen counts -
   // otherwise each layout would ask for the next, every frame, for ever.
+  // Each card is observed once, when it first appears; the list itself too:
+  // the head above it grows and shrinks (the bulk row for suggestions, a
+  // longer tab label), which moves every card's origin without any card
+  // changing size.
   if (!hubMarginRO && window.ResizeObserver) hubMarginRO = new ResizeObserver(entries => {
     let changed = false;
     for (const e of entries) {
-      const h = e.contentRect.height;
+      const box = e.borderBoxSize && (e.borderBoxSize[0] || e.borderBoxSize);
+      const h = box && box.blockSize != null ? box.blockSize : e.target.offsetHeight;
       if (e.target.__dsH != null && Math.abs(h - e.target.__dsH) > 0.5) changed = true;
       e.target.__dsH = h;
     }
     if (changed) hubMarginQueue(true);
   });
-  // The list itself too: the head above it grows and shrinks (the bulk row
-  // for suggestions, a longer tab label), which moves every card's origin
-  // without any card changing size.
-  if (hubMarginRO) { hubMarginRO.disconnect(); hubMarginRO.observe(list); for (const w of want) hubMarginRO.observe(w.el); }
+  if (hubMarginRO) {
+    if (!list.__dsRO) { list.__dsRO = true; hubMarginRO.observe(list); }
+    for (const w of want) if (!w.el.__dsRO) { w.el.__dsRO = true; hubMarginRO.observe(w.el); }
+  }
 }
 /** The line from the card in hand to the words it is about, across the ground
  *  between the page and the gutter — Docs' own cue for which card goes with
- *  which highlight. Drawn only when both ends are on screen. */
-function hubMarginLeader(want, tops, f, z, pageTop) {
+ *  which highlight. Drawn only when both ends are on screen. Reads nothing:
+ *  every rectangle it needs was read by the layout before it wrote. */
+function hubMarginLeader(want, tops, { f, z, listTop, panelBox, pageTop }) {
   const led = $('cmt-leader');
   if (!led) return;
   const i = want.findIndex(w => w.el.classList.contains('active'));
-  // A resolved thread has no highlight on the page to point at.
-  const c = i >= 0 && hubComments.find(x => x.id === want[i].el.dataset.id && !x.resolved);
-  const d = $('out') && $('out').contentDocument;
-  const hit = c && hubCommentRanges.find(h => h.id === c.id);
-  const t = c && (hit ? hit.range : hubCommentEl(d, c.anchor));
-  if (!t) { led.hidden = true; return; }
-  const r = t.getBoundingClientRect();
+  // A resolved thread has no highlight on the page to point at - and no
+  // rectangle from hubMarginWant, which gives it no place.
+  const r = i >= 0 ? want[i].rect : null;
+  if (!r) { led.hidden = true; return; }
   const y = f.top + (r.top + r.height / 2) * z;
-  const panel = $('cpanel').getBoundingClientRect();
-  const cardTop = $('cpanel-list').getBoundingClientRect().top + tops[i];
-  if (y < pageTop || y > panel.bottom || Math.abs(y - (cardTop + 14)) > 400) { led.hidden = true; return; }
-  const x0 = Math.min(f.left + r.right * z + 4, panel.left - 6);
+  const cardTop = listTop + tops[i];
+  if (y < pageTop || y > panelBox.bottom || Math.abs(y - (cardTop + 14)) > 400) { led.hidden = true; return; }
+  const x0 = Math.min(f.left + r.right * z + 4, panelBox.left - 6);
   led.hidden = false;
   led.style.left = x0 + 'px';
-  led.style.width = Math.max(0, panel.left - x0) + 'px';
+  led.style.width = Math.max(0, panelBox.left - x0) + 'px';
   led.style.top = Math.round(y) + 'px';
 }
 /** One layout per frame, however many scroll events ask. */
@@ -16353,7 +16396,9 @@ async function hubCommentsLoad() {
     const r = await fetch(`${docStore()}/comments`, { cache: 'no-store' });
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
-    hubComments = j;
+    // A card the hub has not answered for yet is not the poll's to take away.
+    const pend = hubComments.filter(c => c.pending && !j.some(x => x.id === c.id));
+    hubComments = j.concat(pend);
     hubCommentsFailed = null;
   } catch (e) {
     // Stale is said, once, where the person is looking - not on every poll.
@@ -16491,7 +16536,10 @@ function hubCommentFocus(id, { scrollPage = true } = {}) {
   if (d) hubCommentsPaint(d);
   if (c && c.anchor && scrollPage) hubCommentShow(c);
   const card = $('cpanel-list') && $('cpanel-list').querySelector(`.cmt[data-id="${CSS.escape(id)}"]`);
-  if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // In the margin the layout puts the card in hand beside its words, and the
+  // list is a positioning box that must not be scrolled - scrollIntoView
+  // would, and every card with it.
+  if (card && !$('cpanel').classList.contains('margin')) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 /** A ⋮ menu on a card: built when opened, gone on the next click anywhere. */
 function hubCommentMenu(host, items) {
@@ -16581,18 +16629,15 @@ function hubCommentsRenderInner() {
     && document.activeElement.tagName === 'TEXTAREA' && document.activeElement.id !== 'cpanel-text';
   if (typing) { hubCommentsRenderLater = true; return; }
   hubCommentsRenderLater = false;
-  hubRosterLoad().then(() => { /* names fill in on the next paint */ });
+  // Names fill in when the roster lands: the cards are built again, once.
+  const hadRoster = !!hubRoster;
+  hubRosterLoad().then(() => { if (!hadRoster && hubRoster) hubCommentsRender(); });
   const d = $('out') && $('out').contentDocument;
-  // The composer lives in the list while the cards are in the margin, so put
-  // it back on the panel before the list is emptied — clearing the list would
-  // otherwise destroy it, and with it the words someone was typing.
   const composerEl = document.getElementById('cpanel-composer');
   // The BOX, not the whole card: with the cursor on Cancel the box is being
   // left, not used, and the card goes back to the panel's foot.
   const composerHadFocus = document.activeElement === document.getElementById('cpanel-text');
   const composerSel = composerHadFocus && document.activeElement.selectionStart;
-  if (composerEl && composerEl.parentNode === list) panel.appendChild(composerEl);
-  list.textContent = '';
   const me = collabInfo.login;
   const canWrite = true;   // anyone who may open the document may comment and resolve
   const here = hubCommentAnchor();
@@ -16607,6 +16652,36 @@ function hubCommentsRenderInner() {
   // selection" / "Elsewhere" headings would only take room from the cards;
   // the cards on the selection wear a tag instead.
   const margin = panel.classList.contains('margin');
+  // The list is not emptied and rebuilt: a card whose thread has not changed
+  // (nor what the card says about it - in hand, on the selection) is KEPT,
+  // so it stays where it is, with whatever is open on it (a reply box, a
+  // menu). A rebuild put every card back at the top of the gutter and let it
+  // glide down again, which read as the cards reshuffling on every click.
+  // Cards are known by thread id, separators by their words; a thread's
+  // signature is everything its card shows.
+  const prev = new Map();
+  for (const el of list.children) {
+    if (el.classList.contains('cmt')) prev.set('cmt:' + el.dataset.id, el);
+    else if (el !== composerEl) prev.set('p:' + el.className + ':' + el.textContent, el);
+  }
+  let next = [];   // the list, in order, as it should be
+  const sigOf = c => JSON.stringify([c, c.id === hubCommentActive, margin && onIt(c), margin, hubViewOnly(), hubRole, !!hubRoster, me, collabPeers.length, new Date().toDateString()],
+    (k, v) => (k.startsWith('__') ? undefined : v));
+  const keep = (key, sig, make, altKey) => {
+    const oldKey = prev.has(key) ? key : altKey && prev.has(altKey) ? altKey : null;
+    const old = oldKey ? prev.get(oldKey) : null;
+    if (oldKey) prev.delete(oldKey);
+    if (old && old.__dsSig === sig) { next.push(old); return old; }
+    const el = make();
+    el.__dsSig = sig;
+    // A card built again in place (its thread changed, it was taken in hand)
+    // starts where the old one stood, so it glides rather than jumps.
+    if (old && margin) { el.style.transform = old.style.transform; el.__dsTop = old.__dsTop; }
+    if (old) hubMarginForget(old);
+    next.push(el);
+    return el;
+  };
+  const sep = (cls, text) => keep('p:' + cls + ':' + text, margin + ':' + text, () => { const p = document.createElement('p'); p.className = cls; p.textContent = text; return p; });
   $('cpanel-tab-all').classList.toggle('on', hubCommentsTab === 'all');
   $('cpanel-tab-you').classList.toggle('on', hubCommentsTab === 'you');
   const youN = hubComments.filter(c => !c.resolved && forMe(c)).length;
@@ -16645,7 +16720,7 @@ function hubCommentsRenderInner() {
     const body = m.querySelector('.cmt-text');
     const ta = document.createElement('textarea'); ta.className = 'cmt-edit'; ta.rows = 3; ta.value = text;
     const btns = document.createElement('div'); btns.className = 'cmt-btns';
-    const cancel = textBtn('Cancel', () => { hubCommentsRender(); });
+    const cancel = textBtn('Cancel', () => { const host = m.closest('.cmt'); if (host) host.__dsSig = null; hubCommentsRender(); });
     const ok = textBtn('Save', async () => { const t = ta.value.trim(); if (!t) return; await save(t, hubMentionsOf(ta)); }, 'primary');
     btns.append(cancel, ok);
     body.replaceWith(ta); m.appendChild(btns);
@@ -16657,7 +16732,7 @@ function hubCommentsRenderInner() {
   const card = c => {
     const el = document.createElement('div');
     const sug = c.kind === 'suggestion';
-    el.className = 'cmt' + (sug ? ' suggest' : '') + (c.resolved ? ' resolved' : '') + (c.id === hubCommentActive ? ' active' : '');
+    el.className = 'cmt' + (sug ? ' suggest' : '') + (c.resolved ? ' resolved' : '') + (c.id === hubCommentActive ? ' active' : '') + (c.pending ? ' pending' : '');
     el.dataset.id = c.id; el.tabIndex = 0;
     el.addEventListener('click', e => {
       if (e.target.closest('button, textarea, input, .cmt-menu')) return;
@@ -16726,7 +16801,7 @@ function hubCommentsRenderInner() {
     for (const r of c.replies || []) {
       const mine = hubIsMe(r.by);
       const acts = [];
-      if (mine || hubRole === 'owner') {
+      if (!r.pending && (mine || hubRole === 'owner')) {
         const rm = textBtn('⋮', () => {
           const items = [];
           if (mine) items.push(['Edit', () => editInPlace(rmsg, r.text, (t, mentions) => hubReplyPatch(c.id, r.id, { text: t, mentions }))]);
@@ -16751,17 +16826,18 @@ function hubCommentsRenderInner() {
     // thread the placeholder says what a reply does.
     if (canWrite) {
       const box = document.createElement('div'); box.className = 'cmt-replybox';
-      const open = () => {
+      const open = draft => {
         box.textContent = '';
         const ta = document.createElement('textarea'); ta.rows = 2; ta.placeholder = 'Reply or add others with @'; ta.className = 'cmt-reply-text';
         const btns = document.createElement('div'); btns.className = 'cmt-btns';
-        const cancel = textBtn('Cancel', () => { hubCommentsRender(); });
+        const cancel = textBtn('Cancel', () => { el.__dsSig = null; hubCommentsRender(); });
         const send = textBtn('Reply', async () => { const t = ta.value.trim(); if (!t) { ta.focus(); return; } await hubReplyAdd(c.id, t, hubMentionsOf(ta)); }, 'primary');
         btns.append(cancel, send);
         box.append(ta, btns);
         hubMentionWire(ta);
         ta.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send.click(); if (e.key === 'Escape') cancel.click(); });
         ta.addEventListener('blur', () => setTimeout(() => { if (hubCommentsRenderLater && !list.contains(document.activeElement)) hubCommentsRender(); }, 200));
+        if (draft != null) { ta.value = draft; c.__draft = null; }
         ta.focus();
       };
       const line = document.createElement('input'); line.type = 'text'; line.readOnly = true;
@@ -16770,27 +16846,27 @@ function hubCommentsRenderInner() {
       line.addEventListener('focus', open); line.addEventListener('click', open);
       box.appendChild(line);
       el.appendChild(box);
+      if (c.__draft != null) open(c.__draft);   // the words of a reply the hub refused
     }
     return el;
   };
+  const cardOf = c => keep('cmt:' + c.id, sigOf(c), () => card(c), c.__clientId && 'cmt:' + c.__clientId);
   if (!open.length && !done.length) {
-    const p = document.createElement('p'); p.className = 'cmt-empty';
-    p.textContent = hubCommentsTab === 'you' ? 'Nothing for you yet — threads that name you, or answer you, show here.' : 'No comments yet. Select some words and press ⌘⌥M, or write below.';
-    list.appendChild(p);
+    sep('cmt-empty', hubCommentsTab === 'you' ? 'Nothing for you yet — threads that name you, or answer you, show here.' : 'No comments yet. Select some words and press ⌘⌥M, or write below.');
   }
   const mine = margin ? [] : open.filter(onIt);
   if (mine.length) {
-    const h = document.createElement('p'); h.className = 'cmt-sep cmt-here'; h.textContent = `On the selection (${here})`; list.appendChild(h);
-    for (const c of mine) list.appendChild(card(c));
-    if (open.length > mine.length) { const h2 = document.createElement('p'); h2.className = 'cmt-sep'; h2.textContent = 'Elsewhere'; list.appendChild(h2); }
+    sep('cmt-sep cmt-here', `On the selection (${here})`);
+    for (const c of mine) cardOf(c);
+    if (open.length > mine.length) sep('cmt-sep', 'Elsewhere');
   }
-  for (const c of open) if (!mine.includes(c)) list.appendChild(card(c));
+  for (const c of open) if (!mine.includes(c)) cardOf(c);
   if (done.length) {
-    const h = document.createElement('p'); h.className = 'cmt-sep'; h.textContent = `${done.length} resolved`; list.appendChild(h);
+    sep('cmt-sep', `${done.length} resolved`);
     // Resolved threads stay in the margin, trailing the open ones under this
     // line: they have no words to sit beside any more (hubMarginWant gives
     // them no place), and the panel is the only place they can be found again.
-    for (const c of done) list.appendChild(card(c));
+    for (const c of done) cardOf(c);
   }
   // The new comment is a card at its anchor rather than a foot to the panel —
   // but only once it is IN USE (being typed in, holding words, or quoting a
@@ -16800,21 +16876,31 @@ function hubCommentsRenderInner() {
   const composerInUse = composer && (composerHadFocus || hubCommentQuote || $('cpanel-text').value.trim());
   if (margin && composerInUse) {
     const at = hubCommentPos(d, { anchor: hubCommentAnchor() });
-    let before = null;
-    for (const el of list.children) {
-      const c = el.classList.contains('cmt') && hubComments.find(x => x.id === el.dataset.id);
-      if (c && hubCommentPos(d, c) > at) { before = el; break; }
-    }
-    list.insertBefore(composer, before);
+    let i = next.findIndex(el => el.classList.contains('cmt') && byPos.get(el.dataset.id) > at);
+    if (i < 0) i = next.length;
+    next.splice(i, 0, composer);
     // "No comments yet" has nothing to say while one is being written, and as
     // a card with no anchor it took the top of the gutter and pushed the box
     // out of line with its own words.
-    const empty = list.querySelector('.cmt-empty');
-    if (empty) empty.remove();
-    // Moving a node in the DOM blurs whatever is inside it: put the cursor
-    // back where the person left it.
-    if (composerHadFocus) { const ta = $('cpanel-text'); ta.focus(); if (composerSel != null) ta.selectionStart = ta.selectionEnd = composerSel; }
+    next = next.filter(el => !el.classList.contains('cmt-empty'));
   }
+  // Put the list in that order, touching only what moved: a node that stays
+  // keeps its place, its glide and its focus. Whatever is left over goes -
+  // the composer back to the panel's foot, the rest away.
+  let cursor = list.firstChild;
+  for (const el of next) {
+    if (el === cursor) { cursor = cursor.nextSibling; continue; }
+    list.insertBefore(el, cursor);
+  }
+  while (cursor) {
+    const nx = cursor.nextSibling;
+    if (cursor === composerEl) panel.appendChild(cursor); else { hubMarginForget(cursor); cursor.remove(); }
+    cursor = nx;
+  }
+  for (const el of prev.values()) hubMarginForget(el);
+  // Moving a node in the DOM blurs whatever is inside it: put the cursor
+  // back where the person left it.
+  if (composerHadFocus) { const ta = $('cpanel-text'); if (document.activeElement !== ta) { ta.focus(); if (composerSel != null) ta.selectionStart = ta.selectionEnd = composerSel; } }
   if (margin) hubMarginLayout(true);
   // The new-comment card: who is writing, and about what.
   const on = $('cpanel-anchor');
@@ -16831,37 +16917,132 @@ function hubCommentsRenderInner() {
   if (av) { av.style.setProperty('--av', hubAvatarColor(me)); av.textContent = hubInitial(hubNameOf(me)); av.title = hubNameOf(me); }
 }
 const hubCommentsChanged = () => { hubCommentsStamp = Date.now(); };
-async function hubCommentsCall(url, init, failWord) {
+/** The panel and the page, from the threads as they stand now. */
+function hubCommentsShow() {
+  hubCommentsBadge();
+  if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender();
+  const d = $('out') && $('out').contentDocument;
+  if (d) hubCommentsPaint(d);
+}
+/** A thread as the hub answered with it, in place of what was shown - under
+ *  its id, or under the provisional id it wore before the hub had it. */
+function hubCommentsMerge(t, tmpId) {
+  if (!t || !t.id) return;
+  let at = -1;
+  for (let i = hubComments.length - 1; i >= 0; i--) {
+    const c = hubComments[i];
+    if (c.id === t.id || (tmpId && c.id === tmpId)) { hubComments.splice(i, 1); at = i; }
+  }
+  if (tmpId) t.__clientId = tmpId;   // so its card is the same card, not a new one
+  if (at >= 0) hubComments.splice(at, 0, t); else hubComments.push(t);
+  if (tmpId && hubCommentActive === tmpId) hubCommentActive = t.id;
+}
+const hubCopy = c => (c ? JSON.parse(JSON.stringify(c)) : null);
+const hubPut = (id, c) => { const i = hubComments.findIndex(x => x.id === id); if (i >= 0) hubComments[i] = c; else hubComments.push(c); };
+const pendingId = () => 'pending-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+/** One request to the hub. A change to a thread is answered with the thread,
+ *  which takes the place of the one shown - no second round trip to read the
+ *  list back. Null on failure, which is said in the status line. */
+async function hubCommentsCall(url, init, failWord, tmpId) {
   try {
     const r = await fetch(url, init);
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     hubCommentsChanged();
+    if (j && j.id && Array.isArray(j.replies)) hubCommentsMerge(j, tmpId);
     return j;
   } catch (e) { $('stat').textContent = `${failWord}: ${e.message}`; return null; }
-  finally { await hubCommentsLoad(); }
 }
 const jsonInit = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-const hubCommentPatch = (id, patch) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, jsonInit('PATCH', patch), 'comment not changed');
-const hubCommentDelete = id => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'comment not deleted');
-const hubReplyAdd = (id, text, mentions) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies`, jsonInit('POST', { text, mentions }), 'reply not added');
-const hubReplyPatch = (id, rid, patch) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, jsonInit('PATCH', patch), 'reply not changed');
-const hubReplyDelete = (id, rid) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, { method: 'DELETE' }, 'reply not deleted');
+// Every change shows AT ONCE, as it will stand once the hub agrees, and the
+// hub is asked after: a comment that took two round trips to appear read as
+// the button not working. A refusal puts things back as they were, and says so.
+async function hubCommentPatch(id, patch) {
+  const c = hubComments.find(x => x.id === id);
+  const was = hubCopy(c);
+  if (c) {
+    const me = collabInfo.login, now = new Date().toISOString();
+    if (typeof patch.text === 'string') { c.text = patch.text; c.edited_at = now; if (Array.isArray(patch.mentions)) c.mentions = patch.mentions; }
+    if (c.kind === 'suggestion' && typeof patch.status === 'string') {
+      const done = patch.status !== 'open';
+      c.status = patch.status; c.decided_by = done ? me : null; c.decided_at = done ? now : null;
+      c.resolved = done; c.resolved_by = done ? me : null; c.resolved_at = done ? now : null;
+    } else if (typeof patch.resolved === 'boolean' && c.kind !== 'suggestion') {
+      c.resolved = patch.resolved; c.resolved_by = patch.resolved ? me : null; c.resolved_at = patch.resolved ? now : null;
+    }
+    hubCommentsShow();
+  }
+  const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, jsonInit('PATCH', patch), 'comment not changed');
+  if (!got && was) hubPut(id, was);
+  hubCommentsShow();
+  return got;
+}
+async function hubCommentDelete(id) {
+  const i = hubComments.findIndex(x => x.id === id);
+  const was = i >= 0 ? hubComments[i] : null;
+  if (was) { hubComments.splice(i, 1); if (hubCommentActive === id) hubCommentActive = null; hubCommentsShow(); }
+  const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'comment not deleted');
+  if (!got && was) { hubComments.splice(Math.min(i, hubComments.length), 0, was); hubCommentsShow(); }
+  return got;
+}
+async function hubReplyAdd(id, text, mentions) {
+  const c = hubComments.find(x => x.id === id);
+  const was = hubCopy(c);
+  if (c) {
+    c.replies = [...(c.replies || []), { id: pendingId(), text, by: collabInfo.login, at: new Date().toISOString(), edited_at: null, mentions, pending: true }];
+    if (c.resolved) { c.resolved = false; c.resolved_by = null; c.resolved_at = null; }   // a reply reopens the thread, as the hub does
+    hubCommentsShow();
+  }
+  const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies`, jsonInit('POST', { text, mentions }), 'reply not added');
+  if (!got && was) { was.__draft = text; hubPut(id, was); }   // the words go back into an open box
+  hubCommentsShow();
+  return got;
+}
+async function hubReplyPatch(id, rid, patch) {
+  const c = hubComments.find(x => x.id === id);
+  const was = hubCopy(c);
+  const r = c && (c.replies || []).find(x => x.id === rid);
+  if (r && typeof patch.text === 'string') {
+    r.text = patch.text; r.edited_at = new Date().toISOString(); if (Array.isArray(patch.mentions)) r.mentions = patch.mentions;
+    hubCommentsShow();
+  }
+  const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, jsonInit('PATCH', patch), 'reply not changed');
+  if (!got && was) hubPut(id, was);
+  hubCommentsShow();
+  return got;
+}
+async function hubReplyDelete(id, rid) {
+  const c = hubComments.find(x => x.id === id);
+  const was = hubCopy(c);
+  if (c && c.replies) { c.replies = c.replies.filter(x => x.id !== rid); hubCommentsShow(); }
+  const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, { method: 'DELETE' }, 'reply not deleted');
+  if (!got && was) hubPut(id, was);
+  hubCommentsShow();
+  return got;
+}
 async function hubCommentAdd() {
   const ta = $('cpanel-text');
   const text = (ta.value || '').trim();
   if (!text) { ta.focus(); return; }
-  const q = hubCommentQuote;
+  const q = hubCommentQuote, had = ta._mentions;
   const anchor = hubCommentAnchor();
   const body = { anchor, quote: q && q.anchor === anchor ? q.quote : null, text, mentions: hubMentionsOf(ta) };
-  const made = await hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', body), 'comment not added');
-  if (made) {
-    ta.value = ''; ta._mentions = new Set(); hubCommentQuote = null;
-    if (made.id) hubCommentActive = made.id;
-    hubCommentsRender();
-    const d = $('out') && $('out').contentDocument;
-    if (d) hubCommentsPaint(d);
-  }
+  // A provisional card at once, in hand, and the box cleared for the next;
+  // the hub's answer takes the card's place, a refusal takes it away and
+  // puts the words back in the box.
+  const tmp = { id: pendingId(), kind: 'comment', ...body, by: collabInfo.login, at: new Date().toISOString(), edited_at: null,
+                resolved: false, resolved_by: null, resolved_at: null, replies: [], pending: true };
+  hubComments.push(tmp);
+  hubCommentActive = tmp.id;
+  ta.value = ''; ta._mentions = new Set(); hubCommentQuote = null;
+  hubCommentsShow();
+  const made = await hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', body), 'comment not added', tmp.id);
+  if (!made) {
+    hubComments = hubComments.filter(c => c !== tmp);
+    if (hubCommentActive === tmp.id) hubCommentActive = null;
+    ta.value = text; ta._mentions = had; hubCommentQuote = q;
+  } else if (!made.id) { hubComments = hubComments.filter(c => c !== tmp); hubCommentsLoad(); }
+  hubCommentsShow();
 }
 function hubCommentsToggle(open) {
   const panel = $('cpanel');
