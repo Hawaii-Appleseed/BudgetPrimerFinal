@@ -1291,6 +1291,9 @@
   .cmt-btns button.primary { background:#6B9E78; border-color:#6B9E78; color:#fff; }
   .cmt-empty, .cmt-sep { color:#5B6E66; font-size:12px; margin:0; }
   .cmt-sep { border-top:1px solid #E1E8E3; padding-top:8px; }
+  .cmt-here { border-top:0; padding-top:0; color:#C2703A; font-weight:600; }
+  #ar-comment.has, #ty-comment.has { color:#C2703A; }
+  #ty-comment { margin-left:auto; }
   .cpanel-new { border-top:1px solid #E1E8E3; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
   .cpanel-anchor { font-size:11.5px; color:#5B6E66; }
   #cpanel-text { font:13px system-ui; padding:6px 8px; border:1px solid #C9D6CD; border-radius:6px; resize:vertical; }
@@ -1735,6 +1738,9 @@
     <label><span>Line height</span><input type="range" id="ty-lead-r" min="0.8"
       max="2.6" step="0.05"><input id="ty-lead" type="number" step="0.05" min="0.6" max="4"></label>
   </div>
+  <button id="ty-comment" hidden class="ty-comment" aria-label="Comment on this — a note for whoever opens the document, marked on it">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.4" stroke-linejoin="round"><path d="M2 2.5h10v7H6.5L3.5 12V9.5H2z"/></svg></button>
   <input type="color" id="ty-color" hidden>
 </div>
 <div id="arrange" hidden>
@@ -1847,6 +1853,9 @@
        now hides itself when nothing is selected — which would have taken
        "put a photo on the page" with it. -->
   <span class="ty-sep"></span>
+  <button id="ar-comment" hidden aria-label="Comment on this element — a note for whoever opens the document, marked on it">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.4" stroke-linejoin="round"><path d="M2 2.5h10v7H6.5L3.5 12V9.5H2z"/></svg></button>
   <button id="ar-dup" aria-label="Duplicate (⌘D) — a designed element's copy becomes a floating text box">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.4"><rect x="1.5" y="1.5" width="8" height="8" rx="1.5"/>
@@ -7052,6 +7061,9 @@ function computedType(key) {
 
 function showType(key) {
   selected = key;
+  // The same comment button the arrange strip has, for the strip a lone
+  // text box or paragraph gets instead.
+  $('ty-comment').hidden = !docStore();
   const st = styleOf(key);
   const real = computedType(key);
   $('ty-key').textContent = key;
@@ -7258,7 +7270,7 @@ const selGroups = () => {
 function pageBar(d) {
   $('type').hidden = true;
   $('arrange').hidden = false;
-  ['ar-count', 'ar-pos', 'ar-group', 'ar-ungroup', 'ar-dup', 'ar-lock', 'ar-del',
+  ['ar-count', 'ar-pos', 'ar-group', 'ar-ungroup', 'ar-dup', 'ar-lock', 'ar-del', 'ar-comment',
    'ar-fxbtn', 'ar-table', 'ar-chart', 'ar-border', 'ar-alpha'].forEach(id => {
     const el = $(id); if (el) el.hidden = true;
   });
@@ -7564,6 +7576,9 @@ function arrangeBar(d) {
   $('ar-group').disabled = !canGroup();
   $('ar-ungroup').disabled = !canUngroup();
   $('ar-lock').disabled = !n;
+  // Comment on the selection: only where comments exist (the hub's store).
+  $('ar-comment').hidden = !docStore();
+  $('ar-comment').disabled = !n;
   const locked = n > 0 && [...selIds].every(isLocked);
   $('ar-lock').classList.toggle('on', locked);
   $('ar-lock').setAttribute('aria-label', locked ? 'Unlock' : 'Lock — a locked element cannot be dragged');
@@ -11751,6 +11766,10 @@ function collabPresence() {
     sel: [...selIds], page: selPage, slot: collabEditTarget(),
     drag: !!(collabPointerAt && selIds.size), cursor,
     agent: ag ? { by: ag.by, what: ag.what, target: ag.target } : null,
+    // A comment added, resolved or removed here: everyone else's editor
+    // sees the stamp move and fetches the list, so a marker appears for the
+    // room within a presence tick rather than at the next poll.
+    comments: hubCommentsStamp,
   };
 }
 
@@ -12004,7 +12023,7 @@ function collabPaintPeers(d) {
     el.style.removeProperty('--peer');
   });
   for (const p of collabPeers) {
-    const name = p.login || 'someone';
+    const name = p.name || fmtWho(p.login) || 'someone';
     const mark = (el, cls, label) => {
       if (!el) return;
       el.classList.add(cls);
@@ -12212,6 +12231,10 @@ async function startCollab() {
     presence: collabPresence,
     onPeers: peers => {
       collabPeers = peers;
+      if (peers.some(p => p.comments && p.comments > hubCommentsHeard)) {
+        hubCommentsHeard = Math.max(...peers.map(p => p.comments || 0));
+        hubCommentsLoad();
+      }
       collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, name: p.name, color: p.color, sel: p.sel, slot: p.slot,
                                                               cursor: collab ? collab.resolveCursor(p.cursor) : null,
                                                               agent: p.agent })) };
@@ -15226,6 +15249,10 @@ function docStoreDecide() {
   $('save').textContent = 'Save';
   hubShareLoad();
   hubCommentsLoad();
+  // Presence carries a change the moment it happens; this is for the editor
+  // whose collaborator was not in the room when they commented.
+  clearInterval(hubCommentsSlow);
+  hubCommentsSlow = setInterval(hubCommentsLoad, 60000);
 }
 
 // --- who may open this document (the hub's share list, step 06) ----------
@@ -15377,6 +15404,9 @@ async function hubHistoryDialog() {
 // puts a small marker on what it is about, inside the report.
 let hubComments = [];
 let hubCommentsTimer = 0;
+let hubCommentsStamp = 0;     // when THIS editor last changed the comments (rides presence)
+let hubCommentsHeard = 0;     // the newest such stamp heard from a collaborator
+let hubCommentsSlow = 0;      // the fallback poll, panel open or not
 const COMMENT_MARK_CSS = `
   [data-ds-comments] { position: relative; }
   [data-ds-comments]::after {
@@ -15394,10 +15424,16 @@ function hubCommentsPaint(d) {
     d.head.appendChild(st);
   }
   d.querySelectorAll('[data-ds-comments]').forEach(el => el.removeAttribute('data-ds-comments'));
+  const here = hubCommentAnchor();
+  const has = !!here && hubComments.some(c => !c.resolved && c.anchor === here);
+  $('ar-comment').classList.toggle('has', has);
+  $('ty-comment').classList.toggle('has', has);
   const counts = new Map();
   for (const c of hubComments) if (!c.resolved && c.anchor) counts.set(c.anchor, (counts.get(c.anchor) || 0) + 1);
   for (const [anchor, n] of counts) {
-    const el = d.querySelector(`[data-slot="${CSS.escape(anchor)}"]`) || d.querySelector(`[data-el="${CSS.escape(anchor)}"]`);
+    // The element first: a heading is both a slot and an element under one
+    // name, and the badge sits better on the outer box than on the text.
+    const el = d.querySelector(`[data-el="${CSS.escape(anchor)}"]`) || d.querySelector(`[data-slot="${CSS.escape(anchor)}"]`);
     if (el) el.dataset.dsComments = String(n);
   }
 }
@@ -15432,7 +15468,10 @@ function hubCommentsRender() {
   if (!panel || !list) return;
   list.textContent = '';
   const anchorLabel = a => (a ? `on ${a}` : 'on the document');
-  const open = hubComments.filter(c => !c.resolved), done = hubComments.filter(c => c.resolved);
+  const here = hubCommentAnchor();
+  const onIt = c => here && c.anchor === here;
+  const open = hubComments.filter(c => !c.resolved && !onIt(c)), done = hubComments.filter(c => c.resolved);
+  const mine = hubComments.filter(c => !c.resolved && onIt(c));
   const me = collabInfo.login;
   const row = c => {
     const el = document.createElement('div'); el.className = 'cmt' + (c.resolved ? ' resolved' : '');
@@ -15465,8 +15504,13 @@ function hubCommentsRender() {
     el.append(head, body, btns);
     return el;
   };
-  if (!open.length && !done.length) {
+  if (!open.length && !done.length && !mine.length) {
     const p = document.createElement('p'); p.className = 'cmt-empty'; p.textContent = 'No comments yet.'; list.appendChild(p);
+  }
+  if (mine.length) {
+    const h = document.createElement('p'); h.className = 'cmt-sep cmt-here'; h.textContent = `On the selection (${here})`; list.appendChild(h);
+    for (const c of mine) list.appendChild(row(c));
+    if (open.length) { const h2 = document.createElement('p'); h2.className = 'cmt-sep'; h2.textContent = 'Elsewhere'; list.appendChild(h2); }
   }
   for (const c of open) list.appendChild(row(c));
   if (done.length) {
@@ -15476,11 +15520,13 @@ function hubCommentsRender() {
   const on = $('cpanel-anchor');
   if (on) on.textContent = 'New comment ' + anchorLabel(hubCommentAnchor());
 }
+const hubCommentsChanged = () => { hubCommentsStamp = Date.now(); };
 async function hubCommentPatch(id, patch) {
   try {
     const r = await fetch(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'PATCH',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+    hubCommentsChanged();
   } catch (e) { $('stat').textContent = 'comment not changed: ' + e.message; }
   await hubCommentsLoad();
 }
@@ -15488,6 +15534,7 @@ async function hubCommentDelete(id) {
   try {
     const r = await fetch(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+    hubCommentsChanged();
   } catch (e) { $('stat').textContent = 'comment not deleted: ' + e.message; }
   await hubCommentsLoad();
 }
@@ -15501,6 +15548,7 @@ async function hubCommentAdd() {
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ anchor, text }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
     ta.value = '';
+    hubCommentsChanged();
   } catch (e) { $('stat').textContent = 'comment not added: ' + e.message; }
   await hubCommentsLoad();
 }
@@ -15888,6 +15936,7 @@ async function saveDraft() {
 
 $('history').onclick = () => hubHistoryDialog();
 $('cpanel-close').onclick = () => hubCommentsToggle(false);
+$('ar-comment').onclick = $('ty-comment').onclick = () => { hubCommentsToggle(true); $('cpanel-text').focus(); };
 $('cpanel-add').onclick = () => hubCommentAdd();
 document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender(); });
 $('comments').onclick = () => hubCommentsToggle();
@@ -17609,6 +17658,20 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   /** The whole document as data: pages in order, every element with its id,
    *  kind and box in page inches, every slot with a text snippet. Replaces
    *  the screenshot-and-hunt loop — read this once, then act by id. */
+  /** Select element(s) by id, the way a click does — the arrange strip
+   *  follows, and everyone in a live session sees the ring. null clears. */
+  select(ids) {
+    const d = $('out').contentDocument;
+    const list = ids == null ? [] : [].concat(ids).map(String);
+    for (const id of list) {
+      if (!d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`)) {
+        return { ok: false, error: `no element '${id}' — check inventory()` };
+      }
+    }
+    setSel(d, list);
+    if (typeof arrangeBar === 'function') arrangeBar(d);
+    return { ok: true, selected: [...selIds] };
+  },
   inventory() {
     const d = $('out').contentDocument;
     const pages = [...d.querySelectorAll('section.page')].map((pg, i) => {
