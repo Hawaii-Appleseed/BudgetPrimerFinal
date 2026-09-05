@@ -271,6 +271,10 @@
          color:#8A7433; cursor:pointer; font:16px/1 system-ui; padding:0 2px;
          border-radius:5px; }
   .ds-note-x:hover { background:#E5D9B6; color:#4A3D1C; }
+  /* Offline: the same band, in the chip's own grey, so it reads as a state
+     of the session rather than a note about the report. */
+  .ds-note.ds-offline { background:#EEF2EF; color:#334049; border-bottom-color:#C9D6CD; }
+  .ds-note.ds-offline::before { content:'○'; color:#5B6E66; }
   .ds-note-all { flex:none; border:0; background:none; color:#8A7433;
          cursor:pointer; font:11.5px system-ui; text-decoration:underline; }
   /* Which build is running. Deliberately the quietest thing in the bar — it is
@@ -8570,7 +8574,17 @@ function renderNotices(d) {
   const seen = notesSeen();
   const show = msgs.filter(m => typeof m === 'string' && m.trim() && !seen.has(m));
   host.textContent = '';
-  host.hidden = !show.length;
+  // Working offline is said here, above the page, not only in the chip: the
+  // one state a person must not miss. Not dismissible - it goes when the
+  // session is back, and the edits made meanwhile go with it.
+  const offline = collabInfo && collabInfo.on && collabInfo.status === 'offline';
+  host.hidden = !show.length && !offline;
+  if (offline) {
+    const row = document.createElement('div'); row.className = 'ds-note ds-offline';
+    const txt = document.createElement('span');
+    txt.textContent = 'Working offline — your edits are kept here and shared when the session is back.';
+    row.appendChild(txt); host.appendChild(row);
+  }
   if (!show.length) return;
   show.forEach(msg => {
     const row = document.createElement('div');
@@ -12265,6 +12279,7 @@ async function collabAdopt(files, why) {
     return;
   }
   await render();
+  if (collabSayBack) collabSayBackSoon();   // after the last of these, not between two
   if (why === 'adopt' && collabInfo.status === 'live') {
     renderSays(collabInfo.peers > 1
       ? `joined the live session — ${collabInfo.peers - 1} other${collabInfo.peers > 2 ? 's' : ''} here`
@@ -12344,6 +12359,29 @@ function collabChip() {
   c.title = title;
   c.classList.toggle('live', s.status === 'live');
   c.classList.toggle('can-click', s.status === 'signin');
+  // The offline band above the page comes and goes with the status.
+  if (s.status !== collabChipWas) {
+    collabChipWas = s.status;
+    const d = $('out') && $('out').contentDocument;
+    if (d && d.body) renderNotices(d);
+    // Offline is remembered through the "connecting" in between, so coming
+    // back is said once, when live.
+    if (s.status === 'offline') collabWasOffline = true;
+    if (s.status === 'live' && collabWasOffline) { collabWasOffline = false; collabSayBack = true; collabSayBackSoon(); }
+  }
+}
+let collabChipWas = null, collabWasOffline = false, collabSayBack = false, collabBackTimer = 0;
+const COLLAB_BACK_MSG = 'back in the session — what you did offline is shared now';
+/** Said once the renders that adopt what was missed have settled: each of
+ *  them announces itself and then writes its idle text, so a message said
+ *  between two would be gone before it was read. Every adopt re-arms this. */
+function collabSayBackSoon() {
+  clearTimeout(collabBackTimer);
+  collabBackTimer = setTimeout(() => {
+    if (!collabSayBack) return;
+    collabSayBack = false;
+    if (collabInfo.status === 'live') $('stat').textContent = COLLAB_BACK_MSG;
+  }, 900);
 }
 $('collab').onclick = async () => {
   if (collabInfo.status !== 'signin') return;
