@@ -16563,9 +16563,15 @@ function hubCommentShow(c) {
   const t = hubCommentEl(d, c.anchor);
   if (!t) { $('stat').textContent = 'that part of the document is not on the page any more'; return false; }
   t.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  t.classList.add('ds-comment-flash'); setTimeout(() => t.classList.remove('ds-comment-flash'), 1600);
+  // One flash at a time: a thread shown while the last one's words are still
+  // lit takes the light with it, so the page never points two ways at once.
+  clearTimeout(hubCommentFlashTimer);
+  d.querySelectorAll('.ds-comment-flash').forEach(x => x.classList.remove('ds-comment-flash'));
+  t.classList.add('ds-comment-flash');
+  hubCommentFlashTimer = setTimeout(() => t.classList.remove('ds-comment-flash'), 1600);
   return true;
 }
+let hubCommentFlashTimer = 0;
 /** Bring one thread to hand: darker highlight, raised card, panel open. */
 function hubCommentFocus(id, { scrollPage = true } = {}) {
   hubCommentActive = id;
