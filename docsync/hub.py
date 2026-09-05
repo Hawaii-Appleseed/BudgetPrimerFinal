@@ -197,7 +197,7 @@ def _sync_tree(src: Path, dst: Path, changed: list[str], *, dry: bool,
             shutil.copy2(s, d)
     if dst.is_dir():
         for p in sorted(dst.rglob("*"), reverse=True):
-            if p.is_file() and p.relative_to(dst) not in want:
+            if p.is_file() and p.relative_to(dst) not in want and str(p.relative_to(dst)) not in skip:
                 changed.append(f"- {p}")
                 if not dry:
                     p.unlink()
