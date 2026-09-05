@@ -11528,20 +11528,36 @@ let collabInfo = { on: false, status: 'off', phase: null, peers: 0, here: [],
                    login: null, error: null };
 let collabPointerAt = 0;     // when a pointer went down inside the report
 
-/** The relay URL for this project, or null when it is not shared.
+/** How this project reaches its room, or null when it is not shared. Two
+ *  doors onto the same room (collab/README.md, "two front doors"):
+ *    {url}        the relay Worker — a ticket minted from the GitHub token
+ *    {path, me}   a door on THIS origin (the staff hub's /api/collab) that
+ *                 authenticates the request itself from the session the page
+ *                 already carries; `me` is where it says who that is
  *  `?collab=<url>` overrides it — LOCAL mode only, and only to a loopback
  *  relay (wrangler dev): the page POSTs the GitHub token to whatever this
  *  names, so a hosted editor must never take it from a link. `?collab=0`
- *  opens the project alone. */
-function collabRelay() {
+ *  opens the project alone. A path is never taken from a link at all: it is
+ *  same-origin by construction, so there is nothing for a link to point at. */
+function collabDoor() {
   if (local) {
     const o = new URLSearchParams(location.search).get('collab');
     if (o === '0') return null;
-    if (o && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(o)) return o.replace(/\/+$/, '');
+    if (o && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(o)) return { url: o.replace(/\/+$/, '') };
   }
   const reg = REGISTRY && PROJECT && REGISTRY[PROJECT] && REGISTRY[PROJECT].collab;
   const cfg = reg || (M && M.collab) || null;
-  return cfg && cfg.url ? String(cfg.url).replace(/\/+$/, '') : null;
+  if (!cfg) return null;
+  if (cfg.path) {
+    return { path: '/' + String(cfg.path).replace(/^\/+|\/+$/g, ''),
+             me: cfg.me ? '/' + String(cfg.me).replace(/^\/+/, '') : null };
+  }
+  return cfg.url ? { url: String(cfg.url).replace(/\/+$/, '') } : null;
+}
+/** The relay URL, or null — including when the door is a path. */
+function collabRelay() {
+  const d = collabDoor();
+  return d && d.url || null;
 }
 
 /** owner~repo~project (collab/src/auth.js parseRoom). `?collabroom=<tag>`
@@ -12050,30 +12066,58 @@ $('collab').onclick = async () => {
   if (await ensureAuth()) startCollab();
 };
 
+/** Who this session is, by the door's own account (the hub's /api/me echoes
+ *  the Access identity). For presence only: the ROOM learns the login from
+ *  the header the door set on the socket, and trusts nothing the client says
+ *  about itself. */
+async function collabWhoAmI(door) {
+  if (!door.me) return null;
+  try {
+    const r = await fetch(door.me, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return (j && j.email) || null;
+  } catch (e) { return null; }
+}
+
 async function startCollab() {
-  const relay = collabRelay();
-  if (!relay || collab) return;
+  const door = collabDoor();
+  if (!door || collab) return;
   const room = collabRoom();
   if (!room) return;
   const fail = (error) => { collabInfo = { ...collabInfo, status: 'error', error }; collabChip(); };
   collabInfo = { ...collabInfo, on: true, status: 'connecting' };
   collabChip();
-  if (!collabToken()) { collabInfo = { ...collabInfo, status: 'signin' }; collabChip(); return; }
+  // The relay's door wants the GitHub token. The hub's wants nothing: the
+  // session the page already carries IS the credential, checked at the door.
+  if (door.url && !collabToken()) { collabInfo = { ...collabInfo, status: 'signin' }; collabChip(); return; }
   try {
     // Beside this page, wherever it was staged; location.href rather than a
     // bare relative specifier so a switched project's <base> can't move it.
     collabMod = collabMod || await import(new URL('collab-client.js', location.href).href);
   } catch (e) { fail('collab-client.js did not load — ' + e.message); return; }
-  // One ticket up front, so a refusal (no push access, relay down, repo not
-  // served) is named here in words rather than as a silent socket failure.
-  try { await collabTicket(relay, room); }
-  catch (e) { fail(e.message); return; }
+  let host, path = null, ticket = null;
+  if (door.url) {
+    // One ticket up front, so a refusal (no push access, relay down, repo not
+    // served) is named here in words rather than as a silent socket failure.
+    try { await collabTicket(door.url, room); }
+    catch (e) { fail(e.message); return; }
+    host = door.url;
+    ticket = () => collabTicket(door.url, room);
+  } else {
+    // `prefix` is the whole path (collab/client/session.mjs): the room is
+    // named here, or every document on the hub would share one.
+    host = location.origin;
+    path = `${door.path}/${room}`;
+    collabInfo.login = await collabWhoAmI(door);
+  }
   const baseSha = await collabLoadedSha();
   collab = new collabMod.CollabSession({
-    host: relay, room, login: collabInfo.login,
+    host, room, login: collabInfo.login,
+    ...(path ? { path } : {}),
+    ...(ticket ? { ticket } : {}),
     files: { content: source, layout },
     baseSha,
-    ticket: () => collabTicket(relay, room),
     busy: collabBusy,
     beforeRemote: collabNoteCaret,
     onBaseSha: collabSaved,
@@ -15064,7 +15108,7 @@ let draftBranch = new URLSearchParams(location.search).get('draft') || null;
  *  Phase 4) — the draft is ONE branch for the whole room: everyone in the
  *  session edits one document, so they save it to one place, and a Save by
  *  anyone is a Save for everyone. Otherwise a draft is yours alone. */
-const collabShared = () => !local && !!collabRelay();
+const collabShared = () => !local && !!collabDoor();
 const sharedDraftBranch = () => `draft/${M.id}`;
 const draftBranchFor = user => collabShared() ? sharedDraftBranch() : `draft/${M.id}/${user}`;
 
