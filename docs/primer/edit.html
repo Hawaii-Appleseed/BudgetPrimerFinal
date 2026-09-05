@@ -15150,8 +15150,41 @@ function docStoreDecide() {
   const room = door && door.docs && collabRoom();
   docStoreBase = room ? `${door.docs}/${room}` : null;
   if (!docStoreBase) return;
-  $('share').hidden = $('publish').hidden = true;
+  // Share is a draft-branch link; there is none. Publish stays: it is one
+  // commit of the saved document to git (docStorePublish), off the hot path.
+  $('share').hidden = true;
+  $('publish').disabled = false;
+  $('publish').setAttribute('aria-label', 'Commit the saved document to its repository');
+  $('publish').title = 'One commit of this document, as saved, on its hub/ branch';
   $('save').textContent = 'Save';
+}
+
+/** Publish, on the store path: the hub asks the relay Worker to commit the
+ *  saved document to `hub/<project>` in its repository. The editor never
+ *  holds the credential; it sees the commit it produced. */
+async function docStorePublish() {
+  if (dirty) {
+    if (!await docStoreSave(JSON.stringify(layout, null, 2) + '\n')) return;
+  }
+  if (!docVersion) { $('stat').textContent = 'nothing to publish yet — make an edit and Save first'; return; }
+  if (!await dsConfirm('Publish this document to GitHub?\n\nOne commit of it as saved, on the hub/'
+      + M.id + ' branch of ' + (REPO || 'its repository') + '. The live report is not changed by this.',
+      { okLabel: 'Publish' })) return;
+  $('publish').disabled = true;
+  $('stat').textContent = 'publishing…';
+  try {
+    const r = await fetch(`${docStore()}/publish`, { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || j.reason || `the hub answered ${r.status}`);
+    const sha = String(j.sha || '').slice(0, 7);
+    $('stat').textContent = j.status === 'unchanged'
+      ? `already published — ${j.branch} is at ${sha}`
+      : `published ✓ — ${j.repo}@${j.branch} ${sha}`;
+  } catch (e) {
+    $('stat').textContent = 'publish failed: ' + e.message;
+  } finally {
+    $('publish').disabled = false;
+  }
 }
 
 /** The stored document over the vendored copy, when the store has one. Runs
@@ -15187,7 +15220,10 @@ async function docStoreSave(layoutText, force = false) {
   $('save').disabled = true;
   $('stat').textContent = 'saving…';
   try {
-    const body = { base: (collab && collab.baseSha()) || docVersion, force };
+    const body = { base: (collab && collab.baseSha()) || docVersion, force,
+                   // Where these files belong in the repository, for the
+                   // export: only the editor knows, so every Save says.
+                   paths: { content: M.content, layout: M.layout || null, assets: M.assets || null, branch: BRANCH } };
     if (source !== original) body.content = source;
     if (M.layout && layoutText !== layoutOrig) body.layout = layoutText;
     if (body.content == null && body.layout == null) { markDirty(); return true; }
@@ -15392,6 +15428,7 @@ $('share').onclick = async () => {
 };
 
 $('publish').onclick = async () => {
+  if (docStore()) return docStorePublish();
   if (dirty) { if (!await saveDraft()) return; }
   if (!draftBranch) {
     $('stat').textContent = 'nothing to publish yet — make an edit and Save draft first';
