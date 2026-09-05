@@ -287,8 +287,16 @@
             white-space:nowrap; cursor:default; }
   #collab.live { color:#2E7D4F; opacity:.9; }
   #collab.can-click { cursor:pointer; text-decoration:underline dotted; opacity:.9; }
-  #collab i { display:inline-block; width:8px; height:8px; border-radius:50%;
-              margin-left:5px; vertical-align:middle; }
+  /* Who is here, as Docs shows it: an initial in the person's colour - the
+     same colour as the ring around whatever they have selected on the page.
+     A click goes to where they are; a second click follows them. */
+  #collab i { display:inline-flex; justify-content:center; align-items:center; position:relative;
+              width:18px; height:18px; border-radius:50%; margin-left:4px; vertical-align:middle;
+              color:#fff; font:700 8.5px/1 system-ui; font-style:normal; letter-spacing:0; cursor:pointer;
+              box-shadow:0 0 0 1.5px var(--chrome); }
+  #collab i.typing::after { content:''; position:absolute; right:-2px; bottom:-2px; width:7px; height:7px;
+              border-radius:50%; background:#C2703A; border:1.5px solid var(--chrome); }
+  #collab i.following { box-shadow:0 0 0 1.5px var(--chrome), 0 0 0 3.5px #C2703A; }
   /* The AI at work: shown while an automated editor is changing this report
      — through this tab (pilot ops), through a collaborator's, or on disk
      after announcing itself. Same purple as #agentnote, which is the SAME
@@ -11828,6 +11836,7 @@ function collabWire(d) {
     d.addEventListener('pointerdown', () => { collabPointerAt = Date.now(); }, true);
     d.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
     d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
+    collabFollowWire(d);
   }
   if (collab) collabPaintPeers(d);
   else agentPaint();
@@ -12252,15 +12261,32 @@ function collabChip() {
       text = '… joining';
       title = 'Connecting to the collaboration relay.';
   }
+  if (s.status === 'live' && collabFollow) {
+    const f = collabPeers.find(p => p.login === collabFollow);
+    if (f) text += ' · following ' + (f.name || fmtWho(f.login) || 'someone');
+  }
   c.textContent = text;
-  // One dot per collaborator, in their colour — the same colour as the ring
-  // around whatever they have selected on the page, so the two read as one.
+  // One avatar per collaborator - an initial in their colour, the same colour
+  // as the ring around whatever they have selected on the page, so the two
+  // read as one. The title says where they are; a click goes there, a second
+  // click follows them (see collabFollowTick).
   if (s.status === 'live') {
+    const d = $('out') && $('out').contentDocument;
     for (const p of collabPeers) {
-      const dot = document.createElement('i');
-      dot.style.background = p.color;
-      dot.title = (p.name || p.login || 'someone') + (p.slot ? ' · typing' : '');
-      c.appendChild(dot);
+      const av = document.createElement('i');
+      const name = p.name || fmtWho(p.login) || 'someone';
+      av.style.background = p.color;
+      av.textContent = (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+      const place = collabPeerPlace(d, p);
+      const doing = p.slot ? ' · typing' : p.drag ? ' · moving' : '';
+      const following = collabFollow === p.login;
+      av.title = name + doing + (place.page ? ` on page ${place.page}` : '')
+        + (place.el ? `. Click to go there${following ? '; following — click to stop' : '; click again to follow'}` : '');
+      av.classList.toggle('typing', !!p.slot);
+      av.classList.toggle('following', following);
+      av.setAttribute('role', 'button');
+      av.onclick = e => { e.stopPropagation(); collabAvatarClick(p); };
+      c.appendChild(av);
     }
   }
   c.title = title;
@@ -12271,6 +12297,102 @@ $('collab').onclick = async () => {
   if (collabInfo.status !== 'signin') return;
   if (await ensureAuth()) startCollab();
 };
+
+// --- where a collaborator is, and going there --------------------------------
+// Docs' two gestures on an avatar: a click jumps to where that person is
+// (the paragraph they are typing in, else what they have selected, else the
+// page they are on); a second click FOLLOWS them - every presence tick that
+// finds their place out of view scrolls to it - until the person here
+// scrolls, touches or clicks the page, clicks the avatar again, or the one
+// followed leaves. Programmatic scrolls (this one's own) never count as a
+// reason to stop, which is why the cancel listens to the gesture, not to
+// the scroll event.
+let collabFollow = null;        // the login being followed, or null
+let collabFollowName = '';      // their name at the time, for the goodbye
+let collabJumped = null;        // the login the last click went to: a second click follows
+/** {el, page} - the element to scroll to and the page number it sits on. */
+function collabPeerPlace(d, p) {
+  if (!d || !d.body) return { el: null, page: null };
+  // The paragraph they type in is a slot; what they selected is an element -
+  // the same lookups collabPaintPeers rings and tags, so the jump lands on
+  // what the person here can already see marked. (One id can name both a
+  // slot and an element in different places: a card's words and the card.)
+  const slotEl = id => d.querySelector(`[data-slot="${CSS.escape(id)}"]`) || d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  const elEl = id => d.querySelector(`[data-el="${CSS.escape(id)}"]`) || d.querySelector(`[data-slot="${CSS.escape(id)}"]`);
+  let el = (p.slot && slotEl(p.slot)) || null;
+  if (!el) for (const id of p.sel || []) { el = elEl(id); if (el) break; }
+  let pageEl = el ? el.closest('section.page') : null;
+  if (!pageEl && p.page != null) pageEl = [...d.querySelectorAll('section.page')].find(s => String(s.dataset.page) === String(p.page)) || null;
+  if (!el) el = pageEl;
+  const pages = [...d.querySelectorAll('section.page')];
+  const page = pageEl ? pages.indexOf(pageEl) + 1 : null;
+  return { el, page: page || null };
+}
+const collabInView = el => {
+  const w = el.ownerDocument.defaultView, r = el.getBoundingClientRect();
+  return r.bottom > 0 && r.top < w.innerHeight && r.top >= 0 && r.bottom <= w.innerHeight;
+};
+function collabGoTo(p, { say = true } = {}) {
+  const d = $('out') && $('out').contentDocument;
+  const name = p.name || fmtWho(p.login) || 'someone';
+  const place = collabPeerPlace(d, p);
+  if (!place.el) { if (say) $('stat').textContent = `${name} has nothing selected yet`; return false; }
+  // The report's own window is scrolled, by arithmetic, to put the place in
+  // the middle - not scrollIntoView, which would also drag the stage and the
+  // page around it. Instant, as Docs jumps. And asserted again on the next
+  // frame and a beat later: the editor's own housekeeping (a refit when the
+  // tab is revealed, a render restoring its scroll) can land in the same
+  // frame and put the page back where it was, and a click that went nowhere
+  // is the one thing this must never be.
+  const el = place.el;
+  const put = () => {
+    const w = el.ownerDocument && el.ownerDocument.defaultView;
+    if (!w || collabInView(el)) return;
+    const r = el.getBoundingClientRect();
+    if (!r.height && !r.width) return;   // gone from the page since
+    w.scrollTo(0, Math.max(0, w.scrollY + r.top - (w.innerHeight - r.height) / 2));
+  };
+  put();
+  requestAnimationFrame(put);
+  setTimeout(put, 200);
+  if (say) $('stat').textContent = `${name} is ${p.slot ? 'typing' : 'working'} on page ${place.page || '?'}`;
+  return true;
+}
+function collabAvatarClick(p) {
+  if (collabFollow === p.login) { collabFollowStop(); return; }
+  if (collabJumped === p.login) {
+    collabFollow = p.login; collabFollowName = p.name || fmtWho(p.login) || 'someone'; collabJumped = null;
+    collabGoTo(p, { say: false });
+    $('stat').textContent = `following ${collabFollowName} — scroll or click the page to stop`;
+    collabChip();
+    return;
+  }
+  collabFollow = null; collabJumped = p.login;
+  collabGoTo(p);
+  collabChip();
+}
+function collabFollowStop(why) {
+  if (!collabFollow) return;
+  collabFollow = null; collabJumped = null;
+  $('stat').textContent = why || `stopped following ${collabFollowName}`;
+  collabChip();
+}
+/** Each presence tick: keep the followed person's place in view. */
+function collabFollowTick() {
+  if (!collabFollow) return;
+  const p = collabPeers.find(x => x.login === collabFollow);
+  if (!p) { collabFollowStop(`${collabFollowName} left the session`); return; }
+  collabGoTo(p, { say: false });
+}
+/** The gestures that mean "I want to look somewhere else": bound once per
+ *  report document, from collabWire. */
+function collabFollowWire(d) {
+  const stop = () => { if (collabFollow) collabFollowStop(); };
+  d.addEventListener('wheel', stop, { capture: true, passive: true });
+  d.addEventListener('touchmove', stop, { capture: true, passive: true });
+  d.addEventListener('pointerdown', stop, true);
+  d.addEventListener('keydown', e => { if (/^(Arrow(Up|Down)|Page(Up|Down)|Home|End| )$/.test(e.key)) stop(); }, true);
+}
 
 /** Who this session is, by the door's own account (the hub's /api/me echoes
  *  the Access identity). For presence only: the ROOM learns the login from
@@ -12348,6 +12470,7 @@ async function startCollab() {
                                                               agent: p.agent })) };
       const d = $('out') && $('out').contentDocument;
       if (d) collabPaintPeers(d);
+      collabFollowTick();
       collabChip();
     },
     debug: !!localStorage.getItem('collab-debug'),
