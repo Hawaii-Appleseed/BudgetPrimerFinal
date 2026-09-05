@@ -1264,6 +1264,37 @@
   .hub-share-add { align-self:flex-start; font:12px system-ui; padding:5px 10px; border:1px dashed #C9D6CD; border-radius:6px; background:none; color:#5B6E66; cursor:pointer; }
   .hub-share-note { font-size:11.5px; color:#5B6E66; }
   .dsdlg-err { font:12px system-ui; color:#B3412F; margin:0; min-height:14px; }
+  .hub-history-list { display:flex; flex-direction:column; gap:8px; max-height:52vh; overflow:auto; }
+  .hub-history-row { display:grid; grid-template-columns: 1fr auto; gap:4px 10px; padding:8px 10px; border:1px solid #E1E8E3; border-radius:8px; }
+  .hub-history-row.current { border-color:#6B9E78; background:#F3F7F3; }
+  .hub-history-head { grid-column:1 / -1; font:12px system-ui; color:#5B6E66; }
+  .hub-history-label { font:13px system-ui; padding:5px 8px; border:1px solid #C9D6CD; border-radius:6px; background:#fff; color:var(--ink); }
+  .hub-history-label.saved { border-color:#6B9E78; }
+  .hub-history-btns { display:flex; align-items:center; }
+  .hub-history-restore { font:12px system-ui; padding:5px 10px; border:1px solid #C9D6CD; border-radius:6px; background:#fff; cursor:pointer; }
+  .hub-history-restore:hover { background:#E8EDE6; }
+  #cpanel { position:fixed; right:12px; top:56px; bottom:60px; width:min(340px, 90vw); z-index:45;
+    display:flex; flex-direction:column; background:#fff; border:1px solid #C9D6CD; border-radius:var(--r-card, 10px);
+    box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
+  #cpanel[hidden] { display:none; }
+  .cpanel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #E1E8E3; }
+  .cpanel-head button { border:0; background:none; font:18px/1 system-ui; cursor:pointer; color:#5B6E66; }
+  #cpanel-list { flex:1; overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
+  .cmt { border:1px solid #E1E8E3; border-radius:8px; padding:8px 10px; }
+  .cmt.resolved { opacity:.6; }
+  .cmt-head { font-size:11.5px; color:#5B6E66; }
+  .cmt-text { margin:6px 0; white-space:pre-wrap; line-height:1.45; }
+  .cmt-btns { display:flex; gap:6px; }
+  .cmt-btns button { font:12px system-ui; padding:4px 9px; border:1px solid #C9D6CD; border-radius:6px; background:#fff; cursor:pointer; }
+  .cmt-btns button:hover { background:#E8EDE6; }
+  .cmt-btns button.danger { color:#B3412F; }
+  .cmt-btns button.primary { background:#6B9E78; border-color:#6B9E78; color:#fff; }
+  .cmt-empty, .cmt-sep { color:#5B6E66; font-size:12px; margin:0; }
+  .cmt-sep { border-top:1px solid #E1E8E3; padding-top:8px; }
+  .cpanel-new { border-top:1px solid #E1E8E3; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
+  .cpanel-anchor { font-size:11.5px; color:#5B6E66; }
+  #cpanel-text { font:13px system-ui; padding:6px 8px; border:1px solid #C9D6CD; border-radius:6px; resize:vertical; }
+  #comments.on { background:#E8EDE6; }
   .dsdlg-field > input:focus, .dsdlg-field > select:focus, .dsdlg-field > textarea:focus {
         outline:none; border-color:var(--sage); box-shadow:0 0 0 3px rgba(107,158,120,.18); }
   .dsdlg-err { font:12px system-ui; color:#C0392B; margin:0; min-height:0; }
@@ -1316,6 +1347,15 @@
        so restyling one never reaches the others. Every icon is 16px, stroke
        currentColor: the row's colour is the icon's colour, which is what makes
        hover and the danger row work without a second rule each. -->
+  <aside id="cpanel" hidden aria-label="Comments">
+    <div class="cpanel-head"><b>Comments</b><button type="button" id="cpanel-close" aria-label="Close comments">×</button></div>
+    <div id="cpanel-list"></div>
+    <div class="cpanel-new">
+      <div id="cpanel-anchor" class="cpanel-anchor">New comment on the document</div>
+      <textarea id="cpanel-text" rows="3" placeholder="Write a comment… select a paragraph or element first to attach it there"></textarea>
+      <div class="cmt-btns"><button type="button" id="cpanel-add" class="primary">Comment</button></div>
+    </div>
+  </aside>
   <div class="pop menu" id="filepop" hidden>
     <p class="pop-h">Reports</p>
     <button class="shp" id="file-open"><svg class="shp-i" viewBox="0 0 16 16"
@@ -1526,6 +1566,8 @@
        draft branch away and return to the live report, so detectLocal() hides
        it rather than the markup deleting it. -->
   <button id="revert" disabled hidden>Discard</button>
+  <button id="comments" hidden aria-label="Comments on this document">Comments</button>
+  <button id="history" hidden aria-label="Every saved version of this document">History</button>
   <button id="share" disabled aria-label="Copy a link that shows this draft to anyone">Share</button>
   <button id="publish" disabled aria-label="Make this draft the live report">Publish</button>
   <!-- Download moved into the File menu; its popover stays here. -->
@@ -7455,6 +7497,9 @@ function selectClick(d, id, e) {
 
 function arrangeBar(d) {
   const n = selIds.size;
+  // Anyone else who cares what is selected (the comments panel names the
+  // thing a new comment is about) hears it here, on every change.
+  document.dispatchEvent(new CustomEvent('ds:selection'));
   // A selected PAGE gets its own strip: the only things that mean anything to
   // a sheet are its colour and making another one.
   if (!n && selPage != null) { pageBar(d); return; }
@@ -12228,7 +12273,7 @@ function collabSaved(sha) {
   if (!collab || !sha) return;
   const f = collab.files();
   original = f.content; layoutOrig = f.layoutText;
-  if (docStore()) docVersion = sha;
+  if (docStore()) { docVersion = sha; hubMarkSeen(sha); }
   if (collabShared() && !draftBranch && !docStore()) {
     draftBranch = sharedDraftBranch();
     history.replaceState(null, '', draftUrl());
@@ -13591,6 +13636,7 @@ function wire(roots) {
   });
   dragify(d, roots);
   collabWire(d);
+  hubCommentsPaint(d);
   contextify(d, roots);
   wireSections(d, roots);
   deafenStickyChrome(d);
@@ -15171,6 +15217,7 @@ function docStoreDecide() {
   $('publish').disabled = false;
   $('publish').setAttribute('aria-label', 'Commit the saved document to its repository');
   $('publish').title = 'One commit of this document, as saved, on its hub/ branch';
+  $('comments').hidden = $('history').hidden = false;
   $('share').hidden = false;
   $('share').disabled = false;
   $('share').textContent = 'Share…';
@@ -15178,6 +15225,7 @@ function docStoreDecide() {
   $('share').title = 'Who may open this document, and as what';
   $('save').textContent = 'Save';
   hubShareLoad();
+  hubCommentsLoad();
 }
 
 // --- who may open this document (the hub's share list, step 06) ----------
@@ -15212,6 +15260,263 @@ async function hubShareLoad() {
   collabChip();
 }
 const hubViewOnly = () => hubRole === 'viewer';
+
+/** What this browser last saw of a document, for the hub's "changed since
+ *  you looked" (primer/index.html and the nav badge read the same key). */
+function hubMarkSeen(version) {
+  const room = collabRoom();
+  if (!room || !version) return;
+  try { localStorage.setItem('primer-seen:' + room, version); } catch (e) { /* private mode */ }
+}
+
+// --- every saved version (step 07) ------------------------------------------
+// The store keeps every Save whole under history/<version>/; this shows the
+// list, lets a person NAME a version ("sent to the board") and bring one
+// back. A restore is a new version on top, never a rewind: nothing saved is
+// lost, and the log reads "restored from …". The files come back through
+// the same adopt-and-save path an edit takes, so the room sees them too.
+const fmtWhen = iso => { try { return new Date(iso).toLocaleString(); } catch (e) { return iso || ''; } };
+const fmtWho = who => (who ? String(who).replace(/@.*$/, '') : 'someone');
+
+async function hubHistoryDialog() {
+  if (!docStore()) return;
+  let versions = [];
+  try {
+    const r = await fetch(`${docStore()}/history`, { cache: 'no-store' });
+    if (r.ok) versions = await r.json();
+  } catch (e) { /* listed as empty below */ }
+  const canChange = !hubViewOnly();
+  const choice = await dsModal((dlg, done) => {
+    const form = document.createElement('form');
+    form.method = 'dialog'; form.className = 'dsdlg-form hub-history';
+    const title = document.createElement('h2'); title.className = 'dsdlg-title';
+    title.textContent = 'History — ' + ((REGISTRY && REGISTRY[PROJECT] && REGISTRY[PROJECT].name) || M.id);
+    form.appendChild(title);
+    const msg = document.createElement('p'); msg.className = 'dsdlg-msg';
+    msg.textContent = versions.length
+      ? 'Every Save, newest first. Restoring brings a version back as a new one; nothing is lost.'
+      : 'Nothing saved to the hub yet.';
+    form.appendChild(msg);
+    const list = document.createElement('div'); list.className = 'hub-history-list';
+    for (const v of versions) {
+      const row = document.createElement('div'); row.className = 'hub-history-row';
+      if (v.version === docVersion) row.classList.add('current');
+      const head = document.createElement('div'); head.className = 'hub-history-head';
+      const when = document.createElement('span'); when.className = 'hub-history-when';
+      when.textContent = fmtWhen(v.updated_at) + ' · ' + fmtWho(v.updated_by)
+        + (v.version === docVersion ? ' · current' : '') + (v.restored_from ? ' · restored' : '');
+      head.appendChild(when);
+      const label = document.createElement('input');
+      label.type = 'text'; label.placeholder = canChange ? 'name this version…' : '';
+      label.value = v.label || ''; label.className = 'hub-history-label'; label.disabled = !canChange;
+      label.maxLength = 80; label.spellcheck = false;
+      label.onchange = async () => {
+        try {
+          const r = await fetch(`${docStore()}/history/${v.version}`, { method: 'PATCH',
+            headers: { 'content-type': 'application/json' }, body: JSON.stringify({ label: label.value }) });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+          label.classList.add('saved'); setTimeout(() => label.classList.remove('saved'), 900);
+        } catch (e) { $('stat').textContent = 'name not saved: ' + e.message; }
+      };
+      const btns = document.createElement('div'); btns.className = 'hub-history-btns';
+      if (canChange && v.version !== docVersion) {
+        const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'hub-history-restore';
+        restore.textContent = 'Restore';
+        restore.onclick = () => done({ restore: v });
+        btns.appendChild(restore);
+      }
+      row.append(head, label, btns); list.appendChild(row);
+    }
+    form.appendChild(list);
+    const bar = document.createElement('div'); bar.className = 'dsdlg-btns';
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'dsdlg-cancel'; close.textContent = 'Close';
+    close.onclick = () => done(null); bar.appendChild(close); form.appendChild(bar);
+    form.onsubmit = e => { e.preventDefault(); };
+    dlg.appendChild(form);
+    setTimeout(() => close.focus(), 0);
+  });
+  if (!choice || !choice.restore) return;
+  const v = choice.restore;
+  if (!await dsConfirm(`Bring back the version from ${fmtWhen(v.updated_at)}${v.label ? ` ("${v.label}")` : ''}?\n\n`
+      + 'It becomes the current version — a new Save on top of the others, so nothing is lost. '
+      + 'Everyone in this session gets it.', { okLabel: 'Restore' })) return;
+  $('stat').textContent = 'restoring…';
+  try {
+    const r = await fetch(`${docStore()}/restore`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v.version }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
+    // Adopt the files the way a collaborator's change lands, then record the
+    // version the way a Save does: the room learns it through baseSha.
+    pushHistory();
+    source = j.content;
+    if (M.layout && j.layout != null) {
+      layout = JSON.parse(j.layout);
+      layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
+      syncPageSize();
+    }
+    original = source; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
+    docVersion = j.version;
+    hubMarkSeen(j.version);
+    await render();
+    if (collab) collab.setBaseSha(j.version);
+    clearDraftCache();
+    markDirty();
+    $('stat').textContent = `restored — the version from ${fmtWhen(v.updated_at)} is the current one now`;
+  } catch (e) {
+    $('stat').textContent = 'restore failed: ' + e.message;
+  }
+}
+
+// --- comments (step 07) -------------------------------------------------------
+// Words about the document that are not in the document: a note on a
+// paragraph, an element, or the whole thing. They live beside the store's
+// files (comments.json), not in the Yjs document — a comment is not part of
+// what gets exported or rendered — and the panel refreshes itself while it
+// is open, so a colleague's note appears within seconds. Each open comment
+// puts a small marker on what it is about, inside the report.
+let hubComments = [];
+let hubCommentsTimer = 0;
+const COMMENT_MARK_CSS = `
+  [data-ds-comments] { position: relative; }
+  [data-ds-comments]::after {
+    content: attr(data-ds-comments); position: absolute; top: -6px; right: -6px; z-index: 40;
+    min-width: 16px; height: 16px; padding: 0 5px; border-radius: 999px;
+    background: #C2703A; color: #fff; font: 700 10px/16px system-ui; text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25); pointer-events: none;
+  }
+  .ds-comment-flash { outline: 3px solid #C2703A !important; outline-offset: 2px; transition: outline-color .8s; }
+`;
+function hubCommentsPaint(d) {
+  if (!d || !d.body || !docStore()) return;
+  if (!d.getElementById('ds-comment-css')) {
+    const st = d.createElement('style'); st.id = 'ds-comment-css'; st.textContent = COMMENT_MARK_CSS;
+    d.head.appendChild(st);
+  }
+  d.querySelectorAll('[data-ds-comments]').forEach(el => el.removeAttribute('data-ds-comments'));
+  const counts = new Map();
+  for (const c of hubComments) if (!c.resolved && c.anchor) counts.set(c.anchor, (counts.get(c.anchor) || 0) + 1);
+  for (const [anchor, n] of counts) {
+    const el = d.querySelector(`[data-slot="${CSS.escape(anchor)}"]`) || d.querySelector(`[data-el="${CSS.escape(anchor)}"]`);
+    if (el) el.dataset.dsComments = String(n);
+  }
+}
+function hubCommentsBadge() {
+  const b = $('comments');
+  if (!b || b.hidden) return;
+  const open = hubComments.filter(c => !c.resolved).length;
+  b.textContent = open ? `Comments · ${open}` : 'Comments';
+}
+async function hubCommentsLoad() {
+  if (!docStore()) return;
+  try {
+    const r = await fetch(`${docStore()}/comments`, { cache: 'no-store' });
+    if (r.ok) hubComments = await r.json();
+  } catch (e) { return; }
+  hubCommentsBadge();
+  const d = $('out') && $('out').contentDocument;
+  if (d) hubCommentsPaint(d);
+  if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender();
+}
+/** What a new comment is about: the paragraph or element in hand, else the
+ *  document. Named so the person can see it before they write. */
+function hubCommentAnchor() {
+  const t = collabEditTarget();
+  if (t) return t;
+  if (selIds.size) return [...selIds][0];
+  return null;
+}
+function hubCommentsRender() {
+  const panel = $('cpanel');
+  const list = $('cpanel-list');
+  if (!panel || !list) return;
+  list.textContent = '';
+  const anchorLabel = a => (a ? `on ${a}` : 'on the document');
+  const open = hubComments.filter(c => !c.resolved), done = hubComments.filter(c => c.resolved);
+  const me = collabInfo.login;
+  const row = c => {
+    const el = document.createElement('div'); el.className = 'cmt' + (c.resolved ? ' resolved' : '');
+    const head = document.createElement('div'); head.className = 'cmt-head';
+    const who = document.createElement('b'); who.textContent = fmtWho(c.by);
+    const when = document.createElement('span'); when.textContent = ' · ' + fmtWhen(c.at) + ' · ' + anchorLabel(c.anchor);
+    head.append(who, when);
+    const body = document.createElement('p'); body.className = 'cmt-text'; body.textContent = c.text;
+    const btns = document.createElement('div'); btns.className = 'cmt-btns';
+    if (c.anchor) {
+      const go = document.createElement('button'); go.type = 'button'; go.textContent = 'Show';
+      go.onclick = () => {
+        const d = $('out').contentDocument;
+        const t = d && (d.querySelector(`[data-slot="${CSS.escape(c.anchor)}"]`) || d.querySelector(`[data-el="${CSS.escape(c.anchor)}"]`));
+        if (!t) { $('stat').textContent = 'that part of the document is not on the page any more'; return; }
+        t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        t.classList.add('ds-comment-flash'); setTimeout(() => t.classList.remove('ds-comment-flash'), 1600);
+      };
+      btns.appendChild(go);
+    }
+    const res = document.createElement('button'); res.type = 'button';
+    res.textContent = c.resolved ? 'Reopen' : 'Resolve';
+    res.onclick = () => hubCommentPatch(c.id, { resolved: !c.resolved });
+    btns.appendChild(res);
+    if (c.by === me || hubRole === 'owner') {
+      const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete'; del.className = 'danger';
+      del.onclick = async () => { if (await dsConfirm('Delete this comment?', { okLabel: 'Delete', danger: true })) hubCommentDelete(c.id); };
+      btns.appendChild(del);
+    }
+    el.append(head, body, btns);
+    return el;
+  };
+  if (!open.length && !done.length) {
+    const p = document.createElement('p'); p.className = 'cmt-empty'; p.textContent = 'No comments yet.'; list.appendChild(p);
+  }
+  for (const c of open) list.appendChild(row(c));
+  if (done.length) {
+    const h = document.createElement('p'); h.className = 'cmt-sep'; h.textContent = `${done.length} resolved`; list.appendChild(h);
+    for (const c of done) list.appendChild(row(c));
+  }
+  const on = $('cpanel-anchor');
+  if (on) on.textContent = 'New comment ' + anchorLabel(hubCommentAnchor());
+}
+async function hubCommentPatch(id, patch) {
+  try {
+    const r = await fetch(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'PATCH',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+  } catch (e) { $('stat').textContent = 'comment not changed: ' + e.message; }
+  await hubCommentsLoad();
+}
+async function hubCommentDelete(id) {
+  try {
+    const r = await fetch(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+  } catch (e) { $('stat').textContent = 'comment not deleted: ' + e.message; }
+  await hubCommentsLoad();
+}
+async function hubCommentAdd() {
+  const ta = $('cpanel-text');
+  const text = (ta.value || '').trim();
+  if (!text) { ta.focus(); return; }
+  const anchor = hubCommentAnchor();
+  try {
+    const r = await fetch(`${docStore()}/comments`, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ anchor, text }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+    ta.value = '';
+  } catch (e) { $('stat').textContent = 'comment not added: ' + e.message; }
+  await hubCommentsLoad();
+}
+function hubCommentsToggle(open) {
+  const panel = $('cpanel');
+  if (!panel) return;
+  const show = open == null ? panel.hidden : open;
+  panel.hidden = !show;
+  $('comments').classList.toggle('on', show);
+  clearInterval(hubCommentsTimer); hubCommentsTimer = 0;
+  if (show) {
+    hubCommentsRender();
+    hubCommentsLoad();
+    hubCommentsTimer = setInterval(hubCommentsLoad, 15000);
+  }
+}
 
 /** The share dialog: a default for everyone through Access, and named
  *  exceptions. Anyone who can edit can re-share (assets/collab.js canShare);
@@ -15372,6 +15677,7 @@ async function docStoreLoad(urls, files) {
     if (c != null) files[urls.indexOf('engine/' + M.content)] = c;
     if (M.layout && l != null) files[urls.indexOf('engine/' + M.layout)] = l;
     docVersion = m.version;
+    hubMarkSeen(m.version);
     $('stat').textContent = 'from the hub' + (m.updated_by ? ` — last saved by ${m.updated_by}` : '')
       + (m.updated_at ? ` ${new Date(m.updated_at).toLocaleString()}` : '');
   } catch (e) {
@@ -15406,6 +15712,7 @@ async function docStoreSave(layoutText, force = false) {
     }
     if (!r.ok) throw new Error(j.error || `the store answered ${r.status}`);
     docVersion = j.version;
+    hubMarkSeen(j.version);
     if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
     original = source; layoutOrig = layoutText;
     clearDraftCache();
@@ -15579,6 +15886,11 @@ async function saveDraft() {
   }
 }
 
+$('history').onclick = () => hubHistoryDialog();
+$('cpanel-close').onclick = () => hubCommentsToggle(false);
+$('cpanel-add').onclick = () => hubCommentAdd();
+document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender(); });
+$('comments').onclick = () => hubCommentsToggle();
 $('share').onclick = async () => {
   if (docStore()) return hubShareDialog();
   if (dirty || !draftBranch) { if (!await saveDraft()) return; }
