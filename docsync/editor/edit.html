@@ -3244,7 +3244,7 @@ async function uploadImageFile(d, onDone) {
   // Local mode needs no token: the dev server writes the file into the
   // checkout's assets dir, and the next Save's path-scoped commit takes it
   // along. Only the hosted (GitHub API) path authenticates.
-  if (!local) {
+  if (!local && !docStore()) {
     const tok = await ensureAuth();
     if (!tok) return;
   }
@@ -3276,6 +3276,25 @@ async function uploadImageFile(d, onDone) {
         if (!j.ok) throw new Error(j.error || 'upload failed');
         localImages.set(j.src, dataUrl);   // preview before the next build copies it
         $('stat').textContent = `${name} saved to ${j.path} — commits with your next Save`;
+        onDone(j.src, name);
+      } catch (e) {
+        $('stat').textContent = 'upload failed: ' + e.message;
+      }
+      return;
+    }
+    if (docStore()) {
+      // Into the store, under the project; the hub serves it back at the
+      // very path the layout names (functions/primer/[id]/assets/).
+      try {
+        const r = await fetch(`${docStore()}/assets/${encodeURIComponent(name)}`, {
+          method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file,
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `upload refused (${r.status})`);
+        localImages.set(j.src, dataUrl);
+        $('stat').textContent = shrunk
+          ? `${name} uploaded — shrunk from ${beforeKB.toFixed(0)}KB to ${afterKB.toFixed(0)}KB`
+          : `${name} uploaded`;
         onDone(j.src, name);
       } catch (e) {
         $('stat').textContent = 'upload failed: ' + e.message;
@@ -11345,6 +11364,7 @@ async function boot() {
   // person's intent, not the resolution.)
   if (!draftBranch) showWarmPreview();
   await detectLocal();          // local live server? then Save writes to disk
+  docStoreDecide();             // …or the hub's document store? then Save writes there
   // Seed the build stamp with what THIS page was loaded from, then keep an
   // eye on it — a rebuild whose bump never reached this tab is exactly the
   // case a bump-driven check cannot catch, so it is also polled and checked
@@ -11422,6 +11442,7 @@ async function boot() {
       $('stat').textContent = "that draft isn't on GitHub any more (probably published) — showing the live report";
     }
   }
+  await docStoreLoad(urls, files);
   py = pyodide;
   // The renderer is written for a repo checkout, so rebuild one in Pyodide's FS
   // from the paths the manifest names — no directory list to keep in step.
@@ -11549,8 +11570,8 @@ function collabDoor() {
   const cfg = reg || (M && M.collab) || null;
   if (!cfg) return null;
   if (cfg.path) {
-    return { path: '/' + String(cfg.path).replace(/^\/+|\/+$/g, ''),
-             me: cfg.me ? '/' + String(cfg.me).replace(/^\/+/, '') : null };
+    const abs = v => (v ? '/' + String(v).replace(/^\/+|\/+$/g, '') : null);
+    return { path: abs(cfg.path), me: abs(cfg.me), docs: abs(cfg.docs) };
   }
   return cfg.url ? { url: String(cfg.url).replace(/\/+$/, '') } : null;
 }
@@ -12161,6 +12182,7 @@ async function startCollab() {
  *  editor seeds it. Only a shared, hosted editor with a token can ask; anyone
  *  else seeds null, and Save then skips the check. */
 async function collabLoadedSha() {
+  if (docStore()) return docVersion;
   if (!collabShared() || !localStorage.getItem('docsync-pat')) return null;
   try { return (await gh(`git/ref/heads/${draftBranch || BRANCH}`)).object.sha || null; }
   catch (e) { return null; }
@@ -12191,7 +12213,8 @@ function collabSaved(sha) {
   if (!collab || !sha) return;
   const f = collab.files();
   original = f.content; layoutOrig = f.layoutText;
-  if (collabShared() && !draftBranch) {
+  if (docStore()) docVersion = sha;
+  if (collabShared() && !draftBranch && !docStore()) {
     draftBranch = sharedDraftBranch();
     history.replaceState(null, '', draftUrl());
     showDraftBadge();
@@ -12342,7 +12365,12 @@ function setPushState(ahead) {
 async function detectLocal() {
   try {
     const r = await fetch(withProject('/__ping'), { cache: 'no-store' });
-    local = r.ok;
+    // A 200 is not enough: a static host with a single-page fallback (a
+    // Cloudflare Pages site with no 404.html) answers EVERY path with its
+    // home page and a 200, and this editor once took that for its own dev
+    // server and sent every Save to /__save. serve.py answers JSON; only
+    // JSON is the server.
+    local = r.ok && /\bjson\b/i.test(r.headers.get('content-type') || '');
     if (r.ok) { try {
       const j = await r.json();
       liveVer = j.v;
@@ -15096,6 +15124,101 @@ function tokenWhy(e) {
   return m;
 }
 
+// --- the document store (the hub, step 04) ---------------------------------
+// A hub-served editor does not keep its document in git. The door that
+// joins its room (collabDoor) also names a store on the same origin — the
+// hub's /api/docs, R2 underneath — and that is where the document is LOADED
+// from at boot and SAVED to, and where an uploaded image lands. No GitHub
+// token anywhere: Access authenticates the person, the share list says what
+// they may do, the store keeps every Save as a version. Decided ONCE, here,
+// right after local mode is known; every verb that reads or writes asks
+// docStore() rather than re-deriving it. The git verbs — draft branches,
+// Share, Publish, Push — do not exist on this path, so they hide.
+//
+// The version the files on screen came from plays the part a commit sha
+// played on the git path: it seeds the room's meta.baseSha, so everyone in
+// the session shares one, and a Save carries it as `base` — a store that has
+// moved past it (a Save from a session this browser was not in, a rollback,
+// a script) refuses with 409 and the person chooses, exactly the rule
+// collabBranchStillOurs applies to a branch.
+let docStoreBase = null;    // '/api/docs/<room>' when the document lives on the hub
+let docVersion = null;      // the store's version the files on screen came from
+const docStore = () => docStoreBase;
+
+function docStoreDecide() {
+  const door = !local && collabDoor();
+  const room = door && door.docs && collabRoom();
+  docStoreBase = room ? `${door.docs}/${room}` : null;
+  if (!docStoreBase) return;
+  $('share').hidden = $('publish').hidden = true;
+  $('save').textContent = 'Save';
+}
+
+/** The stored document over the vendored copy, when the store has one. Runs
+ *  where the draft branch's files would have been swapped in: the engine
+ *  stays same-origin, only the two authored files come from the store. */
+async function docStoreLoad(urls, files) {
+  if (!docStore()) return;
+  try {
+    const r = await fetch(docStore(), { cache: 'no-store' });
+    if (!r.ok) throw new Error(`the store answered ${r.status}`);
+    const m = await r.json();
+    if (!m.exists) {
+      $('stat').textContent = 'first time on the hub — Save puts this document in the store';
+      return;
+    }
+    const get = async what => {
+      const q = await fetch(`${docStore()}/${what}`, { cache: 'no-store' });
+      return q.ok ? q.text() : null;
+    };
+    const [c, l] = await Promise.all([get('content'), M.layout ? get('layout') : Promise.resolve(null)]);
+    if (c != null) files[urls.indexOf('engine/' + M.content)] = c;
+    if (M.layout && l != null) files[urls.indexOf('engine/' + M.layout)] = l;
+    docVersion = m.version;
+    $('stat').textContent = 'from the hub' + (m.updated_by ? ` — last saved by ${m.updated_by}` : '')
+      + (m.updated_at ? ` ${new Date(m.updated_at).toLocaleString()}` : '');
+  } catch (e) {
+    $('stat').textContent = 'could not reach the document store — showing the vendored copy; Save will retry';
+  }
+}
+
+/** Save to the store. `force` after the person has said so to a 409. */
+async function docStoreSave(layoutText, force = false) {
+  $('save').disabled = true;
+  $('stat').textContent = 'saving…';
+  try {
+    const body = { base: (collab && collab.baseSha()) || docVersion, force };
+    if (source !== original) body.content = source;
+    if (M.layout && layoutText !== layoutOrig) body.layout = layoutText;
+    if (body.content == null && body.layout == null) { markDirty(); return true; }
+    const r = await fetch(docStore(), {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409) {
+      const who = j.updated_by ? ` by ${j.updated_by}` : '';
+      const when = j.updated_at ? ` at ${new Date(j.updated_at).toLocaleString()}` : '';
+      const ok = await dsConfirm(`This document was saved outside this session${who}${when}.\n\n`
+        + 'Saving replaces that with what everyone here sees.',
+        { okLabel: 'Save over it', danger: true });
+      if (!ok) { $('stat').textContent = 'not saved — the document changed outside this session'; markDirty(); return false; }
+      return docStoreSave(layoutText, true);
+    }
+    if (!r.ok) throw new Error(j.error || `the store answered ${r.status}`);
+    docVersion = j.version;
+    if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
+    original = source; layoutOrig = layoutText;
+    clearDraftCache();
+    markDirty();
+    $('stat').textContent = 'saved — anyone opening this document gets this version';
+    return true;
+  } catch (e) {
+    $('stat').textContent = 'save failed: ' + e.message;
+    markDirty();
+    return false;
+  }
+}
+
 // --- drafts: Save draft / Share / Publish ----------------------------------
 // Nothing here writes to main. Save commits your work — prose and layout in
 // ONE commit — to draft/<project>/<user>, a branch of your own. Share hands
@@ -15122,7 +15245,7 @@ const showDraftBadge = () => {
 const draftUrl = () => location.origin + pageUrl({ draft: draftBranch });
 
 async function resolveDraft() {
-  if (local) { draftBranch = null; return; }
+  if (local || docStore()) { draftBranch = null; return; }
   if (!draftBranch && collabShared() && localStorage.getItem('docsync-pat')) {
     // A shared project's one draft, if anyone in the room has saved yet.
     try { await gh(`git/ref/heads/${sharedDraftBranch()}`); draftBranch = sharedDraftBranch(); }
@@ -15375,6 +15498,7 @@ $('save').onclick = async () => {
     return;
   }
 
+  if (docStore()) { await docStoreSave(layoutText); return; }
   await saveDraft();   // to draft/<project>/<user> — never straight to main
 };
 

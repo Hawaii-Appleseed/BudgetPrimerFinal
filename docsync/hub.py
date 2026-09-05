@@ -23,7 +23,10 @@ What lands in `<hub>/primer/`:
     icons/, manifest.webmanifest   the tab icon
     <id>/engine/…        each project's renderer, the files it reads, its manifest
     <id>/assets/…        each project's images
-    <id>/*.css, *.js     the report's own stylesheet/script, when its build puts one beside the editor
+    <id>/index.html      the built page (the editor's warm preview), and
+    <id>/…               everything that page links relatively — its stylesheet, script,
+                         images — copied from beside the page or beside the editor, and
+                         CHECKED: a reference the copy cannot satisfy fails the vendor
     index.html           the hub's own list page — hand-maintained THERE; never written here
 
 Sources: every binding with an `editor:` block in this repo's docsync.yml, then
@@ -60,18 +63,40 @@ from docsync.registry import ROOT, RegistryError, load_registry  # noqa: E402
 from docsync.stage import COLLAB_CLIENT, EDITOR, _origin_slug, stage  # noqa: E402
 from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers  # noqa: E402
 
-# The hub's front door onto the rooms, and the route that says who is signed
-# in — both paths on the hub's own origin (functions/api/collab/[room].js and
-# functions/api/me.js there). The editor reads these off its registry entry.
-COLLAB_DOOR = {"path": "/api/collab", "me": "/api/me"}
+# The hub's front door onto the rooms, the route that says who is signed in,
+# and the document store — all paths on the hub's own origin
+# (functions/api/collab/[room].js, functions/api/me.js, functions/api/docs/
+# there). The editor reads these off its registry entry: `path` is how it
+# joins the room, `docs` is where it loads and saves the document itself.
+COLLAB_DOOR = {"path": "/api/collab", "me": "/api/me", "docs": "/api/docs"}
 # The editor links these beside itself (a 404 per page load otherwise).
 SHELL_EXTRAS = ("icons",)
-# The editor's own shell, staged beside every project by docsync.stage or a
-# consumer's build. Everything ELSE top-level that is .css/.js in a project's
-# editor dir is the REPORT's — the primer's `primer.css` / `primer.js`, which
-# render_report.py links relative to the page, so the iframe (whose <base> is
-# the project dir) needs them beside the engine or the report paints unstyled.
-SHELL_FILES = {"edit.html", "collab-client.js", "sw.js", "oauth-relay.js", "htmlimport.js"}
+# What a rendered page LOADS beside itself — a <link href>, any src=, a CSS
+# url() — relative ones only. Not <a href>: an ingested web page links to its
+# neighbours, and a link is not a dependency. The editor's iframe resolves
+# these against the PROJECT dir (its <base>), so every one of them has to
+# exist there or the report paints without it: the primer shipped once with
+# its primer.css missing and every page came up cut and unstyled. The built
+# page is the same renderer's output as the editor's, so it names exactly
+# what the editor will ask for.
+LINK_RE = re.compile(r"""<link\b[^>]*?\bhref\s*=\s*["']([^"'#?]+)""", re.I)
+SRC_RE = re.compile(r"""\bsrc\s*=\s*["']([^"'#?]+)""", re.I)
+URL_RE = re.compile(r"""\burl\(\s*["']?([^"')?#]+)""", re.I)
+SKIP_REF = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//|/)", re.I)   # absolute, data:, root
+# A src= inside a page's own script (`src="' + note.u + '"`) is not a file;
+# a dependency has a file type. This is the list of types a report loads.
+ASSET_EXT = (".css", ".js", ".mjs", ".json", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+             ".avif", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".mp4", ".webm", ".pdf")
+
+
+def page_refs(html: str) -> set[str]:
+    out = set()
+    for rx in (LINK_RE, SRC_RE, URL_RE):
+        for m in rx.finditer(html):
+            ref = m.group(1).strip()
+            if ref and not SKIP_REF.match(ref) and ref.lower().endswith(ASSET_EXT):
+                out.add(ref)
+    return out
 WEBMANIFEST = {
     "name": "Report editor — Hawaiʻi Appleseed staff",
     "short_name": "Editor",
@@ -134,7 +159,8 @@ def sources(*, dry: bool) -> list[dict]:
     names = _local_names()
     out: dict[str, dict] = {}
 
-    def add(bid: str, raw: dict, staged: Path, repo: str | None, where: str):
+    def add(bid: str, raw: dict, staged: Path, repo: str | None, where: str,
+            page: Path | None):
         if raw.get("hub") is False:
             print(f"  {bid}: hub: false — skipped")
             return
@@ -147,7 +173,7 @@ def sources(*, dry: bool) -> list[dict]:
             return
         if bid in out:
             print(f"  {bid}: also in {out[bid]['where']} — {where} wins")
-        out[bid] = {"id": bid, "dir": staged, "repo": repo, "where": where,
+        out[bid] = {"id": bid, "dir": staged, "repo": repo, "where": where, "page": page,
                     "name": raw.get("name") or names.get(bid) or humanise(bid)}
 
     # This repo: the registry proper, staged in-process.
@@ -162,7 +188,7 @@ def sources(*, dry: bool) -> list[dict]:
             continue
         if not dry:
             stage(b)
-        add(b.id, raw, b.editor.dir, _origin_slug(ROOT), ROOT.name)
+        add(b.id, raw, b.editor.dir, _origin_slug(ROOT), ROOT.name, b.editor.out)
 
     # Consumers: their own vendored stage, in their own checkout.
     for repo in consumers():
@@ -182,7 +208,8 @@ def sources(*, dry: bool) -> list[dict]:
                     print(f"  {bid}: stage failed in {repo.name} — skipped\n{r.stderr}",
                           file=sys.stderr)
                     continue
-            add(bid, raw, repo / e["dir"], slug, repo.name)
+            add(bid, raw, repo / e["dir"], slug, repo.name,
+                repo / e["out"] if e.get("out") else None)
     return list(out.values())
 
 
@@ -221,9 +248,13 @@ def _write(dst: Path, data: bytes, changed: list[str], *, dry: bool) -> None:
         dst.write_bytes(data)
 
 
-def vendor(hub: Path, projects: list[dict], *, dry: bool) -> list[str]:
+def vendor(hub: Path, projects: list[dict], *, dry: bool,
+           missing: list[str] | None = None) -> list[str]:
+    """Copy everything; append to `missing` each reference a project's page
+    makes that the hub copy cannot satisfy — the caller fails on those."""
     primer = hub / "primer"
     changed: list[str] = []
+    missing = missing if missing is not None else []
 
     # The editor and its client, once.
     _write(primer / "edit.html", EDITOR.read_bytes(), changed, dry=dry)
@@ -251,9 +282,34 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool) -> list[str]:
             _sync_tree(sdir / "assets", pdir / "assets", changed, dry=dry)
         elif (pdir / "assets").is_dir() and not dry:
             shutil.rmtree(pdir / "assets")
-        for f in sorted(sdir.iterdir()):
-            if f.is_file() and f.suffix in (".css", ".js") and f.name not in SHELL_FILES:
-                _write(pdir / f.name, f.read_bytes(), changed, dry=dry)
+        # The built page itself (the editor paints it as its warm preview)
+        # and everything it reaches for, looked up beside the page and
+        # beside the editor — wherever the project's build put it.
+        page = p.get("page")
+        if page and page.is_file():
+            html = page.read_text(errors="replace")
+            _write(pdir / "index.html", html.encode(), changed, dry=dry)
+            refs = sorted(page_refs(html))
+            for ref in refs:
+                for src in (page.parent / ref, sdir / ref):
+                    if src.is_file():
+                        _write(pdir / ref, src.read_bytes(), changed, dry=dry)
+                        break
+                else:
+                    missing.append(f"{pid}: {ref} — linked by {page.name}, found nowhere to copy from")
+        else:
+            missing.append(f"{pid}: no built page to check references against"
+                           + (f" ({page})" if page else ""))
+        # Anything else at the top of the project dir is a leftover from an
+        # earlier vendor (a reference the page no longer makes) — drop it.
+        if pdir.is_dir():
+            keep = {"index.html"} | (page_refs(html) if page and page.is_file() else set())
+            for f in sorted(pdir.rglob("*")):
+                rel = f.relative_to(pdir)
+                if f.is_file() and rel.parts[0] not in ("engine", "assets") and str(rel) not in keep:
+                    changed.append(f"- {f}")
+                    if not dry:
+                        f.unlink()
         registry[pid] = {"name": p["name"], "base": pid, "repo": p["repo"],
                          "collab": dict(COLLAB_DOOR)}
 
@@ -297,7 +353,8 @@ def main() -> int:
         print("no projects to vendor", file=sys.stderr)
         return 1
 
-    changed = vendor(hub, projects, dry=a.dry_run)
+    missing: list[str] = []
+    changed = vendor(hub, projects, dry=a.dry_run, missing=missing)
     verb = "would change" if a.dry_run else "changed"
     print(f"\n{hub / 'primer'}: {len(projects)} project(s) — "
           + ", ".join(p["id"] for p in projects))
@@ -310,6 +367,14 @@ def main() -> int:
             print(f"  … and {len(changed) - 40} more")
         if not a.dry_run:
             print("  review and commit in the hub — a push there deploys.")
+    if missing:
+        print("\nBROKEN ON THE HUB — a page reaches for something its copy does not have:",
+              file=sys.stderr)
+        for m in missing:
+            print(f"  {m}", file=sys.stderr)
+        print("  The report will paint without it. Put the file where the build "
+              "puts the page (or beside the editor), or fix the reference.", file=sys.stderr)
+        return 1
     return 0
 
 
