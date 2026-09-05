@@ -1403,6 +1403,12 @@
     border:1px solid #C9D6CD; border-radius:999px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.18); cursor:pointer; color:#2D5A3D; }
   #cmt-plus[hidden] { display:none; }
   #cmt-plus:hover { background:#E8EDE6; }
+  .cpanel-bulk { display:flex; gap:6px; padding:6px 12px; border-bottom:1px solid #E1E8E3; }
+  .cpanel-bulk[hidden] { display:none; }
+  .cpanel-bulk button { font:600 12px system-ui; padding:4px 10px; border:1px solid #C9D6CD; border-radius:999px; background:#fff; cursor:pointer; }
+  .cpanel-bulk button:hover { background:#E8EDE6; }
+  .cpanel-bulk .accept { color:#1F6B3A; }
+  .cpanel-bulk .reject { color:#B3412F; }
   /* Comments in the MARGIN, the way Docs draws them. On a wide window the
      panel is a gutter beside the page - the stage makes room for it (this is
      the one panel that may move the page: a card has to line up with the
@@ -1494,6 +1500,13 @@
     <div class="cpanel-tabs" role="tablist">
       <button type="button" class="cpanel-tab on" id="cpanel-tab-all" role="tab">All comments</button>
       <button type="button" class="cpanel-tab" id="cpanel-tab-you" role="tab">For you</button>
+    </div>
+    <!-- Docs' "Accept all / Reject all": shown to an editor when two or more
+         suggestions are open; each goes through the same path as its own
+         button, so every one is its own undo step. -->
+    <div id="cpanel-bulk" class="cpanel-bulk" hidden>
+      <button type="button" id="cpanel-accept-all" class="accept">Accept all</button>
+      <button type="button" id="cpanel-reject-all" class="reject">Reject all</button>
     </div>
     <div id="cpanel-list"></div>
     <div class="cpanel-new">
@@ -16434,6 +16447,11 @@ function hubCommentsRender() {
   $('cpanel-tab-you').classList.toggle('on', hubCommentsTab === 'you');
   const youN = hubComments.filter(c => !c.resolved && forMe(c)).length;
   $('cpanel-tab-you').textContent = youN ? `For you · ${youN}` : 'For you';
+  // Accept all / Reject all, for an editor with two or more to decide.
+  const openSug = suggestOpenAll();
+  $('cpanel-bulk').hidden = !(openSug.length >= 2 && !hubViewOnly());
+  $('cpanel-accept-all').textContent = `Accept all ${openSug.length}`;
+  $('cpanel-reject-all').textContent = `Reject all ${openSug.length}`;
 
   const where = c => {
     const q = document.createElement('div'); q.className = 'cmt-quote';
@@ -16860,6 +16878,24 @@ function suggestApplyLayout(e) {
 }
 const suggestReject = c => hubCommentPatch(c.id, { status: 'rejected' });
 const suggestReopen = c => hubCommentPatch(c.id, { status: 'open' });
+const suggestOpenAll = () => hubComments.filter(c => c.kind === 'suggestion' && c.status === 'open' && !c.resolved);
+/** Docs' Accept all / Reject all: one question, then each through its own
+ *  path - an Accept is one undo step and one render each, and one that
+ *  cannot apply (its paragraph rewritten since) still asks on its own. */
+$('cpanel-accept-all').onclick = async () => {
+  const all = suggestOpenAll();
+  if (!all.length) return;
+  if (!await dsConfirm(`Accept all ${all.length} suggestions?\n\nEach is applied to the document the way Accept does — one undo step each.`, { okLabel: 'Accept all' })) return;
+  for (const c of all) await suggestAccept(c);
+  $('stat').textContent = `${all.length} suggestions accepted — on the page for everyone; Save keeps them`;
+};
+$('cpanel-reject-all').onclick = async () => {
+  const all = suggestOpenAll();
+  if (!all.length) return;
+  if (!await dsConfirm(`Reject all ${all.length} suggestions?\n\nThe document stays as it is.`, { okLabel: 'Reject all', danger: true })) return;
+  for (const c of all) await suggestReject(c);
+  $('stat').textContent = `${all.length} suggestions rejected — the document is as it was`;
+};
 /** Markdown to the plain words the page shows of it, near enough to find. */
 const suggestPlain = md => String(md || '').replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\^[^\]]*\]/g, '')
   .replace(/[*_`#>]+/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
