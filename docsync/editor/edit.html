@@ -15535,6 +15535,7 @@ let hubCommentQuote = null;   // {anchor, quote} a new comment is about, from a 
 let hubCommentRanges = [];    // [{id, range, el}] the highlights painted on the page, for hit-testing
 let hubCommentsRenderLater = false;   // a refresh arrived while someone was typing in the panel
 let hubCommentLink = new URLSearchParams(location.search).get('comment') || null;   // ?comment=<id>: open on it
+let hubCommentsWant = new URLSearchParams(location.search).get('comments') || null; // ?comments=you: open the panel on For you
 let hubRoster = null;         // [{email, name}] for @-mentions, from the hub's staff roster
 let hubCommentsFailed = null; // the last refresh's failure, so it is said once
 let hubCommentsView = 'margin';   // 'margin' | 'list' - the person's choice; the width has the last word
@@ -15837,7 +15838,25 @@ async function hubCommentsLoad() {
     const id = hubCommentLink; hubCommentLink = null;
     if (hubComments.some(c => c.id === id)) { hubCommentFocus(id); return; }
   }
+  if (hubCommentsWant) {
+    // Opened from the list page's "N for you": the panel, on that tab.
+    const w = hubCommentsWant; hubCommentsWant = null;
+    if (w === 'you') hubCommentsTab = 'you';
+    if ($('cpanel') && $('cpanel').hidden) { hubCommentsToggle(true); return; }
+  }
   if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender();
+}
+/** When the threads for this person last moved, as the hub's summary
+ *  reckons it (`for_you_at`): the newest of a thread's own time and its
+ *  replies'. Recorded when the For you tab is shown, so the list page and
+ *  the Editor tab's badge can tell new from seen. */
+const hubCommentActivityAt = c => { let at = c.at || ''; for (const r of c.replies || []) if (r.at && r.at > at) at = r.at; return at; };
+function hubMarkSeenYou() {
+  const room = collabRoom();
+  if (!room) return;
+  let at = '';
+  for (const c of hubComments) if (hubCommentForMe(c)) { const a = hubCommentActivityAt(c); if (a > at) at = a; }
+  try { localStorage.setItem('primer-seen-you:' + room, at); } catch (e) { /* private mode */ }
 }
 /** The staff roster, for @-mentions: the same file /api/me reads. Names of
  *  people already in the room ride along even when the roster is missing. */
@@ -15895,12 +15914,16 @@ function hubCommentPos(d, c) {
   return r.top + (d.defaultView ? d.defaultView.scrollY : 0) + r.left / 1e4;
 }
 const hubIsMe = email => !!email && !!collabInfo.login && email.toLowerCase() === collabInfo.login.toLowerCase();
-/** For you: threads that name this person, or their own threads someone
- *  else has answered. */
+/** For you: open threads that name this person (someone else did, in the
+ *  thread or a reply), or their own threads someone else has answered. The
+ *  same rule as the hub's `threadForYou` (assets/docs.js), which the list
+ *  page and the Editor tab's badge count with - the two must agree, or a
+ *  badge would point at a tab that shows nothing. */
 function hubCommentForMe(c) {
   const me = collabInfo.login && collabInfo.login.toLowerCase();
-  if (!me) return false;
-  if ((c.mentions || []).includes(me) || (c.replies || []).some(r => (r.mentions || []).includes(me))) return true;
+  if (!me || c.resolved) return false;
+  const names = r => !hubIsMe(r.by) && (r.mentions || []).includes(me);
+  if (names(c) || (c.replies || []).some(names)) return true;
   return hubIsMe(c.by) && (c.replies || []).some(r => !hubIsMe(r.by));
 }
 /** Text with @Names emphasised, as safe nodes. */
@@ -16024,6 +16047,7 @@ function hubCommentsRender() {
   const here = hubCommentAnchor();
   const forMe = hubCommentForMe;
   const shown = hubCommentsTab === 'you' ? hubComments.filter(forMe) : hubComments.slice();
+  if (hubCommentsTab === 'you') hubMarkSeenYou();   // looked at: the list page and the badge may rest
   const byPos = new Map(shown.map(c => [c.id, hubCommentPos(d, c)]));
   shown.sort((x, y) => byPos.get(x.id) - byPos.get(y.id) || (x.at < y.at ? -1 : 1));
   const open = shown.filter(c => !c.resolved), done = shown.filter(c => c.resolved);
