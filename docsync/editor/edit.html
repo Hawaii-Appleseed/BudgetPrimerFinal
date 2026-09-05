@@ -1339,6 +1339,18 @@
   #cpanel-text { width:100%; box-sizing:border-box; font:13px system-ui; padding:7px 10px; border:1px solid #C9D6CD; border-radius:8px; resize:vertical; }
   #cpanel-text:focus { outline:none; border-color:#6B9E78; }
   #comments.on { background:#E8EDE6; }
+  #mode.suggesting { background:#E6F4EA; color:#1F6B3A; }
+  .mode-menu { z-index:70; }   /* above the type strip and the arrange strip */
+  .cmt.suggest { border-left:3px solid #2D8A4E; }
+  .cmt.suggest.resolved { border-left-color:#C9D6CD; }
+  .cmt-kind { font:600 11px system-ui; color:#1F6B3A; text-transform:uppercase; letter-spacing:.04em; margin-right:6px; }
+  .cmt-diff { grid-column:2 / -1; margin:6px 0 0; font-size:12.5px; line-height:1.45; white-space:pre-wrap; }
+  .cmt-diff del { color:#B3412F; background:#FBE9E5; text-decoration:line-through; }
+  .cmt-diff ins { color:#1F6B3A; background:#E6F4EA; text-decoration:underline; }
+  .cmt-diff .lay { display:block; color:#5B6E66; }
+  .cmt-decided { grid-column:1 / -1; font-size:11.5px; color:#5B6E66; margin:8px 0 0; }
+  .cmt-actions button.accept { color:#1F6B3A; font-weight:600; }
+  .cmt-actions button.reject { color:#B3412F; font-weight:600; }
   #cmt-plus { position:fixed; z-index:46; display:inline-flex; align-items:center; gap:5px; font:600 12px system-ui; padding:5px 10px;
     border:1px solid #C9D6CD; border-radius:999px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.18); cursor:pointer; color:#2D5A3D; }
   #cmt-plus[hidden] { display:none; }
@@ -1622,6 +1634,7 @@
        draft branch away and return to the live report, so detectLocal() hides
        it rather than the markup deleting it. -->
   <button id="revert" disabled hidden>Discard</button>
+  <button id="mode" hidden aria-label="Editing or suggesting — whether your edits change the document or propose a change">Editing ▾</button>
   <button id="comments" hidden aria-label="Comments on this document">Comments</button>
   <button id="history" hidden aria-label="Every saved version of this document">History</button>
   <button id="share" disabled aria-label="Copy a link that shows this draft to anyone">Share</button>
@@ -10345,6 +10358,7 @@ function syncHistoryButtons() {
 // boundary between undo steps — it just marks one in the document instead of
 // copying the state; the state itself lands at the next render's flush.
 function pushHistory() {
+  suggestCapture();
   if (collab) { collab.mark(); syncHistoryButtons(); return; }
   past.push(snapshot());
   if (past.length > 60) past.shift();
@@ -11876,7 +11890,7 @@ function collabParaClosed() {
 }
 /** Push the open paragraph's words into the document when they changed. */
 function collabLiveFlush() {
-  if (!collab || !collabParaOpen() || collabComposing) return;
+  if (!collab || !collabParaOpen() || collabComposing || (suggesting && !suggestApplying)) return;
   const md = collabHostMd();
   if (md == null || md === collabLastLive) return;
   collabLastLive = md;
@@ -13404,6 +13418,7 @@ async function render() {
     renderRunning = false;
     const ws = renderWaiters; renderWaiters = [];
     ws.forEach(r => r());
+    suggestSchedule();
   }
 }
 
@@ -13427,7 +13442,7 @@ async function renderOnce() {
   // Every mutation in this file ends in a render, so this is the one place a
   // local edit becomes a document transaction the room can see. Idempotent:
   // a render that follows an adopted remote change finds nothing to write.
-  if (collab) collabFlush();
+  if (collab && !(suggesting && !suggestApplying)) collabFlush();
   py.globals.set('SRC', source);
   py.globals.set('LAYOUT', JSON.stringify(layout, null, 2));
   py.globals.set('CONTENT', M.content);
@@ -14722,7 +14737,7 @@ $('add').onclick = async () => {
 const RICH_PLAINTEXT_SLOTS = new Set(['cover.title', 'cover.year', 'toc.copyright']);
 
 function edit(d, key) {
-
+  suggestUnpaint(d);   // no proposed <ins> may ride into the words
   const blocks = [...d.querySelectorAll(`[data-slot="${key}"]`)];
   if (!blocks.length || editing) return;
   editing = true;
@@ -15301,6 +15316,7 @@ function docStoreDecide() {
   $('publish').setAttribute('aria-label', 'Commit the saved document to its repository');
   $('publish').title = 'One commit of this document, as saved, on its hub/ branch';
   $('comments').hidden = $('history').hidden = false;
+  $('mode').hidden = false;
   $('share').hidden = false;
   $('share').disabled = false;
   $('share').textContent = 'Share…';
@@ -15338,11 +15354,14 @@ async function hubShareLoad() {
     hubRole = (hubShare.you && hubShare.you.role) || null;
   } catch (e) { return; }
   if (hubRole === 'viewer') {
-    // Watch, do not change: the room drops a viewer's writes and the store
-    // refuses their Save, so say it up front rather than at the first click.
+    // Watch, and suggest: the room drops a viewer's writes and the store
+    // refuses their Save, so their edits are proposed instead - an editor
+    // accepts or rejects them. Said up front rather than at the first click.
     $('save').disabled = true;
     $('publish').disabled = true;
-    $('stat').textContent = 'view only — this document is shared with you to read; edits here are not kept';
+    suggestSetMode(true, { say: false });
+    $('mode').disabled = true;
+    $('stat').textContent = 'view only — this document is shared with you to read; an edit you make here is suggested, for an editor to accept';
   }
   collabChip();
 }
@@ -15568,6 +15587,7 @@ function hubCommentsPaint(d) {
     w.CSS.highlights.set('ds-comment', new w.Highlight(...plain));
     w.CSS.highlights.set('ds-comment-active', new w.Highlight(...active));
   }
+  suggestPaint(d);
 }
 /** Once per document: a click on a highlight opens its thread; a text
  *  selection inside the open paragraph offers "+ Comment"; ⌘⌥M comments on
@@ -15632,7 +15652,8 @@ function hubCommentsBadge() {
   const b = $('comments');
   if (!b || b.hidden) return;
   const open = hubComments.filter(c => !c.resolved).length;
-  b.textContent = open ? `Comments · ${open}` : 'Comments';
+  const sug = hubComments.filter(c => !c.resolved && c.kind === 'suggestion').length;
+  b.textContent = open ? `Comments · ${open}${sug ? ` · ${sug} suggested` : ''}` : 'Comments';
 }
 async function hubCommentsLoad() {
   if (!docStore()) return;
@@ -15891,14 +15912,32 @@ function hubCommentsRender() {
   };
   const card = c => {
     const el = document.createElement('div');
-    el.className = 'cmt' + (c.resolved ? ' resolved' : '') + (c.id === hubCommentActive ? ' active' : '');
+    const sug = c.kind === 'suggestion';
+    el.className = 'cmt' + (sug ? ' suggest' : '') + (c.resolved ? ' resolved' : '') + (c.id === hubCommentActive ? ' active' : '');
     el.dataset.id = c.id; el.tabIndex = 0;
     el.addEventListener('click', e => {
       if (e.target.closest('button, textarea, input, .cmt-menu')) return;
       hubCommentFocus(c.id);
     });
-    el.appendChild(where(c));
-    // The thread's first message: resolve and ⋮ live here.
+    const wh = where(c);
+    if (sug) { const k = document.createElement('span'); k.className = 'cmt-kind'; k.textContent = c.status === 'open' ? 'Suggests' : c.status; wh.prepend(k); }
+    el.appendChild(wh);
+    // The thread's first message: resolve and ⋮ live here - on a
+    // suggestion, Accept and Reject for an editor, Withdraw for its author.
+    const firstActs = [];
+    if (sug) {
+      if (c.status === 'open') {
+        if (!hubViewOnly()) {
+          const ok = textBtn('Accept', () => suggestAccept(c), 'accept'); ok.title = 'Apply this change to the document';
+          const no = textBtn('Reject', () => suggestReject(c), 'reject'); no.title = 'Leave the document as it is';
+          firstActs.push(ok, no);
+        } else if (hubIsMe(c.by)) {
+          firstActs.push(textBtn('Withdraw', () => suggestReject(c), 'reject'));
+        }
+      } else if (!hubViewOnly() || hubIsMe(c.by)) {
+        firstActs.push(textBtn('Reopen', () => suggestReopen(c)));
+      }
+    }
     const resolve = textBtn(c.resolved ? 'Reopen' : 'Resolve', () => hubCommentPatch(c.id, { resolved: !c.resolved }));
     resolve.title = c.resolved ? 'Reopen this thread' : 'Mark as resolved and hide';
     const more = textBtn('⋮', () => {
@@ -15906,7 +15945,7 @@ function hubCommentsRender() {
       if (hubIsMe(c.by)) items.push(['Edit', () => editInPlace(first, c.text, (t, mentions) => hubCommentPatch(c.id, { text: t, mentions }))]);
       if (hubIsMe(c.by) || hubRole === 'owner') items.push(['Delete', async () => { if (await dsConfirm('Delete this comment?', { okLabel: 'Delete', danger: true })) hubCommentDelete(c.id); }, 'danger']);
       if (c.anchor) items.push(['Show', () => { hubCommentActive = c.id; hubCommentShow(c); hubCommentsRender(); }]);
-      items.push([c.resolved ? 'Reopen' : 'Resolve', () => hubCommentPatch(c.id, { resolved: !c.resolved })]);
+      if (!sug) items.push([c.resolved ? 'Reopen' : 'Resolve', () => hubCommentPatch(c.id, { resolved: !c.resolved })]);
       items.push(['Copy link', async () => {
         const u = new URL(location.href); u.searchParams.set('comment', c.id);
         try { await navigator.clipboard.writeText(u.href); $('stat').textContent = 'link to this comment copied'; }
@@ -15915,7 +15954,29 @@ function hubCommentsRender() {
       hubCommentMenu(el, items);
     });
     more.className = 'cmt-more'; more.setAttribute('aria-label', 'More'); more.title = 'More';
-    const first = msg(c.by, c.at, c.text, c.mentions, c.edited_at, [resolve, more]);
+    const first = msg(c.by, c.at, c.text, c.mentions, c.edited_at, sug ? [...firstActs, more] : [resolve, more]);
+    if (sug && c.change) {
+      // The change itself, as Docs shows it: words to go and words to come.
+      const diff = document.createElement('div'); diff.className = 'cmt-diff';
+      for (const [k, v] of Object.entries(c.change.content || {})) {
+        const { prefix, gone, came } = suggestSplit(suggestPlain(v.before || ''), suggestPlain(v.after || ''));
+        const line = document.createElement('div');
+        const tail = prefix.trim().split(/\s+/).slice(-4).join(' ');
+        if (tail) line.append((prefix.trim().split(/\s+/).length > 4 ? '…' : '') + tail + ' ');
+        if (gone.trim()) { const dl = document.createElement('del'); dl.textContent = suggestShort(gone, 120); line.appendChild(dl); }
+        if (came.trim()) { const ins = document.createElement('ins'); ins.textContent = suggestShort(came, 120); line.appendChild(ins); }
+        if (!gone.trim() && !came.trim()) line.append(`(${k}: spacing only)`);
+        diff.appendChild(line);
+      }
+      for (const e of c.change.layout || []) {
+        const line = document.createElement('span'); line.className = 'lay';
+        const what = e.id || e.section;
+        line.textContent = e.section === 'positions' ? (e.after == null ? `put ${what} back` : `move ${what}`)
+          : e.before == null ? `add ${what}` : e.after == null ? `remove ${what}` : `change ${what}`;
+        diff.appendChild(line);
+      }
+      first.appendChild(diff);
+    }
     el.appendChild(first);
     for (const r of c.replies || []) {
       const mine = hubIsMe(r.by);
@@ -15936,7 +15997,9 @@ function hubCommentsRender() {
     }
     if (c.resolved) {
       const line = document.createElement('p'); line.className = 'cmt-resolved-line';
-      line.textContent = `Marked as resolved by ${hubNameOf(c.resolved_by)} · ${fmtWhenShort(c.resolved_at)}`;
+      line.textContent = sug
+        ? `${c.status === 'accepted' ? 'Accepted' : 'Rejected'} by ${hubNameOf(c.decided_by)} · ${fmtWhenShort(c.decided_at)}`
+        : `Marked as resolved by ${hubNameOf(c.resolved_by)} · ${fmtWhenShort(c.resolved_at)}`;
       el.appendChild(line);
     }
     // Reply: one line that opens into a box, as in Docs. On a resolved
@@ -15957,7 +16020,7 @@ function hubCommentsRender() {
         ta.focus();
       };
       const line = document.createElement('input'); line.type = 'text'; line.readOnly = true;
-      line.placeholder = c.resolved ? 'Adding a reply will reopen this discussion…' : 'Reply or add others with @';
+      line.placeholder = c.resolved && !sug ? 'Adding a reply will reopen this discussion…' : 'Reply or add others with @';
       line.className = 'cmt-reply-line';
       line.addEventListener('focus', open); line.addEventListener('click', open);
       box.appendChild(line);
@@ -16044,6 +16107,303 @@ function hubCommentsToggle(open) {
     const d = $('out') && $('out').contentDocument;
     if (d) hubCommentsPaint(d);
   }
+}
+
+// --- suggesting (Google Docs' Suggesting mode) ---------------------------------
+// In Suggesting mode an edit is not made, it is proposed: the words a person
+// typed, the element they moved, the box they added, become a thread of
+// kind 'suggestion' beside the comments, with the change recorded as
+// per-paragraph words before and after plus layout entries. The page shows
+// the proposal inline the way Docs does - words to go struck through in
+// red, words to come underlined in green - and an editor accepts or rejects
+// it from the card. Accepting applies the change through the editor's own
+// edit path (one undo step, one render, shared with the room like any
+// edit). Nothing is written to the document until then, so a viewer -
+// whose edits the room drops - can suggest.
+//
+// How an edit becomes a suggestion: every mutation in this file starts with
+// pushHistory() and ends in render(). In Suggesting mode pushHistory()
+// takes a copy of the files (the base), the render shows the change
+// locally without flushing it to the room, and a short quiet spell after
+// the last render turns base -> now into a suggestion and puts the files
+// back the way the room has them.
+let suggesting = false;       // edits become suggestions, not changes
+let suggestBase = null;       // {content, layoutText} before the action in progress
+let suggestTimer = 0;
+let suggestApplying = false;  // accepting one: a real edit, not a new suggestion
+const SUGGEST_QUIET_MS = 700;
+const SUGGEST_CSS = `
+  ::highlight(ds-suggest-del) { text-decoration: line-through; text-decoration-color: #B3412F; color: #B3412F; background: #FBE9E5; }
+  ins.ds-suggest { text-decoration: underline; text-decoration-color: #2D8A4E; color: #1F6B3A; background: #E6F4EA; padding: 0 1px; }
+  .ds-suggested { outline: 2px dashed #2D8A4E !important; outline-offset: 3px; }
+`;
+/** Every slot's markdown, by key, from a content.md body. */
+function slotsOf(src) {
+  const m = new Map();
+  const re = /(?:^|\n)\[\[([^\]]+)\]\]\n([\s\S]*?)(?=\n\[\[|$)/g;
+  let x;
+  while ((x = re.exec(src || ''))) m.set(x[1], x[2].trim());   // trimmed, as readSlot reads and writeSlot writes
+  return m;
+}
+const suggestNow = () => ({ content: source, layoutText: layoutSaid(layout) });
+/** pushHistory()'s half: the files as they are before the action begins.
+ *  A previous action still pending is finished first. */
+function suggestCapture() {
+  if (!suggesting || suggestApplying || !docStore()) return;
+  if (suggestBase) suggestFinalize();
+  suggestBase = suggestNow();
+}
+/** render()'s half: the action is probably over when nothing has rendered
+ *  for a moment (a drag renders as it goes, a paragraph edit renders when
+ *  it closes). */
+function suggestSchedule() {
+  if (!suggesting || !suggestBase || suggestApplying) return;
+  clearTimeout(suggestTimer);
+  suggestTimer = setTimeout(suggestFinalize, SUGGEST_QUIET_MS);
+}
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** What changed between two copies of the files, as a suggestion's change:
+ *  {content: {key: {before, after}}, layout: [{section, id, arr, before, after}]}, or null. */
+function suggestDiff(base, now) {
+  const content = {};
+  const a = slotsOf(base.content), b = slotsOf(now.content);
+  for (const [k, v] of b) if (a.get(k) !== v) content[k] = { before: a.has(k) ? a.get(k) : null, after: v };
+  for (const [k, v] of a) if (!b.has(k)) content[k] = { before: v, after: null };
+  const out = [];
+  const la = JSON.parse(base.layoutText || '{}'), lb = JSON.parse(now.layoutText || '{}');
+  const same = (x, y) => JSON.stringify(x === undefined ? null : x) === JSON.stringify(y === undefined ? null : y);
+  for (const sec of new Set([...Object.keys(la), ...Object.keys(lb)])) {
+    const va = la[sec], vb = lb[sec];
+    if (same(va, vb)) continue;
+    const arrA = Array.isArray(va), arrB = Array.isArray(vb);
+    if (arrA || arrB) {
+      const idsA = new Map((arrA ? va : []).filter(x => isObj(x) && typeof x.id === 'string').map(x => [x.id, x]));
+      const idsB = new Map((arrB ? vb : []).filter(x => isObj(x) && typeof x.id === 'string').map(x => [x.id, x]));
+      const total = (arrA ? va.length : 0) + (arrB ? vb.length : 0);
+      if (idsA.size + idsB.size === total) {
+        for (const id of new Set([...idsA.keys(), ...idsB.keys()])) {
+          if (!same(idsA.get(id), idsB.get(id))) out.push({ section: sec, id, arr: true, before: idsA.get(id) ?? null, after: idsB.get(id) ?? null });
+        }
+      } else out.push({ section: sec, id: null, arr: false, before: va ?? null, after: vb ?? null });
+    } else if (isObj(va) || isObj(vb)) {
+      const oa = isObj(va) ? va : {}, ob = isObj(vb) ? vb : {};
+      for (const id of new Set([...Object.keys(oa), ...Object.keys(ob)])) {
+        if (!same(oa[id], ob[id])) out.push({ section: sec, id, arr: false, before: oa[id] ?? null, after: ob[id] ?? null });
+      }
+    } else out.push({ section: sec, id: null, arr: false, before: va ?? null, after: vb ?? null });
+  }
+  if (!Object.keys(content).length && !out.length) return null;
+  return { content, layout: out };
+}
+const suggestShort = (s, n = 70) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+/** One line that says what a change does, the way Docs' card does. */
+function suggestSummary(change) {
+  const keys = Object.keys(change.content || {});
+  const lay = change.layout || [];
+  const parts = [];
+  for (const k of keys) {
+    const { before, after } = change.content[k];
+    if (before == null) parts.push(`Add words to ${k}`);
+    else if (after == null) parts.push(`Remove the words of ${k}`);
+    else if (!before.trim()) parts.push(`Add: "${suggestShort(after)}"`);
+    else if (!after.trim()) parts.push(`Delete: "${suggestShort(before)}"`);
+    else parts.push(`Replace: "${suggestShort(before, 40)}" with "${suggestShort(after, 40)}"`);
+  }
+  for (const e of lay) {
+    const what = e.id || e.section;
+    if (e.section === 'positions') parts.push(e.after == null ? `Put ${what} back where it was designed` : `Move ${what}`);
+    else if (e.before == null) parts.push(e.section === 'shapes' ? `Add ${what}` : `Add ${e.section}${e.id ? ' ' + e.id : ''}`);
+    else if (e.after == null) parts.push(`Remove ${what}`);
+    else parts.push(`Change ${what}`);
+  }
+  return parts.length > 3 ? `${parts.slice(0, 2).join('; ')}; and ${parts.length - 2} more` : parts.join('; ');
+}
+/** The one thing a change is about, for the card's anchor and the page mark. */
+function suggestAnchor(change) {
+  const keys = Object.keys(change.content || {});
+  const ids = (change.layout || []).map(e => e.id).filter(Boolean);
+  if (keys.length === 1 && !ids.length) return keys[0];
+  if (!keys.length && ids.length === 1) return ids[0];
+  return keys[0] || ids[0] || null;
+}
+/** The action is over: what it changed becomes a suggestion, and the files
+ *  go back to what the room holds. */
+async function suggestFinalize() {
+  clearTimeout(suggestTimer); suggestTimer = 0;
+  const base = suggestBase;
+  if (!base) return;
+  if (editing) { suggestTimer = setTimeout(suggestFinalize, SUGGEST_QUIET_MS); return; }   // a paragraph is still open
+  suggestBase = null;
+  const change = suggestDiff(base, suggestNow());
+  // Back to the shared document (which has every remote change and none of
+  // this one - nothing was flushed), or to the base when there is no room.
+  const back = collab ? collab.files() : null;
+  source = back ? back.content : base.content;
+  layout = back ? back.layout : JSON.parse(base.layoutText || '{}');
+  layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
+  syncPageSize();
+  markDirty();
+  await render();
+  if (!change) return;
+  const made = await hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', {
+    kind: 'suggestion', anchor: suggestAnchor(change), text: suggestSummary(change), change, mentions: [],
+  }), 'suggestion not sent');
+  if (made) {
+    hubCommentActive = made.id;
+    hubCommentsToggle(true);
+    $('stat').textContent = 'suggested — an editor can accept or reject it from the Comments panel';
+  }
+}
+/** Accept: the change applied here, as one edit, then recorded as accepted.
+ *  A paragraph rewritten since it was suggested is said first. */
+async function suggestAccept(c) {
+  const ch = c.change;
+  if (!ch || suggestApplying) return;
+  const cur = slotsOf(source);
+  const conflicts = Object.entries(ch.content || {}).filter(([k, v]) => v.before != null && cur.has(k) && cur.get(k) !== v.before).map(([k]) => k);
+  if (conflicts.length && !await dsConfirm(`${conflicts.join(', ')} changed since this was suggested.\n\nApply the suggestion over what is there now?`,
+      { okLabel: 'Apply anyway', danger: true })) return;
+  suggestApplying = true;
+  try {
+    pushHistory();
+    for (const [k, v] of Object.entries(ch.content || {})) {
+      if (v.after == null || !cur.has(k)) continue;   // a slot cannot be removed or invented from here
+      writeSlot(k, v.after);
+    }
+    for (const e of ch.layout || []) suggestApplyLayout(e);
+    syncPageSize();
+    markDirty();
+    await render();
+    await hubCommentPatch(c.id, { status: 'accepted' });
+    $('stat').textContent = 'suggestion accepted — it is on the page for everyone; Save keeps it';
+  } finally { suggestApplying = false; }
+}
+function suggestApplyLayout(e) {
+  const sec = e.section;
+  if (e.id == null) { if (e.after == null) delete layout[sec]; else layout[sec] = e.after; return; }
+  if (e.arr) {
+    if (!Array.isArray(layout[sec])) layout[sec] = [];
+    const i = layout[sec].findIndex(x => isObj(x) && x.id === e.id);
+    if (e.after == null) { if (i >= 0) layout[sec].splice(i, 1); }
+    else if (i >= 0) layout[sec][i] = e.after;
+    else layout[sec].push(e.after);
+    return;
+  }
+  if (!isObj(layout[sec])) layout[sec] = {};
+  if (e.after == null) delete layout[sec][e.id]; else layout[sec][e.id] = e.after;
+}
+const suggestReject = c => hubCommentPatch(c.id, { status: 'rejected' });
+const suggestReopen = c => hubCommentPatch(c.id, { status: 'open' });
+/** Markdown to the plain words the page shows of it, near enough to find. */
+const suggestPlain = md => String(md || '').replace(/\[\[[^\]]*\]\]/g, '').replace(/[*_`#>]+/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+/** The common prefix and suffix of two strings: what stayed, what went, what came. */
+function suggestSplit(before, after) {
+  const W = /\S/;
+  let p = 0;
+  while (p < before.length && p < after.length && before[p] === after[p]) p++;
+  // Whole words: a split inside one ("S|aved" against "S|uggested") reads as
+  // gibberish on both sides, so back off to the boundary before it.
+  while (p > 0 && W.test(before[p - 1]) && (W.test(before[p] || '') || W.test(after[p] || ''))) p--;
+  let s = 0;
+  while (s < before.length - p && s < after.length - p && before[before.length - 1 - s] === after[after.length - 1 - s]) s++;
+  while (s > 0 && W.test(before[before.length - s]) && (W.test(before[before.length - 1 - s] || '') || W.test(after[after.length - 1 - s] || ''))) s--;
+  return { prefix: before.slice(0, p), gone: before.slice(p, before.length - s), came: after.slice(p, after.length - s) };
+}
+/** The proposals on the page: words to go struck through, words to come
+ *  underlined after them, a dashed outline on an element to move or change. */
+function suggestPaint(d) {
+  if (!d || !d.body) return;
+  if (!d.getElementById('ds-suggest-css')) {
+    const st = d.createElement('style'); st.id = 'ds-suggest-css'; st.textContent = SUGGEST_CSS;
+    d.head.appendChild(st);
+  }
+  suggestUnpaint(d);
+  if (!docStore()) return;
+  const w = d.defaultView;
+  const canHighlight = !!(w && w.Highlight && w.CSS && w.CSS.highlights);
+  const dels = [];
+  // One proposal that cannot be drawn inline (words inside an SVG, a
+  // paragraph rewritten since) gets the dashed outline instead, and never
+  // stops the others from being drawn.
+  const inline = (el, c, v) => {
+    const { prefix, gone, came } = suggestSplit(suggestPlain(v.before), suggestPlain(v.after));
+    let at = null;
+    if (gone.trim() && canHighlight) {
+      const r = hubQuoteRange(d, el, gone);
+      if (r) { dels.push(r); at = r; }
+    }
+    if (!at && prefix.trim()) {
+      const tail = prefix.trim().split(/\s+/).slice(-6).join(' ');
+      const r = hubQuoteRange(d, el, tail);
+      if (r) { at = d.createRange(); at.setStart(r.endContainer, r.endOffset); at.collapse(true); }
+    }
+    if (!came.trim()) return !!at;
+    if (el.closest('svg')) return false;   // an <ins> inside SVG text draws nothing
+    const ins = d.createElement('ins'); ins.className = 'ds-suggest'; ins.contentEditable = 'false';
+    ins.textContent = came; ins.title = 'suggested by ' + hubNameOf(c.by);
+    if (at) { const r = at.cloneRange(); r.collapse(false); r.insertNode(ins); }
+    else el.appendChild(ins);
+    return true;
+  };
+  for (const c of hubComments) {
+    if (c.kind !== 'suggestion' || c.resolved || !c.change) continue;
+    for (const [k, v] of Object.entries(c.change.content || {})) {
+      const el = hubCommentEl(d, k);
+      if (!el) continue;
+      let drawn = false;
+      if (v.before != null && v.after != null) {
+        try { drawn = inline(el, c, v); } catch (e) { drawn = false; }
+      }
+      if (!drawn) el.classList.add('ds-suggested');
+    }
+    for (const e of c.change.layout || []) {
+      const el = e.id && hubCommentEl(d, e.id);
+      if (el) el.classList.add('ds-suggested');
+    }
+  }
+  if (canHighlight) w.CSS.highlights.set('ds-suggest-del', new w.Highlight(...dels));
+}
+/** Take the proposals off the page - before a paragraph opens for editing,
+ *  so no <ins> rides into its words. */
+function suggestUnpaint(d) {
+  if (!d || !d.body) return;
+  d.querySelectorAll('ins.ds-suggest').forEach(n => n.remove());
+  d.querySelectorAll('.ds-suggested').forEach(n => n.classList.remove('ds-suggested'));
+  const w = d.defaultView;
+  if (w && w.CSS && w.CSS.highlights) w.CSS.highlights.delete('ds-suggest-del');
+}
+/** The Editing / Suggesting switch in the bar. A viewer suggests, and only
+ *  that: the room drops their writes anyway, and this gives them a voice. */
+function suggestSetMode(on, { say = true } = {}) {
+  if (suggestBase) suggestFinalize();
+  suggesting = !!on;
+  const b = $('mode');
+  if (b) {
+    b.textContent = suggesting ? 'Suggesting ▾' : 'Editing ▾';
+    b.classList.toggle('suggesting', suggesting);
+    b.title = suggesting ? 'Your edits are proposed for an editor to accept' : 'Your edits change the document';
+  }
+  if (say) $('stat').textContent = suggesting
+    ? 'suggesting — edits you make are proposed, not made; an editor accepts or rejects them'
+    : 'editing — your edits change the document for everyone';
+}
+function suggestMenu() {
+  const b = $('mode');
+  if (!b || hubViewOnly()) return;
+  document.querySelectorAll('.mode-menu').forEach(m => m.remove());
+  const menu = document.createElement('div'); menu.className = 'cmt-menu mode-menu'; menu.setAttribute('role', 'menu');
+  const r = b.getBoundingClientRect();
+  menu.style.position = 'fixed'; menu.style.left = r.left + 'px'; menu.style.top = (r.bottom + 4) + 'px'; menu.style.right = 'auto';
+  for (const [label, on, hint] of [['Editing', false, 'Your edits change the document'], ['Suggesting', true, 'Your edits are proposed for an editor to accept']]) {
+    const it = document.createElement('button'); it.type = 'button';
+    it.textContent = label + (on === suggesting ? ' ✓' : ''); it.title = hint;
+    it.onclick = e => { e.stopPropagation(); menu.remove(); suggestSetMode(on); };
+    menu.appendChild(it);
+  }
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('mousedown', function off(e) {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); }
+  }), 0);
 }
 
 /** The share dialog: a default for everyone through Access, and named
@@ -16430,6 +16790,7 @@ async function saveDraft() {
 
 $('history').onclick = () => hubHistoryDialog();
 $('cpanel-close').onclick = () => hubCommentsToggle(false);
+$('mode').onclick = () => suggestMenu();
 $('ar-comment').onclick = $('ty-comment').onclick = () => hubCommentStart(null);
 $('cmt-plus').onmousedown = e => { e.preventDefault(); hubCommentStart(); };
 $('cpanel-cancel').onclick = () => { $('cpanel-text').value = ''; $('cpanel-text')._mentions = new Set(); hubCommentQuote = null; hubCommentsRender(); };
