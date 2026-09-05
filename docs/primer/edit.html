@@ -346,6 +346,13 @@
                cursor:pointer; max-width:22rem; overflow:hidden;
                text-overflow:ellipsis; white-space:nowrap; }
   #bar > #agentnote:hover { background:#7A6AB6; border-color:#9A8CD0; }
+  /* The open-comment count, as an exponent on the button's own word. Sage
+     rather than the label's grey so it reads as a number about something,
+     and no line-height of its own — a <sup> that inherits the row's would
+     push the button taller than every other one on the bar. */
+  #comments .cmt-n { font:700 10px/1 system-ui; color:var(--sage);
+        margin-left:1px; vertical-align:super; }
+  #comments.on .cmt-n { color:#fff; }
   #cupd[disabled] { opacity:.6; cursor:default; }
   #upd[disabled] { opacity:.6; cursor:default; }
   /* The three chips whose text is written at runtime, and which therefore
@@ -1196,6 +1203,12 @@
      File-menu row that hides itself (New window, local-only) stayed on screen. */
   .pop .shp[hidden] { display:none; }
   .pop .shp:hover { background:var(--sage); color:#fff; }
+  /* A row can be disabled now that Share lives in the menu — it is offered
+     only once the draft has something to share. Greyed and inert, and it must
+     not take the hover paint. */
+  .pop .shp:disabled { opacity:.45; cursor:default; }
+  .pop .shp:disabled:hover, .pop.menu .shp:disabled:hover
+        { background:none; color:var(--ink); }
   /* A row that stops the whole editor should not look like the row that opens
      a dialog. Quiet until reached for — the same red the confirm it raises
      uses, so the two read as one action. */
@@ -1618,6 +1631,20 @@
       ><path d="M9.6 2.6h3.8v3.8M13.4 2.6 9.6 6.4"/><path
         d="M6.4 13.4H2.6V9.6M2.6 13.4l3.8-3.8"/></svg
       ><span class="shp-t">Resize…</span></button>
+    <!-- Sources and Share MOVED here from the bar (same ids, same handlers).
+         Neither is a per-selection act: Sources is the report's citation list
+         and Share is who may open the document — both belong with Resize and
+         Download, and taking them off the row is what let the rest of it fit
+         a normal window. -->
+    <button class="shp" id="sources" aria-label="View, edit, reorder and remove citations"
+      ><svg class="shp-i" viewBox="0 0 16 16"><path d="M2.6 3.4h10.8M2.6 8h10.8M2.6 12.6h6.6"
+      /></svg><span class="shp-t">Sources…</span></button>
+    <button class="shp" id="share" disabled
+      aria-label="Copy a link that shows this draft to anyone"
+      ><svg class="shp-i" viewBox="0 0 16 16"><circle cx="11.9" cy="3.9" r="2"/><circle
+        cx="4.1" cy="8" r="2"/><circle cx="11.9" cy="12.1" r="2"/><path
+        d="m5.9 7.05 4.2-2.1M5.9 8.95l4.2 2.1"/></svg
+      ><span class="shp-t">Share…</span></button>
     <!-- Where this report's prose was DRAFTED. Most writing here starts in a
          Google Doc, with comments and three colleagues in it, and only becomes
          a report once the words settle. These two rows are that hand-off: one
@@ -1777,7 +1804,6 @@
        control is a presentation decision, and deleting its markup would make
        bringing it back a code change instead of a CSS one. -->
   <button id="add" aria-label="Add a new prose section to a page">+ Section</button>
-  <button id="sources" aria-label="View, edit, reorder and remove citations">Sources</button>
   <button id="present" aria-label="Present — fullscreen, one page at a time; arrows or click advance, Esc exits">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.4"><rect x="1.5" y="2" width="11" height="8" rx="1.2"/>
@@ -1791,7 +1817,6 @@
   <button id="mode" hidden aria-label="Editing or suggesting — whether your edits change the document or propose a change">Editing ▾</button>
   <button id="comments" hidden aria-label="Comments on this document">Comments</button>
   <button id="history" hidden aria-label="Every saved version of this document">History</button>
-  <button id="share" disabled aria-label="Copy a link that shows this draft to anyone">Share</button>
   <button id="publish" disabled aria-label="Make this draft the live report">Publish</button>
   <!-- Download moved into the File menu; its popover stays here. -->
   <div class="pop menu" id="downloadpop" hidden>
@@ -14955,7 +14980,7 @@ function renderSources() {
     list.appendChild(row);
   });
 }
-$('sources').onclick = openSources;
+$('sources').onclick = () => { $('filepop').hidden = true; openSources(); };
 
 // --- sections: add, edit, reorder, move and delete whole prose sections -----
 // A section is an [[extra.<page>.<slug>]] overflow slot the renderer drops at
@@ -15642,7 +15667,7 @@ function docStoreDecide() {
   $('mode').hidden = false;
   $('share').hidden = false;
   $('share').disabled = false;
-  $('share').textContent = 'Share…';
+  rowLabel('share', 'Share…');
   $('share').setAttribute('aria-label', 'Who may open this document, and as what');
   $('share').title = 'Who may open this document, and as what';
   $('save').textContent = 'Save';
@@ -16303,7 +16328,24 @@ function hubCommentsBadge() {
   if (!b || b.hidden) return;
   const open = hubComments.filter(c => !c.resolved).length;
   const sug = hubComments.filter(c => !c.resolved && c.kind === 'suggestion').length;
-  b.textContent = open ? `Comments · ${open}${sug ? ` · ${sug} suggested` : ''}` : 'Comments';
+  // The count as an EXPONENT, not a sentence. "Comments · 3 · 1 suggested"
+  // spelled out, in the row's own type, what a superscript numeral says in
+  // three characters — and it grew the widest button on a bar that had no
+  // room to give. What the number is made of stays on the tooltip, where a
+  // count you are already looking at can be asked about.
+  b.textContent = 'Comments';
+  if (open) {
+    const n = document.createElement('sup');
+    n.className = 'cmt-n';
+    n.id = 'comments-n';
+    n.textContent = String(open);
+    b.appendChild(n);
+  }
+  const said = !open ? 'Comments on this document'
+    : `${open} open comment${open > 1 ? 's' : ''}`
+      + (sug ? `, ${sug} of them suggested edit${sug > 1 ? 's' : ''}` : '');
+  b.title = said;
+  b.setAttribute('aria-label', said);
 }
 async function hubCommentsLoad() {
   if (!docStore()) return;
@@ -17698,6 +17740,7 @@ $('cpanel-add').onclick = () => hubCommentAdd();
 document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender(); });
 $('comments').onclick = () => hubCommentsToggle();
 $('share').onclick = async () => {
+  $('filepop').hidden = true;
   if (docStore()) return hubShareDialog();
   if (dirty || !draftBranch) { if (!await saveDraft()) return; }
   const url = draftUrl();
