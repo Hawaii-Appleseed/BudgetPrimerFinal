@@ -23,6 +23,7 @@ What lands in `<hub>/primer/`:
     icons/, manifest.webmanifest   the tab icon
     <id>/engine/…        each project's renderer, the files it reads, its manifest
     <id>/assets/…        each project's images
+    <id>/*.css, *.js     the report's own stylesheet/script, when its build puts one beside the editor
     index.html           the hub's own list page — hand-maintained THERE; never written here
 
 Sources: every binding with an `editor:` block in this repo's docsync.yml, then
@@ -65,6 +66,12 @@ from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers  # noqa: E402
 COLLAB_DOOR = {"path": "/api/collab", "me": "/api/me"}
 # The editor links these beside itself (a 404 per page load otherwise).
 SHELL_EXTRAS = ("icons",)
+# The editor's own shell, staged beside every project by docsync.stage or a
+# consumer's build. Everything ELSE top-level that is .css/.js in a project's
+# editor dir is the REPORT's — the primer's `primer.css` / `primer.js`, which
+# render_report.py links relative to the page, so the iframe (whose <base> is
+# the project dir) needs them beside the engine or the report paints unstyled.
+SHELL_FILES = {"edit.html", "collab-client.js", "sw.js", "oauth-relay.js", "htmlimport.js"}
 WEBMANIFEST = {
     "name": "Report editor — Hawaiʻi Appleseed staff",
     "short_name": "Editor",
@@ -244,6 +251,9 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool) -> list[str]:
             _sync_tree(sdir / "assets", pdir / "assets", changed, dry=dry)
         elif (pdir / "assets").is_dir() and not dry:
             shutil.rmtree(pdir / "assets")
+        for f in sorted(sdir.iterdir()):
+            if f.is_file() and f.suffix in (".css", ".js") and f.name not in SHELL_FILES:
+                _write(pdir / f.name, f.read_bytes(), changed, dry=dry)
         registry[pid] = {"name": p["name"], "base": pid, "repo": p["repo"],
                          "collab": dict(COLLAB_DOOR)}
 
