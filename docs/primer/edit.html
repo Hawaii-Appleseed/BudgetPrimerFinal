@@ -12086,9 +12086,9 @@ function collabHostMd(host = richHost) {
   if (!host) return null;
   const inline = host.dataset.richMode === 'inline';
   try {
-    return richOpts.allowMd === false
+    return richRehead(richOpts.allowMd === false
       ? (inline ? host.textContent : host.innerText)
-      : htmlToMd(host, { allowLists: !!richOpts.allowLists, inline });
+      : htmlToMd(host, { allowLists: !!richOpts.allowLists, inline }));
   } catch (e) { return null; }
 }
 /** What the editor holds, with the open paragraph's live words overlaid. */
@@ -12194,8 +12194,9 @@ function collabRefreshHost(md, index) {
   const i = index == null || !focused ? null : Math.max(0, Math.min(index, md.length));
   const marked = i == null ? md : md.slice(0, i) + CARET_MARK + md.slice(i);
   const paint = text => {
+    text = richUnhead(text);   // the marker the editor took off stays off
     if (richOpts.allowMd === false) richHost.textContent = text;
-    else richHost.innerHTML = mdToHtml(text, { allowLists: !!richOpts.allowLists, inline, fnLabels: richOpts.fnLabels });
+    else { richHost.innerHTML = mdToHtml(text, { allowLists: !!richOpts.allowLists, inline, fnLabels: richOpts.fnLabels }); richWear(richHost); }
   };
   paint(marked);
   let node = null, at = -1;
@@ -14255,7 +14256,12 @@ function wire(roots) {
     /* display:inline (not inline-block) would let an EMPTY field collapse to
        a zero-size, unclickable box — inline-block with a floor keeps it a
        real target even before anything is typed. */
-    .ds-inline { display:inline-block; min-width:1.5em; min-height:1em; }
+    /* Inline, as the words it replaced were: an inline-block changed the
+       line's height (a heading grew while it was edited) and cannot break
+       across lines the way a caption does. Only an EMPTY slot gets a box,
+       so there is something to click into. */
+    .ds-inline { display:inline; }
+    .ds-inline:empty { display:inline-block; min-width:1.5em; min-height:1em; }
     /* user-select ALL (not none): a footnote chip must be part of a text
        selection so it travels when you cut/copy a sentence to move it.
        user-select none made the browser skip it, silently dropping the
@@ -15100,6 +15106,27 @@ $('add').onclick = async () => {
  *  "work" in the editor and then render literal ** after a save. */
 const RICH_PLAINTEXT_SLOTS = new Set(['cover.title', 'cover.year', 'toc.copyright']);
 
+/** The words look the same while they are edited as they do on the page.
+ *  Two things the renderer does that a fresh editor host did not: it drops a
+ *  heading marker ("### Key Points" is shown as "Key Points" — the # is
+ *  styling, not content, content.py's _HEADING_RE), and it styles many
+ *  words INLINE (a card's bold bullets, a title's span, a styled
+ *  paragraph). So the marker comes off for editing and goes back on for
+ *  the file, and the inline styles the slot's own elements wore are put on
+ *  the host's fresh ones, by tag — the first <li>'s on every li, and so on.
+ *  block_html slots (extra sections) keep their markers: there a # line IS
+ *  a heading, and mdToHtml draws it as one. */
+const HEAD_MARK_RE = /^#{1,6}[ \t]+/gm;
+const richUnhead = (md, opts = richOpts) => (typeof opts.headMark === 'string' && !opts.allowLists ? (md || '').replace(HEAD_MARK_RE, '') : md);
+const richRehead = (md, opts = richOpts) => (opts.headMark && md && md.trim() ? opts.headMark + md : md);
+function richWear(host, wear = richOpts.wear) {
+  if (!wear || !wear.size) return;
+  for (const n of host.querySelectorAll('*')) {
+    const st = wear.get(n.tagName);
+    if (st && !n.getAttribute('style')) n.setAttribute('style', st);
+  }
+}
+
 function edit(d, key) {
   suggestUnpaint(d);   // no proposed <ins> may ride into the words
   const blocks = [...d.querySelectorAll(`[data-slot="${key}"]`)];
@@ -15126,7 +15153,18 @@ function edit(d, key) {
   if (extraClass.length) host.classList.add(...extraClass);
   collabWarnShared(key, 'paragraph');
 
-  const raw = readSlot(key);
+  // What the slot's own elements wear inline, by tag (see richWear), and the
+  // host itself dressed as the element it replaces when it is the same kind.
+  const wear = new Map();
+  for (const n of [blocks[0], ...blocks[0].querySelectorAll('*')]) {
+    const st = n.getAttribute('style');
+    if (st && !wear.has(n.tagName)) wear.set(n.tagName, st);
+  }
+  if (host.tagName === blocks[0].tagName && wear.has(host.tagName)) host.setAttribute('style', wear.get(host.tagName));
+  const raw0 = readSlot(key);
+  const headMark = allowLists ? '' : (raw0.match(/^#{1,6}[ \t]+/) || [''])[0];
+  const raw = richUnhead(raw0, { headMark, allowLists });
+  const rehead = md => richRehead(md, { headMark });
   let fnLabels = null;
   if (!allowMd) {
     host.style.whiteSpace = 'pre-wrap';   // preserve cover.title's <br> lines
@@ -15138,6 +15176,7 @@ function edit(d, key) {
     host.innerHTML = mdToHtml(raw, { allowLists, inline, fnLabels });
     if (!inline && extraClass.length)
       host.querySelectorAll(':scope > p').forEach(p => p.classList.add(...extraClass));
+    richWear(host, wear);
   }
 
   // The host replaces the block ONE FOR ONE — no toolbar row, no hint line
@@ -15149,7 +15188,7 @@ function edit(d, key) {
   blocks[0].replaceWith(host);
   blocks.slice(1).forEach(b => b.remove());
   richHost = host;
-  richOpts = { allowLists, allowMd, fnLabels };
+  richOpts = { allowLists, allowMd, fnLabels, headMark, wear };
   collabParaOpened();
   // The chrome type row is where B/I/lists live now — raise it no matter how
   // this editor was opened. The click path already did (showType before
@@ -15171,8 +15210,8 @@ function edit(d, key) {
     editing = false;
     richHost = null; syncMarksBar();
     const newVal = keep
-      ? (!allowMd ? (inline ? host.textContent : host.innerText)
-                  : htmlToMd(host, { allowLists, inline }))
+      ? rehead(!allowMd ? (inline ? host.textContent : host.innerText)
+                        : htmlToMd(host, { allowLists, inline }))
       : null;
     // The old document stays VISIBLE while the re-render loads its twin —
     // so this editor must stop being one right now. Left editable, it kept
