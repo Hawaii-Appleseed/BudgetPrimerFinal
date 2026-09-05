@@ -1275,32 +1275,74 @@
   .hub-history-restore:hover { background:#E8EDE6; }
   /* Below the bar AND the contextual strip, so it never sits over a
      control that is about the selection - the strip's own comment button
-     was under its head once, and every click on it landed on the panel. */
-  #cpanel { position:fixed; right:12px; top:104px; bottom:60px; width:min(340px, 90vw); z-index:45;
-    display:flex; flex-direction:column; background:#fff; border:1px solid #C9D6CD; border-radius:var(--r-card, 10px);
+     was under its head once, and every click on it landed on the panel.
+     Shaped like Google Docs' comments: cards with an avatar, name and
+     time, the quoted words above, replies threaded under, a checkmark and
+     a ⋮ on hover, a one-line reply box that opens into a real one. */
+  #cpanel { position:fixed; right:12px; top:104px; bottom:60px; width:min(360px, 90vw); z-index:45;
+    display:flex; flex-direction:column; background:#F8FAF8; border:1px solid #C9D6CD; border-radius:var(--r-card, 10px);
     box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
   #cpanel[hidden] { display:none; }
-  .cpanel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #E1E8E3; }
+  .cpanel-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px 4px; }
+  .cpanel-head b { font-size:15px; }
   .cpanel-head button { border:0; background:none; font:18px/1 system-ui; cursor:pointer; color:#5B6E66; }
+  .cpanel-tabs { display:flex; gap:2px; padding:0 10px; border-bottom:1px solid #E1E8E3; }
+  .cpanel-tab { font:600 12px system-ui; padding:8px 10px; border:0; background:none; border-bottom:2px solid transparent; color:#5B6E66; cursor:pointer; }
+  .cpanel-tab.on { color:#2D5A3D; border-bottom-color:#2D5A3D; }
   #cpanel-list { flex:1; overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
-  .cmt { border:1px solid #E1E8E3; border-radius:8px; padding:8px 10px; }
-  .cmt.resolved { opacity:.6; }
-  .cmt-head { font-size:11.5px; color:#5B6E66; }
-  .cmt-text { margin:6px 0; white-space:pre-wrap; line-height:1.45; }
-  .cmt-btns { display:flex; gap:6px; }
-  .cmt-btns button { font:12px system-ui; padding:4px 9px; border:1px solid #C9D6CD; border-radius:6px; background:#fff; cursor:pointer; }
+  .cmt { position:relative; border:1px solid #E1E8E3; border-radius:10px; padding:10px 12px; background:#fff; cursor:pointer; outline:none; }
+  .cmt:focus-visible, .cmt.active { border-color:#C2703A; box-shadow:0 2px 12px rgba(194,112,58,.22); }
+  .cmt.resolved { background:#F1F4F1; color:#5B6E66; }
+  .cmt-quote { font-size:11.5px; color:#5B6E66; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cmt-quote q, .cpanel-anchor q { quotes:"\201C" "\201D"; font-style:italic; color:var(--ink); background:#FBE7A1; padding:0 2px; border-radius:3px; }
+  .cmt-msg { display:grid; grid-template-columns:28px 1fr auto; column-gap:8px; align-items:start; margin-top:8px; }
+  .cmt-msg.reply { margin-top:10px; padding-top:10px; border-top:1px solid #EEF2EE; }
+  .cmt-avatar { width:28px; height:28px; border-radius:50%; background:var(--av,#6B9E78); color:#fff; font:700 11px/28px system-ui; text-align:center; letter-spacing:.02em; flex:none; }
+  .cmt-meta { min-width:0; } .cmt-meta b { display:block; font-size:12.5px; line-height:1.2; } .cmt-meta span { font-size:11px; color:#5B6E66; }
+  .cmt-actions { display:flex; gap:2px; opacity:0; transition:opacity .12s; }
+  .cmt:hover .cmt-actions, .cmt.active .cmt-actions, .cmt:focus-within .cmt-actions { opacity:1; }
+  .cmt-actions button { border:0; background:none; font:12px system-ui; padding:3px 7px; border-radius:6px; cursor:pointer; color:#2D5A3D; }
+  .cmt-actions button:hover { background:#E8EDE6; }
+  .cmt-actions button.cmt-more { font-size:16px; line-height:1; padding:1px 6px; }
+  .cmt-text { grid-column:2 / -1; margin:4px 0 0; white-space:pre-wrap; line-height:1.45; }
+  .cmt-text .mention { font-weight:600; color:#2D5A3D; }
+  .cmt-edit { grid-column:2 / -1; font:13px system-ui; padding:6px 8px; border:1px solid #C9D6CD; border-radius:8px; resize:vertical; margin-top:4px; }
+  .cmt-menu { position:absolute; right:10px; top:38px; z-index:5; background:#fff; border:1px solid #C9D6CD; border-radius:8px;
+    box-shadow:0 6px 20px rgba(0,0,0,.15); display:flex; flex-direction:column; min-width:150px; padding:4px; }
+  .cmt-menu button { text-align:left; border:0; background:none; font:13px system-ui; padding:7px 10px; border-radius:6px; cursor:pointer; color:var(--ink); }
+  .cmt-menu button:hover { background:#E8EDE6; }
+  .cmt-menu button.danger { color:#B3412F; }
+  .cmt-resolved-line { font-size:11.5px; color:#5B6E66; margin:8px 0 0; }
+  .cmt-replybox { margin-top:8px; position:relative; }
+  .cmt-reply-line { width:100%; box-sizing:border-box; font:12.5px system-ui; padding:7px 12px; border:1px solid #C9D6CD; border-radius:999px; background:#fff; cursor:text; color:var(--ink); }
+  .cmt-reply-text { width:100%; box-sizing:border-box; font:13px system-ui; padding:7px 10px; border:1px solid #6B9E78; border-radius:8px; resize:vertical; }
+  .cmt-btns { display:flex; gap:6px; justify-content:flex-end; margin-top:6px; }
+  .cmt-btns button { font:600 12px system-ui; padding:5px 12px; border:1px solid #C9D6CD; border-radius:999px; background:#fff; cursor:pointer; color:var(--ink); }
   .cmt-btns button:hover { background:#E8EDE6; }
-  .cmt-btns button.danger { color:#B3412F; }
-  .cmt-btns button.primary { background:#6B9E78; border-color:#6B9E78; color:#fff; }
+  .cmt-btns button.primary { background:#2D5A3D; border-color:#2D5A3D; color:#fff; }
+  .cmt-btns button.primary:disabled { opacity:.5; }
   .cmt-empty, .cmt-sep { color:#5B6E66; font-size:12px; margin:0; }
   .cmt-sep { border-top:1px solid #E1E8E3; padding-top:8px; }
   .cmt-here { border-top:0; padding-top:0; color:#C2703A; font-weight:600; }
+  .cmt-mentions { position:absolute; left:0; z-index:6; background:#fff; border:1px solid #C9D6CD; border-radius:8px;
+    box-shadow:0 6px 20px rgba(0,0,0,.15); max-height:220px; overflow:auto; width:min(280px, 100%); padding:4px; }
+  .cmt-mentions button { display:flex; gap:8px; align-items:center; width:100%; text-align:left; border:0; background:none; padding:5px 8px; border-radius:6px; font:13px system-ui; cursor:pointer; color:var(--ink); }
+  .cmt-mentions button.on, .cmt-mentions button:hover { background:#E8EDE6; }
+  .cmt-mentions small { display:block; color:#5B6E66; font-size:11px; }
+  .cmt-mentions .cmt-avatar { width:24px; height:24px; line-height:24px; font-size:10px; }
   #ar-comment.has, #ty-comment.has { color:#C2703A; }
   #ty-comment { margin-left:6px; }
-  .cpanel-new { border-top:1px solid #E1E8E3; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
-  .cpanel-anchor { font-size:11.5px; color:#5B6E66; }
-  #cpanel-text { font:13px system-ui; padding:6px 8px; border:1px solid #C9D6CD; border-radius:6px; resize:vertical; }
+  .cpanel-new { border-top:1px solid #E1E8E3; padding:10px 12px; background:#fff; border-radius:0 0 var(--r-card, 10px) var(--r-card, 10px); position:relative; }
+  .cpanel-new-row { display:grid; grid-template-columns:28px 1fr; column-gap:8px; align-items:start; }
+  .cpanel-anchor { font-size:11.5px; color:#5B6E66; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cmt-unquote { border:0; background:none; color:#5B6E66; cursor:pointer; font:14px/1 system-ui; margin-left:4px; vertical-align:middle; }
+  #cpanel-text { width:100%; box-sizing:border-box; font:13px system-ui; padding:7px 10px; border:1px solid #C9D6CD; border-radius:8px; resize:vertical; }
+  #cpanel-text:focus { outline:none; border-color:#6B9E78; }
   #comments.on { background:#E8EDE6; }
+  #cmt-plus { position:fixed; z-index:46; display:inline-flex; align-items:center; gap:5px; font:600 12px system-ui; padding:5px 10px;
+    border:1px solid #C9D6CD; border-radius:999px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.18); cursor:pointer; color:#2D5A3D; }
+  #cmt-plus[hidden] { display:none; }
+  #cmt-plus:hover { background:#E8EDE6; }
   .dsdlg-field > input:focus, .dsdlg-field > select:focus, .dsdlg-field > textarea:focus {
         outline:none; border-color:var(--sage); box-shadow:0 0 0 3px rgba(107,158,120,.18); }
   .dsdlg-err { font:12px system-ui; color:#C0392B; margin:0; min-height:0; }
@@ -1355,13 +1397,21 @@
        hover and the danger row work without a second rule each. -->
   <aside id="cpanel" hidden aria-label="Comments">
     <div class="cpanel-head"><b>Comments</b><button type="button" id="cpanel-close" aria-label="Close comments">×</button></div>
+    <div class="cpanel-tabs" role="tablist">
+      <button type="button" class="cpanel-tab on" id="cpanel-tab-all" role="tab">All comments</button>
+      <button type="button" class="cpanel-tab" id="cpanel-tab-you" role="tab">For you</button>
+    </div>
     <div id="cpanel-list"></div>
     <div class="cpanel-new">
       <div id="cpanel-anchor" class="cpanel-anchor">New comment on the document</div>
-      <textarea id="cpanel-text" rows="3" placeholder="Write a comment… select a paragraph or element first to attach it there"></textarea>
-      <div class="cmt-btns"><button type="button" id="cpanel-add" class="primary">Comment</button></div>
+      <div class="cpanel-new-row">
+        <span class="cmt-avatar" id="cpanel-me"></span>
+        <textarea id="cpanel-text" rows="2" placeholder="Comment or add others with @"></textarea>
+      </div>
+      <div class="cmt-btns"><button type="button" id="cpanel-cancel">Cancel</button><button type="button" id="cpanel-add" class="primary">Comment</button></div>
     </div>
   </aside>
+  <button type="button" id="cmt-plus" hidden aria-label="Comment on the selected words">＋ Comment</button>
   <div class="pop menu" id="filepop" hidden>
     <p class="pop-h">Reports</p>
     <button class="shp" id="file-open"><svg class="shp-i" viewBox="0 0 16 16"
@@ -3353,7 +3403,7 @@ async function uploadImageFile(d, onDone) {
         const r = await fetch(`${docStore()}/assets/${encodeURIComponent(name)}`, {
           method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file,
         });
-        const j = await r.json().catch(() => ({}));
+        const j = await hubJson(r);
         if (!r.ok) throw new Error(j.error || `upload refused (${r.status})`);
         localImages.set(j.src, dataUrl);
         $('stat').textContent = shrunk
@@ -12110,6 +12160,13 @@ async function collabAdopt(files, why) {
     renderSays(collabInfo.peers > 1
       ? `joined the live session — ${collabInfo.peers - 1} other${collabInfo.peers > 2 ? 's' : ''} here`
       : 'live session — edits here are shared as you make them');
+    // The room was built from one version and the store now holds another
+    // (a Save from outside the session, a restore while the room slept):
+    // what is on screen is the room's. Said now, not at the first Save.
+    const base = collab && collab.baseSha();
+    if (docStore() && docVersion && base && base !== docVersion) {
+      renderSays('this session holds an older version than the store — it was saved outside the session; Save will ask before replacing that');
+    }
   }
 }
 
@@ -15313,8 +15370,9 @@ async function hubHistoryDialog() {
   let versions = [];
   try {
     const r = await fetch(`${docStore()}/history`, { cache: 'no-store' });
-    if (r.ok) versions = await r.json();
-  } catch (e) { /* listed as empty below */ }
+    versions = await hubJson(r);
+    if (!r.ok) throw new Error(versions.error || `the hub answered ${r.status}`);
+  } catch (e) { versions = []; $('stat').textContent = 'history not loaded: ' + e.message; }
   const canChange = !hubViewOnly();
   const choice = await dsModal((dlg, done) => {
     const form = document.createElement('form');
@@ -15344,7 +15402,8 @@ async function hubHistoryDialog() {
         try {
           const r = await fetch(`${docStore()}/history/${v.version}`, { method: 'PATCH',
             headers: { 'content-type': 'application/json' }, body: JSON.stringify({ label: label.value }) });
-          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+          const j = await hubJson(r);
+          if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
           label.classList.add('saved'); setTimeout(() => label.classList.remove('saved'), 900);
         } catch (e) { $('stat').textContent = 'name not saved: ' + e.message; }
       };
@@ -15374,7 +15433,7 @@ async function hubHistoryDialog() {
   try {
     const r = await fetch(`${docStore()}/restore`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v.version }) });
-    const j = await r.json().catch(() => ({}));
+    const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     // Adopt the files the way a collaborator's change lands, then record the
     // version the way a Save does: the room learns it through baseSha.
@@ -15398,18 +15457,33 @@ async function hubHistoryDialog() {
   }
 }
 
-// --- comments (step 07) -------------------------------------------------------
-// Words about the document that are not in the document: a note on a
-// paragraph, an element, or the whole thing. They live beside the store's
-// files (comments.json), not in the Yjs document — a comment is not part of
-// what gets exported or rendered — and the panel refreshes itself while it
-// is open, so a colleague's note appears within seconds. Each open comment
-// puts a small marker on what it is about, inside the report.
+// --- comments (step 07, shaped like Google Docs) --------------------------------
+// Words about the document that are not in the document: a thread on a run
+// of words in a paragraph, on a paragraph or element, or on the whole thing.
+// Threads live beside the store's files (comments.json), not in the Yjs
+// document — a comment is not part of what gets exported or rendered.
+//
+// What a person sees is what they know from Google Docs: the quoted words
+// highlighted in the report (a click on the highlight opens the thread), a
+// "+ Comment" button beside a text selection, a card with an avatar, name
+// and time, replies threaded under it, a checkmark to resolve, a ⋮ menu
+// (Edit, Delete, Show, Copy link), @-mentions from the staff roster, a
+// "For you" tab, and a reply on a resolved thread reopening it. Cards are
+// ordered as the document is. The panel refreshes while open, and presence
+// carries a change the moment it happens.
 let hubComments = [];
 let hubCommentsTimer = 0;
 let hubCommentsStamp = 0;     // when THIS editor last changed the comments (rides presence)
 let hubCommentsHeard = 0;     // the newest such stamp heard from a collaborator
 let hubCommentsSlow = 0;      // the fallback poll, panel open or not
+let hubCommentsTab = 'all';   // 'all' | 'you'
+let hubCommentActive = null;  // the thread in hand: darker highlight, raised card
+let hubCommentQuote = null;   // {anchor, quote} a new comment is about, from a text selection
+let hubCommentRanges = [];    // [{id, range, el}] the highlights painted on the page, for hit-testing
+let hubCommentsRenderLater = false;   // a refresh arrived while someone was typing in the panel
+let hubCommentLink = new URLSearchParams(location.search).get('comment') || null;   // ?comment=<id>: open on it
+let hubRoster = null;         // [{email, name}] for @-mentions, from the hub's staff roster
+let hubCommentsFailed = null; // the last refresh's failure, so it is said once
 const COMMENT_MARK_CSS = `
   [data-ds-comments] { position: relative; }
   [data-ds-comments]::after {
@@ -15418,27 +15492,141 @@ const COMMENT_MARK_CSS = `
     background: #C2703A; color: #fff; font: 700 10px/16px system-ui; text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,.25); pointer-events: none;
   }
+  ::highlight(ds-comment) { background: #FBE7A1; }
+  ::highlight(ds-comment-active) { background: #F5C542; }
   .ds-comment-flash { outline: 3px solid #C2703A !important; outline-offset: 2px; transition: outline-color .8s; }
 `;
+
+/** The anchor's element on the page: the element first (a heading is both a
+ *  slot and an element under one name), then the slot. */
+function hubCommentEl(d, anchor) {
+  if (!d || !anchor) return null;
+  return d.querySelector(`[data-el="${CSS.escape(anchor)}"]`) || d.querySelector(`[data-slot="${CSS.escape(anchor)}"]`);
+}
+/** The run of words `quote` inside `el`, as a Range — whitespace folded on
+ *  both sides, so a quote taken from the editor still matches after a
+ *  re-render wrapped the paragraph differently. Null when the words are
+ *  gone (the paragraph was rewritten). */
+function hubQuoteRange(d, el, quote) {
+  if (!el || !quote) return null;
+  const walker = d.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const chars = [];       // one entry per folded character: {node, offset}
+  let folded = '', lastSpace = true;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const t = n.nodeValue;
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (/\s/.test(ch)) { if (lastSpace) continue; folded += ' '; chars.push({ node: n, offset: i }); lastSpace = true; }
+      else { folded += ch; chars.push({ node: n, offset: i }); lastSpace = false; }
+    }
+  }
+  const q = quote.replace(/\s+/g, ' ').trim();
+  if (!q) return null;
+  const at = folded.indexOf(q);
+  if (at < 0) return null;
+  const s = chars[at], e = chars[at + q.length - 1];
+  const r = d.createRange();
+  r.setStart(s.node, s.offset);
+  r.setEnd(e.node, e.offset + 1);
+  return r;
+}
 function hubCommentsPaint(d) {
   if (!d || !d.body || !docStore()) return;
   if (!d.getElementById('ds-comment-css')) {
     const st = d.createElement('style'); st.id = 'ds-comment-css'; st.textContent = COMMENT_MARK_CSS;
     d.head.appendChild(st);
   }
+  hubCommentsBind(d);
   d.querySelectorAll('[data-ds-comments]').forEach(el => el.removeAttribute('data-ds-comments'));
   const here = hubCommentAnchor();
   const has = !!here && hubComments.some(c => !c.resolved && c.anchor === here);
   $('ar-comment').classList.toggle('has', has);
   $('ty-comment').classList.toggle('has', has);
+  // Quoted words get a highlight; a thread on a whole paragraph or element,
+  // or whose words are gone, gets the count badge instead.
+  const w = d.defaultView;
+  const canHighlight = !!(w && w.Highlight && w.CSS && w.CSS.highlights);
+  const plain = [], active = [];
+  hubCommentRanges = [];
   const counts = new Map();
-  for (const c of hubComments) if (!c.resolved && c.anchor) counts.set(c.anchor, (counts.get(c.anchor) || 0) + 1);
+  for (const c of hubComments) {
+    if (c.resolved || !c.anchor) continue;
+    const el = hubCommentEl(d, c.anchor);
+    const r = canHighlight && c.quote ? hubQuoteRange(d, el, c.quote) : null;
+    if (r) {
+      (c.id === hubCommentActive ? active : plain).push(r);
+      hubCommentRanges.push({ id: c.id, range: r, el });
+    } else {
+      counts.set(c.anchor, (counts.get(c.anchor) || 0) + 1);
+    }
+  }
   for (const [anchor, n] of counts) {
-    // The element first: a heading is both a slot and an element under one
-    // name, and the badge sits better on the outer box than on the text.
-    const el = d.querySelector(`[data-el="${CSS.escape(anchor)}"]`) || d.querySelector(`[data-slot="${CSS.escape(anchor)}"]`);
+    const el = hubCommentEl(d, anchor);
     if (el) el.dataset.dsComments = String(n);
   }
+  if (canHighlight) {
+    w.CSS.highlights.set('ds-comment', new w.Highlight(...plain));
+    w.CSS.highlights.set('ds-comment-active', new w.Highlight(...active));
+  }
+}
+/** Once per document: a click on a highlight opens its thread; a text
+ *  selection inside the open paragraph offers "+ Comment"; ⌘⌥M comments on
+ *  whatever is in hand. */
+function hubCommentsBind(d) {
+  if (d.__dsComments) return;
+  d.__dsComments = true;
+  d.addEventListener('mousedown', e => {
+    if (!hubCommentRanges.length || e.button !== 0) return;
+    const pos = d.caretRangeFromPoint ? d.caretRangeFromPoint(e.clientX, e.clientY) : null;
+    if (!pos) return;
+    const hit = hubCommentRanges.find(h => {
+      try { return h.range.isPointInRange(pos.startContainer, pos.startOffset); } catch (err) { return false; }
+    });
+    if (hit) hubCommentFocus(hit.id, { scrollPage: false });
+  }, true);
+  d.addEventListener('selectionchange', () => hubCommentPlus(d));
+  d.addEventListener('keydown', e => { if (hubCommentKey(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
+}
+/** The "+ Comment" pill beside a text selection in the open paragraph —
+ *  Google Docs' affordance, in the top document because the report's frame
+ *  re-renders under it. */
+function hubCommentPlus(d) {
+  const btn = $('cmt-plus');
+  if (!btn) return;
+  const sel = d.getSelection && d.getSelection();
+  const ok = docStore() && !hubViewOnly() && richHost && sel && sel.rangeCount && !sel.isCollapsed
+    && richHost.contains(sel.anchorNode) && sel.toString().trim().length > 0;
+  if (!ok) { btn.hidden = true; return; }
+  const r = sel.getRangeAt(0).getBoundingClientRect();
+  const f = $('out').getBoundingClientRect();
+  const z = f.width / ($('out').clientWidth || f.width);   // the frame is scaled on zoom
+  btn.hidden = false;
+  btn.style.left = Math.min(window.innerWidth - btn.offsetWidth - 8, f.left + r.right * z + 8) + 'px';
+  btn.style.top = Math.max(8, f.top + r.top * z - 6) + 'px';
+}
+/** What the words in hand are, for a new comment: {anchor, quote}. */
+function hubCommentSelection() {
+  const d = $('out') && $('out').contentDocument;
+  const sel = d && d.getSelection && d.getSelection();
+  if (richHost && sel && sel.rangeCount && !sel.isCollapsed && richHost.contains(sel.anchorNode)) {
+    const quote = sel.toString().replace(/\s+/g, ' ').trim();
+    const anchor = richHost.dataset.slot || richHost.dataset.el || null;
+    if (anchor && quote) return { anchor, quote };
+  }
+  return null;
+}
+/** Start a comment on the words in hand (⌘⌥M, the pill, the strip's button). */
+function hubCommentStart(q) {
+  hubCommentQuote = q || hubCommentSelection();
+  $('cmt-plus').hidden = true;
+  hubCommentsToggle(true);
+  hubCommentsRender();
+  $('cpanel-text').focus();
+}
+function hubCommentKey(e) {
+  if (!docStore() || !(e.metaKey || e.ctrlKey) || !e.altKey || e.code !== 'KeyM') return false;
+  hubCommentStart();
+  return true;
 }
 function hubCommentsBadge() {
   const b = $('comments');
@@ -15450,110 +15638,395 @@ async function hubCommentsLoad() {
   if (!docStore()) return;
   try {
     const r = await fetch(`${docStore()}/comments`, { cache: 'no-store' });
-    if (r.ok) hubComments = await r.json();
-  } catch (e) { return; }
+    const j = await hubJson(r);
+    if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
+    hubComments = j;
+    hubCommentsFailed = null;
+  } catch (e) {
+    // Stale is said, once, where the person is looking - not on every poll.
+    if (hubCommentsFailed !== e.message && $('cpanel') && !$('cpanel').hidden) $('stat').textContent = 'comments not refreshed: ' + e.message;
+    hubCommentsFailed = e.message;
+    return;
+  }
   hubCommentsBadge();
   const d = $('out') && $('out').contentDocument;
   if (d) hubCommentsPaint(d);
+  if (hubCommentLink) {
+    // Opened by a link to one comment: show it, once the store has answered.
+    const id = hubCommentLink; hubCommentLink = null;
+    if (hubComments.some(c => c.id === id)) { hubCommentFocus(id); return; }
+  }
   if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender();
 }
-/** What a new comment is about: the paragraph or element in hand, else the
- *  document. Named so the person can see it before they write. */
+/** The staff roster, for @-mentions: the same file /api/me reads. Names of
+ *  people already in the room ride along even when the roster is missing. */
+async function hubRosterLoad() {
+  if (hubRoster) return hubRoster;
+  let list = [];
+  try {
+    const r = await fetch(new URL('/data/staff.json', location.origin), { cache: 'no-store' });
+    if (r.ok) list = ((await r.json()).staff || []).filter(s => s.email && s.name).map(s => ({ email: s.email.toLowerCase(), name: s.name }));
+  } catch (e) { /* roster missing: presence and the share list fill in */ }
+  const seen = new Set(list.map(s => s.email));
+  const add = (email, name) => { if (email && !seen.has(email.toLowerCase())) { seen.add(email.toLowerCase()); list.push({ email: email.toLowerCase(), name: name || fmtWho(email) }); } };
+  for (const p of collabPeers) add(p.login, p.name);
+  if (collabInfo.login) add(collabInfo.login, collabInfo.name);
+  if (hubShare && hubShare.people) for (const e of Object.keys(hubShare.people)) add(e, null);
+  hubRoster = list;
+  return list;
+}
+const hubNameOf = email => {
+  if (!email) return 'someone';
+  const rec = hubRoster && hubRoster.find(s => s.email === String(email).toLowerCase());
+  return rec ? rec.name : (collabPeers.find(p => p.login === email) || {}).name || fmtWho(email);
+};
+const hubInitial = name => (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+function hubAvatarColor(email) {
+  let h = 0;
+  for (const ch of String(email || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${h % 360} 40% 42%)`;
+}
+/** "1:06 PM" today, "Sep 3" this year, else the date. */
+function fmtWhenShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return iso;
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString();
+}
+/** What a new comment is about: the words in hand from a selection, else the
+ *  paragraph or element in hand, else the document. */
 function hubCommentAnchor() {
+  if (hubCommentQuote) return hubCommentQuote.anchor;
   const t = collabEditTarget();
   if (t) return t;
   if (selIds.size) return [...selIds][0];
   return null;
 }
+/** Where a thread sits in the document, for ordering the cards as the page
+ *  reads: the document itself first, then by position, the lost ones last. */
+function hubCommentPos(d, c) {
+  if (!c.anchor) return -1;
+  const el = hubCommentEl(d, c.anchor);
+  if (!el) return Number.MAX_SAFE_INTEGER;
+  const r = el.getBoundingClientRect();
+  return r.top + (d.defaultView ? d.defaultView.scrollY : 0) + r.left / 1e4;
+}
+const hubIsMe = email => !!email && !!collabInfo.login && email.toLowerCase() === collabInfo.login.toLowerCase();
+/** For you: threads that name this person, or their own threads someone
+ *  else has answered. */
+function hubCommentForMe(c) {
+  const me = collabInfo.login && collabInfo.login.toLowerCase();
+  if (!me) return false;
+  if ((c.mentions || []).includes(me) || (c.replies || []).some(r => (r.mentions || []).includes(me))) return true;
+  return hubIsMe(c.by) && (c.replies || []).some(r => !hubIsMe(r.by));
+}
+/** Text with @Names emphasised, as safe nodes. */
+function hubCommentTextNodes(text, mentions) {
+  const frag = document.createDocumentFragment();
+  const names = (mentions || []).map(hubNameOf).filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!names.length) { frag.appendChild(document.createTextNode(text)); return frag; }
+  const re = new RegExp('@(' + names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const b = document.createElement('span'); b.className = 'mention'; b.textContent = m[0];
+    frag.appendChild(b);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
+}
+/** Scroll the page to a thread's words and flash them. */
+function hubCommentShow(c) {
+  const d = $('out').contentDocument;
+  const t = hubCommentEl(d, c.anchor);
+  if (!t) { $('stat').textContent = 'that part of the document is not on the page any more'; return false; }
+  t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  t.classList.add('ds-comment-flash'); setTimeout(() => t.classList.remove('ds-comment-flash'), 1600);
+  return true;
+}
+/** Bring one thread to hand: darker highlight, raised card, panel open. */
+function hubCommentFocus(id, { scrollPage = true } = {}) {
+  hubCommentActive = id;
+  const c = hubComments.find(x => x.id === id);
+  if ($('cpanel').hidden) hubCommentsToggle(true); else hubCommentsRender();
+  const d = $('out') && $('out').contentDocument;
+  if (d) hubCommentsPaint(d);
+  if (c && c.anchor && scrollPage) hubCommentShow(c);
+  const card = $('cpanel-list') && $('cpanel-list').querySelector(`.cmt[data-id="${CSS.escape(id)}"]`);
+  if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+/** A ⋮ menu on a card: built when opened, gone on the next click anywhere. */
+function hubCommentMenu(host, items) {
+  host.querySelectorAll('.cmt-menu').forEach(m => m.remove());
+  const menu = document.createElement('div'); menu.className = 'cmt-menu'; menu.setAttribute('role', 'menu');
+  for (const [label, fn, cls] of items) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls;
+    b.onclick = e => { e.stopPropagation(); menu.remove(); fn(); };
+    menu.appendChild(b);
+  }
+  host.appendChild(menu);
+  setTimeout(() => document.addEventListener('mousedown', function off(e) {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', off); }
+  }), 0);
+}
+/** The @-mention picker under a box: type "@" and some letters, pick with
+ *  ↑↓ and Enter or a click; the name goes into the words and the email into
+ *  the box's `_mentions`. */
+function hubMentionWire(ta) {
+  ta._mentions = ta._mentions || new Set();
+  let list = null, at = -1, idx = 0, matches = [];
+  const close = () => { if (list) list.remove(); list = null; at = -1; };
+  const pick = m => {
+    const v = ta.value;
+    ta.value = v.slice(0, at) + '@' + m.name + ' ' + v.slice(ta.selectionStart);
+    ta._mentions.add(m.email);
+    ta.selectionStart = ta.selectionEnd = at + m.name.length + 2;
+    close(); ta.focus();
+  };
+  const paint = () => {
+    if (!list) { list = document.createElement('div'); list.className = 'cmt-mentions'; ta.parentNode.appendChild(list); }
+    list.textContent = '';
+    matches.forEach((m, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = i === idx ? 'on' : '';
+      const av = document.createElement('span'); av.className = 'cmt-avatar'; av.style.setProperty('--av', hubAvatarColor(m.email)); av.textContent = hubInitial(m.name);
+      const t = document.createElement('span'); t.append(m.name); const s = document.createElement('small'); s.textContent = m.email; t.appendChild(s);
+      b.append(av, t);
+      b.onmousedown = e => { e.preventDefault(); pick(m); };
+      list.appendChild(b);
+    });
+    list.style.top = (ta.offsetTop + ta.offsetHeight + 2) + 'px';
+  };
+  ta.addEventListener('input', async () => {
+    const v = ta.value.slice(0, ta.selectionStart);
+    const m = v.match(/(^|\s)@([^\s@]*)$/);
+    if (!m) { close(); return; }
+    at = v.length - m[2].length - 1;
+    const q = m[2].toLowerCase();
+    const roster = await hubRosterLoad();
+    matches = roster.filter(s => !q || s.name.toLowerCase().includes(q) || s.email.startsWith(q)).slice(0, 6);
+    if (!matches.length) { close(); return; }
+    idx = 0; paint();
+  });
+  ta.addEventListener('keydown', e => {
+    if (!list) return;
+    if (e.key === 'ArrowDown') { idx = (idx + 1) % matches.length; paint(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { idx = (idx + matches.length - 1) % matches.length; paint(); e.preventDefault(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { pick(matches[idx]); e.preventDefault(); }
+    else if (e.key === 'Escape') { close(); e.stopPropagation(); }
+  });
+  ta.addEventListener('blur', () => setTimeout(close, 150));
+}
+/** The mentions a box still names: an @Name deleted from the words is not
+ *  a mention. */
+function hubMentionsOf(ta) {
+  const out = [];
+  for (const email of ta._mentions || []) if (ta.value.includes('@' + hubNameOf(email))) out.push(email);
+  return out;
+}
 function hubCommentsRender() {
   const panel = $('cpanel');
   const list = $('cpanel-list');
   if (!panel || !list) return;
+  // Not under someone's fingers: a refresh while they type in a reply or an
+  // edit would eat their words. It runs when they are done.
+  const typing = document.activeElement && list.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA';
+  if (typing) { hubCommentsRenderLater = true; return; }
+  hubCommentsRenderLater = false;
+  hubRosterLoad().then(() => { /* names fill in on the next paint */ });
+  const d = $('out') && $('out').contentDocument;
   list.textContent = '';
-  const anchorLabel = a => (a ? `on ${a}` : 'on the document');
-  const here = hubCommentAnchor();
-  const onIt = c => here && c.anchor === here;
-  const open = hubComments.filter(c => !c.resolved && !onIt(c)), done = hubComments.filter(c => c.resolved);
-  const mine = hubComments.filter(c => !c.resolved && onIt(c));
   const me = collabInfo.login;
-  const row = c => {
-    const el = document.createElement('div'); el.className = 'cmt' + (c.resolved ? ' resolved' : '');
-    const head = document.createElement('div'); head.className = 'cmt-head';
-    const who = document.createElement('b'); who.textContent = fmtWho(c.by);
-    const when = document.createElement('span'); when.textContent = ' · ' + fmtWhen(c.at) + ' · ' + anchorLabel(c.anchor);
-    head.append(who, when);
-    const body = document.createElement('p'); body.className = 'cmt-text'; body.textContent = c.text;
+  const canWrite = true;   // anyone who may open the document may comment and resolve
+  const here = hubCommentAnchor();
+  const forMe = hubCommentForMe;
+  const shown = hubCommentsTab === 'you' ? hubComments.filter(forMe) : hubComments.slice();
+  const byPos = new Map(shown.map(c => [c.id, hubCommentPos(d, c)]));
+  shown.sort((x, y) => byPos.get(x.id) - byPos.get(y.id) || (x.at < y.at ? -1 : 1));
+  const open = shown.filter(c => !c.resolved), done = shown.filter(c => c.resolved);
+  const onIt = c => here && c.anchor === here && !c.resolved;
+  $('cpanel-tab-all').classList.toggle('on', hubCommentsTab === 'all');
+  $('cpanel-tab-you').classList.toggle('on', hubCommentsTab === 'you');
+  const youN = hubComments.filter(c => !c.resolved && forMe(c)).length;
+  $('cpanel-tab-you').textContent = youN ? `For you · ${youN}` : 'For you';
+
+  const where = c => {
+    const q = document.createElement('div'); q.className = 'cmt-quote';
+    if (c.quote) { q.append('on '); const qq = document.createElement('q'); qq.textContent = c.quote; q.appendChild(qq); }
+    else q.textContent = c.anchor ? `on ${c.anchor}` : 'on the document';
+    return q;
+  };
+  const msg = (who, at, text, mentions, edited, actions) => {
+    const m = document.createElement('div'); m.className = 'cmt-msg';
+    const av = document.createElement('span'); av.className = 'cmt-avatar'; av.style.setProperty('--av', hubAvatarColor(who)); av.textContent = hubInitial(hubNameOf(who));
+    const meta = document.createElement('div'); meta.className = 'cmt-meta';
+    const nm = document.createElement('b'); nm.textContent = hubNameOf(who);
+    const when = document.createElement('span'); when.textContent = fmtWhenShort(at) + (edited ? ' · edited' : '');
+    meta.append(nm, when);
+    const act = document.createElement('div'); act.className = 'cmt-actions'; for (const b of actions) act.appendChild(b);
+    const body = document.createElement('p'); body.className = 'cmt-text'; body.appendChild(hubCommentTextNodes(text, mentions));
+    m.append(av, meta, act, body);
+    return m;
+  };
+  const textBtn = (label, fn, cls) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls;
+    b.onclick = e => { e.stopPropagation(); fn(e); };
+    return b;
+  };
+  /** Swap a message's words for a box: Save / Cancel. */
+  const editInPlace = (m, text, save) => {
+    const body = m.querySelector('.cmt-text');
+    const ta = document.createElement('textarea'); ta.className = 'cmt-edit'; ta.rows = 3; ta.value = text;
     const btns = document.createElement('div'); btns.className = 'cmt-btns';
-    if (c.anchor) {
-      const go = document.createElement('button'); go.type = 'button'; go.textContent = 'Show';
-      go.onclick = () => {
-        const d = $('out').contentDocument;
-        const t = d && (d.querySelector(`[data-slot="${CSS.escape(c.anchor)}"]`) || d.querySelector(`[data-el="${CSS.escape(c.anchor)}"]`));
-        if (!t) { $('stat').textContent = 'that part of the document is not on the page any more'; return; }
-        t.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        t.classList.add('ds-comment-flash'); setTimeout(() => t.classList.remove('ds-comment-flash'), 1600);
+    const cancel = textBtn('Cancel', () => { hubCommentsRender(); });
+    const ok = textBtn('Save', async () => { const t = ta.value.trim(); if (!t) return; await save(t, hubMentionsOf(ta)); }, 'primary');
+    btns.append(cancel, ok);
+    body.replaceWith(ta); m.appendChild(btns);
+    hubMentionWire(ta);
+    ta.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') ok.click(); if (e.key === 'Escape') cancel.click(); });
+    ta.addEventListener('blur', () => setTimeout(() => { if (hubCommentsRenderLater && !list.contains(document.activeElement)) hubCommentsRender(); }, 200));
+    ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length;
+  };
+  const card = c => {
+    const el = document.createElement('div');
+    el.className = 'cmt' + (c.resolved ? ' resolved' : '') + (c.id === hubCommentActive ? ' active' : '');
+    el.dataset.id = c.id; el.tabIndex = 0;
+    el.addEventListener('click', e => {
+      if (e.target.closest('button, textarea, input, .cmt-menu')) return;
+      hubCommentFocus(c.id);
+    });
+    el.appendChild(where(c));
+    // The thread's first message: resolve and ⋮ live here.
+    const resolve = textBtn(c.resolved ? 'Reopen' : 'Resolve', () => hubCommentPatch(c.id, { resolved: !c.resolved }));
+    resolve.title = c.resolved ? 'Reopen this thread' : 'Mark as resolved and hide';
+    const more = textBtn('⋮', () => {
+      const items = [];
+      if (hubIsMe(c.by)) items.push(['Edit', () => editInPlace(first, c.text, (t, mentions) => hubCommentPatch(c.id, { text: t, mentions }))]);
+      if (hubIsMe(c.by) || hubRole === 'owner') items.push(['Delete', async () => { if (await dsConfirm('Delete this comment?', { okLabel: 'Delete', danger: true })) hubCommentDelete(c.id); }, 'danger']);
+      if (c.anchor) items.push(['Show', () => { hubCommentActive = c.id; hubCommentShow(c); hubCommentsRender(); }]);
+      items.push([c.resolved ? 'Reopen' : 'Resolve', () => hubCommentPatch(c.id, { resolved: !c.resolved })]);
+      items.push(['Copy link', async () => {
+        const u = new URL(location.href); u.searchParams.set('comment', c.id);
+        try { await navigator.clipboard.writeText(u.href); $('stat').textContent = 'link to this comment copied'; }
+        catch (e) { $('stat').textContent = u.href; }
+      }]);
+      hubCommentMenu(el, items);
+    });
+    more.className = 'cmt-more'; more.setAttribute('aria-label', 'More'); more.title = 'More';
+    const first = msg(c.by, c.at, c.text, c.mentions, c.edited_at, [resolve, more]);
+    el.appendChild(first);
+    for (const r of c.replies || []) {
+      const mine = hubIsMe(r.by);
+      const acts = [];
+      if (mine || hubRole === 'owner') {
+        const rm = textBtn('⋮', () => {
+          const items = [];
+          if (mine) items.push(['Edit', () => editInPlace(rmsg, r.text, (t, mentions) => hubReplyPatch(c.id, r.id, { text: t, mentions }))]);
+          items.push(['Delete', async () => { if (await dsConfirm('Delete this reply?', { okLabel: 'Delete', danger: true })) hubReplyDelete(c.id, r.id); }, 'danger']);
+          hubCommentMenu(el, items);
+        });
+        rm.className = 'cmt-more'; rm.setAttribute('aria-label', 'More');
+        acts.push(rm);
+      }
+      const rmsg = msg(r.by, r.at, r.text, r.mentions, r.edited_at, acts);
+      rmsg.classList.add('reply');
+      el.appendChild(rmsg);
+    }
+    if (c.resolved) {
+      const line = document.createElement('p'); line.className = 'cmt-resolved-line';
+      line.textContent = `Marked as resolved by ${hubNameOf(c.resolved_by)} · ${fmtWhenShort(c.resolved_at)}`;
+      el.appendChild(line);
+    }
+    // Reply: one line that opens into a box, as in Docs. On a resolved
+    // thread the placeholder says what a reply does.
+    if (canWrite) {
+      const box = document.createElement('div'); box.className = 'cmt-replybox';
+      const open = () => {
+        box.textContent = '';
+        const ta = document.createElement('textarea'); ta.rows = 2; ta.placeholder = 'Reply or add others with @'; ta.className = 'cmt-reply-text';
+        const btns = document.createElement('div'); btns.className = 'cmt-btns';
+        const cancel = textBtn('Cancel', () => { hubCommentsRender(); });
+        const send = textBtn('Reply', async () => { const t = ta.value.trim(); if (!t) { ta.focus(); return; } await hubReplyAdd(c.id, t, hubMentionsOf(ta)); }, 'primary');
+        btns.append(cancel, send);
+        box.append(ta, btns);
+        hubMentionWire(ta);
+        ta.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send.click(); if (e.key === 'Escape') cancel.click(); });
+        ta.addEventListener('blur', () => setTimeout(() => { if (hubCommentsRenderLater && !list.contains(document.activeElement)) hubCommentsRender(); }, 200));
+        ta.focus();
       };
-      btns.appendChild(go);
+      const line = document.createElement('input'); line.type = 'text'; line.readOnly = true;
+      line.placeholder = c.resolved ? 'Adding a reply will reopen this discussion…' : 'Reply or add others with @';
+      line.className = 'cmt-reply-line';
+      line.addEventListener('focus', open); line.addEventListener('click', open);
+      box.appendChild(line);
+      el.appendChild(box);
     }
-    const res = document.createElement('button'); res.type = 'button';
-    res.textContent = c.resolved ? 'Reopen' : 'Resolve';
-    res.onclick = () => hubCommentPatch(c.id, { resolved: !c.resolved });
-    btns.appendChild(res);
-    if (c.by === me || hubRole === 'owner') {
-      const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete'; del.className = 'danger';
-      del.onclick = async () => { if (await dsConfirm('Delete this comment?', { okLabel: 'Delete', danger: true })) hubCommentDelete(c.id); };
-      btns.appendChild(del);
-    }
-    el.append(head, body, btns);
     return el;
   };
-  if (!open.length && !done.length && !mine.length) {
-    const p = document.createElement('p'); p.className = 'cmt-empty'; p.textContent = 'No comments yet.'; list.appendChild(p);
+  if (!open.length && !done.length) {
+    const p = document.createElement('p'); p.className = 'cmt-empty';
+    p.textContent = hubCommentsTab === 'you' ? 'Nothing for you yet — threads that name you, or answer you, show here.' : 'No comments yet. Select some words and press ⌘⌥M, or write below.';
+    list.appendChild(p);
   }
+  const mine = open.filter(onIt);
   if (mine.length) {
     const h = document.createElement('p'); h.className = 'cmt-sep cmt-here'; h.textContent = `On the selection (${here})`; list.appendChild(h);
-    for (const c of mine) list.appendChild(row(c));
-    if (open.length) { const h2 = document.createElement('p'); h2.className = 'cmt-sep'; h2.textContent = 'Elsewhere'; list.appendChild(h2); }
+    for (const c of mine) list.appendChild(card(c));
+    if (open.length > mine.length) { const h2 = document.createElement('p'); h2.className = 'cmt-sep'; h2.textContent = 'Elsewhere'; list.appendChild(h2); }
   }
-  for (const c of open) list.appendChild(row(c));
+  for (const c of open) if (!onIt(c)) list.appendChild(card(c));
   if (done.length) {
     const h = document.createElement('p'); h.className = 'cmt-sep'; h.textContent = `${done.length} resolved`; list.appendChild(h);
-    for (const c of done) list.appendChild(row(c));
+    for (const c of done) list.appendChild(card(c));
   }
+  // The new-comment card: who is writing, and about what.
   const on = $('cpanel-anchor');
-  if (on) on.textContent = 'New comment ' + anchorLabel(hubCommentAnchor());
+  if (on) {
+    on.textContent = '';
+    if (hubCommentQuote) {
+      on.append('New comment on '); const q = document.createElement('q'); q.textContent = hubCommentQuote.quote; on.appendChild(q);
+      const x = document.createElement('button'); x.type = 'button'; x.className = 'cmt-unquote'; x.textContent = '×'; x.title = 'Comment on the whole document instead';
+      x.onclick = () => { hubCommentQuote = null; hubCommentsRender(); };
+      on.appendChild(x);
+    } else on.textContent = 'New comment ' + (here ? `on ${here}` : 'on the document');
+  }
+  const av = $('cpanel-me');
+  if (av) { av.style.setProperty('--av', hubAvatarColor(me)); av.textContent = hubInitial(hubNameOf(me)); av.title = hubNameOf(me); }
 }
 const hubCommentsChanged = () => { hubCommentsStamp = Date.now(); };
-async function hubCommentPatch(id, patch) {
+async function hubCommentsCall(url, init, failWord) {
   try {
-    const r = await fetch(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'PATCH',
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
+    const r = await fetch(url, init);
+    const j = await hubJson(r);
+    if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     hubCommentsChanged();
-  } catch (e) { $('stat').textContent = 'comment not changed: ' + e.message; }
-  await hubCommentsLoad();
+    return j;
+  } catch (e) { $('stat').textContent = `${failWord}: ${e.message}`; return null; }
+  finally { await hubCommentsLoad(); }
 }
-async function hubCommentDelete(id) {
-  try {
-    const r = await fetch(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
-    hubCommentsChanged();
-  } catch (e) { $('stat').textContent = 'comment not deleted: ' + e.message; }
-  await hubCommentsLoad();
-}
+const jsonInit = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const hubCommentPatch = (id, patch) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, jsonInit('PATCH', patch), 'comment not changed');
+const hubCommentDelete = id => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'comment not deleted');
+const hubReplyAdd = (id, text, mentions) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies`, jsonInit('POST', { text, mentions }), 'reply not added');
+const hubReplyPatch = (id, rid, patch) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, jsonInit('PATCH', patch), 'reply not changed');
+const hubReplyDelete = (id, rid) => hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, { method: 'DELETE' }, 'reply not deleted');
 async function hubCommentAdd() {
   const ta = $('cpanel-text');
   const text = (ta.value || '').trim();
   if (!text) { ta.focus(); return; }
+  const q = hubCommentQuote;
   const anchor = hubCommentAnchor();
-  try {
-    const r = await fetch(`${docStore()}/comments`, { method: 'POST',
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ anchor, text }) });
-    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `the hub answered ${r.status}`);
-    ta.value = '';
-    hubCommentsChanged();
-  } catch (e) { $('stat').textContent = 'comment not added: ' + e.message; }
-  await hubCommentsLoad();
+  const body = { anchor, quote: q && q.anchor === anchor ? q.quote : null, text, mentions: hubMentionsOf(ta) };
+  const made = await hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', body), 'comment not added');
+  if (made) {
+    ta.value = ''; ta._mentions = new Set(); hubCommentQuote = null;
+    if (made.id) hubCommentActive = made.id;
+    hubCommentsRender();
+    const d = $('out') && $('out').contentDocument;
+    if (d) hubCommentsPaint(d);
+  }
 }
 function hubCommentsToggle(open) {
   const panel = $('cpanel');
@@ -15566,6 +16039,10 @@ function hubCommentsToggle(open) {
     hubCommentsRender();
     hubCommentsLoad();
     hubCommentsTimer = setInterval(hubCommentsLoad, 15000);
+  } else {
+    hubCommentActive = null;
+    const d = $('out') && $('out').contentDocument;
+    if (d) hubCommentsPaint(d);
   }
 }
 
@@ -15668,7 +16145,7 @@ async function hubShareDialog() {
   try {
     const r = await fetch(url, { method: 'PUT', headers: { 'content-type': 'application/json' },
                                  body: JSON.stringify(result) });
-    const j = await r.json().catch(() => ({}));
+    const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     const named = Object.keys(result.people).length;
     $('stat').textContent = `sharing saved — everyone ${result.default === 'none' ? 'is kept out' : result.default === 'viewer' ? 'may view' : 'may edit'}`
@@ -15694,7 +16171,7 @@ async function docStorePublish() {
   $('stat').textContent = 'publishing…';
   try {
     const r = await fetch(`${docStore()}/publish`, { method: 'POST' });
-    const j = await r.json().catch(() => ({}));
+    const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || j.reason || `the hub answered ${r.status}`);
     const sha = String(j.sha || '').slice(0, 7);
     $('stat').textContent = j.status === 'unchanged'
@@ -15707,6 +16184,20 @@ async function docStorePublish() {
   }
 }
 
+/** The hub's answer as JSON — or the reason it is not one. An Access
+ *  session that has expired answers every request with the sign-in page:
+ *  200, HTML. Without this a Save would "succeed" with no version and clear
+ *  the unsaved mark over words the store never got. */
+async function hubJson(r) {
+  const type = r.headers.get('content-type') || '';
+  if (r.redirected || !/json/i.test(type)) {
+    throw new Error(r.redirected || /html/i.test(type) || r.status === 401 || r.status === 403
+      ? 'signed out of the hub — reload this page to sign in again (unsaved edits are kept in this browser)'
+      : `the hub answered ${r.status} with ${type || 'no content type'}`);
+  }
+  return r.json();
+}
+
 /** The stored document over the vendored copy, when the store has one. Runs
  *  where the draft branch's files would have been swapped in: the engine
  *  stays same-origin, only the two authored files come from the store. */
@@ -15714,8 +16205,8 @@ async function docStoreLoad(urls, files) {
   if (!docStore()) return;
   try {
     const r = await fetch(docStore(), { cache: 'no-store' });
-    if (!r.ok) throw new Error(`the store answered ${r.status}`);
-    const m = await r.json();
+    const m = await hubJson(r);
+    if (!r.ok) throw new Error(m.error || `the store answered ${r.status}`);
     if (!m.exists) {
       $('stat').textContent = 'first time on the hub — Save puts this document in the store';
       return;
@@ -15732,7 +16223,7 @@ async function docStoreLoad(urls, files) {
     $('stat').textContent = 'from the hub' + (m.updated_by ? ` — last saved by ${m.updated_by}` : '')
       + (m.updated_at ? ` ${new Date(m.updated_at).toLocaleString()}` : '');
   } catch (e) {
-    $('stat').textContent = 'could not reach the document store — showing the vendored copy; Save will retry';
+    $('stat').textContent = `could not load from the document store (${e.message}) — showing the vendored copy; Save will retry`;
   }
 }
 
@@ -15751,7 +16242,7 @@ async function docStoreSave(layoutText, force = false) {
     const r = await fetch(docStore(), {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     });
-    const j = await r.json().catch(() => ({}));
+    const j = await hubJson(r);
     if (r.status === 409) {
       const who = j.updated_by ? ` by ${j.updated_by}` : '';
       const when = j.updated_at ? ` at ${new Date(j.updated_at).toLocaleString()}` : '';
@@ -15939,7 +16430,20 @@ async function saveDraft() {
 
 $('history').onclick = () => hubHistoryDialog();
 $('cpanel-close').onclick = () => hubCommentsToggle(false);
-$('ar-comment').onclick = $('ty-comment').onclick = () => { hubCommentsToggle(true); $('cpanel-text').focus(); };
+$('ar-comment').onclick = $('ty-comment').onclick = () => hubCommentStart(null);
+$('cmt-plus').onmousedown = e => { e.preventDefault(); hubCommentStart(); };
+$('cpanel-cancel').onclick = () => { $('cpanel-text').value = ''; $('cpanel-text')._mentions = new Set(); hubCommentQuote = null; hubCommentsRender(); };
+$('cpanel-tab-all').onclick = () => { hubCommentsTab = 'all'; hubCommentsRender(); };
+$('cpanel-tab-you').onclick = () => { hubCommentsTab = 'you'; hubCommentsRender(); };
+hubMentionWire($('cpanel-text'));
+$('cpanel-text').addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); hubCommentAdd(); }
+  if (e.key === 'Escape' && !e.defaultPrevented) $('cpanel-cancel').click();
+});
+window.addEventListener('keydown', e => { if (hubCommentKey(e)) e.preventDefault(); });
+// A collaborator's selection ring, the peer marks, and now the comment
+// cards follow the page: re-sort when the panel is open and the page moved.
+window.addEventListener('resize', () => { const d = $('out') && $('out').contentDocument; if (d) hubCommentPlus(d); });
 $('cpanel-add').onclick = () => hubCommentAdd();
 document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender(); });
 $('comments').onclick = () => hubCommentsToggle();
