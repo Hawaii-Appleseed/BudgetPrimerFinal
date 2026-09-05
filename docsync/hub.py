@@ -19,6 +19,7 @@ What lands in `<hub>/primer/`:
 
     edit.html            the editor — ONE copy, for every project
     collab-client.js     its collaboration client
+    sw.js                its service worker (Pyodide cached once, for good)
     projects.json        the registry: id -> {name, base, repo, collab: {path}}
     icons/, manifest.webmanifest   the tab icon
     <id>/engine/…        each project's renderer, the files it reads, its manifest
@@ -60,7 +61,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from docsync.registry import ROOT, RegistryError, load_registry  # noqa: E402
-from docsync.stage import COLLAB_CLIENT, EDITOR, _origin_slug, stage  # noqa: E402
+from docsync.stage import COLLAB_CLIENT, EDITOR, SERVICE_WORKER, _origin_slug, stage  # noqa: E402
 from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers  # noqa: E402
 
 # The hub's front door onto the rooms, the route that says who is signed in,
@@ -260,6 +261,11 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
     _write(primer / "edit.html", EDITOR.read_bytes(), changed, dry=dry)
     if COLLAB_CLIENT.is_file():
         _write(primer / "collab-client.js", COLLAB_CLIENT.read_bytes(), changed, dry=dry)
+    # The worker beside the editor, so its register('sw.js') finds one: without
+    # it every cold open on the hub pulled Pyodide's ~30MB from the CDN again,
+    # and a browser that had dropped that from its HTTP cache paid it every time.
+    if SERVICE_WORKER.is_file():
+        _write(primer / "sw.js", SERVICE_WORKER.read_bytes(), changed, dry=dry)
     for extra in SHELL_EXTRAS:
         src = ROOT / "docs" / "primer" / extra
         if src.is_dir():

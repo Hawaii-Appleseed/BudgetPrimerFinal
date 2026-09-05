@@ -37,6 +37,12 @@ from docsync.registry import ROOT, Binding, RegistryError, get, load_registry  #
 
 EDITOR = Path(__file__).resolve().parent / "editor" / "edit.html"
 COLLAB_CLIENT = EDITOR.parent / "collab-client.js"
+# The editor's service worker: Pyodide's ~30MB runtime cache-first in Cache
+# Storage, the shell network-first. It lived only in docs/primer/ (a build
+# artifact, untracked since 58a47f4), so every other checkout - the hub, CI,
+# a clone - served the editor with no worker at all and its register() 404'd
+# silently: each cold open there was a full CDN download again.
+SERVICE_WORKER = EDITOR.parent / "sw.js"
 # Every docsync module a project renderer may import, copied into Pyodide's
 # filesystem. Unlike vendor.py — where the package genuinely IS the manifest —
 # this list is explicit, so a new shared module has to be added here too or the
@@ -159,6 +165,8 @@ def stage(b: Binding, repo: str = "") -> None:
     # to stage everywhere and saves a "where does this file come from" hunt.
     if COLLAB_CLIENT.is_file():
         shutil.copy2(COLLAB_CLIENT, e.dir / "collab-client.js")
+    if SERVICE_WORKER.is_file():
+        shutil.copy2(SERVICE_WORKER, e.dir / "sw.js")
     # The assets themselves, staged beside the editor: the iframe resolves a
     # box's "assets/…" src against the editor's page, and for a scaffolded
     # project nothing else put the files there — a template's logo (or any

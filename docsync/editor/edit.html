@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<link rel="manifest" href="manifest.webmanifest">
+<!-- use-credentials: behind an access gate (the staff hub) a manifest fetched
+     without cookies is bounced to the sign-in page - two seconds, every open,
+     for nothing. -->
+<link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
 <!-- The render engine's assets, started at HTML-parse time. The script tag
      that asks for them sits at the END of this (large) document, and its
      loader then fetches them one after another — so the 10MB wasm did not
