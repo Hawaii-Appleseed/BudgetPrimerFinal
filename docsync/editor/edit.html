@@ -1522,6 +1522,11 @@
          up full Pyodide boots was a real annoyance), so wanting two at once —
          two projects side by side, or one report on two pages — is asked for
          here instead. -->
+    <!-- On the hub, where the store is the record, every quiet two seconds
+         after an edit is a Save (hubAutosaveSchedule). Per browser. -->
+    <button class="shp" id="file-autosave" hidden><svg class="shp-i" viewBox="0 0 16 16"
+      ><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v4h5v-4M5 13v-4h6v4"
+      /></svg><span class="shp-t">Autosave on the hub: on</span></button>
     <button class="shp" id="file-newwin" hidden><svg class="shp-i" viewBox="0 0 16 16"
       ><rect x="1.8" y="5" width="8.4" height="7.8" rx="1.2"/><path
         d="M6 5V4.2a1 1 0 0 1 1-1h6.2a1 1 0 0 1 1 1V10a1 1 0 0 1-1 1h-.8"
@@ -11161,6 +11166,7 @@ function markDirty() {
   $('revert').hidden = local || !draftBranch;
   $('save').classList.toggle('dirty', dirty);
   cacheDraft();                       // persist unsaved edits for offline safety
+  if (typeof hubAutosaveSchedule === 'function' && docStore()) { hubSaveLabel(); hubAutosaveSchedule(); }
 }
 
 // --- offline draft cache (idb-keyval) --------------------------------------
@@ -15520,6 +15526,7 @@ function docStoreDecide() {
   $('publish').setAttribute('aria-label', 'Commit the saved document to its repository');
   $('publish').title = 'One commit of this document, as saved, on its hub/ branch';
   $('comments').hidden = $('history').hidden = false;
+  hubAutosaveMenu();   // the File menu row, on the store path only
   $('mode').hidden = false;
   $('share').hidden = false;
   $('share').disabled = false;
@@ -17156,8 +17163,9 @@ async function docStoreLoad(urls, files) {
 }
 
 /** Save to the store. `force` after the person has said so to a 409. */
-async function docStoreSave(layoutText, force = false) {
+async function docStoreSave(layoutText, force = false, auto = false) {
   $('save').disabled = true;
+  hubSaveBusy = true;
   $('stat').textContent = 'saving…';
   try {
     const body = { base: (collab && collab.baseSha()) || docVersion, force,
@@ -17174,6 +17182,13 @@ async function docStoreSave(layoutText, force = false) {
     if (r.status === 409) {
       const who = j.updated_by ? ` by ${j.updated_by}` : '';
       const when = j.updated_at ? ` at ${new Date(j.updated_at).toLocaleString()}` : '';
+      if (auto) {
+        // Not a question an automatic Save may answer: hold, and leave the
+        // choice to a press of Save.
+        hubAutosaveHold = true;
+        $('stat').textContent = `not saved — the document changed outside this session${who}; press Save to choose`;
+        markDirty(); return false;
+      }
       const ok = await dsConfirm(`This document was saved outside this session${who}${when}.\n\n`
         + 'Saving replaces that with what everyone here sees.',
         { okLabel: 'Save over it', danger: true });
@@ -17186,15 +17201,75 @@ async function docStoreSave(layoutText, force = false) {
     if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
     original = source; layoutOrig = layoutText;
     clearDraftCache();
+    hubAutosaveHold = false;                    // a Save that landed: automatic ones may resume
+    hubSavedAt = Date.now();
     markDirty();
-    $('stat').textContent = 'saved — anyone opening this document gets this version';
+    $('stat').textContent = auto ? 'saved automatically — anyone opening this document gets this version'
+                                 : 'saved — anyone opening this document gets this version';
     return true;
   } catch (e) {
-    $('stat').textContent = 'save failed: ' + e.message;
+    if (auto) { hubAutosaveHold = true; $('stat').textContent = 'autosave paused — save failed: ' + e.message + '; press Save to try again'; }
+    else $('stat').textContent = 'save failed: ' + e.message;
     markDirty();
     return false;
+  } finally {
+    hubSaveBusy = false;
   }
 }
+
+// --- autosave on the hub ----------------------------------------------------------
+// With the store as the record, a quiet two seconds after an edit is a Save:
+// the room already carries the live document, so nothing is lost either way -
+// this only takes the button out of people's minds, the way Docs never has
+// one. Not while a paragraph or box editor is open (a half-typed sentence is
+// not a version), not while a Save is in flight or a dialog is up, and not
+// after a 409 or a failure until a press of Save settles it: an automatic Save
+// must never ask a question or keep failing quietly. The button stays, as
+// "Saved · just now" when there is nothing to save. Per browser, on unless
+// turned off in the File menu (`localStorage['primer-autosave']`).
+let hubAutosaveTimer = 0;
+let hubAutosaveHold = false;   // a 409 or a failure: wait for a press of Save
+let hubSaveBusy = false;       // a store Save in flight
+let hubSavedAt = 0;            // when the last store Save landed
+const AUTOSAVE_QUIET_MS = 2000;
+function hubAutosaveOn() {
+  if (!docStore()) return false;
+  try { return localStorage.getItem('primer-autosave') !== 'off'; } catch (e) { return true; }
+}
+function hubAutosaveSchedule() {
+  clearTimeout(hubAutosaveTimer); hubAutosaveTimer = 0;
+  if (!hubAutosaveOn() || !dirty || hubViewOnly() || hubAutosaveHold) return;
+  hubAutosaveTimer = setTimeout(hubAutosaveTick, AUTOSAVE_QUIET_MS);
+}
+async function hubAutosaveTick() {
+  hubAutosaveTimer = 0;
+  if (!hubAutosaveOn() || !dirty || hubViewOnly() || hubAutosaveHold) return;
+  if (editing || modalOpen || hubSaveBusy) { hubAutosaveSchedule(); return; }   // not mid-word, not mid-Save
+  await docStoreSave(JSON.stringify(layout, null, 2) + '\n', false, true);
+}
+/** The Save button's face on the store path: "Save" with something to save,
+ *  "Saved · just now" right after one landed, "Saved" once that is old news. */
+function hubSaveLabel() {
+  const b = $('save');
+  if (!b || !docStore()) return;
+  if (dirty) b.textContent = 'Save';
+  else if (hubSavedAt && Date.now() - hubSavedAt < 60000) b.textContent = 'Saved · just now';
+  else b.textContent = hubSavedAt ? 'Saved' : 'Save';
+}
+setInterval(hubSaveLabel, 15000);
+function hubAutosaveMenu() {
+  const row = $('file-autosave');
+  if (!row) return;
+  row.hidden = !docStore();
+  row.querySelector('.shp-t').textContent = 'Autosave on the hub: ' + (hubAutosaveOn() ? 'on' : 'off');
+}
+$('file-autosave').onclick = () => {
+  try { localStorage.setItem('primer-autosave', hubAutosaveOn() ? 'off' : 'on'); } catch (e) { /* file: */ }
+  hubAutosaveMenu();
+  hubAutosaveSchedule();
+  $('stat').textContent = hubAutosaveOn() ? 'autosave on — a quiet two seconds after an edit is a Save' : 'autosave off — Save is yours to press';
+  togglePop($('filepop'), $('file'));
+};
 
 // --- drafts: Save draft / Share / Publish ----------------------------------
 // Nothing here writes to main. Save commits your work — prose and layout in
