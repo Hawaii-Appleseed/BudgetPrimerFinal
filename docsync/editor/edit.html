@@ -1355,6 +1355,39 @@
     border:1px solid #C9D6CD; border-radius:999px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.18); cursor:pointer; color:#2D5A3D; }
   #cmt-plus[hidden] { display:none; }
   #cmt-plus:hover { background:#E8EDE6; }
+  /* Comments in the MARGIN, the way Docs draws them. On a wide window the
+     panel is a gutter beside the page - the stage makes room for it (this is
+     the one panel that may move the page: a card has to line up with the
+     words it is about, so it needs its own column, not a float over the
+     page's right third) - and each card sits at its anchor's height, stacked
+     so none overlap, the one in hand at its exact place with the rest nudged
+     out of its way; they follow the page as it scrolls. Under 1100px (a
+     phone, a narrow pane) the panel stays the ordered list, and the switch
+     in its head is hidden because there is nothing to switch to. */
+  body.cmt-margin #stage { margin-right:var(--cmt-gutter, 384px); }
+  body.cmt-margin #rail, body.cmt-margin #context { right:var(--cmt-gutter, 384px); }
+  /* The gutter starts where the stage starts (its top is set from #work in
+     hubCommentsMode) and its head is kept short, so the band of page with no
+     margin beside it is as thin as it can be. */
+  #cpanel.margin { right:0; bottom:0; width:var(--cmt-gutter, 384px); border-radius:var(--r-edge) 0 0 0;
+    border-right:0; border-bottom:0; box-shadow:none; background:#EEF2EF; }
+  #cpanel.margin .cpanel-head { padding:4px 12px 0; }
+  #cpanel.margin .cpanel-head b { font-size:12px; }
+  #cpanel.margin .cpanel-head button { font-size:15px; }
+  #cpanel.margin #cpanel-view { font-size:11px; }
+  #cpanel.margin .cpanel-tab { padding:3px 8px; font-size:11.5px; }
+  #cpanel.margin #cpanel-list { position:relative; overflow:hidden; padding:0; display:block; }
+  #cpanel.margin #cpanel-list > * { position:absolute; left:12px; right:12px; top:0; margin:0; box-sizing:border-box; }
+  #cpanel.margin #cpanel-list.anim > * { transition:top .16s ease; }
+  #cpanel.margin .cmt { box-shadow:0 1px 3px rgba(30,44,50,.10); }
+  #cpanel.margin .cmt.active { z-index:2; box-shadow:0 4px 16px rgba(194,112,58,.24); }
+  #cpanel.margin .cmt-empty { top:12px; }
+  #cpanel.margin .cmt-sep { border-top:0; padding:6px 2px 0; }
+  #cpanel-view { border:1px solid #C9D6CD; background:#fff; font:600 11px system-ui; color:#5B6E66; padding:3px 9px;
+    border-radius:999px; cursor:pointer; margin-left:auto; margin-right:8px; }
+  #cpanel-view:hover { background:#E8EDE6; color:var(--ink); }
+  #cpanel-view[hidden] { display:none; }
+  @media (max-width:1099px) { #cpanel-view { display:none; } }
   .dsdlg-field > input:focus, .dsdlg-field > select:focus, .dsdlg-field > textarea:focus {
         outline:none; border-color:var(--sage); box-shadow:0 0 0 3px rgba(107,158,120,.18); }
   .dsdlg-err { font:12px system-ui; color:#C0392B; margin:0; min-height:0; }
@@ -1408,7 +1441,7 @@
        currentColor: the row's colour is the icon's colour, which is what makes
        hover and the danger row work without a second rule each. -->
   <aside id="cpanel" hidden aria-label="Comments">
-    <div class="cpanel-head"><b>Comments</b><button type="button" id="cpanel-close" aria-label="Close comments">×</button></div>
+    <div class="cpanel-head"><b>Comments</b><button type="button" id="cpanel-view" title="Show the comments as a list">List</button><button type="button" id="cpanel-close" aria-label="Close comments">×</button></div>
     <div class="cpanel-tabs" role="tablist">
       <button type="button" class="cpanel-tab on" id="cpanel-tab-all" role="tab">All comments</button>
       <button type="button" class="cpanel-tab" id="cpanel-tab-you" role="tab">For you</button>
@@ -9115,6 +9148,7 @@ function applyZoom(recompute = true) {
   if (d && d.documentElement)
     d.documentElement.style.scrollPaddingTop = Math.round(CTX_CLEAR / s) + 'px';
   syncZoomBar();
+  if (typeof hubMarginQueue === 'function') hubMarginQueue(false);   // the comment cards follow the page's new scale
 }
 
 /** The bar shows the scale ACTUALLY in effect, never the choice that asked for
@@ -15503,6 +15537,10 @@ let hubCommentsRenderLater = false;   // a refresh arrived while someone was typ
 let hubCommentLink = new URLSearchParams(location.search).get('comment') || null;   // ?comment=<id>: open on it
 let hubRoster = null;         // [{email, name}] for @-mentions, from the hub's staff roster
 let hubCommentsFailed = null; // the last refresh's failure, so it is said once
+let hubCommentsView = 'margin';   // 'margin' | 'list' - the person's choice; the width has the last word
+try { hubCommentsView = localStorage.getItem('primer-comments-view') || 'margin'; } catch (e) { /* file: */ }
+let hubMarginRaf = 0;
+let hubMarginRO = null;       // watches the cards' heights: a reply box opening restacks the rest
 const COMMENT_MARK_CSS = `
   [data-ds-comments] { position: relative; }
   [data-ds-comments]::after {
@@ -15588,6 +15626,126 @@ function hubCommentsPaint(d) {
     w.CSS.highlights.set('ds-comment-active', new w.Highlight(...active));
   }
   suggestPaint(d);
+  hubMarginLayout(true);   // a render moved the anchors; the cards follow
+}
+
+// --- comments in the margin ---------------------------------------------------
+// Docs' arrangement: a card beside the words it is about. The panel becomes a
+// gutter the stage makes room for, the list inside it a positioning box, and
+// every card is placed by hand: at its anchor's height on screen, never over
+// the card before it, the one in hand at its exact place and the others
+// pushed up or down to clear it. Threads on the document itself sit at the
+// top; threads whose words are gone, and resolved ones, trail the rest. Only
+// `top` changes on a scroll or a zoom - the cards are never rebuilt for that,
+// so a reply being typed is never disturbed. Under 1100px there is no room
+// for a gutter and the panel is the ordered list it always was.
+const hubMarginOn = () => hubCommentsView !== 'list' && window.matchMedia('(min-width: 1100px)').matches;
+/** Put the panel in the mode the width and the person's choice call for, and
+ *  refit the page when the gutter comes or goes. */
+function hubCommentsMode() {
+  const panel = $('cpanel');
+  if (!panel) return;
+  const on = hubMarginOn();
+  panel.classList.toggle('margin', on);
+  // Beside the stage from its very top; the list's own top is under the bar.
+  panel.style.top = on && $('work') ? Math.round($('work').getBoundingClientRect().top) + 'px' : '';
+  const view = $('cpanel-view');
+  if (view) {
+    view.textContent = hubCommentsView === 'list' ? 'Margin' : 'List';
+    view.title = hubCommentsView === 'list' ? 'Show the comments beside the page' : 'Show the comments as a list';
+  }
+  const gutter = on && !panel.hidden;
+  if (document.body.classList.contains('cmt-margin') !== gutter) {
+    document.body.classList.toggle('cmt-margin', gutter);
+    if (typeof applyZoom === 'function' && $('out') && $('out').contentDocument) applyZoom();
+  }
+}
+/** Where a thread's card wants to be, in the list's coordinates: its anchor's
+ *  top on screen. Words still on the page (below the stage's top edge) keep
+ *  their card inside the gutter - at the top of it when they sit in the thin
+ *  band beside the panel's head - so a card about something you can see is
+ *  always reachable; words that have scrolled off the top take their card
+ *  with them, as in Docs. 0 for the document itself; Infinity when the
+ *  anchor is gone. */
+function hubMarginWant(d, c, f, z, listTop, pageTop) {
+  if (!c || !c.anchor) return { y: 0, onPage: true };
+  if (!d) return { y: Infinity, onPage: false };
+  const hit = hubCommentRanges.find(h => h.id === c.id);
+  const t = hit ? hit.range : hubCommentEl(d, c.anchor);
+  if (!t) return { y: Infinity, onPage: false };
+  const r = t.getBoundingClientRect();
+  const screenY = f.top + r.top * z;
+  const onPage = screenY >= pageTop;
+  const y = screenY - listTop;
+  return { y: onPage ? Math.max(0, y) : y, onPage };
+}
+function hubMarginLayout(animate = false) {
+  const panel = $('cpanel'), list = $('cpanel-list');
+  if (!panel || panel.hidden || !panel.classList.contains('margin') || !list) return;
+  const items = [...list.children];
+  if (!items.length) return;
+  list.classList.toggle('anim', !!animate);
+  const out = $('out');
+  const d = out && out.contentDocument;
+  const f = out.getBoundingClientRect();
+  const z = f.width / (out.clientWidth || f.width);
+  const listTop = list.getBoundingClientRect().top;
+  const pageTop = $('work') ? $('work').getBoundingClientRect().top : 0;
+  const GAP = 8;
+  const want = items.map(el => {
+    const c = el.classList.contains('cmt') ? hubComments.find(x => x.id === el.dataset.id) : null;
+    const w = el.classList.contains('cmt') && !el.classList.contains('resolved') ? hubMarginWant(d, c, f, z, listTop, pageTop) : { y: Infinity, onPage: false };
+    return { el, y: w.y, onPage: w.onPage, h: el.offsetHeight };
+  });
+  // In the order the render gave them (as the document reads), each below the
+  // one before; a trailing item (gone, resolved, a separator) follows the last.
+  // A card whose words are above the gutter is above it too, out of sight.
+  const stack = (from, start) => {
+    let prev = start;   // the bottom of the card before, or null at the top
+    for (let i = from; i < want.length; i++) {
+      const w = want[i];
+      tops[i] = isFinite(w.y) ? (prev == null ? w.y : Math.max(w.y, prev + GAP)) : (prev == null ? 0 : prev + GAP);
+      prev = tops[i] + w.h;
+    }
+  };
+  const tops = new Array(want.length);
+  stack(0, null);
+  // The one in hand sits at its exact place and those above are pushed up out
+  // of its way - but never out of the gutter: a card whose words are on the
+  // page stays reachable, so when there is no room above, it is the card in
+  // hand that gives way and sits lower. (Docs pushes them off; its margin
+  // runs the whole document, ours is a window on it.)
+  const ai = want.findIndex(w => w.el.classList.contains('active'));
+  if (ai >= 0 && isFinite(want[ai].y)) {
+    tops[ai] = want[ai].y;
+    for (let i = ai - 1; i >= 0; i--) tops[i] = Math.min(tops[i], tops[i + 1] - GAP - want[i].h);
+    let prev = -Infinity;
+    for (let i = 0; i <= ai; i++) {
+      const floor = want[i].onPage ? 0 : -Infinity;
+      tops[i] = Math.max(tops[i], floor, prev + GAP); prev = tops[i] + want[i].h;
+    }
+    stack(ai + 1, prev);
+  }
+  want.forEach((w, i) => { w.el.style.top = Math.round(tops[i]) + 'px'; });
+  // A card that changes height (a reply box opening, a message edited)
+  // restacks the rest. Observing fires once on its own for every element
+  // observed, so only a height that DIFFERS from the one last seen counts -
+  // otherwise each layout would ask for the next, every frame, for ever.
+  if (!hubMarginRO && window.ResizeObserver) hubMarginRO = new ResizeObserver(entries => {
+    let changed = false;
+    for (const e of entries) {
+      const h = e.contentRect.height;
+      if (e.target.__dsH != null && Math.abs(h - e.target.__dsH) > 0.5) changed = true;
+      e.target.__dsH = h;
+    }
+    if (changed) hubMarginQueue(true);
+  });
+  if (hubMarginRO) { hubMarginRO.disconnect(); for (const w of want) hubMarginRO.observe(w.el); }
+}
+/** One layout per frame, however many scroll events ask. */
+function hubMarginQueue(animate = false) {
+  if (hubMarginRaf) return;
+  hubMarginRaf = requestAnimationFrame(() => { hubMarginRaf = 0; hubMarginLayout(animate); });
 }
 /** Once per document: a click on a highlight opens its thread; a text
  *  selection inside the open paragraph offers "+ Comment"; ⌘⌥M comments on
@@ -15606,6 +15764,8 @@ function hubCommentsBind(d) {
   }, true);
   d.addEventListener('selectionchange', () => hubCommentPlus(d));
   d.addEventListener('keydown', e => { if (hubCommentKey(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
+  // The cards in the margin ride with the page: repositioned, not rebuilt.
+  if (d.defaultView) d.defaultView.addEventListener('scroll', () => hubMarginQueue(false), { passive: true });
 }
 /** The "+ Comment" pill beside a text selection in the open paragraph —
  *  Google Docs' affordance, in the top document because the report's frame
@@ -15868,6 +16028,10 @@ function hubCommentsRender() {
   shown.sort((x, y) => byPos.get(x.id) - byPos.get(y.id) || (x.at < y.at ? -1 : 1));
   const open = shown.filter(c => !c.resolved), done = shown.filter(c => c.resolved);
   const onIt = c => here && c.anchor === here && !c.resolved;
+  // In the margin a card's place says what it is on, so the list's "On the
+  // selection" / "Elsewhere" headings would only take room from the cards;
+  // the cards on the selection wear a tag instead.
+  const margin = panel.classList.contains('margin');
   $('cpanel-tab-all').classList.toggle('on', hubCommentsTab === 'all');
   $('cpanel-tab-you').classList.toggle('on', hubCommentsTab === 'you');
   const youN = hubComments.filter(c => !c.resolved && forMe(c)).length;
@@ -15920,6 +16084,7 @@ function hubCommentsRender() {
       hubCommentFocus(c.id);
     });
     const wh = where(c);
+    if (margin && onIt(c)) { const t = document.createElement('span'); t.className = 'cmt-here'; t.textContent = 'On the selection · '; wh.prepend(t); }
     if (sug) { const k = document.createElement('span'); k.className = 'cmt-kind'; k.textContent = c.status === 'open' ? 'Suggests' : c.status; wh.prepend(k); }
     el.appendChild(wh);
     // The thread's first message: resolve and ⋮ live here - on a
@@ -16033,17 +16198,18 @@ function hubCommentsRender() {
     p.textContent = hubCommentsTab === 'you' ? 'Nothing for you yet — threads that name you, or answer you, show here.' : 'No comments yet. Select some words and press ⌘⌥M, or write below.';
     list.appendChild(p);
   }
-  const mine = open.filter(onIt);
+  const mine = margin ? [] : open.filter(onIt);
   if (mine.length) {
     const h = document.createElement('p'); h.className = 'cmt-sep cmt-here'; h.textContent = `On the selection (${here})`; list.appendChild(h);
     for (const c of mine) list.appendChild(card(c));
     if (open.length > mine.length) { const h2 = document.createElement('p'); h2.className = 'cmt-sep'; h2.textContent = 'Elsewhere'; list.appendChild(h2); }
   }
-  for (const c of open) if (!onIt(c)) list.appendChild(card(c));
+  for (const c of open) if (!mine.includes(c)) list.appendChild(card(c));
   if (done.length) {
     const h = document.createElement('p'); h.className = 'cmt-sep'; h.textContent = `${done.length} resolved`; list.appendChild(h);
     for (const c of done) list.appendChild(card(c));
   }
+  if (margin) hubMarginLayout(true);
   // The new-comment card: who is writing, and about what.
   const on = $('cpanel-anchor');
   if (on) {
@@ -16097,6 +16263,7 @@ function hubCommentsToggle(open) {
   const show = open == null ? panel.hidden : open;
   panel.hidden = !show;
   $('comments').classList.toggle('on', show);
+  hubCommentsMode();   // the gutter comes with the panel and goes with it
   clearInterval(hubCommentsTimer); hubCommentsTimer = 0;
   if (show) {
     hubCommentsRender();
@@ -16793,6 +16960,15 @@ async function saveDraft() {
 
 $('history').onclick = () => hubHistoryDialog();
 $('cpanel-close').onclick = () => hubCommentsToggle(false);
+$('cpanel-view').onclick = () => {
+  hubCommentsView = hubCommentsView === 'list' ? 'margin' : 'list';
+  try { localStorage.setItem('primer-comments-view', hubCommentsView); } catch (e) { /* file: */ }
+  hubCommentsMode();
+  hubCommentsRender();
+};
+// A window that narrows past the gutter's width falls back to the list, and
+// one that widens gets the margin back; either way the cards find their places.
+window.addEventListener('resize', () => { if ($('cpanel') && !$('cpanel').hidden) { const was = $('cpanel').classList.contains('margin'); hubCommentsMode(); if (was !== $('cpanel').classList.contains('margin')) hubCommentsRender(); else hubMarginQueue(false); } });
 $('mode').onclick = () => suggestMenu();
 $('ar-comment').onclick = $('ty-comment').onclick = () => hubCommentStart(null);
 $('cmt-plus').onmousedown = e => { e.preventDefault(); hubCommentStart(); };
