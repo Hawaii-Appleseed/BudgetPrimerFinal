@@ -91,10 +91,23 @@
   /* The two top rows read as ONE chrome zone now: same dark ground, no rule
      between them, and the contextual controls floating on it as a light card.
      A hairline border under each row cut the chrome into stripes. */
-  #bar { position:relative; display:flex; gap:8px; align-items:center; padding:9px 14px;
-         background:var(--chrome); color:var(--txt); flex-wrap:nowrap; }
+  /* Tight by design: a hosted session shows every control at once (Mode,
+     Comments, History, Share, Publish on top of the local set) and the row
+     does not wrap — so anything past the window edge was simply gone. Every
+     number below is a few pixels taken back from padding and gaps rather
+     than a control removed. */
+  #bar { position:relative; display:flex; gap:5px; align-items:center; padding:8px 10px;
+         background:var(--chrome); color:var(--txt); flex-wrap:nowrap;
+         /* Last resort, for a window narrow enough that even the tightened
+            row runs long: the overflow SCROLLS instead of being clipped, so
+            Publish is reachable rather than simply gone. No visible bar (it
+            would add height to a fixed-height row and read as chrome); the
+            popovers are all position:fixed, so none of them is clipped by
+            this. */
+         overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+  #bar::-webkit-scrollbar { display:none; }
   /* A thin rule between the history/commit group and the rest. */
-  .bar-sep { flex:none; width:1px; height:20px; background:var(--line); margin:0 3px; }
+  .bar-sep { flex:none; width:1px; height:18px; background:var(--line); margin:0 1px; }
   #stat { flex:1 1 40px; min-width:40px; opacity:.9; overflow:hidden;
           text-overflow:ellipsis; white-space:nowrap;
           transition:opacity .5s ease; }
@@ -114,22 +127,22 @@
   /* Canva's zoom control: a track between two end dots, a round handle, and
      the level read out beside it. Sized to sit on the bar's 30px button row
      without setting its own height. */
-  #zoombar { display:inline-flex; align-items:center; gap:7px; flex:none;
-             padding:0 4px; }
+  #zoombar { display:inline-flex; align-items:center; gap:5px; flex:none;
+             padding:0 2px; }
   /* The two ends of the track are the step buttons — one click per rung of
      ZOOM_STEPS, the same ladder ⌘+ / ⌘- walk. They replaced a pair of purely
      decorative dots: the ends of a zoom track are exactly where a hand
      reaches, so spending them on ornament was a waste of the only two
      obvious targets the control has. #bar's button styling is a CHILD
      selector, so these need their own rules. */
-  .zb-step { flex:none; width:19px; height:19px; padding:0; display:grid;
+  .zb-step { flex:none; width:18px; height:18px; padding:0; display:grid;
             place-items:center; border:1px solid var(--ctl-line); border-radius:50%;
             background:var(--ctl); color:var(--txt); cursor:pointer;
             font:15px/1 system-ui; transition:background .12s, border-color .12s; }
   .zb-step:hover:not(:disabled) { border-color:var(--sage); background:#4B5B68; }
   .zb-step:disabled { opacity:.4; cursor:default; }
   .zb-step:focus-visible { outline:2px solid rgba(107,158,120,.55); outline-offset:2px; }
-  #zb-range { -webkit-appearance:none; appearance:none; width:96px; height:5px;
+  #zb-range { -webkit-appearance:none; appearance:none; width:68px; height:5px;
              border-radius:99px; background:var(--ctl-line); cursor:pointer;
              flex:none; margin:0; }
   #zb-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
@@ -143,8 +156,8 @@
   #zb-range:focus-visible { outline:2px solid rgba(107,158,120,.55); outline-offset:3px; }
   /* Tabular figures: the readout changes constantly while dragging, and
      proportional digits make the whole bar twitch as it does. */
-  #zb-val { font:12px system-ui; font-variant-numeric:tabular-nums;
-            color:var(--dim); min-width:38px; text-align:right; flex:none; }
+  #zb-val { font:11.5px system-ui; font-variant-numeric:tabular-nums;
+            color:var(--dim); min-width:32px; text-align:right; flex:none; }
   /* +Section, hidden for now. Same treatment as the zoom segment above: the
      button and every handler stay live, so bringing it back is deleting this
      one line — not rebuilding a feature. */
@@ -335,6 +348,21 @@
   #bar > #agentnote:hover { background:#7A6AB6; border-color:#9A8CD0; }
   #cupd[disabled] { opacity:.6; cursor:default; }
   #upd[disabled] { opacity:.6; cursor:default; }
+  /* The three chips whose text is written at runtime, and which therefore
+     have no width of their own to budget for: an update headline, a
+     cut-in-print warning naming every offending page. Each is a SUMMARY with
+     its detail on title= and its action on click, so an ellipsis costs
+     nothing — where being pushed off the end of an unwrapping row cost the
+     whole control. */
+  /* display:inline-block, not the row's inline-flex: an ellipsis belongs to
+     an inline box, and a flex container's anonymous text item never gets
+     one. line-height replaces the centring flex was doing. */
+  #bar > #upd, #bar > #cupd, #bar > #fit {
+        max-width:14rem; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; display:inline-block; line-height:16px; }
+  /* …and a display of any kind beats the hidden attribute's own display:none.
+     The same trap as #bar > button[hidden] below. */
+  #bar > #upd[hidden], #bar > #cupd[hidden], #bar > #fit[hidden] { display:none; }
   /* A caution, not an offer — amber rather than #upd/#cupd's inviting sage/
      blue, since clicking it does not fix anything, only dismisses the notice
      (checkStage2()). */
@@ -349,10 +377,15 @@
      dark slab of chrome sitting on a white card. That is what made the Shape,
      Text and Download menus look the way they did. */
   #bar > button, #zoom button {
-                display:inline-flex; align-items:center; gap:6px; font:12.5px system-ui;
+                display:inline-flex; align-items:center; gap:5px; font:12px system-ui;
                 background:var(--ctl); color:var(--txt); border:1px solid var(--ctl-line);
-                border-radius:var(--r-ctl); padding:5px 13px; cursor:pointer; height:30px;
+                border-radius:var(--r-ctl); padding:5px 9px; cursor:pointer; height:28px;
                 transition:background .12s, border-color .12s, transform .08s; }
+  /* The icon-only buttons are square: a 14px glyph in a 13px-per-side text
+     button was mostly padding, and four of them side by side spent more of
+     the row than any label does. Two ids each: "#bar > button" is (id + type) and
+     outranks a bare id, the same trap #agentnote fell into above. */
+  #bar > #reload, #bar > #guides, #bar > #layers, #bar > #present { padding:5px 6px; }
   #bar > button:active:not(:disabled) { transform:translateY(1px); }
   /* The flex rule above beats [hidden]'s own (non-!important) display:none —
      Share/Publish/Push all render anyway once "hidden" is only an attribute.
@@ -363,7 +396,7 @@
   #bar > button:disabled { opacity:.45; cursor:default; border-color:var(--ctl-line);
                          background:var(--ctl); }
   #bar > button.on { background:var(--sage); border-color:var(--sage); color:#fff; }
-  #undo, #redo { font-size:16px; line-height:1; padding:4px 9px; }
+  #undo, #redo { font-size:15px; line-height:1; padding:4px 6px; }
 
   /* Sources manager — a light panel over the preview, in the top document so a
      re-render of the iframe never disturbs it. top is set from the bar height. */
@@ -7618,6 +7651,22 @@ function showMini(d, els) {
     const speedB = btn('Expand speed…',
       '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="5.3"/><path d="M7 4.2v3l2 1.1"/></svg>',
       () => openTglSpeedPopover(d, speedB, tb));
+  }
+  // Comment on what is selected — the same act as the strip's #ar-comment,
+  // reachable from the object itself. Without it the only way to note
+  // something about an element was to find the top strip, which is the one
+  // control the floating bar exists to save you walking to. Only where
+  // comments have somewhere to live (the hub's store), and never for a
+  // viewer-role session, which cannot write one.
+  if (docStore() && !hubViewOnly()) {
+    const anchor = mine.length === 1 ? idOf(mine[0]) : null;
+    const hasCmt = !!anchor
+      && hubComments.some(c => !c.resolved && c.anchor === anchor);
+    const cmtB = btn(hasCmt ? 'Comments on this element' : 'Comment on this element',
+      '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"'
+      + ' stroke-width="1.4" stroke-linejoin="round"><path d="M2 2.5h10v7H6.5L3.5 12V9.5H2z"/></svg>',
+      () => hubCommentStart(null));
+    if (hasCmt) cmtB.classList.add('on');
   }
   const dupDisabled = ![...selIds].every(id => dupModeOf(d, id));
   btn(dupDisabled ? 'Duplicate — an endnote reorders instead: drag it up or down the list'
