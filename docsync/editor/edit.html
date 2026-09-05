@@ -16295,7 +16295,8 @@ function suggestApplyLayout(e) {
 const suggestReject = c => hubCommentPatch(c.id, { status: 'rejected' });
 const suggestReopen = c => hubCommentPatch(c.id, { status: 'open' });
 /** Markdown to the plain words the page shows of it, near enough to find. */
-const suggestPlain = md => String(md || '').replace(/\[\[[^\]]*\]\]/g, '').replace(/[*_`#>]+/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+const suggestPlain = md => String(md || '').replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\^[^\]]*\]/g, '')
+  .replace(/[*_`#>]+/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
 /** The common prefix and suffix of two strings: what stayed, what went, what came. */
 function suggestSplit(before, after) {
   const W = /\S/;
@@ -16329,7 +16330,9 @@ function suggestPaint(d) {
     const { prefix, gone, came } = suggestSplit(suggestPlain(v.before), suggestPlain(v.after));
     let at = null;
     if (gone.trim() && canHighlight) {
-      const r = hubQuoteRange(d, el, gone);
+      // The whole run, else its first words: a footnote mark or a link the
+      // page renders differently should not cost the strike altogether.
+      const r = hubQuoteRange(d, el, gone) || hubQuoteRange(d, el, gone.trim().split(/\s+/).slice(0, 8).join(' '));
       if (r) { dels.push(r); at = r; }
     }
     if (!at && prefix.trim()) {
