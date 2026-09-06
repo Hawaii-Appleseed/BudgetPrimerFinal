@@ -7046,9 +7046,22 @@ function editBox(d, el) {
   // inches, above everything while it is open.
   // Read off el's OWN rendered numbers before replaceWith() below discards it.
   const fnLabels = fnRenderedLabels(el, b.md);
+  // The wrapper IS the box as the page drew it — its class and every inline
+  // declaration it wore (the text style's size/weight/colour/alignment, a
+  // fill and its padding, rotation, opacity, shadow), so the words look the
+  // same open as they did closed: a bare wrapper dropped a 22px bold red
+  // centred note to 15px regular slate on white the moment it was opened.
+  // The host inherits the text styling from it (.ds-edit is font/color/
+  // line-height:inherit); only the geometry is restated, since a narrow box
+  // gets a floor to type in and the editor must ride above everything.
   const wrap = d.createElement('div');
-  wrap.style.cssText = `position:absolute;left:${b.x}in;top:${b.y}in;`
-    + `width:${Math.max(b.w, 1.8)}in;z-index:20000`;
+  wrap.className = el.className;
+  wrap.style.cssText = el.style.cssText;
+  wrap.style.position = 'absolute';
+  wrap.style.left = `${b.x}in`;
+  wrap.style.top = `${b.y}in`;
+  wrap.style.width = `${Math.max(b.w, 1.8)}in`;
+  wrap.style.zIndex = '20000';
   const host = d.createElement('div');
   host.contentEditable = 'true';
   host.className = 'ds-edit';
