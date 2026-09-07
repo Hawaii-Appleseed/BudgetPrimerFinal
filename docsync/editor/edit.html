@@ -1399,7 +1399,20 @@
   .cpanel-tab.on { color:#2D5A3D; border-bottom-color:#2D5A3D; }
   #cpanel-list { flex:1; overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
   .cmt { position:relative; border:1px solid #E1E8E3; border-radius:10px; padding:10px 12px; background:#fff; cursor:pointer; outline:none; }
-  .cmt:focus-visible, .cmt.active { border-color:#C2703A; box-shadow:0 2px 12px rgba(194,112,58,.22); }
+  .cmt:focus-visible { border-color:#C2703A; box-shadow:0 2px 12px rgba(194,112,58,.22); }
+  /* The thread in hand POPS: a warm ground, a ring, a deeper shadow, and a
+     short swell as it is taken - the same cue as the darker highlight on the
+     page, so a click on the words and a click on the card read as one act.
+     Shadow and colour only, never transform: in the margin the card's
+     transform is its place. */
+  .cmt.active { border-color:#C2703A; background:#FFF9F1;
+    box-shadow:0 0 0 2px rgba(194,112,58,.38), 0 8px 22px rgba(194,112,58,.28);
+    animation:cmt-pop .32s ease-out; }
+  @keyframes cmt-pop {
+    0%   { box-shadow:0 0 0 0 rgba(194,112,58,0), 0 1px 3px rgba(30,44,50,.10); background:#fff; }
+    45%  { box-shadow:0 0 0 4px rgba(194,112,58,.30), 0 10px 26px rgba(194,112,58,.34); }
+    100% { box-shadow:0 0 0 2px rgba(194,112,58,.38), 0 8px 22px rgba(194,112,58,.28); background:#FFF9F1; }
+  }
   .cmt.resolved { background:#F1F4F1; color:#5B6E66; }
   .cmt-quote { font-size:11.5px; color:#5B6E66; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .cmt-quote q, .cpanel-anchor q { quotes:"\201C" "\201D"; font-style:italic; color:var(--ink); background:#FBE7A1; padding:0 2px; border-radius:3px; }
@@ -1501,7 +1514,9 @@
   #cpanel.margin #cpanel-list.anim > .fresh { transition:none; }
   .cmt.pending { opacity:.72; }
   #cpanel.margin .cmt { box-shadow:0 1px 3px rgba(30,44,50,.10); }
-  #cpanel.margin .cmt.active { z-index:2; box-shadow:0 4px 16px rgba(194,112,58,.24); }
+  /* In the margin the card in hand also steps OUT of the column - a few
+     pixels wider each side, towards the page it is about - over the others. */
+  #cpanel.margin #cpanel-list > .cmt.active { z-index:2; left:4px; right:6px; }
   #cpanel.margin .cmt-empty { top:12px; }
   #cpanel.margin .cmt-sep { border-top:0; padding:6px 2px 0; }
   /* The new comment is a card at its anchor too, not a foot to the panel:
@@ -7718,8 +7733,8 @@ function showMini(d, els) {
   // viewer-role session, which cannot write one.
   if (docStore() && !hubViewOnly()) {
     const anchor = mine.length === 1 ? idOf(mine[0]) : null;
-    const hasCmt = !!anchor
-      && hubComments.some(c => !c.resolved && c.anchor === anchor);
+    // A thread on the block, or on the slot inside it (hubCommentAnchorsInHand).
+    const hasCmt = !!anchor && hubCommentsOnHand().length > 0;
     const cmtB = btn(hasCmt ? 'Comments on this element' : 'Comment on this element',
       '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"'
       + ' stroke-width="1.4" stroke-linejoin="round"><path d="M2 2.5h10v7H6.5L3.5 12V9.5H2z"/></svg>',
@@ -16145,8 +16160,7 @@ function hubCommentsPaint(d) {
   }
   hubCommentsBind(d);
   d.querySelectorAll('[data-ds-comments]').forEach(el => el.removeAttribute('data-ds-comments'));
-  const here = hubCommentAnchor();
-  const has = !!here && hubComments.some(c => !c.resolved && c.anchor === here);
+  const has = hubCommentsOnHand().length > 0;
   $('ar-comment').classList.toggle('has', has);
   $('ty-comment').classList.toggle('has', has);
   // Quoted words get a highlight; a thread on a whole paragraph or element,
@@ -16379,6 +16393,10 @@ function hubCommentsBind(d) {
   d.addEventListener('keydown', e => { if (hubCommentKey(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
   // The cards in the margin ride with the page: repositioned, not rebuilt.
   if (d.defaultView) d.defaultView.addEventListener('scroll', () => hubMarginQueue(false), { passive: true });
+  // The stage scrolls too - the clearance band under the last page (up to
+  // 154px in the gutter) and a zoomed canvas's sideways range - and moves the
+  // page just the same; without this the cards stood still through it.
+  if (!$('stage').__dsMarginScroll) { $('stage').__dsMarginScroll = true; $('stage').addEventListener('scroll', () => hubMarginQueue(false), { passive: true }); }
 }
 /** The "+ Comment" pill beside a text selection in the open paragraph —
  *  Google Docs' affordance, in the top document because the report's frame
@@ -16588,6 +16606,60 @@ function hubCommentShow(c) {
   return true;
 }
 let hubCommentFlashTimer = 0;
+/** What is selected on the page has a thread on it: that thread comes to
+ *  hand - its card pops in the panel, its highlight darkens - as if the card
+ *  had been clicked, but with no scroll (the words are already in view: they
+ *  were just clicked). Selecting something with no thread lets go of the one
+ *  in hand, as Docs does; an EMPTY selection changes nothing, since a render
+ *  clears the selection all the time and the card would flicker. Not while a
+ *  new comment is being written: the composer owns the selection then. */
+let hubCommentSelSeen = '';   // the selection the hook last acted on
+function hubCommentFollowSelection() {
+  if (hubCommentQuote) return;
+  const here = hubCommentAnchor();
+  // Only a selection that CHANGED. The event fires on every refresh of the
+  // strip - every render, a peer's edit - and acting on the same selection
+  // twice would take back a card clicked since, whose words are elsewhere.
+  const seen = here ? [...hubCommentAnchorsInHand()].join('|') : '';
+  if (seen === hubCommentSelSeen) return;
+  hubCommentSelSeen = seen;
+  if (!here) return;
+  const on = hubCommentsOnHand();
+  if (on.some(c => c.id === hubCommentActive)) return;
+  // Let go only of a thread the list can see: one it cannot (just posted,
+  // and a refresh that left before the post has come back without it) is
+  // not "elsewhere", it is in flight, and the next refresh brings it back.
+  const cur = hubComments.find(c => c.id === hubCommentActive);
+  if (on.length) hubCommentActive = on[0].id;
+  else if (cur) hubCommentActive = null;
+  else return;
+  const d = $('out') && $('out').contentDocument;
+  if (d) hubCommentsPaint(d);
+}
+/** Every anchor the selection stands for. The thing in hand first; then, for
+ *  one selected block, the slots inside it - a paragraph is a movable block
+ *  around one slot, a click selects the BLOCK, and a thread on its words is
+ *  anchored to the SLOT (the open paragraph names the slot). Both are "this". */
+function hubCommentAnchorsInHand() {
+  const here = hubCommentAnchor();
+  const set = new Set(here ? [here] : []);
+  const d = $('out') && $('out').contentDocument;
+  if (d && selIds.size === 1) {
+    const el = selEls(d)[0];
+    if (el) {
+      if (el.dataset.slot) set.add(el.dataset.slot);
+      el.querySelectorAll('[data-slot]').forEach(x => set.add(x.dataset.slot));
+    }
+  }
+  return set;
+}
+/** The open threads on what is selected, the one on the thing itself first. */
+function hubCommentsOnHand() {
+  const here = hubCommentAnchor();
+  const set = hubCommentAnchorsInHand();
+  return hubComments.filter(c => !c.resolved && set.has(c.anchor))
+    .sort((x, y) => (y.anchor === here) - (x.anchor === here));
+}
 /** Bring one thread to hand: darker highlight, raised card, panel open. */
 function hubCommentFocus(id, { scrollPage = true } = {}) {
   hubCommentActive = id;
@@ -16708,7 +16780,8 @@ function hubCommentsRenderInner() {
   const byPos = new Map(shown.map(c => [c.id, hubCommentPos(d, c)]));
   shown.sort((x, y) => byPos.get(x.id) - byPos.get(y.id) || (x.at < y.at ? -1 : 1));
   const open = shown.filter(c => !c.resolved), done = shown.filter(c => c.resolved);
-  const onIt = c => here && c.anchor === here && !c.resolved;
+  const onHand = hubCommentAnchorsInHand();
+  const onIt = c => here && onHand.has(c.anchor) && !c.resolved;
   // In the margin a card's place says what it is on, so the list's "On the
   // selection" / "Elsewhere" headings would only take room from the cards;
   // the cards on the selection wear a tag instead.
@@ -16735,6 +16808,10 @@ function hubCommentsRenderInner() {
     if (old && old.__dsSig === sig) { next.push(old); return old; }
     const el = make();
     el.__dsSig = sig;
+    // The pop plays when a card is TAKEN in hand, not when a card already in
+    // hand is built again for some other reason (a peer arriving, the roster
+    // landing, a reply).
+    if (old && old.classList.contains('active') && el.classList.contains('active')) el.style.animation = 'none';
     // A card built again in place (its thread changed, it was taken in hand)
     // starts where the old one stood, so it glides rather than jumps.
     if (old && margin) { el.style.transform = old.style.transform; el.__dsTop = old.__dsTop; }
@@ -17979,7 +18056,7 @@ window.addEventListener('keydown', e => { if (hubCommentKey(e)) e.preventDefault
 // cards follow the page: re-sort when the panel is open and the page moved.
 window.addEventListener('resize', () => { const d = $('out') && $('out').contentDocument; if (d) hubCommentPlus(d); });
 $('cpanel-add').onclick = () => hubCommentAdd();
-document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender(); });
+document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) { hubCommentFollowSelection(); hubCommentsRender(); } });
 $('comments').onclick = () => hubCommentsToggle();
 $('share').onclick = async () => {
   $('filepop').hidden = true;
