@@ -15839,12 +15839,28 @@ function tokenWhy(e) {
 let docStoreBase = null;    // '/api/docs/<room>' when the document lives on the hub
 let docVersion = null;      // the store's version the files on screen came from
 const docStore = () => docStoreBase;
+// The store's three files, requested the moment the store is chosen — all
+// three at once, not meta and THEN the two the meta admits to. They used to
+// go out only after Pyodide was ready (docStoreLoad runs after the engine
+// gate), one after another, ~160ms each through Access: the document the
+// person came for was the last thing asked for. Now they are in flight beside
+// the engine files and the wasm, and docStoreLoad finds them landed. A
+// document the store has not seen yet answers 404 for content and layout —
+// two cheap misses, ignored.
+let docStoreAhead = null;   // {meta, content, layout}: fetch promises, or null
+function docStoreFetchAhead() {
+  if (!docStore()) { docStoreAhead = null; return; }
+  const one = what => fetch(what ? `${docStore()}/${what}` : docStore(), { cache: 'no-store' });
+  docStoreAhead = { meta: one(''), content: one('content'), layout: one('layout') };
+  for (const p of Object.values(docStoreAhead)) p.catch(() => {});   // reported by docStoreLoad, not as orphans
+}
 
 function docStoreDecide() {
   const door = !local && collabDoor();
   const room = door && door.docs && collabRoom();
   docStoreBase = room ? `${door.docs}/${room}` : null;
   if (!docStoreBase) return;
+  docStoreFetchAhead();
   // Publish stays: it is one commit of the saved document to git
   // (docStorePublish), off the hot path. Share is the share LIST here, not
   // a draft-branch link: who may open this document, and as what.
@@ -15866,7 +15882,15 @@ function docStoreDecide() {
   // whose collaborator was not in the room when they commented.
   clearInterval(hubCommentsSlow);
   hubCommentsSlow = setInterval(hubCommentsLoad, 60000);
+  // Looked at again: read the list now, not at the minute. Presence carries
+  // a change from someone IN the room; the one who resolved a thread from
+  // another tab, or before this editor opened, is not in it.
+  if (!hubCommentsWatch) {
+    hubCommentsWatch = true;
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) hubCommentsLoad(); });
+  }
 }
+let hubCommentsWatch = false;
 
 // --- who may open this document (the hub's share list, step 06) ----------
 // The door's share record (functions/api/collab/share/) decides the role
@@ -16194,6 +16218,7 @@ let hubComments = [];
 let hubCommentsTimer = 0;
 let hubCommentsStamp = 0;     // when THIS editor last changed the comments (rides presence)
 let hubCommentsHeard = 0;     // the newest such stamp heard from a collaborator
+let hubCommentsGen = 0;       // bumped by every local change and every load: a poll's answer is only as good as the world it was asked in
 let hubCommentsSlow = 0;      // the fallback poll, panel open or not
 let hubCommentsTab = 'all';   // 'all' | 'you'
 let hubCommentActive = null;  // the thread in hand: darker highlight, raised card
@@ -16601,10 +16626,18 @@ function hubCommentsBadge() {
 }
 async function hubCommentsLoad() {
   if (!docStore()) return;
+  // The world this poll was asked in. A Resolve clicked while the answer was
+  // on its way back would be undone by it - the list as it stood BEFORE the
+  // click, painted over the resolved card - and stay undone until the next
+  // poll, fifteen seconds on: "it takes a while to see it as resolved". An
+  // answer from an older world is dropped; the change bumped the generation
+  // and the next poll reads the hub as it now is.
+  const gen = ++hubCommentsGen;
   try {
     const r = await fetch(`${docStore()}/comments`, { cache: 'no-store' });
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
+    if (gen !== hubCommentsGen) return;
     // A card the hub has not answered for yet is not the poll's to take away.
     const pend = hubComments.filter(c => c.pending && !j.some(x => x.id === c.id));
     hubComments = j.concat(pend);
@@ -17190,9 +17223,10 @@ function hubCommentsRenderInner() {
   const av = $('cpanel-me');
   if (av) { av.style.setProperty('--av', hubAvatarColor(me)); av.textContent = hubInitial(hubNameOf(me)); av.title = hubNameOf(me); }
 }
-const hubCommentsChanged = () => { hubCommentsStamp = Date.now(); };
+const hubCommentsChanged = () => { hubCommentsStamp = Date.now(); hubCommentsGen++; };
 /** The panel and the page, from the threads as they stand now. */
 function hubCommentsShow() {
+  hubCommentsGen++;   // the list moved here: a poll asked before this is answering about an older world
   hubCommentsBadge();
   if ($('cpanel') && !$('cpanel').hidden) hubCommentsRender();
   const d = $('out') && $('out').contentDocument;
@@ -17857,8 +17891,11 @@ async function hubJson(r) {
  *  stays same-origin, only the two authored files come from the store. */
 async function docStoreLoad(urls, files) {
   if (!docStore()) return;
+  // The requests docStoreDecide sent ahead, or fresh ones (a call with none
+  // ahead: a retry, a test). Taken once — a second load asks again.
+  const ahead = docStoreAhead; docStoreAhead = null;
   try {
-    const r = await fetch(docStore(), { cache: 'no-store' });
+    const r = await (ahead ? ahead.meta : fetch(docStore(), { cache: 'no-store' }));
     const m = await hubJson(r);
     if (!r.ok) throw new Error(m.error || `the store answered ${r.status}`);
     if (!m.exists) {
@@ -17866,7 +17903,7 @@ async function docStoreLoad(urls, files) {
       return;
     }
     const get = async what => {
-      const q = await fetch(`${docStore()}/${what}`, { cache: 'no-store' });
+      const q = await (ahead ? ahead[what] : fetch(`${docStore()}/${what}`, { cache: 'no-store' }));
       return q.ok ? q.text() : null;
     };
     const [c, l] = await Promise.all([get('content'), M.layout ? get('layout') : Promise.resolve(null)]);
