@@ -1449,6 +1449,35 @@
     box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
   #hpanel[hidden] { display:none; }
   #hpanel.gutter { right:0; bottom:0; width:var(--cmt-gutter, 384px); border-radius:var(--r-edge) 0 0 0; border-right:0; border-bottom:0; box-shadow:none; background:#EEF2EF; }
+  /* Ask AI: the history panel's frame, with a transcript where the versions
+     go and a question box at the foot. Same gutter rule on a wide window. */
+  #aipanel { position:fixed; right:12px; top:104px; bottom:60px; width:min(360px, 90vw); z-index:45;
+    display:flex; flex-direction:column; background:#F8FAF8; border:1px solid #C9D6CD; border-radius:var(--r-card, 10px);
+    box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
+  #aipanel[hidden] { display:none; }
+  #aipanel.gutter { right:0; bottom:0; width:var(--cmt-gutter, 384px); border-radius:var(--r-edge) 0 0 0; border-right:0; border-bottom:0; box-shadow:none; background:#EEF2EF; }
+  #aipanel-clear { border:1px solid #C9D6CD; background:#fff; font:600 11px system-ui; color:#5B6E66; padding:3px 9px; border-radius:999px; cursor:pointer; margin-left:auto; margin-right:8px; }
+  #aipanel-clear:hover { background:#E8EDE6; color:var(--ink); }
+  #aipanel-log { flex:1; overflow:auto; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .ai-turn { padding:8px 10px; border-radius:10px; font:13px/1.45 system-ui; white-space:pre-wrap; word-wrap:break-word; }
+  .ai-turn.you { background:#E8EDE6; color:var(--ink); align-self:flex-end; max-width:92%; }
+  .ai-turn.claude { background:#fff; border:1px solid #E1E8E3; color:var(--ink); }
+  .ai-turn.note { background:none; color:#5B6E66; font-size:12px; padding:2px 10px; }
+  .ai-turn.err { background:#FBEFEC; border:1px solid #EACBC4; color:#8C3B2E; }
+  .ai-turn.working { color:#5B6E66; font-style:italic; }
+  /* What an answer changed, so the person can see it before they trust it -
+     and the one undo that takes it all back. */
+  .ai-applied { display:flex; align-items:center; gap:8px; margin-top:6px; padding-top:6px; border-top:1px solid #E1E8E3; font:12px system-ui; color:#2D5A3D; }
+  .ai-applied button { border:1px solid #C9D6CD; background:#fff; font:600 11px system-ui; color:#5B6E66; padding:2px 8px; border-radius:999px; cursor:pointer; margin-left:auto; }
+  .ai-applied button:hover { background:#E8EDE6; color:var(--ink); }
+  #aipanel-form { display:flex; flex-direction:column; gap:6px; padding:8px 12px 4px; border-top:1px solid #E1E8E3; }
+  #aipanel-ask { font:13px/1.4 system-ui; padding:8px 10px; border:1px solid #C9D6CD; border-radius:8px; background:#fff; color:var(--ink); resize:vertical; min-height:58px; }
+  #aipanel-ask:focus { outline:2px solid #6B9E78; outline-offset:1px; }
+  .aipanel-row { display:flex; align-items:center; gap:8px; }
+  #aipanel-hint { font:11px system-ui; color:#5B6E66; }
+  #aipanel-send { margin-left:auto; font:600 12px system-ui; padding:6px 14px; border:0; border-radius:999px; background:#2D5A3D; color:#fff; cursor:pointer; }
+  #aipanel-send:hover { background:#24492F; }
+  #aipanel-send:disabled { opacity:.55; cursor:default; }
   #hpanel-named { border:1px solid #C9D6CD; background:#fff; font:600 11px system-ui; color:#5B6E66; padding:3px 9px; border-radius:999px; cursor:pointer; margin-left:auto; margin-right:8px; }
   #hpanel-named:hover { background:#E8EDE6; color:var(--ink); }
   #hpanel-named.on { background:#2D5A3D; border-color:#2D5A3D; color:#fff; }
@@ -1794,6 +1823,20 @@
     <div id="hpanel-list"></div>
     <p class="hpanel-note">Restoring brings a version back as a new one — nothing is lost.</p>
   </aside>
+  <!-- Ask AI: the hub's Claude, on the open document. The panel gathers the
+       document through docsync.api, posts it to the door's `ai` route with
+       what was typed, shows the answer, and applies any proposed edits as ONE
+       docsync.api.batch() - one undo step, the same validation as typing, live
+       to the room. A viewer sees the proposal and cannot apply it. -->
+  <aside id="aipanel" hidden aria-label="Ask AI">
+    <div class="cpanel-head"><b>Ask AI</b><button type="button" id="aipanel-clear" title="Start a new conversation">Clear</button><button type="button" id="aipanel-close" aria-label="Close Ask AI">×</button></div>
+    <div id="aipanel-log" aria-live="polite"></div>
+    <form id="aipanel-form">
+      <textarea id="aipanel-ask" rows="3" placeholder="Ask about the report, or say what to change — “tighten the intro on page 2”, “what does the cover claim?”"></textarea>
+      <div class="aipanel-row"><span id="aipanel-hint">Enter sends · Shift+Enter for a new line</span><button type="submit" id="aipanel-send">Ask</button></div>
+    </form>
+    <p class="hpanel-note" id="aipanel-note">Edits it proposes are applied as one step — ⌘Z undoes the whole thing.</p>
+  </aside>
   <div class="pop menu" id="filepop" hidden>
     <p class="pop-h">Reports</p>
     <button class="shp" id="file-open"><svg class="shp-i" viewBox="0 0 16 16"
@@ -1945,6 +1988,8 @@
   <button id="mode" hidden aria-label="Editing or suggesting — whether your edits change the document or propose a change">Editing ▾</button>
   <button id="comments" hidden aria-label="Comments on this document">Comments</button>
   <button id="history" hidden aria-label="Every saved version of this document">History</button>
+  <!-- Hub only: the door carries an `ai` path (docStoreDecide shows it). -->
+  <button id="ai" hidden aria-label="Ask Claude about this document, or to change it">Ask AI</button>
   <!-- Discard is off the local bar: undo covers stepping an edit back. It is
        NOT redundant on a saved draft, where it is the only way to throw the
        draft branch away and return to the live report, so detectLocal() hides
@@ -12269,7 +12314,8 @@ function collabDoor() {
   if (!cfg) return null;
   if (cfg.path) {
     const abs = v => (v ? '/' + String(v).replace(/^\/+|\/+$/g, '') : null);
-    return { path: abs(cfg.path), me: abs(cfg.me), docs: abs(cfg.docs) };
+    // `ai` is the hub's Claude route; its presence is what shows Ask AI.
+    return { path: abs(cfg.path), me: abs(cfg.me), docs: abs(cfg.docs), ai: abs(cfg.ai) };
   }
   return cfg.url ? { url: String(cfg.url).replace(/\/+$/, '') } : null;
 }
@@ -16115,6 +16161,11 @@ function docStoreDecide() {
   $('mode').hidden = false;
   $('share').hidden = false;
   $('share').disabled = false;
+  // Ask AI shows only where the door has a route to answer it: a hub that
+  // predates /api/ai shows no button. A hub with the route but no key bound
+  // answers 501, and the panel says "not configured" in place - that is the
+  // route's own distinction between cannot and may not, kept visible.
+  if (door.ai && $('ai')) $('ai').hidden = false;
   rowLabel('share', 'Share…');
   $('share').setAttribute('aria-label', 'Who may open this document, and as what');
   $('share').title = 'Who may open this document, and as what';
@@ -16217,6 +16268,7 @@ async function hubHistoryToggle(open) {
   if (!panel || !docStore()) return;
   const show = open == null ? panel.hidden : open;
   if (show && $('cpanel') && !$('cpanel').hidden) hubCommentsToggle(false);   // one side panel at a time
+  if (show && $('aipanel') && !$('aipanel').hidden) hubAiToggle(false);
   panel.hidden = !show;
   $('history').classList.toggle('on', show);
   hubGutterSync();
@@ -16227,11 +16279,12 @@ async function hubHistoryToggle(open) {
  *  under 1100px both float over the page. */
 function hubGutterSync() {
   const wide = window.matchMedia('(min-width: 1100px)').matches;
-  const c = $('cpanel'), h = $('hpanel');
-  const gutter = wide && ((c && !c.hidden && c.classList.contains('margin')) || (h && !h.hidden));
-  if (h) {
-    h.classList.toggle('gutter', wide && !h.hidden);
-    h.style.top = wide && !h.hidden && $('work') ? Math.round($('work').getBoundingClientRect().top) + 'px' : '';
+  const c = $('cpanel'), h = $('hpanel'), ai = $('aipanel');
+  const gutter = wide && ((c && !c.hidden && c.classList.contains('margin')) || (h && !h.hidden) || (ai && !ai.hidden));
+  for (const p of [h, ai]) {
+    if (!p) continue;
+    p.classList.toggle('gutter', wide && !p.hidden);
+    p.style.top = wide && !p.hidden && $('work') ? Math.round($('work').getBoundingClientRect().top) + 'px' : '';
   }
   if (document.body.classList.contains('cmt-margin') !== gutter) {
     document.body.classList.toggle('cmt-margin', gutter);
@@ -16409,6 +16462,141 @@ function hubHistoryPaint(d) {
   for (const k of hubHistorySel.added || []) { const el = hubCommentEl(d, k); if (el) el.classList.add('ds-hist-changed'); }
 }
 $('hpanel-close').onclick = () => hubHistoryToggle(false);
+
+// --- Ask AI (hub only) -------------------------------------------------------
+// The hub's /api/ai, from a side panel. Nothing here talks to a model: the
+// panel gathers the document, posts it with the question, and does with the
+// answer exactly what a pilot would - agentTouch() so the room sees an
+// automated editor at work, then ONE docsync.api.batch() so the change is one
+// undo step under the same validation as typing. A viewer is shown the
+// proposal and told why it stays a proposal; their own edits are suggestions
+// for the same reason.
+let hubAiHistory = [];          // [{role, text}] this panel's turns, sent back for follow-ups
+let hubAiBusy = false;
+
+function hubAiToggle(open) {
+  const panel = $('aipanel');
+  if (!panel || !docStore()) return;
+  const show = open == null ? panel.hidden : open;
+  if (show && $('cpanel') && !$('cpanel').hidden) hubCommentsToggle(false);   // one side panel at a time
+  if (show && $('hpanel') && !$('hpanel').hidden) hubHistoryToggle(false);
+  panel.hidden = !show;
+  $('ai').classList.toggle('on', show);
+  hubGutterSync();
+  if (show) {
+    if (!$('aipanel-log').childElementCount)
+      hubAiNote('Ask a question, or say what to change. It sees the whole report - every slot\'s text and where everything sits.');
+    $('aipanel-ask').focus();
+  }
+}
+
+function hubAiRow(cls, text) {
+  const d = document.createElement('div');
+  d.className = 'ai-turn ' + cls;
+  d.textContent = text;
+  $('aipanel-log').appendChild(d);
+  $('aipanel-log').scrollTop = $('aipanel-log').scrollHeight;
+  return d;
+}
+const hubAiNote = t => hubAiRow('note', t);
+
+/** The document as the route wants it: every slot's FULL markdown, read off
+ *  the source itself (inventory() only lists the slots that render inside a
+ *  section.page, and carries 80-char snippets - enough to find prose, not to
+ *  rewrite it), plus inventory() for the map: which slot sits on which page,
+ *  and every element with its box. */
+function hubAiDocument() {
+  const inv = docsync.api.inventory();
+  const keys = [];
+  const seen = new Set();
+  for (const m of String(source).matchAll(/\[\[([^\]\n]+)\]\]/g)) {
+    if (!seen.has(m[1])) { seen.add(m[1]); keys.push(m[1]); }
+  }
+  const slots = keys.map(key => { const g = docsync.api.getSlot(key); return g.ok ? { key, md: g.md } : null; }).filter(Boolean);
+  const pages = inv.pages.map(p => ({
+    id: p.id, index: p.index,
+    slots: p.slots.map(s => s.key),
+    elements: p.elements.map(e => ({ id: e.id, kind: e.kind, box: e.box, locked: e.locked, text: e.text })),
+  }));
+  return {
+    project: inv.project, name: (M && M.name) || inv.project,
+    page: inv.page, pageOrder: inv.pageOrder, selected: inv.selected,
+    role: hubViewOnly() ? 'viewer' : 'editor',
+    slots, pages, sources: inv.sources,
+  };
+}
+
+async function hubAiSend() {
+  if (hubAiBusy) return;
+  const door = collabDoor();
+  const ask = $('aipanel-ask').value.trim();
+  if (!ask || !door || !door.ai) return;
+  if (editing) { hubAiRow('err', 'An inline text editor is open - close it first, so the answer sees the text as it is.'); return; }
+  hubAiBusy = true;
+  $('aipanel-send').disabled = true;
+  $('aipanel-ask').value = '';
+  hubAiRow('you', ask);
+  const working = hubAiRow('claude working', 'Reading the report…');
+  let j = null;
+  try {
+    const r = await fetch(door.ai, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: collabRoom(), instruction: ask, document: hubAiDocument(), history: hubAiHistory }),
+    });
+    // Access answers a signed-out browser with its sign-in page: 200, HTML.
+    const ct = r.headers.get('content-type') || '';
+    j = /\bjson\b/i.test(ct) ? await r.json() : { ok: false, error: r.status === 200 ? 'signed out of the hub - reload to sign in' : `the hub answered ${r.status}` };
+    if (r.status === 501 && j && j.error) j.error = 'Ask AI is not set up on this hub yet (' + j.error + ')';
+  } catch (e) {
+    j = { ok: false, error: 'could not reach the hub - ' + (e && e.message || e) };
+  }
+  working.remove();
+  hubAiBusy = false;
+  $('aipanel-send').disabled = false;
+
+  if (!j || !j.ok) { hubAiRow('err', (j && j.error) || 'no answer'); $('aipanel-ask').focus(); return; }
+
+  const said = j.text || (j.ops && j.ops.length ? j.summary : '') || '(no answer)';
+  const row = hubAiRow('claude', said);
+  hubAiHistory.push({ role: 'user', text: ask }, { role: 'assistant', text: said });
+  if (hubAiHistory.length > 24) hubAiHistory = hubAiHistory.slice(-24);
+  if (j.truncated) hubAiNote('The answer ran long and was cut off - ask about less at once.');
+
+  if (j.ops && j.ops.length) {
+    if (hubViewOnly()) {
+      hubAiNote(`Proposed ${j.ops.length} change${j.ops.length === 1 ? '' : 's'} - view only here, so nothing was applied. Ask an editor.`);
+    } else {
+      // One automated editor at work, named to the room, then one batch.
+      agentTouch({ by: 'Claude', what: j.summary || `${j.ops.length} edit${j.ops.length === 1 ? '' : 's'}`,
+                   target: typeof (j.ops[0].args || [])[0] === 'string' ? j.ops[0].args[0] : null });
+      let res;
+      try { res = await docsync.api.batch(j.ops); } catch (e) { res = { ok: false, error: e && e.message || String(e) }; }
+      if (res && res.ok) {
+        const box = document.createElement('div');
+        box.className = 'ai-applied';
+        box.textContent = `Applied ${j.ops.length} change${j.ops.length === 1 ? '' : 's'}` + (j.summary ? ` — ${j.summary}` : '');
+        const undo = document.createElement('button');
+        undo.type = 'button'; undo.textContent = 'Undo';
+        undo.onclick = async () => { const u = await docsync.api.undo(); if (u && u.ok) { undo.disabled = true; undo.textContent = 'Undone'; } };
+        box.appendChild(undo);
+        row.appendChild(box);
+      } else {
+        hubAiRow('err', 'The editor refused the change, so nothing was applied: ' + ((res && res.error) || 'unknown'));
+      }
+    }
+  }
+  $('aipanel-ask').focus();
+}
+
+if ($('ai')) {
+  $('ai').onclick = () => hubAiToggle();
+  $('aipanel-close').onclick = () => hubAiToggle(false);
+  $('aipanel-clear').onclick = () => { hubAiHistory = []; $('aipanel-log').textContent = ''; hubAiNote('New conversation.'); $('aipanel-ask').focus(); };
+  $('aipanel-form').onsubmit = e => { e.preventDefault(); hubAiSend(); };
+  $('aipanel-ask').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); hubAiSend(); }
+  });
+}
 $('hpanel-named').onclick = () => { hubHistoryNamedOnly = !hubHistoryNamedOnly; hubHistoryRender(); };
 $('hpanel-show').onchange = () => hubHistoryPaint($('out') && $('out').contentDocument);
 /** Bring a version back: a new version on top, everyone in the session gets it. */
@@ -17658,6 +17846,7 @@ function hubCommentsToggle(open) {
   if (!panel) return;
   const show = open == null ? panel.hidden : open;
   if (show && $('hpanel') && !$('hpanel').hidden) hubHistoryToggle(false);   // one side panel at a time
+  if (show && $('aipanel') && !$('aipanel').hidden) hubAiToggle(false);
   panel.hidden = !show;
   $('comments').classList.toggle('on', show);
   hubCommentsMode();   // the gutter comes with the panel and goes with it
