@@ -14491,6 +14491,7 @@ function wire(roots) {
   dragify(d, roots);
   collabWire(d);
   hubCommentsPaint(d);
+  hubSlotFocus(d);
   hubHistoryPaint(d);
   contextify(d, roots);
   wireSections(d, roots);
@@ -16538,6 +16539,42 @@ function hubQuoteRange(d, el, quote) {
   r.setStart(s.node, s.offset);
   r.setEnd(e.node, e.offset + 1);
   return r;
+}
+// --- ?slot=<key>: a link that names one slot ---------------------------------
+//
+// The hub's connector answers "that is geometry, and it is done here" with a
+// link, because a refusal a person cannot act on is just a wall. This is the
+// other end of it: open the editor on the slot in question, ringed and
+// selected, so the arrange strip is already pointed at the thing they were
+// asking to move. Once, on the first paint that has the element.
+let hubSlotLink = new URLSearchParams(location.search).get('slot') || null;
+const SLOT_LINK_CSS = `
+  @keyframes ds-slotlink-fade { from { box-shadow: 0 0 0 3px rgba(76,145,130,.85), 0 0 0 9px rgba(76,145,130,.22); }
+                                to   { box-shadow: 0 0 0 3px rgba(76,145,130,0), 0 0 0 9px rgba(76,145,130,0); } }
+  .ds-slotlink { border-radius: 2px; animation: ds-slotlink-fade 2.4s ease-out forwards; }
+  @media (prefers-reduced-motion: reduce) { .ds-slotlink { animation: none; box-shadow: 0 0 0 3px rgba(76,145,130,.85); } }
+`;
+function hubSlotFocus(d) {
+  if (!hubSlotLink || !d || !d.body) return;
+  let el;
+  try { el = d.querySelector(`[data-slot="${CSS.escape(hubSlotLink)}"]`); } catch (e) { el = null; }
+  if (!el) return;              // not painted yet — the next wire() tries again
+  hubSlotLink = null;
+  if (!d.getElementById('ds-slotlink-css')) {
+    const st = d.createElement('style'); st.id = 'ds-slotlink-css'; st.textContent = SLOT_LINK_CSS;
+    d.head.appendChild(st);
+  }
+  // The slot is the text; the movable thing is its element host. Select that
+  // where there is one, so the strip opens on what a drag would move.
+  const host = el.closest('[data-el]');
+  const id = host && host.getAttribute('data-el');
+  if (id) {
+    setSel(d, [id]);
+    if (typeof arrangeBar === 'function') arrangeBar(d);
+  }
+  try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { try { el.scrollIntoView(); } catch (e2) { /* detached */ } }
+  el.classList.add('ds-slotlink');
+  setTimeout(() => { try { el.classList.remove('ds-slotlink'); } catch (e) { /* gone */ } }, 2600);
 }
 function hubCommentsPaint(d) {
   if (!d || !d.body || !docStore()) return;
