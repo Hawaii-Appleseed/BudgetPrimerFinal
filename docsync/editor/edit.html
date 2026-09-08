@@ -13002,6 +13002,22 @@ async function startCollab() {
       collabChip();
     },
     onHistory: syncHistoryButtons,
+    // Pilot ops relayed through the room — a person's own Claude, talking to
+    // the hub's MCP connector, editing a document someone has open. This
+    // editor applies them the way the local /__pilot relay does: one
+    // docsync.api.batch(), one undo step, the same validation as typing, the
+    // agent chip for the room — and answers with what happened.
+    onPilot: async msg => {
+      const ops = Array.isArray(msg.ops) ? msg.ops : [];
+      if (!ops.length) return { ok: false, error: 'no ops' };
+      if (hubViewOnly()) return { ok: false, error: 'the editor that was asked is view only' };
+      if (editing) return { ok: false, error: 'an inline text editor is open in the editor that would apply this — close it and try again' };
+      agentTouch({ by: msg.by ? `Claude, for ${String(msg.by).replace(/@.*$/, '')}` : 'Claude',
+                   what: msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : '')),
+                   target: typeof (ops[0].args || [])[0] === 'string' ? ops[0].args[0] : null });
+      const r = await docsync.api.batch(ops);
+      return r && r.ok ? { ok: true, results: r.results || null } : { ok: false, error: (r && r.error) || 'the editor refused the batch' };
+    },
     presence: collabPresence,
     onPeers: peers => {
       collabPeers = peers;
