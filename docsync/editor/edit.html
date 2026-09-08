@@ -2267,8 +2267,28 @@
 // failing where it always failed (boot's catch, which names the cause and the
 // fix) instead of at parse time; the no-op catch keeps an early failure from
 // surfacing as an unhandled rejection before boot() gets around to awaiting.
-const pyodideBoot = typeof loadPyodide === 'undefined' ? null : loadPyodide();
+//
+// …though not quite the moment it parses, since 2026-09-07. loadPyodide()
+// holds the main thread for ~500ms while it instantiates (measured on the
+// hub: one synchronous gap), and everything queued behind it — the registry
+// fetch's continuation, the manifest, the warm-boot preview — waited it out,
+// so a preview that needs only a cache read painted at ~800ms instead of
+// ~150ms. The engine now starts the moment the preview is on screen from the
+// cache, or after WARM_GATE_MS, whichever is first: a cache miss or a hidden
+// tab (no frames) costs the engine at most the gate; a hit costs it a few
+// frames and gives the person the page half a second sooner. showWarmPreview
+// opens the gate; it is created HERE, before the declarations below, so the
+// task that runs the early preview can reach it.
+const WARM_GATE_MS = 150;
+let warmGateOpen = () => {};
+const warmGate = new Promise(res => { warmGateOpen = res; setTimeout(res, WARM_GATE_MS); });
+const pyodideBoot = typeof loadPyodide === 'undefined' ? null : warmGate.then(() => loadPyodide());
 if (pyodideBoot) pyodideBoot.catch(() => {});
+// The early preview itself: queued, not called. PROJECT, $ and the rest are
+// declared further down this same script, so a call from here would land in
+// their temporal dead zone; a microtask runs the moment the script's top
+// level has finished — still before the engine, which waits on the gate.
+queueMicrotask(() => { try { showWarmPreview({ early: true }); } catch (e) { warmGateOpen(); } });
 
 let M = null;                          // the manifest
 let REPO = '';                         // owner/name we save to
@@ -8822,6 +8842,29 @@ async function thumbSheetFor(d) {
   return sheet;
 }
 
+/** Every relative URL in a page clone, made absolute against the REPORT
+ *  document's base (its <base href>, when the project is switched), so the
+ *  clone finds the same files from the editor's document. */
+function thumbAbsolutize(root, d) {
+  const abs = v => { try { return new URL(v, d.baseURI).href; } catch (e) { return v; } };
+  const rel = v => !!v && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(v);
+  root.querySelectorAll('[src],[href],[xlink\\:href],[poster],[srcset]').forEach(el => {
+    for (const a of ['src', 'href', 'xlink:href', 'poster']) {
+      const v = el.getAttribute(a);
+      if (rel(v)) el.setAttribute(a, abs(v));
+    }
+    const ss = el.getAttribute('srcset');
+    if (ss) el.setAttribute('srcset', ss.split(',').map(part => {
+      const [u, ...rest] = part.trim().split(/\s+/);
+      return (rel(u) ? abs(u) : u) + (rest.length ? ' ' + rest.join(' ') : '');
+    }).join(', '));
+  });
+  root.querySelectorAll('[style*="url("]').forEach(el => {
+    el.setAttribute('style', el.getAttribute('style').replace(
+      /url\((['"]?)([^'")]+)\1\)/g, (m, q, u) => rel(u) ? `url(${q}${abs(u)}${q})` : m));
+  });
+}
+
 let thumbSeq = 0;
 async function railThumbs() {
   const mine = ++thumbSeq;
@@ -8860,6 +8903,12 @@ async function railThumbs() {
       + `font-size:${b.fontSize};line-height:${b.lineHeight};color:${b.color};`;
     const clone = sec.cloneNode(true);
     clone.querySelectorAll(THUMB_STRIP).forEach(n => n.remove());
+    // The clone is shown in THIS document, whose URL is the editor's, not
+    // the report's: `assets/branch-0.jpg`, which the frame's <base> resolved
+    // to /primer/<id>/assets/…, resolved to /primer/assets/… out here — six
+    // broken pictures on the strip and a 404 through the edge for each, on
+    // every render. Resolve against the report document before it leaves.
+    thumbAbsolutize(clone, d);
     // .page centres itself in a document with `margin: 24px auto`; in a box
     // that is exactly one page wide that margin is just an offset.
     clone.style.margin = '0';
@@ -11733,8 +11782,17 @@ const IDLE_STAT = 'live — edits here and from Claude land in the same files';
 })();
 
 async function boot() {
+  // The manifest, speculatively, ALONGSIDE the registry: everywhere this
+  // editor is deployed a project's base is its id (stage.py and hub.py both
+  // write it so), so the second round trip need not wait for the first —
+  // and through the hub's Access edge each one is ~100-200ms. A registry
+  // that says otherwise costs one wasted 404 and the fetch it always did.
+  const guessBase = PROJECT;
+  const manifestGuess = get((guessBase ? guessBase + '/' : '') + 'engine/manifest.json');
+  manifestGuess.catch(() => {});
   await loadRegistry();
-  M = JSON.parse(await get(withBase('engine/manifest.json')));
+  M = JSON.parse(await (PBASE.replace(/\/+$/, '') === guessBase
+    ? manifestGuess : get(withBase('engine/manifest.json'))));
   checkStage2();
   REPO = M.repo || '';
   BRANCH = M.branch || 'main';
@@ -11755,14 +11813,23 @@ async function boot() {
   // URL param here; resolveDraft() runs later, and the guard wants the
   // person's intent, not the resolution.)
   if (!draftBranch) showWarmPreview();
+  // The engine's own files, in flight NOW: they wait on nothing below (the
+  // ping, the store, the draft resolution), and used to queue behind all of
+  // it. Reported by the Promise.all further down, not as orphans here.
+  const urls = Object.keys(M.files);
+  const fileJobs = urls.map(u => ({
+    label: u,
+    p: BINARY_RE.test(u) ? getBytes(withBase(u)) : get(withBase(u)),
+  }));
+  fileJobs.forEach(j => j.p.catch(() => {}));
   await detectLocal();          // local live server? then Save writes to disk
   docStoreDecide();             // …or the hub's document store? then Save writes there
   // Seed the build stamp with what THIS page was loaded from, then keep an
   // eye on it — a rebuild whose bump never reached this tab is exactly the
   // case a bump-driven check cannot catch, so it is also polled and checked
   // whenever the tab is looked at again.
-  buildChangedOnDisk();
   if (local) {
+    buildChangedOnDisk();
     setInterval(checkBuildFresh, 20000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) checkBuildFresh();
@@ -11770,7 +11837,6 @@ async function boot() {
   }
   await resolveDraft();         // ?draft=… in the URL, or your own saved draft
 
-  const urls = Object.keys(M.files);
   // pyodideBoot has been compiling since the page parsed; a null means the
   // CDN script never arrived, and calling loadPyodide() reproduces the old
   // ReferenceError so the failure lands in the same catch it always did.
@@ -11789,10 +11855,7 @@ async function boot() {
   const jobs = [{
     label: 'the render engine (Pyodide, ~30MB from cdn.jsdelivr.net)',
     p: pyodideBoot || loadPyodide(),
-  }, ...urls.map(u => ({
-    label: u,
-    p: BINARY_RE.test(u) ? getBytes(withBase(u)) : get(withBase(u)),
-  }))];
+  }, ...fileJobs];
   const waiting = new Set(jobs.map(j => j.label));
   // settled, not fulfilled: a rejection is reported by the catch, and
   // counting it as outstanding would blame the wrong thing.
@@ -12914,7 +12977,17 @@ function setPushState(ahead) {
     : 'Nothing saved locally is waiting to go to GitHub');
 }
 
+/** Served from the staff hub: the registry gives the project a same-origin
+ *  door (collab.path). That origin is a Cloudflare Pages site, which has no
+ *  serve.py — known without asking, and the asking cost ~100ms through the
+ *  Access edge on the critical path of every open, for a 404. */
+function onHub() {
+  const reg = REGISTRY && PROJECT && REGISTRY[PROJECT] && REGISTRY[PROJECT].collab;
+  const cfg = reg || (M && M.collab) || null;
+  return !!(cfg && cfg.path);
+}
 async function detectLocal() {
+  if (onHub()) { local = false; return; }
   try {
     const r = await fetch(withProject('/__ping'), { cache: 'no-store' });
     // A 200 is not enough: a static host with a single-page fallback (a
@@ -12937,6 +13010,7 @@ async function detectLocal() {
     } catch (e) {} }
   } catch (e) { local = false; }
   if (!local) return;
+  sayHello();                   // there is a server to tell, now that we know
   // Local mode is the dev loop: files on disk are the truth, and a Save
   // commits them here — Push is the separate, explicit trip to GitHub.
   // Draft branches and PRs belong to the hosted editor, so those verbs hide.
@@ -13006,12 +13080,15 @@ async function detectLocal() {
 // the last window says goodbye; a force-quit sends nothing, which is what the
 // server-side TTL (re-hello every 30 min) is for.
 const WINDOW_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+// Only to a server that exists: detectLocal says the first hello once the
+// ping has answered (a hosted editor used to POST it into a 404 — twice, on
+// the hub, through the Access edge — before the ping had even been sent).
 const sayHello = () => {
+  if (!local) return;
   try { fetch(withProject('/__hello'), { method: 'POST', body: WINDOW_ID,
                                          keepalive: true }).catch(() => {}); }
   catch (e) {}
 };
-sayHello();
 window.addEventListener('pageshow', sayHello);
 setInterval(sayHello, 30 * 60 * 1000);
 window.addEventListener('pagehide', () => {
@@ -13754,47 +13831,72 @@ function prepPreviewHtml(html) {
   });
 }
 
-async function showWarmPreview() {
+// The parse-time cache lookup (showWarmPreview({early:true})), awaited by
+// boot's own call so the two never paint twice or race each other.
+let warmEarly = Promise.resolve();
+async function showWarmPreview({ early = false } = {}) {
+  if (early) { warmEarly = warmFromCache(); return warmEarly; }
   try {
+    await warmEarly;
+    // Painted from the cache already, or the engine WON the race — a warm
+    // cache renders in well under a second, and the first swap may already
+    // have happened. Painting a stale stand-in OVER a live document is the
+    // one thing this must never do.
+    if (py || $('ds-warm')) return;
+    // A first-ever open: the deployed copy beside the editor, when one exists.
+    const r = await fetch(bust(withBase('index.html')), { cache: 'no-store' });
+    if (!r.ok) return;
+    let html = await r.text();
+    html = prepPreviewHtml(html);
+    html = html.replace(/<\/head>/i, '<style>.page{max-width:none}</style></head>');
+    warmPaint(html);
+  } catch (e) { /* never let a bonus break the boot */ }
+}
+/** The cache read alone — no registry, no manifest, nothing but the project
+ *  id in the URL, which is why it can run before the engine holds the thread.
+ *  A draft link skips it: that content comes from the draft branch, and
+ *  flashing the live copy first would put the WRONG report on screen (boot
+ *  applies the same rule to its fallback). Whatever happens, the gate opens:
+ *  after the paint, two frames on (warmPaint), or here at once. */
+async function warmFromCache() {
+  try {
+    if (new URLSearchParams(location.search).get('draft')) return;
     let html = null;
     try {
       const hit = await (await caches.open(PREVIEW_CACHE)).match(previewKey());
       if (hit) html = await hit.text();
     } catch (e) { /* storage unavailable */ }
-    if (!html) {
-      const r = await fetch(bust(withBase('index.html')), { cache: 'no-store' });
-      if (!r.ok) return;
-      html = await r.text();
-      html = prepPreviewHtml(html);
-      html = html.replace(/<\/head>/i, '<style>.page{max-width:none}</style></head>');
-    }
-    // The engine may have WON the race — a warm cache renders in well under a
-    // second, and the first swap may already have happened. Painting a stale
-    // stand-in OVER a live document is the one thing this must never do.
-    if (py) return;
-    // Its own overlay frame, never #out: the live iframe stays empty until a
-    // real render fills it, so everything that treats "#out has pages" as
-    // "the editor is up" (the test fixture above all) stays true. The first
-    // swap removes the overlay in the same breath it fills #out.
-    const fr = document.createElement('iframe');
-    fr.id = 'ds-warm';
-    fr.title = 'last render (read-only preview)';
-    $('out').parentNode.appendChild(fr);
-    fr.srcdoc = html;
-    // The note rides the CANVAS, not the status row — detectLocal writes its
-    // own line there moments later and the last writer wins. A fixed chip
-    // needs no contest: the first real render's swap removes it.
-    if (!$('ds-warmchip')) {
-      const chip = document.createElement('div');
-      chip.id = 'ds-warmchip';
-      chip.textContent = 'last render — the live engine is warming up…';
-      chip.style.cssText = 'position:fixed;bottom:16px;left:50%;'
-        + 'transform:translateX(-50%);background:#2F3E46;color:#fff;'
-        + 'padding:6px 13px;border-radius:9px;font:12.5px system-ui;'
-        + 'z-index:40;opacity:.93;pointer-events:none';
-      document.body.appendChild(chip);
-    }
-  } catch (e) { /* never let a bonus break the boot */ }
+    if (html) warmPaint(html);
+  } catch (e) { /* a bonus, never a failure */ }
+  finally { if (!$('ds-warm')) warmGateOpen(); }
+}
+function warmPaint(html) {
+  if (py || $('ds-warm')) return;
+  // Its own overlay frame, never #out: the live iframe stays empty until a
+  // real render fills it, so everything that treats "#out has pages" as
+  // "the editor is up" (the test fixture above all) stays true. The first
+  // swap removes the overlay in the same breath it fills #out.
+  const fr = document.createElement('iframe');
+  fr.id = 'ds-warm';
+  fr.title = 'last render (read-only preview)';
+  $('out').parentNode.appendChild(fr);
+  fr.srcdoc = html;
+  // The note rides the CANVAS, not the status row — detectLocal writes its
+  // own line there moments later and the last writer wins. A fixed chip
+  // needs no contest: the first real render's swap removes it.
+  if (!$('ds-warmchip')) {
+    const chip = document.createElement('div');
+    chip.id = 'ds-warmchip';
+    chip.textContent = 'last render — the live engine is warming up…';
+    chip.style.cssText = 'position:fixed;bottom:16px;left:50%;'
+      + 'transform:translateX(-50%);background:#2F3E46;color:#fff;'
+      + 'padding:6px 13px;border-radius:9px;font:12.5px system-ui;'
+      + 'z-index:40;opacity:.93;pointer-events:none';
+    document.body.appendChild(chip);
+  }
+  // On screen — two frames on, so the frame's HTML is parsed and laid out
+  // before the engine's instantiate holds the thread — the engine may start.
+  requestAnimationFrame(() => requestAnimationFrame(warmGateOpen));
 }
 
 async function render() {
@@ -16209,6 +16311,7 @@ const hubMarginOn = () => hubCommentsView !== 'list' && window.matchMedia('(min-
 function hubCommentsMode() {
   const panel = $('cpanel');
   if (!panel) return;
+  if (!panel.__dsWheel) { panel.__dsWheel = true; panel.addEventListener('wheel', hubMarginWheel, { passive: false }); }
   const on = hubMarginOn();
   panel.classList.toggle('margin', on);
   if (!on || panel.hidden) $('cmt-leader').hidden = true;
@@ -16220,6 +16323,39 @@ function hubCommentsMode() {
     view.title = hubCommentsView === 'list' ? 'Show the comments beside the page' : 'Show the comments as a list';
   }
   hubGutterSync();   // the stage makes room for whichever side panel is open
+}
+/** A wheel over the gutter scrolls the page, as it does in Docs: the margin
+ *  is part of the document, not a window beside it. Before this the wheel
+ *  did nothing there — the list is overflow:hidden in margin mode and nothing
+ *  forwarded — so the page sat still whenever the pointer crossed the cards,
+ *  which read as the panel lagging. A card with somewhere to scroll (a long
+ *  thread, a reply being typed) keeps the wheel while it has room in that
+ *  direction; otherwise the delta goes to the report, in the report's own
+ *  pixels (the frame is scaled), and past the report's end to the stage's
+ *  clearance band, exactly as a wheel over the page would. List mode keeps
+ *  its own scrolling list. */
+function hubMarginWheel(e) {
+  const panel = $('cpanel');
+  if (!panel || panel.hidden || !panel.classList.contains('margin')) return;
+  for (let n = e.target; n && n !== panel; n = n.parentElement) {
+    if (n.scrollHeight <= n.clientHeight + 1) continue;
+    const o = getComputedStyle(n).overflowY;
+    if (o !== 'auto' && o !== 'scroll') continue;
+    if (e.deltaY < 0 ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1) return;
+  }
+  const out = $('out'), w = out && out.contentWindow;
+  const se = w && w.document && w.document.scrollingElement;
+  if (!se) return;
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? w.innerHeight : 1;
+  const s = curScale || 1;
+  const dy = e.deltaY * unit / s;
+  const max = Math.max(0, se.scrollHeight - w.innerHeight);
+  const from = se.scrollTop;
+  const to = Math.max(0, Math.min(max, from + dy));
+  if (to !== from) w.scrollTo(w.scrollX, to);
+  const rest = (from + dy - to) * s;
+  if (Math.abs(rest) > 0.5) $('stage').scrollBy(0, rest);
 }
 /** Where a thread's card wants to be, in the list's coordinates: its anchor's
  *  top on screen. Words still on the page (below the stage's top edge) keep
