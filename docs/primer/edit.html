@@ -16520,7 +16520,13 @@ function hubMarginLayout(animate = false) {
     ? want.findIndex(w => w.composer)
     : want.findIndex(w => w.el.classList.contains('active'));
   if (ai >= 0 && isFinite(want[ai].y)) {
-    tops[ai] = want[ai].y;
+    // ...and never OUT of the gutter. Its words scrolled off the top, or not
+    // yet up from the bottom, would take the card with them, as the others'
+    // do - and the thread the person was reading, or the comment they were
+    // writing, was gone from the panel with nothing to say where: "lost".
+    // The card in hand holds at the edge its words went past instead, in
+    // reach, until they come back or another thread is taken.
+    tops[ai] = Math.max(0, Math.min(want[ai].y, list.clientHeight - want[ai].h - GAP));
     for (let i = ai - 1; i >= 0; i--) tops[i] = Math.min(tops[i], tops[i + 1] - GAP - want[i].h);
     let prev = -Infinity;
     for (let i = 0; i <= ai; i++) {
@@ -16840,26 +16846,27 @@ let hubCommentFlashTimer = 0;
  *  new comment is being written: the composer owns the selection then. */
 let hubCommentSelSeen = '';   // the selection the hook last acted on
 function hubCommentFollowSelection() {
-  if (hubCommentQuote) return;
+  if (hubCommentQuote) return false;
   const here = hubCommentAnchor();
   // Only a selection that CHANGED. The event fires on every refresh of the
   // strip - every render, a peer's edit - and acting on the same selection
   // twice would take back a card clicked since, whose words are elsewhere.
   const seen = here ? [...hubCommentAnchorsInHand()].join('|') : '';
-  if (seen === hubCommentSelSeen) return;
+  if (seen === hubCommentSelSeen) return false;
   hubCommentSelSeen = seen;
-  if (!here) return;
+  if (!here) return false;
   const on = hubCommentsOnHand();
-  if (on.some(c => c.id === hubCommentActive)) return;
+  if (on.some(c => c.id === hubCommentActive)) return true;
   // Let go only of a thread the list can see: one it cannot (just posted,
   // and a refresh that left before the post has come back without it) is
   // not "elsewhere", it is in flight, and the next refresh brings it back.
   const cur = hubComments.find(c => c.id === hubCommentActive);
   if (on.length) hubCommentActive = on[0].id;
   else if (cur) hubCommentActive = null;
-  else return;
+  else return false;
   const d = $('out') && $('out').contentDocument;
   if (d) hubCommentsPaint(d);
+  return on.length > 0;
 }
 /** Every anchor the selection stands for. The thing in hand first; then, for
  *  one selected block, the slots inside it - a paragraph is a movable block
@@ -18285,7 +18292,18 @@ window.addEventListener('keydown', e => { if (hubCommentKey(e)) e.preventDefault
 // cards follow the page: re-sort when the panel is open and the page moved.
 window.addEventListener('resize', () => { const d = $('out') && $('out').contentDocument; if (d) hubCommentPlus(d); });
 $('cpanel-add').onclick = () => hubCommentAdd();
-document.addEventListener('ds:selection', () => { if ($('cpanel') && !$('cpanel').hidden) { hubCommentFollowSelection(); hubCommentsRender(); } });
+// What is selected has a thread on it: the thread comes to hand, and a
+// CLOSED panel opens on it - the badge on the page said there was something
+// to read, and the click said "this"; asking for the panel too was a step
+// nobody took, and the thread went unread. Not over the history panel: the
+// page shows a version then, and a selection there is about the version.
+document.addEventListener('ds:selection', () => {
+  const panel = $('cpanel');
+  if (!panel) return;
+  const took = hubCommentFollowSelection();
+  if (!panel.hidden) hubCommentsRender();
+  else if (took && !($('hpanel') && !$('hpanel').hidden)) hubCommentsToggle(true);
+});
 $('comments').onclick = () => hubCommentsToggle();
 $('share').onclick = async () => {
   $('filepop').hidden = true;
