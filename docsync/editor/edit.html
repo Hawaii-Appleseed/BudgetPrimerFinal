@@ -2526,6 +2526,41 @@ async function getBytes(u) {
   return new Uint8Array(await r.arrayBuffer());
 }
 
+// --- the engine's files, speculated from the manifest last seen --------------
+// The manifest names the engine's files, and the manifest arrives behind the
+// registry and, on the hub, behind Pyodide's ~300-500ms instantiate block:
+// the continuation that reads it cannot run until the block ends, so the
+// engine fetches went out at ~730ms (measured 2026-09-07) though the list
+// they needed had landed at ~400. This project's list, as it was LAST boot,
+// is remembered here; on the next open the same files are asked for the
+// moment this script parses - beside the registry, ahead of the block - and
+// boot() takes them if the manifest that then arrives names exactly that set
+// under that base, and lets them go otherwise (a renamed file, a moved
+// project: one wasted round of requests, then the fetch it always did). The
+// bytes are never stale: every engine file is fetched no-store every open,
+// speculated or not - only the LIST is remembered, and it is checked.
+// Keyed by the ?project= AS WRITTEN, not by PROJECT: loadRegistry() clears
+// PROJECT for an id the registry does not list (the engine next door is
+// used), and the speculation runs before the registry is read.
+const ENGINE_MEMO = 'primer-engine:';   // + the ?project= param -> {base, files}
+const ENGINE_MEMO_ID = new URLSearchParams(location.search).get('project') || '';
+let engineAhead = null;                 // {base, files: Map url -> promise}, until boot() looks
+(function speculateEngine() {
+  const id = ENGINE_MEMO_ID;
+  if (!id) return;
+  let memo = null;
+  try { memo = JSON.parse(localStorage.getItem(ENGINE_MEMO + id) || 'null'); } catch (e) { /* private mode, or junk */ }
+  if (!memo || typeof memo.base !== 'string' || !Array.isArray(memo.files) || !memo.files.length) return;
+  const at = u => (memo.base ? memo.base.replace(/\/+$/, '') + '/' + u : u);
+  const files = new Map(memo.files.map(u => [u, BINARY_RE.test(u) ? getBytes(at(u)) : get(at(u))]));
+  for (const p of files.values()) p.catch(() => {});   // reported by boot's Promise.all, if taken; else nobody's
+  engineAhead = { base: memo.base, files };
+})();
+function engineRemember(id, base, urls) {
+  if (!id) return;
+  try { localStorage.setItem(ENGINE_MEMO + id, JSON.stringify({ base, files: urls })); } catch (e) { /* private mode */ }
+}
+
 // --- projects: one editor, many reports ------------------------------------
 // projects.json beside this file maps an id to the directory holding that
 // report's engine/ (relative to this page, or an absolute URL — GitHub Pages
@@ -11830,9 +11865,14 @@ async function boot() {
   // ping, the store, the draft resolution), and used to queue behind all of
   // it. Reported by the Promise.all further down, not as orphans here.
   const urls = Object.keys(M.files);
+  // Taken from the speculation above when the manifest names that very set
+  // under that very base; fetched here otherwise.
+  const ahead = engineAhead; engineAhead = null;
+  const speculated = !!(ahead && ahead.base === PBASE && ahead.files.size === urls.length && urls.every(u => ahead.files.has(u)));
+  engineRemember(ENGINE_MEMO_ID, PBASE, urls);
   const fileJobs = urls.map(u => ({
     label: u,
-    p: BINARY_RE.test(u) ? getBytes(withBase(u)) : get(withBase(u)),
+    p: speculated ? ahead.files.get(u) : (BINARY_RE.test(u) ? getBytes(withBase(u)) : get(withBase(u))),
   }));
   fileJobs.forEach(j => j.p.catch(() => {}));
   await detectLocal();          // local live server? then Save writes to disk
