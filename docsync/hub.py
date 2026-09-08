@@ -70,10 +70,7 @@ from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers  # noqa: E402
 # (functions/api/collab/[room].js, functions/api/me.js, functions/api/docs/
 # there). The editor reads these off its registry entry: `path` is how it
 # joins the room, `docs` is where it loads and saves the document itself.
-# `ai` is the hub's Claude route: its presence in the door is what shows the
-# editor's Ask AI button, so a hub without the route (or a locally served
-# editor, which has no door at all) never offers a panel that cannot answer.
-COLLAB_DOOR = {"path": "/api/collab", "me": "/api/me", "docs": "/api/docs", "ai": "/api/ai"}
+COLLAB_DOOR = {"path": "/api/collab", "me": "/api/me", "docs": "/api/docs"}
 # The editor links these beside itself (a 404 per page load otherwise).
 SHELL_EXTRAS = ("icons",)
 # What a rendered page LOADS beside itself — a <link href>, any src=, a CSS
