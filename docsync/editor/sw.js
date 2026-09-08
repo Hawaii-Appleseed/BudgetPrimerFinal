@@ -26,12 +26,13 @@
  * Bump CACHE_VERSION on any shell change that should evict old entries
  * outright rather than wait for revalidation (e.g. a renamed file).
  */
-const CACHE_VERSION = 'primer-shell-v5';
+const CACHE_VERSION = 'primer-shell-v6';
 const PYODIDE_CACHE = 'primer-pyodide-v1';
 
 const SHELL_FILES = [
   './start.html',
   './edit.html',
+  './collab-client.js',
   './htmlimport.js',
   './manifest.webmanifest',
   './icons/icon.svg',
@@ -77,8 +78,20 @@ const isPyodide = url => url.hostname === 'cdn.jsdelivr.net' && url.pathname.inc
 // have the worker intercept their next visit to the report page too — a
 // stale copy of what a reader actually came here to read is a much worse
 // failure than "the app shell recaches its own five files."
-// The app's own pages: fresh wins, cache is the offline fallback (tier 2).
-const isShellPage = url => /\/(edit|start)\.html$/.test(url.pathname);
+// The app's own code: fresh wins, cache is the offline fallback (tier 2).
+//
+// collab-client.js belongs here for exactly the reason the HTML pages do, and
+// it took a live failure to notice. It is a BUILT BUNDLE that changes with the
+// engine, and it is import()ed by path with no ?v= to break a cache. Under the
+// generic same-origin branch below it was served cache-first and revalidated
+// behind, so every deploy ran one whole session on the PREVIOUS client: the
+// day the room learned to hand an editor pilot ops, every warm browser
+// answered with a bundle that had no such case and silently dropped the
+// message, and the only symptom was a 25-second timeout at the other end.
+// A client one deploy behind the room it is talking to is the same "fixes look
+// unshipped" bug factory the pages comment above describes.
+const isShellPage = url => /\/(edit|start)\.html$/.test(url.pathname)
+                        || /\/collab-client\.js$/.test(url.pathname);
 
 const isNetworkOnly = url =>
   url.hostname === 'api.github.com' ||
