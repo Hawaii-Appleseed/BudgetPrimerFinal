@@ -1590,8 +1590,9 @@
   <aside id="cpanel" hidden aria-label="Comments">
     <div class="cpanel-head"><b>Comments</b><button type="button" id="cpanel-view" title="Show the comments as a list">List</button><button type="button" id="cpanel-close" aria-label="Close comments">×</button></div>
     <div class="cpanel-tabs" role="tablist">
-      <button type="button" class="cpanel-tab on" id="cpanel-tab-all" role="tab">All comments</button>
+      <button type="button" class="cpanel-tab on" id="cpanel-tab-open" role="tab">Open</button>
       <button type="button" class="cpanel-tab" id="cpanel-tab-you" role="tab">For you</button>
+      <button type="button" class="cpanel-tab" id="cpanel-tab-resolved" role="tab">Resolved</button>
     </div>
     <!-- Docs' "Accept all / Reject all": shown to an editor when two or more
          suggestions are open; each goes through the same path as its own
@@ -16275,7 +16276,7 @@ let hubCommentsStamp = 0;     // when THIS editor last changed the comments (rid
 let hubCommentsHeard = 0;     // the newest such stamp heard from a collaborator
 let hubCommentsGen = 0;       // bumped by every local change and every load: a poll's answer is only as good as the world it was asked in
 let hubCommentsSlow = 0;      // the fallback poll, panel open or not
-let hubCommentsTab = 'all';   // 'all' | 'you'
+let hubCommentsTab = 'open';  // 'open' | 'you' | 'resolved' - the open threads by default; the resolved ones are a tab of their own, out of the way
 let hubCommentActive = null;  // the thread in hand: darker highlight, raised card
 let hubCommentQuote = null;   // {anchor, quote} a new comment is about, from a text selection
 let hubCommentRanges = [];    // [{id, range, el}] the highlights painted on the page, for hit-testing
@@ -16516,9 +16517,13 @@ function hubMarginLayout(animate = false) {
   // runs the whole document, ours is a window on it.)
   // Whoever is being written to takes its exact place: the composer while it
   // is open, else the thread in hand.
-  const ai = want.findIndex(w => w.composer && document.activeElement === $('cpanel-text')) >= 0
-    ? want.findIndex(w => w.composer)
-    : want.findIndex(w => w.el.classList.contains('active'));
+  // The composer is in the list only while it is in use (words in it, a
+  // quote, or the cursor), so its being here is enough: a click on the page
+  // to pick what the comment is about takes the cursor out of the box, and
+  // the box must not fall out of the gutter for that - it did, cut off above
+  // the top, "the comment bar jumps".
+  let ai = want.findIndex(w => w.composer);
+  if (ai < 0) ai = want.findIndex(w => w.el.classList.contains('active'));
   if (ai >= 0 && isFinite(want[ai].y)) {
     // ...and never OUT of the gutter. Its words scrolled off the top, or not
     // yet up from the bottom, would take the card with them, as the others'
@@ -16896,6 +16901,8 @@ function hubCommentsOnHand() {
 function hubCommentFocus(id, { scrollPage = true } = {}) {
   hubCommentActive = id;
   const c = hubComments.find(x => x.id === id);
+  // On the tab that has it: a resolved thread lives under Resolved.
+  if (c && (c.resolved ? hubCommentsTab !== 'resolved' : hubCommentsTab === 'resolved')) hubCommentsTab = c.resolved ? 'resolved' : 'open';
   if ($('cpanel').hidden) hubCommentsToggle(true); else hubCommentsRender();
   const d = $('out') && $('out').contentDocument;
   if (d) hubCommentsPaint(d);
@@ -17007,7 +17014,11 @@ function hubCommentsRenderInner() {
   const canWrite = true;   // anyone who may open the document may comment and resolve
   const here = hubCommentAnchor();
   const forMe = hubCommentForMe;
-  const shown = hubCommentsTab === 'you' ? hubComments.filter(forMe) : hubComments.slice();
+  // Open by default: the resolved threads are a tab of their own, so what
+  // is settled never crowds what is not. For you shows open threads too.
+  const shown = hubCommentsTab === 'you' ? hubComments.filter(forMe)
+              : hubCommentsTab === 'resolved' ? hubComments.filter(c => c.resolved)
+              : hubComments.filter(c => !c.resolved);
   if (hubCommentsTab === 'you') hubMarkSeenYou();   // looked at: the list page and the badge may rest
   const byPos = new Map(shown.map(c => [c.id, hubCommentPos(d, c)]));
   shown.sort((x, y) => byPos.get(x.id) - byPos.get(y.id) || (x.at < y.at ? -1 : 1));
@@ -17052,10 +17063,14 @@ function hubCommentsRenderInner() {
     return el;
   };
   const sep = (cls, text) => keep('p:' + cls + ':' + text, margin + ':' + text, () => { const p = document.createElement('p'); p.className = cls; p.textContent = text; return p; });
-  $('cpanel-tab-all').classList.toggle('on', hubCommentsTab === 'all');
+  $('cpanel-tab-open').classList.toggle('on', hubCommentsTab === 'open');
   $('cpanel-tab-you').classList.toggle('on', hubCommentsTab === 'you');
+  $('cpanel-tab-resolved').classList.toggle('on', hubCommentsTab === 'resolved');
   const youN = hubComments.filter(c => !c.resolved && forMe(c)).length;
+  const openN = hubComments.filter(c => !c.resolved).length, doneN = hubComments.length - openN;
+  $('cpanel-tab-open').textContent = openN ? `Open · ${openN}` : 'Open';
   $('cpanel-tab-you').textContent = youN ? `For you · ${youN}` : 'For you';
+  $('cpanel-tab-resolved').textContent = doneN ? `Resolved · ${doneN}` : 'Resolved';
   // Accept all / Reject all, for an editor with two or more to decide.
   const openSug = suggestOpenAll();
   $('cpanel-bulk').hidden = !(openSug.length >= 2 && !hubViewOnly());
@@ -17222,7 +17237,10 @@ function hubCommentsRenderInner() {
   };
   const cardOf = c => keep('cmt:' + c.id, sigOf(c), () => card(c), c.__clientId && 'cmt:' + c.__clientId);
   if (!open.length && !done.length) {
-    sep('cmt-empty', hubCommentsTab === 'you' ? 'Nothing for you yet — threads that name you, or answer you, show here.' : 'No comments yet. Select some words and press ⌘⌥M, or write below.');
+    sep('cmt-empty', hubCommentsTab === 'you' ? 'Nothing for you yet — threads that name you, or answer you, show here.'
+      : hubCommentsTab === 'resolved' ? 'Nothing resolved yet. A thread marked resolved moves here, and a reply reopens it.'
+      : hubComments.length ? 'No open comments. The resolved ones are under their tab.'
+      : 'No comments yet. Select some words and press ⌘⌥M, or write below.');
   }
   const mine = margin ? [] : open.filter(onIt);
   if (mine.length) {
@@ -17405,6 +17423,7 @@ async function hubCommentAdd() {
                 resolved: false, resolved_by: null, resolved_at: null, replies: [], pending: true };
   hubComments.push(tmp);
   hubCommentActive = tmp.id;
+  if (hubCommentsTab === 'resolved') hubCommentsTab = 'open';   // the card is an open one: show the tab that has it
   ta.value = ''; ta._mentions = new Set(); hubCommentQuote = null;
   hubCommentsShow();
   const made = await hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', body), 'comment not added', tmp.id);
@@ -17576,6 +17595,7 @@ async function suggestFinalize() {
   }), 'suggestion not sent');
   if (made) {
     hubCommentActive = made.id;
+    if (hubCommentsTab === 'resolved') hubCommentsTab = 'open';   // a new proposal is an open one: show the tab that has it
     hubCommentsToggle(true);
     $('stat').textContent = 'suggested — an editor can accept or reject it from the Comments panel';
   }
@@ -18268,8 +18288,9 @@ $('mode').onclick = () => suggestMenu();
 $('ar-comment').onclick = $('ty-comment').onclick = () => hubCommentStart(null);
 $('cmt-plus').onmousedown = e => { e.preventDefault(); hubCommentStart(); };
 $('cpanel-cancel').onclick = () => { $('cpanel-text').value = ''; $('cpanel-text')._mentions = new Set(); hubCommentQuote = null; hubCommentsRender(); };
-$('cpanel-tab-all').onclick = () => { hubCommentsTab = 'all'; hubCommentsRender(); };
+$('cpanel-tab-open').onclick = () => { hubCommentsTab = 'open'; hubCommentsRender(); };
 $('cpanel-tab-you').onclick = () => { hubCommentsTab = 'you'; hubCommentsRender(); };
+$('cpanel-tab-resolved').onclick = () => { hubCommentsTab = 'resolved'; hubCommentsRender(); };
 hubMentionWire($('cpanel-text'));
 // In the margin the box becomes a card at its anchor the moment it is used,
 // and goes back to the panel's foot when it is left empty — not at the next
@@ -18302,9 +18323,11 @@ document.addEventListener('ds:selection', () => {
   if (!panel) return;
   const took = hubCommentFollowSelection();
   if (!panel.hidden) hubCommentsRender();
-  else if (took && !($('hpanel') && !$('hpanel').hidden)) hubCommentsToggle(true);
+  else if (took && !($('hpanel') && !$('hpanel').hidden)) { if (hubCommentsTab === 'resolved') hubCommentsTab = 'open'; hubCommentsToggle(true); }
 });
-$('comments').onclick = () => hubCommentsToggle();
+// Opened fresh, the panel is on the open threads: what was settled the last
+// time it was open is not what it is opened for now.
+$('comments').onclick = () => { if ($('cpanel').hidden && hubCommentsTab === 'resolved') hubCommentsTab = 'open'; hubCommentsToggle(); };
 $('share').onclick = async () => {
   $('filepop').hidden = true;
   if (docStore()) return hubShareDialog();
