@@ -2249,6 +2249,19 @@
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
+// --- prerendered? (Speculation Rules) -----------------------------------------
+// The hub's list page prerenders an editor as the pointer rests on its tile,
+// so the click lands on a page that has already fetched, compiled and painted.
+// A prerendered page runs everything below in a hidden document that may
+// never be shown - so it must not DO anything on anyone's behalf: not join
+// the room (a ghost in everyone's presence bar, "· 2" for one person), not
+// mark the document seen (the list page would say "read" of a document
+// never opened). Those wait on `activated()`; reads, the engine and the
+// paint go ahead, which is the point.
+const activated = () => (document.prerendering
+  ? new Promise(res => document.addEventListener('prerenderingchange', () => res(), { once: true }))
+  : Promise.resolve());
+
 // This editor knows nothing about any particular report. Everything specific —
 // which renderer to run, what it reads, where it writes, how big a page is —
 // comes from engine/manifest.json, staged beside this file from docsync.yml by
@@ -11964,7 +11977,8 @@ async function boot() {
   // Only now, with the files settled and painted: if this project has a
   // collaboration relay, join its room (seeding it from what is on screen if
   // nobody has yet). Not awaited — the editor is usable while it connects.
-  startCollab();
+  // A prerendered editor waits to be shown first (see `activated`).
+  activated().then(startCollab);
   if (!local) $('share').disabled = $('publish').disabled = false;
   // Buttons start disabled in the HTML and only markDirty() flips them — run
   // it once now so a resumed draft's Discard is live before the first edit.
@@ -15933,6 +15947,7 @@ const hubViewOnly = () => hubRole === 'viewer';
 function hubMarkSeen(version) {
   const room = collabRoom();
   if (!room || !version) return;
+  if (document.prerendering) { activated().then(() => hubMarkSeen(version)); return; }   // seen when shown, not when fetched
   try { localStorage.setItem('primer-seen:' + room, version); } catch (e) { /* private mode */ }
   // A new version landed (a Save here, a collaborator's, a restore): the open
   // history panel lists it. Only a NEW one - the room re-announces the same
@@ -16672,6 +16687,7 @@ const hubCommentActivityAt = c => { let at = c.at || ''; for (const r of c.repli
 function hubMarkSeenYou() {
   const room = collabRoom();
   if (!room) return;
+  if (document.prerendering) { activated().then(hubMarkSeenYou); return; }
   let at = '';
   for (const c of hubComments) if (hubCommentForMe(c)) { const a = hubCommentActivityAt(c); if (a > at) at = a; }
   try { localStorage.setItem('primer-seen-you:' + room, at); } catch (e) { /* private mode */ }
