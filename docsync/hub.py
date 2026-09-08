@@ -20,7 +20,7 @@ What lands in `<hub>/primer/`:
     edit.html            the editor — ONE copy, for every project
     collab-client.js     its collaboration client
     sw.js                its service worker (Pyodide cached once, for good)
-    projects.json        the registry: id -> {name, base, repo, collab: {path}}
+    projects.json        the registry: id -> {name, base, repo, rendered, collab: {path}}
     icons/, manifest.webmanifest   the tab icon
     <id>/engine/…        each project's renderer, the files it reads, its manifest
     <id>/assets/…        each project's images
@@ -51,6 +51,7 @@ commit there when it is time to ship.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import re
 import shutil
@@ -276,6 +277,14 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
 
     # Each project: engine + assets, with a canonical manifest.
     registry: dict[str, dict] = {}
+    # The stamps already on the hub, so an unchanged report keeps the date it
+    # already had rather than being restamped by every vendor that walks past.
+    try:
+        prev_registry = json.loads((primer / "projects.json").read_text())
+    except Exception:                                    # noqa: BLE001 - absent, or junk
+        prev_registry = {}
+    vendored_at = (datetime.datetime.now(datetime.timezone.utc)
+                   .isoformat(timespec="seconds").replace("+00:00", "Z"))
     for p in projects:
         pid, sdir = p["id"], p["dir"]
         pdir = primer / pid
@@ -292,8 +301,12 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
         # and everything it reaches for, looked up beside the page and
         # beside the editor — wherever the project's build put it.
         page = p.get("page")
+        page_changed = True
         if page and page.is_file():
             html = page.read_text(errors="replace")
+            # Read before the write, or there is nothing left to compare to.
+            hub_page = pdir / "index.html"
+            page_changed = (not hub_page.is_file()) or hub_page.read_bytes() != html.encode()
             _write(pdir / "index.html", html.encode(), changed, dry=dry)
             refs = sorted(page_refs(html))
             for ref in refs:
@@ -318,6 +331,27 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
                         f.unlink()
         registry[pid] = {"name": p["name"], "base": pid, "repo": p["repo"],
                          "collab": dict(COLLAB_DOOR)}
+        # When this report was last modified, so the hub's door can say so.
+        #
+        # It has to be stamped here, because there is nowhere to read it from
+        # afterwards: Cloudflare Pages serves these files with no
+        # Last-Modified header (checked against the live hub), and the collab
+        # store only knows documents somebody has Saved through the editor —
+        # one of the ten, at the time of writing. Every vendor stamps every
+        # project, so a report added tomorrow carries a date without anyone
+        # remembering to give it one.
+        #
+        # Carried forward when the page is byte-identical to the copy already
+        # on the hub. The mtime cannot be used for this: `stage()` rewrites
+        # the built page on every run, so every mtime is the time of the last
+        # vendor and no report would ever look older than any other. What
+        # moves the stamp is the report changing, which is what "modified"
+        # means.
+        if pid in prev_registry and not page_changed:
+            carried = prev_registry[pid].get("rendered")
+            if carried:
+                registry[pid]["rendered"] = carried
+        registry[pid].setdefault("rendered", vendored_at)
 
     # A project that left the registry leaves the hub. Only directories this
     # script made (they hold an engine/manifest.json) — never index.html or
