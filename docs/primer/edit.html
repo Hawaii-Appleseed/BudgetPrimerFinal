@@ -5585,6 +5585,17 @@ function paintCut(d, bad) {
   });
 }
 
+/** What is falling off the page right now: which page, which element, how
+ *  far past the trim, in inches. `.page` is overflow:hidden, so this is the
+ *  only warning there is — a longer paragraph does not reflow, it is cut.
+ *  lastFit is refreshed by reportFit() on every render, so this is as fresh
+ *  as the render that just ran. Sent back to whoever asked the editor to
+ *  change something, because they cannot measure a page and it can. */
+function fitReport() {
+  const cut = (lastFit || []).map(b => ({ page: b.page, who: b.who, over: b.over }));
+  return { cut, pages: [...new Set(cut.map(c => c.page))] };
+}
+
 function reportFit(d) {
   const bad = fitCheck(d);
   paintCut(d, bad);
@@ -13016,7 +13027,20 @@ async function startCollab() {
                    what: msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : '')),
                    target: typeof (ops[0].args || [])[0] === 'string' ? ops[0].args[0] : null });
       const r = await docsync.api.batch(ops);
-      return r && r.ok ? { ok: true, results: r.results || null } : { ok: false, error: (r && r.error) || 'the editor refused the batch' };
+      // batch() awaits its own render, and wire() runs reportFit(), so the
+      // fit below is this edit's, not the one before it.
+      return r && r.ok ? { ok: true, results: r.results || null, fit: fitReport() }
+                       : { ok: false, error: (r && r.error) || 'the editor refused the batch' };
+    },
+    // A question, not a change: the room relays it here because this editor
+    // is the only thing in the system that has the page laid out in inches.
+    // A view-only editor answers too — it renders the same page.
+    onAsk: async msg => {
+      if (msg.what !== 'inventory') return { ok: false, error: `this editor does not answer '${msg.what}'` };
+      const inv = docsync.api.inventory();
+      return { ok: true, inventory: { project: inv.project, pageOrder: inv.pageOrder,
+                                      pages: inv.pages.map(p => ({ id: p.id, index: p.index, slots: p.slots })) },
+               fit: fitReport() };
     },
     presence: collabPresence,
     onPeers: peers => {
@@ -20394,7 +20418,19 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         const key = el.dataset.slot;
         if (slotSeen.has(key)) return;      // a slot can render several <p>s
         slotSeen.add(key);
-        slots.push({ key,
+        // The element the slot's text lives in: what a reader would point at
+        // ("the box on page 3"), and what a move would move. Named here so a
+        // caller that only has slot keys — the hub's connector — can say
+        // where a slot is without measuring anything itself.
+        const host = el.closest('[data-el]');
+        const eid = host ? host.dataset.el : null;
+        slots.push({ key, el: eid,
+          kind: eid ? (eid.startsWith('text.') ? 'textbox'
+                     : eid.startsWith('table.') ? 'table'
+                     : eid.startsWith('endnote.') ? 'endnote'
+                     : eid.startsWith('para.') ? 'prose' : 'designed')
+                    : (el.tagName || '').toLowerCase(),
+          chars: (el.textContent || '').replace(/\s+/g, ' ').trim().length,
           text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) });
       });
       return { id: pg.dataset.page != null ? pg.dataset.page : String(i + 1),
