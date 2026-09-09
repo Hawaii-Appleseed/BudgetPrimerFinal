@@ -381,6 +381,14 @@
                cursor:pointer; max-width:22rem; overflow:hidden;
                text-overflow:ellipsis; white-space:nowrap; }
   #bar > #agentnote:hover { background:#7A6AB6; border-color:#9A8CD0; }
+  /* Amber, the editor's own colour for "this concerns you" (the comments
+     that name you wear it on the hub's list). Not purple: an automated edit
+     and a colleague's edit are different facts. */
+  #bar > #sincechip { background:#F5E4C4; color:#6B4E16; border:1px solid #E3CDA8;
+               border-radius:99px; padding:5px 13px; font:600 12px system-ui;
+               cursor:pointer; max-width:22rem; overflow:hidden;
+               text-overflow:ellipsis; white-space:nowrap; }
+  #bar > #sincechip:hover { background:#EFD9B0; border-color:#D6BC90; }
   /* The open-comment count, as an exponent on the button's own word. Sage
      rather than the label's grey so it reads as a number about something,
      and no line-height of its own — a <sup> that inherits the row's would
@@ -1942,6 +1950,13 @@
        and Save is correctly greyed out — which means without this the work
        would simply appear with no way to tell who did it or undo it. -->
   <button id="agentnote" hidden aria-label="An automated editor changed this report"></button>
+  <!-- What moved while you were away. Most work on this hub happens at
+       different hours, so the question a person opens a document with is
+       usually "what is different since I last looked" - and until now the
+       list page could say a document had changed while the document itself
+       could not say WHERE. Clicking walks the changed paragraphs; the x
+       clears the marks. -->
+  <button id="sincechip" hidden aria-label="Paragraphs that changed since you last looked"></button>
   <span class="bar-sep"></span>
   <!-- The document's own panels and its editing mode. Left of #stat, which is
        the bar's one flexible item and so reads as the gap between what acts on
@@ -6243,6 +6258,12 @@ function editCell(d, td, seed) {
   renderTablePanel();
   editing = true;
   const raw = (t.rows[ri] && t.rows[ri][ci]) || '';
+  // A cell's words are a whole string in layout.json: they cannot merge with
+  // a collaborator's, so the two are settled at the commit rather than one
+  // quietly replacing the other. See collabFieldSettle.
+  const tid = idOf(tableEl);
+  collabWarnShared(tid, 'table cell', { merges: false });
+  collabFieldOpen(L => (((L.shapes || []).find(x => x.id === tid) || {}).table || {}).rows?.[ri]?.[ci]);
   const host = d.createElement('span');
   host.contentEditable = 'true';
   host.className = 'ds-cell-edit';
@@ -6272,9 +6293,20 @@ function editCell(d, td, seed) {
     host.contentEditable = 'false';
     host.classList.remove('ds-cell-edit');
     if (keep) {
-      if (newVal !== ((t.rows[ri] && t.rows[ri][ci]) || '')) {
-        pushHistory(); t.rows[ri][ci] = newVal; markDirty();
+      const moved = newVal !== ((t.rows[ri] && t.rows[ri][ci]) || '');
+      const settled = moved ? await collabFieldSettle(newVal, 'table cell') : 'mine';
+      if (moved && settled === 'mine') {
+        await collabFieldFirstTheirs();
+        const tt = tableOf(tid) || t;      // re-found: see collabFieldFirstTheirs
+        pushHistory();
+        if (tt.rows[ri]) tt.rows[ri][ci] = newVal;
+        markDirty();
       }
+      await render();
+      collabFieldNote(settled, 'table cell');
+      return;
+    } else {
+      collabFieldSettle(null, 'table cell');
     }
     await render();
   };
@@ -7222,6 +7254,14 @@ function editChartText(d, node) {
   if (!s) return;
   const hook = node.dataset.ch;
   editing = true;
+  // Chart text is a whole string in layout.json too - see collabFieldSettle.
+  // chartText() reads it out of any chart, which is exactly what the
+  // settlement needs to ask the room the same question of its copy.
+  collabWarnShared(s.id, 'chart label', { merges: false });
+  collabFieldOpen(L => {
+    const sh = (L.shapes || []).find(x => x.id === s.id && x.kind === 'chart');
+    return sh && sh.chart ? chartText(sh.chart, hook) : undefined;
+  });
   const r = node.getBoundingClientRect();
   const inp = d.createElement('input');
   inp.className = 'ds-ch-edit';
@@ -7241,9 +7281,17 @@ function editChartText(d, node) {
     const val = inp.value;
     inp.remove();
     if (keep && val !== chartText(s.chart, hook)) {
-      pushHistory(); chartText(s.chart, hook, val); markDirty();
+      const settled = await collabFieldSettle(val, 'chart label');
+      if (settled === 'mine') {
+        await collabFieldFirstTheirs();
+        const sh = layout.shapes.find(x => x.id === s.id && x.kind === 'chart') || s;
+        pushHistory(); chartText(sh.chart, hook, val); markDirty();
+      }
       await render();
       renderChartPanel();
+      collabFieldNote(settled, 'chart label');
+    } else {
+      collabFieldSettle(null, 'chart label');
     }
   };
   inp.addEventListener('blur', () => finish(true));
@@ -7354,7 +7402,8 @@ function editBox(d, el) {
   host.className = 'ds-edit';
   host.dataset.richMode = 'block';
   host.dataset.el = b.id;       // presence reads this: "ada is typing in this box"
-  collabWarnShared(b.id, 'text box');
+  collabWarnShared(b.id, 'text box', { merges: false });
+  collabFieldOpen(L => ((L.boxes || []).find(x => x.id === b.id) || {}).md);
   host.innerHTML = mdToHtml(b.md, { allowLists: true, fnLabels });
   // Just the words — no toolbar or hint row under them (they added height and
   // shoved the page around; see edit()). Chrome bar has B/I/lists, ⌘K links,
@@ -7380,8 +7429,22 @@ function editBox(d, el) {
     host.contentEditable = 'false';
     host.classList.remove('ds-edit');
     if (keep) {
-      if (newVal.trim() && newVal !== b.md) { b.md = newVal.trim(); markDirty(); }
+      const want = newVal.trim();
+      // Whose words, when two people wrote in this box at once.
+      const settled = want && want !== b.md ? await collabFieldSettle(want, 'text box') : 'mine';
+      if (settled === 'mine' && want && want !== b.md) {
+        await collabFieldFirstTheirs();
+        // `b` pointed into the layout this editor opened on; a collaborator's
+        // change that just landed replaced it.
+        const box = (layout.boxes || []).find(x => x.id === b.id) || b;
+        if (box.md !== want) { box.md = want; markDirty(); }
+      }
       settleEndnotesSection();
+      await render();
+      collabFieldNote(settled, 'text box');
+      return;
+    } else {
+      collabFieldSettle(null, 'text box');   // nothing to settle; clear the record
     }
     await render();
   };
@@ -12245,6 +12308,11 @@ async function boot() {
   if (local && !renderFailed) $('stat').textContent = 'live — edits here and from Claude land in the same files';
   else if (cachedRestored) $('stat').textContent =
     'restored unsaved edits from this browser — Save to keep them, or Discard to drop them';
+  // What moved while this person was away. After the first render, because
+  // the marks go onto rendered paragraphs and the diff is against `source`,
+  // which the render above settled. Not awaited, and silent when there is
+  // nothing to say: one fetch of a version this browser has already seen.
+  activated().then(() => hubSinceLoad(hubSinceWas)).catch(() => {});
 }
 
 // ------------------------------------------------------------ collaboration
@@ -12868,14 +12936,95 @@ function peerBox(d, page, p, id, b, label) {
   page.appendChild(box);
 }
 
+// --- a field two people cannot merge into ---------------------------------
+//
+// A paragraph's words are a Y.Text: two people type into one and the CRDT
+// merges them character by character (Phase 4). Everything else a person can
+// type into — a text box, a table cell, a chart label — lives in layout.json,
+// where the smallest thing the document holds is the WHOLE string. Two edits
+// to one of those do not merge; the second write simply replaces the first.
+//
+// That was silent. The editor holds a collaborator's change back while such
+// an editor is open (collabBusy), so the person typing never saw it arrive,
+// and their commit wrote over words they had never been shown.
+//
+// It cannot be merged, so it is asked. At the commit, the value the ROOM
+// holds (collab.netFiles() — the shadow deliberately does not have it yet) is
+// compared with the value this editor started from: if somebody changed it
+// meanwhile, the person is told whose words are on the other side and
+// chooses. Nothing is lost without a person choosing to lose it.
+let collabFieldFrom = null;   // {read, value} — what this inline editor opened on
+
+/** An inline editor on a layout-backed field is opening. `read(layout)` pulls
+ *  that one field out of a layout object, so the same function can ask this
+ *  editor's copy and the room's. */
+function collabFieldOpen(read) {
+  collabFieldFrom = collab ? { read, value: read(layout) } : null;
+}
+
+/**
+ * Settle what to write. Returns 'mine' (write it) or 'theirs' (leave the
+ * document alone; the held update lands the moment this editor closes).
+ *
+ * @param {string|null} mine   the value this editor would write
+ * @param {string} what        what to call it in the question ("text box")
+ */
+async function collabFieldSettle(mine, what) {
+  const from = collabFieldFrom;
+  collabFieldFrom = null;
+  if (!from || !collab || mine == null) return 'mine';
+  let theirs;
+  try { theirs = from.read(collab.netFiles().layout); }
+  catch (e) { return 'mine'; }               // unreadable: behave as before
+  // Nobody touched it, or they arrived at the same words, or they removed the
+  // thing entirely (then this editor's own value is all there is).
+  if (theirs === undefined || theirs === from.value || theirs === mine) return 'mine';
+  const who = collabPeers.filter(p => !p.idle).map(p => p.name || fmtWho(p.login) || 'someone');
+  const named = who.length ? who.join(' and ') : 'somebody';
+  const keep = await dsConfirm(
+    `${named} changed this ${what} while you had it open, and words here cannot be merged the way a `
+    + `paragraph's can — one of the two versions has to go.\n\nTheirs: “${String(theirs).slice(0, 140)}”`
+    + `\n\nYours: “${String(mine).slice(0, 140)}”`,
+    { okLabel: 'Keep mine', cancelLabel: 'Keep theirs', danger: true });
+  if (keep) return 'mine';
+  // Said by collabFieldNote AFTER the caller's render: the change this
+  // settlement lets through lands in the document as that render runs, and
+  // markDirty's own line would be the last word on a row that has something
+  // more important to say.
+  collabFieldGave = named === 'somebody' ? 'their' : named + '’s';
+  return 'theirs';
+}
+let collabFieldGave = null;
+
+/** A person chose to keep their own value: let the collaborator's change land
+ *  first, so the write that follows is the later one and the choice sticks.
+ *  Their change replaces `layout` wholesale on the way in (collabAdopt), so
+ *  every caller re-finds what it is about to write into AFTER this. */
+async function collabFieldFirstTheirs() {
+  if (collab && collab.drainNow) { try { await collab.drainNow(); } catch (e) { /* land it later, then */ } }
+}
+
+/** Say whose words won, once the render that adopted them has been. */
+function collabFieldNote(settled, what) {
+  if (settled !== 'theirs' || !collabFieldGave) return;
+  $('stat').textContent = `kept ${collabFieldGave} ${what} — your version was not saved`;
+  collabFieldGave = null;
+}
+
 /** Opening an inline editor on something a collaborator is already typing
  *  in: say so. Both edits merge (that is what the CRDT is for), but a person
  *  should know they are not alone in the sentence. */
-function collabWarnShared(id, what) {
+function collabWarnShared(id, what, { merges = true } = {}) {
   if (!collab) return;
-  const who = collabPeers.filter(p => p.slot === id).map(p => p.login || 'someone');
+  const who = collabPeers.filter(p => p.slot === id).map(p => p.name || fmtWho(p.login) || p.login || 'someone');
   if (!who.length) return;
-  $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'are' : 'is'} also editing this ${what} — both of your edits will be kept`;
+  // Two different promises, and only one of them was ever true here. A
+  // paragraph merges; a field whose whole value is the smallest thing the
+  // document holds does not, and saying "both will be kept" about one of
+  // those was the lie that made the loss silent.
+  $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'are' : 'is'} also editing this ${what} — `
+    + (merges ? 'both of your edits will be kept'
+              : 'words here cannot be merged, so you will be asked which version to keep');
 }
 /** About to move something a collaborator has in hand: say who, and what
  *  that means. Unlike a paragraph, a move cannot be merged. */
@@ -16687,6 +16836,96 @@ function hubHistoryDiffEl(sel) {
   for (const k of sel.added) { const l = document.createElement('span'); l.className = 'lay'; l.textContent = `${k}: only on screen`; box.appendChild(l); }
   return box;
 }
+// --- what changed while you were away -------------------------------------
+//
+// The hub's list page has always been able to say a document CHANGED since
+// this browser last looked (it compares the store's version with
+// `primer-seen:<room>`). Inside the document that fact was unusable: a report
+// is forty paragraphs and the change was somewhere in it.
+//
+// Most work here happens at different hours - two people in one document at
+// once is the exception - so this is the collaboration people actually have,
+// and it was the one the editor said nothing about. The version this browser
+// last SAW is fetched from the store's history, diffed against what is on
+// screen with the history panel's own diff, and the paragraphs that moved are
+// marked. The chip walks them.
+//
+// Silent when there is nothing to say: a first visit (no seen version), the
+// version already seen, or a store that cannot produce the old copy.
+let hubSince = null;          // {keys: [slot], at: index} or null
+let hubSinceWas = null;       // the version this browser last saw, before this open stamped a new one
+
+async function hubSinceLoad(seen) {
+  if (!seen || !docStore() || !docVersion || seen === docVersion) return;
+  let content = null;
+  try {
+    const r = await fetch(`${docStore()}/history/${seen}/content`, { cache: 'no-store' });
+    if (!r.ok) return;        // pruned, or never in the store: nothing to say
+    content = await r.text();
+  } catch (e) { return; }
+  const diff = hubHistoryDiff(content, null);
+  const keys = [...diff.changed.map(c => c.key), ...diff.added];
+  if (!keys.length) return;   // it moved, but not in the words (a layout Save)
+  hubSince = { keys, at: -1 };
+  hubSinceChip();
+  hubSincePaint($('out') && $('out').contentDocument);
+}
+function hubSinceChip() {
+  const c = $('sincechip');
+  if (!c) return;
+  c.hidden = !hubSince;
+  if (!hubSince) return;
+  const n = hubSince.keys.length;
+  c.textContent = `${n} paragraph${n === 1 ? '' : 's'} changed since you looked ✕`;
+  c.title = `Marked on the page. Click to go to ${hubSince.at < 0 ? 'the first' : 'the next'} one; `
+    + 'the ✕ at the end clears the marks.';
+}
+function hubSincePaint(d) {
+  if (!d || !d.body) return;
+  if (!d.getElementById('ds-since-css')) {
+    const st = d.createElement('style'); st.id = 'ds-since-css';
+    // Its own class, not the history panel's: that one is cleared wholesale
+    // whenever the panel repaints, and these two marks answer different
+    // questions and must not switch each other off.
+    st.textContent = '.ds-since { outline:2px dashed #C2703A; outline-offset:4px; }\n'
+      + '.ds-since-at { outline-style:solid; background:rgba(245,228,196,.5); }';
+    d.head.appendChild(st);
+  }
+  d.querySelectorAll('.ds-since, .ds-since-at').forEach(el => el.classList.remove('ds-since', 'ds-since-at'));
+  if (!hubSince) return;
+  hubSince.keys.forEach((k, i) => {
+    const el = hubCommentEl(d, k);
+    if (!el) return;
+    el.classList.add('ds-since');
+    if (i === hubSince.at) el.classList.add('ds-since-at');
+  });
+}
+/** The chip: walk the changed paragraphs, or clear them with the ✕. */
+function hubSinceClick(e) {
+  if (!hubSince) return;
+  const c = $('sincechip');
+  // The ✕ is the last glyph of the chip's own label rather than a button
+  // inside a button, which is not HTML: a click in its right-hand margin
+  // clears, anywhere else walks.
+  const r = c.getBoundingClientRect();
+  if (e && e.clientX > r.right - 22) { hubSinceClear(); return; }
+  const d = $('out') && $('out').contentDocument;
+  hubSince.at = (hubSince.at + 1) % hubSince.keys.length;
+  hubSincePaint(d);
+  hubSinceChip();
+  const el = d && hubCommentEl(d, hubSince.keys[hubSince.at]);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' });
+  $('stat').textContent = `${hubSince.keys[hubSince.at]} — changed since you last looked `
+    + `(${hubSince.at + 1} of ${hubSince.keys.length})`;
+}
+function hubSinceClear() {
+  hubSince = null;
+  hubSinceChip();
+  hubSincePaint($('out') && $('out').contentDocument);
+  $('stat').textContent = 'cleared the marks';
+}
+$('sincechip').addEventListener('click', hubSinceClick);
+
 /** Mark on the page the paragraphs that differ from the version in hand. */
 function hubHistoryPaint(d) {
   if (!d || !d.body) return;
@@ -18538,6 +18777,9 @@ async function docStoreLoad(urls, files) {
     const [c, l] = await Promise.all([get('content'), M.layout ? get('layout') : Promise.resolve(null)]);
     if (c != null) files[urls.indexOf('engine/' + M.content)] = c;
     if (M.layout && l != null) files[urls.indexOf('engine/' + M.layout)] = l;
+    // What this browser last saw, read BEFORE hubMarkSeen writes this one
+    // over it — that value is the whole question "since when".
+    try { hubSinceWas = localStorage.getItem('primer-seen:' + (collabRoom() || '')); } catch (e) { hubSinceWas = null; }
     docVersion = m.version;
     hubMarkSeen(m.version);
     $('stat').textContent = 'from the hub' + (m.updated_by ? ` — last saved by ${m.updated_by}` : '')
