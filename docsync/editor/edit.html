@@ -12398,10 +12398,15 @@ function collabEditTarget() {
 function collabPresence() {
   collabLiveFlush();
   const key = collabParaOpen();
-  let cursor = null;
+  let cursor = null, anchor = null;
   if (key) {
     const i = collabHostCaretIndex();
     if (i != null) cursor = collab.cursorAt(key, i);
+    // The other end of a text selection, when there is one: two relative
+    // positions, and the room can draw the band between them. Absent when the
+    // selection is a caret, so nothing is drawn twice.
+    const j = collabHostCaretIndex('anchor');
+    if (i != null && j != null && j !== i) anchor = collab.cursorAt(key, j);
   }
   // A collaborator's caret is a position into text this editor may be
   // changing: repaint it as the words move, not only when they move it.
@@ -12409,7 +12414,11 @@ function collabPresence() {
   const ag = agentActive();
   return {
     sel: [...selIds], page: selPage, slot: collabEditTarget(),
-    drag: !!(collabPointerAt && selIds.size), cursor,
+    drag: !!(collabPointerAt && selIds.size), cursor, anchor,
+    // Where they are LOOKING, as distinct from what they have in hand. A
+    // person reading page 6 with nothing selected used to be a bare initial
+    // in everyone else's bar - present, placeless, and impossible to go to.
+    view: collabViewPage($('out').contentDocument),
     agent: ag ? { by: ag.by, what: ag.what, target: ag.target } : null,
     // A comment added, resolved or removed here: everyone else's editor
     // sees the stamp move and fetches the list, so a marker appears for the
@@ -12517,14 +12526,36 @@ const nodeAt = (root, path) => { let n = root; for (const i of path) n = n && n.
  *  selection's focus is marked in a CLONE of the host and found again after
  *  the same DOM→markdown pass the commit uses. Null when there is no caret
  *  in the host, or the mark fell somewhere words are not (a link's URL). */
-function collabHostCaretIndex() {
+function collabHostCaretIndex(which = 'focus') {
   if (!richHost) return null;
   const d = richHost.ownerDocument, sel = d.getSelection();
-  if (!sel || !sel.rangeCount || !richHost.contains(sel.focusNode)) return null;
+  let node = which === 'anchor' ? sel && sel.anchorNode : sel && sel.focusNode;
+  if (!sel || !sel.rangeCount || !richHost.contains(node)) return null;
+  let off = which === 'anchor' ? sel.anchorOffset : sel.focusOffset;
+  // A selection end that sits on an ELEMENT boundary - (host, 0) and
+  // (host, childNodes.length) are what select-all leaves, and edit() opens
+  // every paragraph that way - is moved into the text beside it first. A
+  // marker dropped as a bare text node between block children was not
+  // surviving the markdown pass, so an editor that had just opened a
+  // paragraph published no caret at all until the person moved it.
+  if (node.nodeType !== Node.TEXT_NODE) {
+    const into = (el, atEnd) => {
+      const w = d.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let t = null, last = null;
+      while ((t = w.nextNode())) { last = t; if (!atEnd) break; }
+      return last;
+    };
+    const kids = node.childNodes;
+    let t = null;
+    if (off < kids.length) t = into(kids[off], false) || null;
+    if (!t && off > 0) { t = into(kids[Math.min(off, kids.length) - 1], true); if (t) off = t.data.length; }
+    else if (t) off = 0;
+    if (!t) return null;
+    node = t;
+  }
   const clone = richHost.cloneNode(true);
-  const n = sel.focusNode === richHost ? clone : nodeAt(clone, nodePath(richHost, sel.focusNode));
+  const n = node === richHost ? clone : nodeAt(clone, nodePath(richHost, node));
   if (!n) return null;
-  const off = sel.focusOffset;
   if (n.nodeType === Node.TEXT_NODE) n.data = n.data.slice(0, off) + CARET_MARK + n.data.slice(off);
   else n.insertBefore(d.createTextNode(CARET_MARK), n.childNodes[off] || null);
   const md = collabHostMd(clone);
@@ -12610,7 +12641,7 @@ function collabCaretDom(d, key, index) {
  *  the prose is touched. */
 function collabPaintCarets(d) {
   if (!d || !d.body) return;
-  d.querySelectorAll('.ds-peer-caret').forEach(el => el.remove());
+  d.querySelectorAll('.ds-peer-caret, .ds-peer-range').forEach(el => el.remove());
   if (!collab) return;
   for (const p of collabPeers) {
     const c = p.cursor && collab.resolveCursor(p.cursor);
@@ -12619,6 +12650,36 @@ function collabPaintCarets(d) {
     if (!pos || !pos.node.parentElement) continue;
     const page = pos.node.parentElement.closest('section.page');
     if (!page) continue;
+    // The words they have selected, as a band in their colour: the other end
+    // of the selection is a second relative position, resolved the same way,
+    // and the band is the range's own client rects - one per line - so it
+    // wraps as the prose wraps. Only when both ends resolve into the same
+    // slot; the caret alone is drawn otherwise.
+    const a = p.anchor && collab.resolveCursor(p.anchor);
+    if (a && a.slot === c.slot && a.index !== c.index) {
+      const apos = collabCaretDom(d, a.slot, a.index);
+      if (apos && apos.node.parentElement && apos.node.parentElement.closest('section.page') === page) {
+        const rr = d.createRange();
+        const before = apos.node === pos.node ? apos.offset < pos.offset
+          : (apos.node.compareDocumentPosition(pos.node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        if (before) { rr.setStart(apos.node, apos.offset); rr.setEnd(pos.node, pos.offset); }
+        else { rr.setStart(pos.node, pos.offset); rr.setEnd(apos.node, apos.offset); }
+        const px = DPI * zoomOf(page), pr = page.getBoundingClientRect();
+        for (const rc of rr.getClientRects()) {
+          if (!rc.width || !rc.height) continue;
+          const band = d.createElement('div');
+          band.className = 'ds-peer-range';
+          band.dataset.peer = p.login || 'someone';
+          band.dataset.slot = c.slot;
+          band.style.setProperty('--peer', p.color);
+          band.style.left = ((rc.left - pr.left) / px).toFixed(3) + 'in';
+          band.style.top = ((rc.top - pr.top) / px).toFixed(3) + 'in';
+          band.style.width = (rc.width / px).toFixed(3) + 'in';
+          band.style.height = (rc.height / px).toFixed(3) + 'in';
+          page.appendChild(band);
+        }
+      }
+    }
     const r = d.createRange(); r.setStart(pos.node, pos.offset); r.collapse(true);
     let rect = r.getClientRects()[0] || r.getBoundingClientRect();
     if (!rect || !rect.height) {
@@ -12638,20 +12699,28 @@ function collabPaintCarets(d) {
   }
 }
 
+// The name tag is 11px on a 1px pale keyline: it sits over whatever is above
+// the element - usually the previous paragraph - and at 10px with no edge it
+// was a smear of colour on a line of prose. The keyline is what lets a word
+// be read over a word.
 const PEER_CSS = [
   '[data-el].ds-peer { outline:2px solid var(--peer) !important; outline-offset:3px; position:relative; }',
-  '.ds-peer::after, .ds-peer-typing::after { content:attr(data-peer); position:absolute;',
-  '  left:-2px; top:-1.55em; font:600 10px/1.4 system-ui,sans-serif; letter-spacing:.2px;',
-  '  color:#fff; background:var(--peer); padding:0 6px; border-radius:99px 99px 99px 2px;',
-  '  white-space:nowrap; pointer-events:none; z-index:9997; }',
+  '.ds-peer::after, .ds-peer-typing::after, .ds-peer-box::after { content:attr(data-peer); position:absolute;',
+  '  left:-2px; top:-1.7em; font:600 11px/1.5 system-ui,sans-serif; letter-spacing:.2px;',
+  '  color:#fff; background:var(--peer); padding:0 7px; border-radius:99px 99px 99px 2px;',
+  '  box-shadow:0 0 0 1px rgba(255,255,255,.85); white-space:nowrap; pointer-events:none; z-index:9997; }',
+  '.ds-peer-box { position:absolute; z-index:9996; pointer-events:none;',
+  '  outline:2px solid var(--peer); outline-offset:3px; }',
+  '.ds-peer-range { position:absolute; background:var(--peer); opacity:.22; pointer-events:none;',
+  '  z-index:9994; border-radius:2px; }',
   '[data-el].ds-sel.ds-peer { outline-style:double !important; }',
   '.ds-peer-typing { box-shadow:inset 3px 0 0 var(--peer); position:relative; }',
   'section.page.ds-peer-page { box-shadow:0 0 0 3px var(--peer); }',
   '.ds-peer-caret { position:absolute; width:2px; margin-left:-1px; background:var(--peer);',
   '  pointer-events:none; z-index:9998; }',
   '.ds-peer-caret::after { content:attr(data-peer); position:absolute; left:-1px; bottom:100%;',
-  '  font:600 9px/1.3 system-ui,sans-serif; color:#fff; background:var(--peer); padding:0 4px;',
-  '  border-radius:3px 3px 3px 0; white-space:nowrap; }',
+  '  font:600 10px/1.4 system-ui,sans-serif; color:#fff; background:var(--peer); padding:0 5px;',
+  '  border-radius:3px 3px 3px 0; white-space:nowrap; box-shadow:0 0 0 1px rgba(255,255,255,.85); }',
 ].join('\n');
 
 /** Paint every collaborator's selection and typing spot onto the report
@@ -12668,6 +12737,7 @@ function collabPaintPeers(d) {
     el.removeAttribute('data-peer');
     el.style.removeProperty('--peer');
   });
+  d.querySelectorAll('.ds-peer-box').forEach(el => el.remove());
   for (const p of collabPeers) {
     const name = p.name || fmtWho(p.login) || 'someone';
     const mark = (el, cls, label) => {
@@ -12680,10 +12750,27 @@ function collabPaintPeers(d) {
       else if (!el.dataset.peer.includes(name)) el.dataset.peer += ', ' + label;
     };
     for (const id of p.sel) {
-      // Rings go on HTML elements only: an outline on an SVG child paints
-      // around the whole page-sized viewport (see paintSel's overlay note).
-      mark(d.querySelector(`[data-el="${CSS.escape(id)}"]`), 'ds-peer',
-           name + (p.drag ? ' · moving' : ''));
+      const label = name + (p.drag ? ' · moving' : '');
+      const html = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+      if (html) { mark(html, 'ds-peer', label); continue; }
+      // A shape, a chart, an icon, a line: an SVG child, where a CSS outline
+      // would paint around the whole page-sized viewport. So, as paintSel
+      // does for this editor's own selection, an overlay box at the shape's
+      // inch box instead - drawn in the page, carried by the same repaint. A
+      // collaborator resizing a chart used to be invisible except for the
+      // chart moving on its own.
+      const shape = d.querySelector(`[data-shape="${CSS.escape(id)}"]`);
+      if (!shape) continue;
+      const page = shape.closest('section.page') || d.querySelector('section.page');
+      if (!page) continue;
+      const b = shapeBox(shape, page);
+      const box = d.createElement('div');
+      box.className = 'ds-peer-box';
+      box.dataset.for = id;
+      box.dataset.peer = label;
+      box.style.setProperty('--peer', p.color);
+      box.style.cssText += `;left:${b.x}in;top:${b.y}in;width:${b.w}in;height:${b.h}in`;
+      page.appendChild(box);
     }
     if (p.slot) {
       const el = d.querySelector(`[data-slot="${CSS.escape(p.slot)}"]`)
@@ -12817,7 +12904,10 @@ function collabChip() {
       const place = collabPeerPlace(d, p);
       const doing = p.slot ? ' · typing' : p.drag ? ' · moving' : '';
       const following = collabFollow === p.login;
-      av.title = name + doing + (place.page ? ` on page ${place.page}` : '')
+      // "typing on page 2" is what they are doing there; "reading page 2" is
+      // where they are with nothing in hand. Two sentences, both true.
+      const where = !place.page ? '' : place.how === 'view' ? ` · reading page ${place.page}` : ` on page ${place.page}`;
+      av.title = name + doing + where
         + (place.el ? `. Click to go there${following ? '; following — click to stop' : '; click again to follow'}` : '');
       av.classList.toggle('typing', !!p.slot);
       av.classList.toggle('following', following);
@@ -12878,15 +12968,40 @@ function collabPeerPlace(d, p) {
   // what the person here can already see marked. (One id can name both a
   // slot and an element in different places: a card's words and the card.)
   const slotEl = id => d.querySelector(`[data-slot="${CSS.escape(id)}"]`) || d.querySelector(`[data-el="${CSS.escape(id)}"]`);
-  const elEl = id => d.querySelector(`[data-el="${CSS.escape(id)}"]`) || d.querySelector(`[data-slot="${CSS.escape(id)}"]`);
+  // An element is placed HTML or a shape in the page's SVG; both are things
+  // a person can have in hand, and both have to be somewhere to go to.
+  const elEl = id => d.querySelector(`[data-el="${CSS.escape(id)}"]`) || d.querySelector(`[data-shape="${CSS.escape(id)}"]`)
+    || d.querySelector(`[data-slot="${CSS.escape(id)}"]`);
   let el = (p.slot && slotEl(p.slot)) || null;
   if (!el) for (const id of p.sel || []) { el = elEl(id); if (el) break; }
-  let pageEl = el ? el.closest('section.page') : null;
-  if (!pageEl && p.page != null) pageEl = [...d.querySelectorAll('section.page')].find(s => String(s.dataset.page) === String(p.page)) || null;
-  if (!el) el = pageEl;
   const pages = [...d.querySelectorAll('section.page')];
+  let pageEl = el ? el.closest('section.page') : null;
+  if (!pageEl && p.page != null) pageEl = pages.find(s => String(s.dataset.page) === String(p.page)) || null;
+  // Nothing in hand: the page in the middle of their window. `how` says so,
+  // because "reading page 6" and "working on page 6" are different sentences
+  // and the bar should say the right one.
+  let how = el ? 'at' : pageEl ? 'page' : null;
+  if (!pageEl && p.view != null && pages[p.view - 1]) { pageEl = pages[p.view - 1]; how = 'view'; }
+  if (!el) el = pageEl;
   const page = pageEl ? pages.indexOf(pageEl) + 1 : null;
-  return { el, page: page || null };
+  return { el, page: page || null, how };
+}
+/** The page in the middle of this window, 1-based in section.page order:
+ *  what a person is looking at, whether or not they have anything in hand.
+ *  Order rather than id, because the two sides need only agree with each
+ *  other and a page's id differs between renderers (see visiblePageId). */
+function collabViewPage(d) {
+  if (!d || !d.body || !d.defaultView) return null;
+  const pages = [...d.querySelectorAll('section.page')];
+  if (!pages.length) return null;
+  const mid = d.defaultView.innerHeight / 2;
+  let best = 0, dist = Infinity;
+  pages.forEach((pg, i) => {
+    const r = pg.getBoundingClientRect();
+    const dd = r.top <= mid && r.bottom >= mid ? 0 : Math.min(Math.abs(r.top - mid), Math.abs(r.bottom - mid));
+    if (dd < dist) { dist = dd; best = i; }
+  });
+  return best + 1;
 }
 const collabInView = el => {
   const w = el.ownerDocument.defaultView, r = el.getBoundingClientRect();
@@ -12896,7 +13011,7 @@ function collabGoTo(p, { say = true } = {}) {
   const d = $('out') && $('out').contentDocument;
   const name = p.name || fmtWho(p.login) || 'someone';
   const place = collabPeerPlace(d, p);
-  if (!place.el) { if (say) $('stat').textContent = `${name} has nothing selected yet`; return false; }
+  if (!place.el) { if (say) $('stat').textContent = `${name} is not on a page yet`; return false; }
   // The report's own window is scrolled, by arithmetic, to put the place in
   // the middle - not scrollIntoView, which would also drag the stage and the
   // page around it. Instant, as Docs jumps. And asserted again on the next
@@ -12915,7 +13030,7 @@ function collabGoTo(p, { say = true } = {}) {
   put();
   requestAnimationFrame(put);
   setTimeout(put, 200);
-  if (say) $('stat').textContent = `${name} is ${p.slot ? 'typing' : 'working'} on page ${place.page || '?'}`;
+  if (say) $('stat').textContent = `${name} is ${p.slot ? 'typing' : place.how === 'view' ? 'reading' : 'working'} on page ${place.page || '?'}`;
   return true;
 }
 function collabAvatarClick(p) {
