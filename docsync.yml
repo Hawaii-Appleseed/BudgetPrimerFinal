@@ -37,6 +37,18 @@ bindings:
     # here is what lets one editor serve any report: the editor reads the
     # manifest staged beside it and knows nothing about the primer.
     editor:
+      # The pages whose renderer calls C.extras() — where a whole new
+      # section may be added, read off report2027/tools/render_report.py.
+      pages:
+        - ["basics", "Budget Basics"]
+        - ["process", "Budget Process"]
+        - ["spent", "How Money Is Spent"]
+        - ["categories", "Spending Categories"]
+        - ["cip", "Capital Improvements"]
+        - ["onetime", "One-Time & Emergency"]
+        - ["funding", "Funding the Budget"]
+        - ["taxes", "Taxes"]
+        - ["whopays", "Who Pays"]
       dir: docs/primer               # published dir; editor + engine staged here
       render: report2027/tools/render_report.py
       out: report2027/web/index.html

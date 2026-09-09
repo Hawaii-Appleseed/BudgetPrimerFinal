@@ -42,7 +42,44 @@
     "#2F3E46",
     "#FFFFFF"
   ],
-  "pages": [],
+  "pages": [
+    [
+      "basics",
+      "Budget Basics"
+    ],
+    [
+      "process",
+      "Budget Process"
+    ],
+    [
+      "spent",
+      "How Money Is Spent"
+    ],
+    [
+      "categories",
+      "Spending Categories"
+    ],
+    [
+      "cip",
+      "Capital Improvements"
+    ],
+    [
+      "onetime",
+      "One-Time & Emergency"
+    ],
+    [
+      "funding",
+      "Funding the Budget"
+    ],
+    [
+      "taxes",
+      "Taxes"
+    ],
+    [
+      "whopays",
+      "Who Pays"
+    ]
+  ],
   "images": [
     "appleseed-logo-white.svg",
     "appleseed-logo.svg",
