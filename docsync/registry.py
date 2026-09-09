@@ -37,6 +37,13 @@ class Editor:
     margins: tuple[float, float] = (0.62, 0.75)  # side, top — snap lines
     assets: Path | None = None        # uploaded images land here
     palette: list = None              # the report's own colours, offered first
+    # Where a whole new prose section may go: the pages whose renderer calls
+    # C.extras("<id>"), as [["<id>", "Label"], …]. This is a DECLARATION, kept
+    # in step with the renderer by hand — the editor's Add Section offers
+    # exactly these, and the hub's connector will not write an [[extra.…]]
+    # slot for a page that is not here, because the renderer would never draw
+    # it. Absent or empty means this report takes no added sections.
+    pages: list = None
     layout: Path | None = None        # the overrides file, if the report has one
     branch: str = "main"              # the deploy branch drafts fork from / publish to
 
@@ -147,6 +154,22 @@ def load_registry(path: Path = REGISTRY) -> list[Binding]:
     return out
 
 
+def _pages(raw, where: str) -> list:
+    """editor.pages -> [["id", "Label"], …]. A bare list of ids is allowed and
+    labelled from the id, because "page1" is its own label."""
+    if not raw:
+        return []
+    out = []
+    for item in raw:
+        if isinstance(item, str):
+            out.append([item, item.replace("-", " ").capitalize()])
+            continue
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise RegistryError(f"{where}: editor 'pages' entries are \"id\" or [\"id\", \"Label\"]")
+        out.append([str(item[0]), str(item[1])])
+    return out
+
+
 def _editor(e: dict | None, where: str) -> Editor | None:
     if not e:
         return None
@@ -163,6 +186,7 @@ def _editor(e: dict | None, where: str) -> Editor | None:
         margins=(float(margins[0]), float(margins[1])),
         assets=ROOT / e["assets"] if e.get("assets") else None,
         palette=list(e.get("palette") or []),
+        pages=_pages(e.get("pages"), where),
         layout=ROOT / e["layout"] if e.get("layout") else None,
         branch=e.get("branch") or "main",
     )

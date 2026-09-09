@@ -82,6 +82,11 @@ def manifest(b: Binding) -> dict:
         "page": {"w": e.page[0], "h": e.page[1]},
         "margins": {"side": e.margins[0], "top": e.margins[1]},
         "palette": e.palette or [],
+        # The pages that take an added section (editor.pages). Always present,
+        # so an EMPTY list means "this report takes none" rather than "this
+        # manifest predates the field" — the editor and the hub's connector
+        # both read it that way.
+        "pages": e.pages or [],
         # The images already IN the project — a template's logos, past
         # uploads — so Insert image can offer them without a trip through
         # the file picker. Names only; they resolve as "assets/<name>"

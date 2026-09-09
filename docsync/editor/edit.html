@@ -12044,7 +12044,12 @@ async function boot() {
   checkStage2();
   REPO = M.repo || '';
   BRANCH = M.branch || 'main';
-  if (M.pages && M.pages.length) EXTRA_PAGES = M.pages;
+  // A manifest that DECLARES pages decides, even when it declares none —
+  // an empty list means this report takes no added sections, and falling
+  // back to another report's page names would offer slots its renderer
+  // never draws. Only a manifest with no `pages` key at all keeps the
+  // Budget Primer default below.
+  if (Array.isArray(M.pages)) EXTRA_PAGES = M.pages;
   PAGE_W_IN = M.page.w; PAGE_H_IN = M.page.h;
   MARGIN_IN = M.margins.side; TOP_IN = M.margins.top;
   $('title').textContent = M.id;
@@ -15490,6 +15495,12 @@ function moveSectionToPage(key, newPage) {
 
 $('add').onclick = async () => {
   if (editing) return;
+  if (!EXTRA_PAGES.length) {
+    await dsAlert('This report does not say where an added section could go.\n\n'
+      + 'A section is an overflow slot the renderer drops at the end of a page, so the report has to open a page for it '
+      + '(C.extras("…") in render_report.py, declared as editor.pages in docsync.yml). Until it does, sections are a change to the report itself.');
+    return;
+  }
   // One form: pick the page and name the section together, so nothing typed is
   // lost to a dismissed second prompt.
   const r = await dsForm('Add a new section', [
@@ -20320,6 +20331,26 @@ function _pilotApplyAddSource(id, text, url) {
   return { id };
 }
 
+// A whole new prose section — the one thing that adds a slot, and only where
+// the report opened a page for it (editor.pages, from the manifest). Not a
+// renderer change: the renderer already draws every extra.<page>.* it finds.
+function _pilotValidateAddSection(page, slug) {
+  if (!EXTRA_PAGES.length)
+    return { ok: false, error: 'this report does not open any page for an added section' };
+  if (!EXTRA_PAGES.some(([id]) => id === page))
+    return { ok: false, error: `no page '${page}' takes a section — this report offers ${EXTRA_PAGES.map(([id]) => id).join(', ')}` };
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(String(slug || '')))
+    return { ok: false, error: `'${slug}' is not a section name — lower case letters, digits and hyphens` };
+  if (source.includes(`[[extra.${page}.${slug}]]`))
+    return { ok: false, error: `there is already a section extra.${page}.${slug}` };
+  return { ok: true };
+}
+function _pilotApplyAddSection(page, slug, md) {
+  const key = addExtra(page, slug);
+  if (typeof md === 'string' && md.trim()) _pilotApplySetSlot(key, md);
+  return { key };
+}
+
 // The verbs batch() accepts — each op is {verb, args}, args in the same
 // order as the single-verb call. addPage/addEndnotesSection call shared
 // helpers (addBlankPage, the engine's addEndnotesSection) that already do
@@ -20333,6 +20364,8 @@ const PILOT_BATCH_VERBS = {
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
   addSource: { validate: (id, t, u) => _pilotValidateAddSource(id, t, u),
                apply: (id, t, u) => _pilotApplyAddSource(id, t, u) },
+  addSection: { validate: (p, sl) => _pilotValidateAddSection(p, sl),
+                apply: (p, sl, md) => _pilotApplyAddSection(p, sl, md) },
   setStyle: { validate: (k, p) => _pilotValidateSetStyle(k, p), apply: (k, p) => _pilotApplySetStyle(k, p) },
   setBoxText: { validate: (id, m) => _pilotValidateSetBoxText(id, m), apply: (id, m) => _pilotApplySetBoxText(id, m) },
   rotate: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplyRotate(id, deg) },
