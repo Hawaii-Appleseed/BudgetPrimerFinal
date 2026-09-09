@@ -345,6 +345,10 @@
   #collab i.typing::after { content:''; position:absolute; right:-2px; bottom:-2px; width:7px; height:7px;
               border-radius:50%; background:#C2703A; border:1.5px solid var(--chrome); }
   #collab i.following { box-shadow:0 0 0 1.5px var(--chrome), 0 0 0 3.5px #C2703A; }
+  /* Present, not at the desk: no input for five minutes. Faded and hollow —
+     a face that is still in the room, and plainly not looking. The count
+     beside it says how many people are actually here. */
+  #collab i.idle { opacity:.5; }
   /* The AI at work: shown while an automated editor is changing this report
      — through this tab (pilot ops), through a collaborator's, or on disk
      after announcing itself. Same purple as #agentnote, which is the SAME
@@ -11287,6 +11291,11 @@ function startDrag(d, el, e0, drillIn = false) {
     $('stat').textContent = 'the page is squeezed below print width — use Fit zoom to move things';
     return;
   }
+  // Somebody else has hold of this. Both moves are whole-value writes to
+  // layout.json, so they do not merge: the last drop wins, silently, and the
+  // other person's move is simply gone. Not blocked - two people nudging the
+  // same figure is ordinary - but said, at the moment it can still be undone.
+  collabWarnHeld(idOf(el));
   // Dragging a selected element moves every selected element on this page;
   // anything locked stays put. A fresh element drags alone.
   let members = selIds.size > 1 && selIds.has(idOf(el))
@@ -12262,6 +12271,17 @@ let collabMod = null;        // the imported client module
 let collabInfo = { on: false, status: 'off', phase: null, peers: 0, here: [],
                    login: null, error: null };
 let collabPointerAt = 0;     // when a pointer went down inside the report
+// When this editor was last USED - a key, a pointer, a wheel, anywhere in the
+// chrome or the report. A tab left open all afternoon is still in the room and
+// still counted as an editor, which is how "3 editors here" came to mean
+// "one person and two forgotten tabs". After COLLAB_IDLE_MS presence says so,
+// the avatar dims, and the chip counts the people who are actually there.
+let collabActiveAt = Date.now();
+const COLLAB_IDLE_MS = 5 * 60 * 1000;
+const collabActive = () => { collabActiveAt = Date.now(); };
+for (const ev of ['pointerdown', 'keydown', 'wheel']) {
+  window.addEventListener(ev, collabActive, { capture: true, passive: true });
+}
 
 /** How this project reaches its room, or null when it is not shared. Two
  *  doors onto the same room (collab/README.md, "two front doors"):
@@ -12368,6 +12388,7 @@ function collabWire(d) {
   if (!d) return;
   if (!d.__collabWired) {
     d.__collabWired = true;
+    for (const ev of ['pointerdown', 'keydown', 'wheel']) d.addEventListener(ev, collabActive, { capture: true, passive: true });
     d.addEventListener('pointerdown', () => { collabPointerAt = Date.now(); }, true);
     d.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
     d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
@@ -12419,12 +12440,47 @@ function collabPresence() {
     // person reading page 6 with nothing selected used to be a bare initial
     // in everyone else's bar - present, placeless, and impossible to go to.
     view: collabViewPage($('out').contentDocument),
+    // Present but not at the desk. Sent as a fact, not inferred at the other
+    // end: only this editor knows whether anyone has touched it.
+    idle: Date.now() - collabActiveAt > COLLAB_IDLE_MS,
+    // While something is being MOVED, where it is being moved to - in inches,
+    // read off the page as the drag goes. The document itself does not change
+    // until the drop (renderOnce flushes it), so without this a collaborator
+    // saw a chart teleport rather than travel, and a two-second drag across a
+    // page was two seconds of nothing followed by a jump.
+    boxes: collabDragBoxes($('out').contentDocument),
     agent: ag ? { by: ag.by, what: ag.what, target: ag.target } : null,
     // A comment added, resolved or removed here: everyone else's editor
     // sees the stamp move and fetches the list, so a marker appears for the
     // room within a presence tick rather than at the next poll.
     comments: hubCommentsStamp,
   };
+}
+
+/** Where this editor is moving things to, or [] when it is not moving any.
+ *  The live geometry of whatever is selected while a pointer is down: the
+ *  drag writes inches into `layout` and paints as it goes (see startDrag), so
+ *  reading the boxes here needs no hook in the drag itself. Capped, because
+ *  presence is a message every collaborator receives four times a second. */
+const COLLAB_DRAG_MAX = 12;
+function collabDragBoxes(d) {
+  if (!d || !d.body || !collabPointerAt || !selIds.size) return [];
+  // The page by ORDER, not by data-page: only some renderers stamp an id
+  // there, and the two sides need only agree with each other (the same
+  // reason collabViewPage counts sheets).
+  const pages = [...d.querySelectorAll('section.page')];
+  const out = [];
+  for (const el of selEls(d)) {
+    const page = el.closest('section.page');
+    if (!page) continue;
+    const b = shapeBox(el, page);
+    if (!b || (!b.w && !b.h)) continue;
+    out.push({ id: idOf(el), page: pages.indexOf(page) + 1,
+               x: +(+b.x).toFixed(2), y: +(+b.y).toFixed(2),
+               w: +(+b.w).toFixed(2), h: +(+b.h).toFixed(2) });
+    if (out.length >= COLLAB_DRAG_MAX) break;
+  }
+  return out;
 }
 
 // --- the open paragraph (Phase 4) ------------------------------------------
@@ -12711,6 +12767,10 @@ const PEER_CSS = [
   '  box-shadow:0 0 0 1px rgba(255,255,255,.85); white-space:nowrap; pointer-events:none; z-index:9997; }',
   '.ds-peer-box { position:absolute; z-index:9996; pointer-events:none;',
   '  outline:2px solid var(--peer); outline-offset:3px; }',
+  // Present, not at the desk. Dimmed rather than dropped: "grace has this
+  // open" is worth knowing even when grace is at lunch, and it must not read
+  // as loudly as somebody who is typing.
+  '.ds-peer-idle { opacity:.45; }',
   '.ds-peer-range { position:absolute; background:var(--peer); opacity:.22; pointer-events:none;',
   '  z-index:9994; border-radius:2px; }',
   '[data-el].ds-sel.ds-peer { outline-style:double !important; }',
@@ -12740,9 +12800,13 @@ function collabPaintPeers(d) {
   d.querySelectorAll('.ds-peer-box').forEach(el => el.remove());
   for (const p of collabPeers) {
     const name = p.name || fmtWho(p.login) || 'someone';
+    // A live box beats the local geometry: while they drag, the thing is
+    // where THEY have it, not where this copy of the document still has it.
+    const live = new Map((p.boxes || []).map(b => [b.id, b]));
     const mark = (el, cls, label) => {
       if (!el) return;
       el.classList.add(cls);
+      if (p.idle) el.classList.add('ds-peer-idle');
       el.style.setProperty('--peer', p.color);
       // First to claim an element names it; a second person on the same one
       // is in the tooltip rather than a second tag over the first.
@@ -12750,7 +12814,18 @@ function collabPaintPeers(d) {
       else if (!el.dataset.peer.includes(name)) el.dataset.peer += ', ' + label;
     };
     for (const id of p.sel) {
-      const label = name + (p.drag ? ' · moving' : '');
+      const label = name + (p.drag ? ' · moving' : p.idle ? ' · away' : '');
+      // Being moved: drawn as an overlay at the geometry they are publishing,
+      // whatever kind of thing it is. A ring class would sit on the element
+      // where THIS copy still has it - which is the old place, until they
+      // let go.
+      const box = live.get(id);
+      if (box) {
+        const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
+        const page = [...d.querySelectorAll('section.page')][box.page - 1]
+          || (el && el.closest('section.page')) || d.querySelector('section.page');
+        if (page) { peerBox(d, page, p, id, box, label); continue; }
+      }
       const html = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
       if (html) { mark(html, 'ds-peer', label); continue; }
       // A shape, a chart, an icon, a line: an SVG child, where a CSS outline
@@ -12763,14 +12838,7 @@ function collabPaintPeers(d) {
       if (!shape) continue;
       const page = shape.closest('section.page') || d.querySelector('section.page');
       if (!page) continue;
-      const b = shapeBox(shape, page);
-      const box = d.createElement('div');
-      box.className = 'ds-peer-box';
-      box.dataset.for = id;
-      box.dataset.peer = label;
-      box.style.setProperty('--peer', p.color);
-      box.style.cssText += `;left:${b.x}in;top:${b.y}in;width:${b.w}in;height:${b.h}in`;
-      page.appendChild(box);
+      peerBox(d, page, p, id, shapeBox(shape, page), label);
     }
     if (p.slot) {
       const el = d.querySelector(`[data-slot="${CSS.escape(p.slot)}"]`)
@@ -12786,6 +12854,20 @@ function collabPaintPeers(d) {
   agentPaint();
 }
 
+/** One overlay box at an inch box, in a collaborator's colour. Used for
+ *  anything a CSS ring cannot say: a shape (an outline on an SVG child rings
+ *  the whole page-sized viewport) and anything being moved (the ring would
+ *  sit where this copy still has it). */
+function peerBox(d, page, p, id, b, label) {
+  const box = d.createElement('div');
+  box.className = 'ds-peer-box' + (p.idle ? ' ds-peer-idle' : '');
+  box.dataset.for = id;
+  box.dataset.peer = label;
+  box.style.setProperty('--peer', p.color);
+  box.style.cssText += `;left:${b.x}in;top:${b.y}in;width:${b.w}in;height:${b.h}in`;
+  page.appendChild(box);
+}
+
 /** Opening an inline editor on something a collaborator is already typing
  *  in: say so. Both edits merge (that is what the CRDT is for), but a person
  *  should know they are not alone in the sentence. */
@@ -12794,6 +12876,16 @@ function collabWarnShared(id, what) {
   const who = collabPeers.filter(p => p.slot === id).map(p => p.login || 'someone');
   if (!who.length) return;
   $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'are' : 'is'} also editing this ${what} — both of your edits will be kept`;
+}
+/** About to move something a collaborator has in hand: say who, and what
+ *  that means. Unlike a paragraph, a move cannot be merged. */
+function collabWarnHeld(id) {
+  if (!collab || !id) return;
+  const who = collabPeers.filter(p => !p.idle && (p.sel || []).includes(id))
+    .map(p => p.name || fmtWho(p.login) || 'someone');
+  if (!who.length) return;
+  $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'have' : 'has'} this selected too — `
+    + 'a move is not merged, so whoever lets go last wins';
 }
 window.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
 window.addEventListener('blur', () => { collabPointerAt = 0; });
@@ -12857,18 +12949,33 @@ function collabChip() {
   const s = collabInfo;
   c.hidden = !s.on;
   if (!s.on) return;
-  // Who else is here, by name when the door knows one (the hub's roster).
-  const others = collabPeers.length ? collabPeers.map(p => p.name || p.login).filter(Boolean)
+  // Who else is here, by name when the door knows one (the hub's roster) -
+  // and the ones whose tabs are open with nobody at them counted separately,
+  // because "with alice, and 1 idle tab" while alice IS the idle tab is a
+  // sentence that contradicts itself.
+  const named = p => p.name || p.login;
+  const others = collabPeers.length ? collabPeers.filter(p => !p.idle).map(named).filter(Boolean)
                                     : s.here.filter(Boolean);
+  const asleep = collabPeers.filter(p => p.idle).map(named).filter(Boolean);
   const who = others.length ? ' with ' + others.join(', ') : '';
   let text = '', title = '';
   switch (s.status) {
-    case 'live':
-      text = '● live' + (s.peers > 1 ? ' · ' + s.peers : '') + (hubRole === 'viewer' ? ' · view only' : '');
-      title = (s.peers > 1 ? `${s.peers} editors in this session${who}.` : 'Live session — nobody else here yet.')
+    case 'live': {
+      // The count is of people who are AT the document: a tab somebody left
+      // open this morning is here, and is not an editor for the purpose of
+      // "how many of us are in this". Both numbers are said, so neither is a
+      // lie about the other.
+      const away = collabPeers.filter(x => x.idle).length;
+      const at = Math.max(1, s.peers - away);
+      text = '● live' + (s.peers > 1 ? ' · ' + at : '') + (hubRole === 'viewer' ? ' · view only' : '');
+      title = (s.peers > 1 ? `${at} editor${at > 1 ? 's' : ''} in this session${who}`
+                              + (asleep.length ? `. ${asleep.join(', ')} ${asleep.length > 1 ? 'have' : 'has'} it open, `
+                                                 + 'with no input for five minutes.' : '.')
+                           : 'Live session — nobody else here yet.')
         + (hubRole === 'viewer' ? ' You can watch; this document is shared with you to view, not to change.'
                                 : ' Edits are shared as you make them.');
       break;
+    }
     case 'offline':
       text = '○ offline';
       title = 'The collaboration relay is unreachable. Keep working — edits are kept and sent when it is back.';
@@ -12902,14 +13009,15 @@ function collabChip() {
       av.style.background = p.color;
       av.textContent = (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
       const place = collabPeerPlace(d, p);
-      const doing = p.slot ? ' · typing' : p.drag ? ' · moving' : '';
+      const doing = p.idle ? ' · away' : p.slot ? ' · typing' : p.drag ? ' · moving' : '';
       const following = collabFollow === p.login;
       // "typing on page 2" is what they are doing there; "reading page 2" is
       // where they are with nothing in hand. Two sentences, both true.
       const where = !place.page ? '' : place.how === 'view' ? ` · reading page ${place.page}` : ` on page ${place.page}`;
       av.title = name + doing + where
         + (place.el ? `. Click to go there${following ? '; following — click to stop' : '; click again to follow'}` : '');
-      av.classList.toggle('typing', !!p.slot);
+      av.classList.toggle('typing', !!p.slot && !p.idle);
+      av.classList.toggle('idle', !!p.idle);
       av.classList.toggle('following', following);
       av.setAttribute('role', 'button');
       av.onclick = e => { e.stopPropagation(); collabAvatarClick(p); };
