@@ -26,7 +26,10 @@
  * Bump CACHE_VERSION on any shell change that should evict old entries
  * outright rather than wait for revalidation (e.g. a renamed file).
  */
-const CACHE_VERSION = 'primer-shell-v6';
+// v7: the shell rule missed Pages' clean URLs, so a stale /primer/edit is in
+// every warm browser's cache. A rename evicts them outright rather than
+// waiting for a revalidation that the old rule never asked for.
+const CACHE_VERSION = 'primer-shell-v7';
 const PYODIDE_CACHE = 'primer-pyodide-v1';
 
 const SHELL_FILES = [
@@ -90,7 +93,16 @@ const isPyodide = url => url.hostname === 'cdn.jsdelivr.net' && url.pathname.inc
 // message, and the only symptom was a 25-second timeout at the other end.
 // A client one deploy behind the room it is talking to is the same "fixes look
 // unshipped" bug factory the pages comment above describes.
-const isShellPage = url => /\/(edit|start)\.html$/.test(url.pathname)
+// `.html` OPTIONAL, and that is not a nicety. Cloudflare Pages serves clean
+// URLs: a request for /primer/edit.html is answered with a 301 to
+// /primer/edit, the browser follows it, and the redirect is a SECOND request
+// through this worker - for a path this rule did not match. So every open of
+// the editor on the hub was answered from the cache and revalidated behind,
+// which is the exact failure the comment above describes, still live for the
+// only URL anybody actually has: measured on the deployed hub, an editor
+// three deploys old with the new file sitting on the server. The hub's
+// _headers has always named both spellings; this had not.
+const isShellPage = url => /\/(edit|start)(\.html)?$/.test(url.pathname)
                         || /\/collab-client\.js$/.test(url.pathname);
 
 const isNetworkOnly = url =>
@@ -109,7 +121,7 @@ const isNetworkOnly = url =>
   // numbers as the cached reply and the live stream disagreed is what exposed
   // it. A stale answer here is always wrong; there is no offline value in one.
   /^\/__/.test(url.pathname) ||
-  /\/primer\/(index\.html)?$/.test(url.pathname);
+  /\/primer\/(index(\.html)?)?$/.test(url.pathname);
 
 self.addEventListener('fetch', event => {
   const req = event.request;
