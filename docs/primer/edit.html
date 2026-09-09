@@ -13031,11 +13031,23 @@ async function startCollab() {
       agentTouch({ by: msg.by ? `Claude, for ${String(msg.by).replace(/@.*$/, '')}` : 'Claude',
                    what: msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : '')),
                    target: typeof (ops[0].args || [])[0] === 'string' ? ops[0].args[0] : null });
-      const r = await docsync.api.batch(ops);
+      // One op whose verb batch() cannot take — remove, duplicate, addPage,
+      // applyScheme, addEndnotesSection push their own history — runs as
+      // the single call it is, the same verb a local /__pilot would run.
+      // Anything else is a batch: one undo step, one render.
+      let r;
+      const one = ops.length === 1 ? ops[0] : null;
+      if (one && !PILOT_BATCH_VERBS[one.verb] && PILOT_SINGLE_VERBS.has(one.verb)) {
+        const args = Array.isArray(one.args) ? one.args : [one.args];
+        r = await docsync.api[one.verb](...args);
+        if (r && r.ok) r = { results: [{ verb: one.verb, ...r }] };
+      } else {
+        r = await docsync.api.batch(ops);
+      }
       // batch() awaits its own render, and wire() runs reportFit(), so the
       // fit below is this edit's, not the one before it.
-      return r && r.ok ? { ok: true, results: r.results || null, fit: fitReport() }
-                       : { ok: false, error: (r && r.error) || 'the editor refused the batch' };
+      return r && r.ok !== false ? { ok: true, results: r.results || null, fit: fitReport() }
+                                 : { ok: false, error: (r && r.error) || 'the editor refused the batch' };
     },
     // A question, not a change: the room relays it here because this editor
     // is the only thing in the system that has the page laid out in inches.
@@ -13043,8 +13055,12 @@ async function startCollab() {
     onAsk: async msg => {
       if (msg.what !== 'inventory') return { ok: false, error: `this editor does not answer '${msg.what}'` };
       const inv = docsync.api.inventory();
+      // Elements as well as slots: every id a pilot verb takes, with its
+      // box in page inches — what the hub's connector hands a person's
+      // Claude so it can move, recolour or delete by id, measured here.
       return { ok: true, inventory: { project: inv.project, pageOrder: inv.pageOrder,
-                                      pages: inv.pages.map(p => ({ id: p.id, index: p.index, slots: p.slots })) },
+                                      pages: inv.pages.map(p => ({ id: p.id, index: p.index, slots: p.slots, elements: p.elements })) },
+               page: { w: PAGE_W_IN, h: PAGE_H_IN, pageless: !!(layout.page && layout.page.h == null) },
                fit: fitReport() };
     },
     presence: collabPresence,
@@ -20375,6 +20391,11 @@ const PILOT_BATCH_VERBS = {
   group: { validate: ids => _pilotValidateGroup(ids), apply: ids => _pilotApplyGroup(ids) },
   ungroup: { validate: id => _pilotValidateUngroup(id), apply: id => _pilotApplyUngroup(id) },
 };
+
+// The verbs a relayed pilot op may run ALONE — the ones batch() refuses
+// because they push their own history and render. Named here so a room
+// message cannot reach an arbitrary property of docsync.api.
+const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection']);
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
