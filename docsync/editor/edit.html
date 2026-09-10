@@ -17906,7 +17906,7 @@ function hubCommentsRenderInner() {
     // suggestion, Accept and Reject for an editor, Withdraw for its author.
     const firstActs = [];
     if (sug) {
-      if (c.status === 'open') {
+      if (c.status === 'open' && !c.pending) {   // pending: the hub has no id to decide it by yet
         if (!hubViewOnly()) {
           const ok = textBtn('Accept', () => suggestAccept(c), 'accept'); ok.title = 'Apply this change to the document';
           const no = textBtn('Reject', () => suggestReject(c), 'reject'); no.title = 'Leave the document as it is';
@@ -18219,7 +18219,7 @@ async function hubCommentAdd() {
   } else if (!made.id) { hubComments = hubComments.filter(c => c !== tmp); hubCommentsLoad(); }
   hubCommentsShow();
 }
-function hubCommentsToggle(open) {
+function hubCommentsToggle(open, { load = true } = {}) {
   const panel = $('cpanel');
   if (!panel) return;
   const show = open == null ? panel.hidden : open;
@@ -18230,7 +18230,7 @@ function hubCommentsToggle(open) {
   clearInterval(hubCommentsTimer); hubCommentsTimer = 0;
   if (show) {
     hubCommentsRender();
-    hubCommentsLoad();
+    if (load) hubCommentsLoad();   // load:false - the caller has just merged the hub's own answer
     hubCommentsTimer = setInterval(hubCommentsLoad, 15000);
   } else {
     hubCommentActive = null;
@@ -18367,23 +18367,43 @@ async function suggestFinalize() {
   const change = suggestDiff(base, suggestNow());
   // Back to the shared document (which has every remote change and none of
   // this one - nothing was flushed), or to the base when there is no room.
-  const back = collab ? collab.files() : null;
+  // A room that has not synced yet holds no document at all: the base stands
+  // in for it rather than a blank page.
+  const room = collab ? collab.files() : null;
+  const back = room && typeof room.content === 'string' && room.content.trim() ? room : null;
   source = back ? back.content : base.content;
   layout = back ? back.layout : JSON.parse(base.layoutText || '{}');
   layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
   syncPageSize();
   markDirty();
-  await render();
-  if (!change) return;
-  const made = await hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', {
-    kind: 'suggestion', anchor: suggestAnchor(change), text: suggestSummary(change), change, mentions: [],
-  }), 'suggestion not sent');
-  if (made) {
-    hubCommentActive = made.id;
+  // The proposal is on a card and on the page the moment the action is over,
+  // drawn from what was done here - not after the hub has answered and been
+  // asked again, which on the hub was two round trips of nothing visible
+  // between the words going back and the proposal appearing. The card wears
+  // .pending until the hub has it (as a new comment's does); a refusal takes
+  // it away and says so. The render below paints it along with the revert.
+  const body = change && { kind: 'suggestion', anchor: suggestAnchor(change), text: suggestSummary(change), change, mentions: [] };
+  const tmp = change && { id: pendingId(), ...body, status: 'open', decided_by: null, decided_at: null, quote: null,
+                          by: collabInfo.login, at: new Date().toISOString(), edited_at: null,
+                          resolved: false, resolved_by: null, resolved_at: null, replies: [], pending: true };
+  if (tmp) {
+    hubComments.push(tmp);
+    hubCommentActive = tmp.id;
     if (hubCommentsTab === 'resolved') hubCommentsTab = 'open';   // a new proposal is an open one: show the tab that has it
-    hubCommentsToggle(true);
+    hubCommentsToggle(true, { load: false });   // the panel; the hub's answer below stands in for the poll
+  }
+  const posting = tmp && hubCommentsCall(`${docStore()}/comments`, jsonInit('POST', body), 'suggestion not sent', tmp.id);
+  await render();
+  if (!tmp) return;
+  const made = await posting;
+  if (!made || !made.id) {
+    hubComments = hubComments.filter(c => c !== tmp);
+    if (hubCommentActive === tmp.id) hubCommentActive = null;
+    if (made) hubCommentsLoad();   // answered, but not with a thread: the list as the hub has it
+  } else {
     $('stat').textContent = 'suggested — an editor can accept or reject it from the Comments panel';
   }
+  hubCommentsShow();
 }
 /** Accept: the change applied here, as one edit, then recorded as accepted.
  *  A paragraph rewritten since it was suggested is said first. */
@@ -18408,6 +18428,13 @@ async function suggestAccept(c) {
     await hubCommentPatch(c.id, { status: 'accepted' });
     $('stat').textContent = 'suggestion accepted — it is on the page for everyone; Save keeps it';
   } finally { suggestApplying = false; }
+}
+/** What the layout holds now where a suggestion's layout entry points. */
+function suggestLayoutNow(e) {
+  const sec = layout[e.section];
+  if (e.id == null) return sec ?? null;
+  if (e.arr) return (Array.isArray(sec) ? sec : []).find(x => isObj(x) && x.id === e.id) ?? null;
+  return isObj(sec) && sec[e.id] !== undefined ? sec[e.id] : null;
 }
 function suggestApplyLayout(e) {
   const sec = e.section;
@@ -18497,9 +18524,17 @@ function suggestPaint(d) {
     else el.appendChild(ins);
     return true;
   };
+  // What the document says now. A proposal whose change is already in it -
+  // an Accept that reached this editor through the room before the hub said
+  // the thread was decided - is not drawn: the new words would show twice,
+  // once as the paragraph and once more in green after it, for as long as
+  // the hub took to answer, and then vanish. Docs draws nothing there either.
+  const cur = slotsOf(source);
+  const same = (x, y) => JSON.stringify(x === undefined ? null : x) === JSON.stringify(y === undefined ? null : y);
   for (const c of hubComments) {
     if (c.kind !== 'suggestion' || c.resolved || !c.change) continue;
     for (const [k, v] of Object.entries(c.change.content || {})) {
+      if (v.after != null && cur.has(k) && cur.get(k) === v.after) continue;
       const el = hubCommentEl(d, k);
       if (!el) continue;
       let drawn = false;
@@ -18509,6 +18544,7 @@ function suggestPaint(d) {
       if (!drawn) el.classList.add('ds-suggested');
     }
     for (const e of c.change.layout || []) {
+      if (same(suggestLayoutNow(e), e.after)) continue;   // already so
       const el = e.id && hubCommentEl(d, e.id);
       if (el) el.classList.add('ds-suggested');
     }

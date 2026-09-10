@@ -29,7 +29,14 @@
 // v7: the shell rule missed Pages' clean URLs, so a stale /primer/edit is in
 // every warm browser's cache. A rename evicts them outright rather than
 // waiting for a revalidation that the old rule never asked for.
-const CACHE_VERSION = 'primer-shell-v7';
+// v8: the hub's own API answered from this cache. /api/docs/<room>/comments
+// fell through to the generic same-origin branch and was served cache-first,
+// revalidated behind — so every poll of the comments returned the poll
+// BEFORE it: a suggestion showed up one poll late, and a thread resolved a
+// moment ago came back open from the stale copy until the poll after. The
+// rule below now leaves /api/ alone; the rename evicts the copies already
+// stored.
+const CACHE_VERSION = 'primer-shell-v8';
 const PYODIDE_CACHE = 'primer-pyodide-v1';
 
 const SHELL_FILES = [
@@ -121,11 +128,18 @@ const isNetworkOnly = url =>
   // numbers as the cached reply and the live stream disagreed is what exposed
   // it. A stale answer here is always wrong; there is no offline value in one.
   /^\/__/.test(url.pathname) ||
+  // The hub's API: the document store (comments, versions, the share list),
+  // /api/me, presence. Every answer is live state and every caller already
+  // says {cache:'no-store'} — which a worker overrides unless it steps aside.
+  /^\/api\//.test(url.pathname) ||
   /\/primer\/(index(\.html)?)?$/.test(url.pathname);
 
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;              // writes always hit the network directly
+  // A request that asked for no cache gets none from here either: the page
+  // knows which of its reads are liveness signals, and this worker does not.
+  if (req.cache === 'no-store') return;
   const url = new URL(req.url);
 
   if (isPyodide(url)) {
