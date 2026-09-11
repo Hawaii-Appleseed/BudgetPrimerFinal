@@ -6500,23 +6500,43 @@ function reindexCells(t, kind, at, delta) {
   t.cells = out;
   if (!Object.keys(out).length) delete t.cells;
 }
+/** cellSel is positional. A row or column inserted, deleted or moved shifts
+ *  what its numbers point at, so the next Bold or fill would land on the
+ *  wrong cells - or, after a delete, on none while the panel still said
+ *  "Cell selected". It moves with the edit, and clears when it falls off. */
+function cellSelShift(t, kind, at, delta) {
+  if (!cellSel || tableOfId(cellSel.id) !== t) return;
+  const move = i => (delta < 0 && i === at) ? null : (i >= at ? i + delta : i);
+  const a = kind === 'row' ? 'r0' : 'c0', b = kind === 'row' ? 'r1' : 'c1';
+  const lo = Math.min(cellSel[a], cellSel[b]), hi = Math.max(cellSel[a], cellSel[b]);
+  if (delta < 0 && lo === at && hi === at) { cellSel = null; return; }   // the selected line went
+  cellSel[a] = move(cellSel[a]) ?? lo; cellSel[b] = move(cellSel[b]) ?? Math.max(lo, hi - 1);
+  const n = kind === 'row' ? t.rows.length + delta : t.rows[0].length + delta;
+  if (cellSel[a] >= n || cellSel[b] >= n) cellSel = null;
+}
+function cellSelSwap(t, kind, x, y) {
+  if (!cellSel || tableOfId(cellSel.id) !== t) return;
+  const sw = i => (i === x ? y : i === y ? x : i);
+  if (kind === 'row') { cellSel.r0 = sw(cellSel.r0); cellSel.r1 = sw(cellSel.r1); }
+  else { cellSel.c0 = sw(cellSel.c0); cellSel.c1 = sw(cellSel.c1); }
+}
 function tableInsertRow(t, at) {
-  reindexCells(t, 'row', at, 1);
+  reindexCells(t, 'row', at, 1); cellSelShift(t, 'row', at, 1);
   t.rows.splice(at, 0, Array(t.rows[0].length).fill(''));
 }
 function tableDeleteRow(t, at) {
   if (t.rows.length <= 1) return;
-  reindexCells(t, 'row', at, -1);
+  reindexCells(t, 'row', at, -1); cellSelShift(t, 'row', at, -1);
   t.rows.splice(at, 1);
 }
 function tableInsertCol(t, at) {
-  reindexCells(t, 'col', at, 1);
+  reindexCells(t, 'col', at, 1); cellSelShift(t, 'col', at, 1);
   t.rows.forEach(r => r.splice(at, 0, ''));
   if (t.colw) t.colw.splice(at, 0, t.colw.reduce((a, b) => a + b, 0) / t.colw.length);
 }
 function tableDeleteCol(t, at) {
   if (t.rows[0].length <= 1) return;
-  reindexCells(t, 'col', at, -1);
+  reindexCells(t, 'col', at, -1); cellSelShift(t, 'col', at, -1);
   t.rows.forEach(r => r.splice(at, 1));
   if (t.colw) t.colw.splice(at, 1);
 }
@@ -6537,14 +6557,14 @@ function tableMoveRow(t, at, delta) {
   const to = at + delta;
   if (to < 0 || to >= t.rows.length) return;
   [t.rows[at], t.rows[to]] = [t.rows[to], t.rows[at]];
-  swapCellLines(t, 'row', at, to);
+  swapCellLines(t, 'row', at, to); cellSelSwap(t, 'row', at, to);
 }
 function tableMoveCol(t, at, delta) {
   const to = at + delta;
   if (to < 0 || to >= t.rows[0].length) return;
   t.rows.forEach(r => { [r[at], r[to]] = [r[to], r[at]]; });
   if (t.colw) [t.colw[at], t.colw[to]] = [t.colw[to], t.colw[at]];
-  swapCellLines(t, 'col', at, to);
+  swapCellLines(t, 'col', at, to); cellSelSwap(t, 'col', at, to);
 }
 /** Column widths from what is actually in the cells. Measured off the live
  *  DOM — the renderer already laid the text out, so the widest cell's
@@ -9144,11 +9164,18 @@ function renderNotices(d) {
   // one state a person must not miss. Not dismissible - it goes when the
   // session is back, and the edits made meanwhile go with it.
   const offline = collabInfo && collabInfo.on && collabInfo.status === 'offline';
-  host.hidden = !show.length && !offline;
+  const paused = typeof hubAutosaveHold !== 'undefined' && hubAutosaveHold && hubAutosaveHoldWhy && !offline;
+  host.hidden = !show.length && !offline && !paused;
   if (offline) {
     const row = document.createElement('div'); row.className = 'ds-note ds-offline';
     const txt = document.createElement('span');
     txt.textContent = 'Working offline — your edits are kept here and shared when the session is back.';
+    row.appendChild(txt); host.appendChild(row);
+  }
+  if (paused) {
+    const row = document.createElement('div'); row.className = 'ds-note ds-offline';
+    const txt = document.createElement('span');
+    txt.textContent = `Autosave is paused — a save failed (${hubAutosaveHoldWhy}). Press Save to try again.`;
     row.appendChild(txt); host.appendChild(row);
   }
   if (!show.length) return;
@@ -13120,6 +13147,16 @@ window.addEventListener('blur', () => { collabPointerAt = 0; });
 /** Local -> document. One transaction; nothing if nothing changed. With a
  *  paragraph open, its live words ride along — a flush of `source` alone
  *  would read as deleting them. */
+let collabRenderTimer = 0;
+const COLLAB_RENDER_QUIET_MS = 300;
+function collabRenderSoon() {
+  clearTimeout(collabRenderTimer);
+  collabRenderTimer = setTimeout(async () => {
+    collabRenderTimer = 0;
+    await render();
+    if (collabSayBack) collabSayBackSoon();
+  }, COLLAB_RENDER_QUIET_MS);
+}
 function collabFlush() {
   try { collab.flush(collabLiveFiles()); }
   catch (e) { console.warn('[collab] flush refused:', e); }
@@ -13152,6 +13189,16 @@ async function collabAdopt(files, why) {
       }
     }
     collabPaintPeers($('out').contentDocument);
+    return;
+  }
+  if (why !== 'adopt') {
+    // Someone else's edit. The document is adopted at once (source and
+    // layout above - a flush from here carries the merged state), but the
+    // PAINT waits a beat: the peer's open paragraph arrives four times a
+    // second, and each arrival ran the whole renderer here, so anyone
+    // reading while a colleague typed got a stutter per keystroke. One
+    // render per burst, after the burst.
+    collabRenderSoon();
     return;
   }
   await render();
@@ -13263,6 +13310,7 @@ function collabChip() {
     // back is said once, when live.
     if (s.status === 'offline') collabWasOffline = true;
     if (s.status === 'live' && collabWasOffline) { collabWasOffline = false; collabSayBack = true; collabSayBackSoon(); }
+    if (s.status === 'live' && typeof hubAutosaveResume === 'function') hubAutosaveResume();
   }
 }
 let collabChipWas = null, collabWasOffline = false, collabSayBack = false, collabBackTimer = 0;
@@ -13465,6 +13513,15 @@ async function startCollab() {
     onStatus: st => {
       collabInfo = { ...collabInfo, status: st.status, phase: st.phase, peers: st.peers,
                      here: st.here, error: st.error };
+      // A dropped socket hears no more peers messages, so the last roster
+      // would stand: a colleague's caret, ring and "typing" lock painted on
+      // a page they may have left an hour ago. Not live: nobody is here.
+      if (st.status !== 'live' && collabPeers.length) {
+        collabPeers = [];
+        collabInfo.peerList = [];
+        const d = $('out') && $('out').contentDocument;
+        if (d && d.body) collabPaintPeers(d);
+      }
       collabChip();
     },
     onHistory: syncHistoryButtons,
@@ -16748,7 +16805,9 @@ let hubHistorySel = null;        // the version in hand, with its differences on
 let hubHistoryNamedOnly = false;
 let hubHistoryLoading = 0;
 const HIST_CSS = `
+@media screen {
   .ds-hist-changed { outline: 2px solid #C2703A !important; outline-offset: 3px; background: rgba(245,197,66,.16); }
+}
 `;
 /** The History button (and the pilot) open the panel; the name is the old dialog's. */
 async function hubHistoryDialog() { return hubHistoryToggle(); }
@@ -16987,8 +17046,11 @@ function hubSincePaint(d) {
     // Its own class, not the history panel's: that one is cleared wholesale
     // whenever the panel repaints, and these two marks answer different
     // questions and must not switch each other off.
-    st.textContent = '.ds-since { outline:2px dashed #C2703A; outline-offset:4px; }\n'
-      + '.ds-since-at { outline-style:solid; background:rgba(245,228,196,.5); }';
+    // Screen only: File > Download on the hub is the frame's own print, and
+    // these marks (like the comment badges and suggestion colours) were
+    // landing in the PDF.
+    st.textContent = '@media screen { .ds-since { outline:2px dashed #C2703A; outline-offset:4px; }\n'
+      + '.ds-since-at { outline-style:solid; background:rgba(245,228,196,.5); } }';
     d.head.appendChild(st);
   }
   d.querySelectorAll('.ds-since, .ds-since-at').forEach(el => el.classList.remove('ds-since', 'ds-since-at'));
@@ -17108,6 +17170,7 @@ try { hubCommentsView = localStorage.getItem('primer-comments-view') || 'margin'
 let hubMarginRaf = 0;
 let hubMarginRO = null;       // watches the cards' heights: a reply box opening restacks the rest
 const COMMENT_MARK_CSS = `
+@media screen {
   [data-ds-comments] { position: relative; }
   [data-ds-comments]::after {
     content: attr(data-ds-comments); position: absolute; top: -6px; right: -6px; z-index: 40;
@@ -17118,6 +17181,7 @@ const COMMENT_MARK_CSS = `
   ::highlight(ds-comment) { background: #FBE7A1; }
   ::highlight(ds-comment-active) { background: #F5C542; }
   .ds-comment-flash { outline: 3px solid #C2703A !important; outline-offset: 2px; transition: outline-color .8s; }
+}
 `;
 
 /** The anchor's element on the page: the element first (a heading is both a
@@ -17558,9 +17622,26 @@ async function hubCommentsLoad() {
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     if (gen !== hubCommentsGen) return;
-    // A card the hub has not answered for yet is not the poll's to take away.
-    const pend = hubComments.filter(c => c.pending && !j.some(x => x.id === c.id));
-    hubComments = j.concat(pend);
+    // Per thread, not wholesale. A card the hub has not answered for yet is
+    // not the poll's to take away - and neither is a REPLY still on its way
+    // (it vanished from the card and popped back when the POST landed), nor
+    // a Resolve or an edit whose PATCH is in flight (the poll painted the
+    // thread as it stood before the click). A pending card the hub has
+    // already stored under its own id is the same card, not a second one.
+    const same = (a, b) => a && b && a.by === b.by && a.text === b.text;
+    const local = hubComments;
+    const merged = j.map(t => {
+      const mine = local.find(c => c.id === t.id || (c.__clientId && c.__clientId === t.id));
+      if (!mine) return t;
+      if (mine.__busy) return mine;
+      const keep = (mine.replies || []).filter(r => r.pending && !(t.replies || []).some(x => x.id === r.id || same(x, r)));
+      const out = keep.length ? { ...t, replies: [...(t.replies || []), ...keep] } : t;
+      if (mine.__clientId) out.__clientId = mine.__clientId;
+      if (mine.__draft) out.__draft = mine.__draft;
+      return out;
+    });
+    const pend = local.filter(c => c.pending && !j.some(x => x.id === c.id || (same(x, c) && x.anchor === c.anchor)));
+    hubComments = merged.concat(pend);
     hubCommentsFailed = null;
   } catch (e) {
     // Stale is said, once, where the person is looking - not on every poll.
@@ -18250,9 +18331,11 @@ async function hubCommentPatch(id, patch) {
     } else if (typeof patch.resolved === 'boolean' && c.kind !== 'suggestion') {
       c.resolved = patch.resolved; c.resolved_by = patch.resolved ? me : null; c.resolved_at = patch.resolved ? now : null;
     }
+    c.__busy = true;
     hubCommentsShow();
   }
   const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}`, jsonInit('PATCH', patch), 'comment not changed');
+  const c2 = hubComments.find(x => x.id === id); if (c2) delete c2.__busy;
   if (!got && was) hubPut(id, was);
   hubCommentsShow();
   return got;
@@ -18271,9 +18354,11 @@ async function hubReplyAdd(id, text, mentions) {
   if (c) {
     c.replies = [...(c.replies || []), { id: pendingId(), text, by: collabInfo.login, at: new Date().toISOString(), edited_at: null, mentions, pending: true }];
     if (c.resolved) { c.resolved = false; c.resolved_by = null; c.resolved_at = null; }   // a reply reopens the thread, as the hub does
+    c.__busy = true;
     hubCommentsShow();
   }
   const got = await hubCommentsCall(`${docStore()}/comments/${encodeURIComponent(id)}/replies`, jsonInit('POST', { text, mentions }), 'reply not added');
+  const c2 = hubComments.find(x => x.id === id); if (c2) delete c2.__busy;
   if (!got && was) { was.__draft = text; hubPut(id, was); }   // the words go back into an open box
   hubCommentsShow();
   return got;
@@ -18369,9 +18454,12 @@ let suggestTimer = 0;
 let suggestApplying = false;  // accepting one: a real edit, not a new suggestion
 const SUGGEST_QUIET_MS = 700;
 const SUGGEST_CSS = `
+@media screen {
   ::highlight(ds-suggest-del) { text-decoration: line-through; text-decoration-color: #B3412F; color: #B3412F; background: #FBE9E5; }
   ins.ds-suggest { text-decoration: underline; text-decoration-color: #2D8A4E; color: #1F6B3A; background: #E6F4EA; padding: 0 1px; }
   .ds-suggested { outline: 2px dashed #2D8A4E !important; outline-offset: 3px; }
+}
+@media print { ins.ds-suggest { text-decoration: none; } }
 `;
 /** Every slot's markdown, by key, from a content.md body. */
 function slotsOf(src) {
@@ -19003,14 +19091,30 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
     original = sent; layoutOrig = layoutText;
     clearDraftCache();
-    hubAutosaveHold = false;                    // a Save that landed: automatic ones may resume
+    hubAutosaveHold = false; hubAutosaveFails = 0; hubAutosaveHoldWhy = '';   // a Save that landed: automatic ones may resume
+    hubAutosaveNoticeSync();
     hubSavedAt = Date.now();
     markDirty();
     $('stat').textContent = auto ? 'saved automatically — anyone opening this document gets this version'
                                  : 'saved — anyone opening this document gets this version';
     return true;
   } catch (e) {
-    if (auto) { hubAutosaveHold = true; $('stat').textContent = 'autosave paused — save failed: ' + e.message + '; press Save to try again'; }
+    if (auto) {
+      // A blink is not a reason to stop: three tries, a little apart, before
+      // the hold - and the hold is said in the band above the page, where
+      // #stat's one line (overwritten by the next drag frame) could not
+      // hold it.
+      hubAutosaveFails++;
+      if (hubAutosaveFails <= 3) {
+        $('stat').textContent = `save failed: ${e.message} — trying again`;
+        clearTimeout(hubAutosaveTimer);
+        hubAutosaveTimer = setTimeout(hubAutosaveTick, 1500 * hubAutosaveFails);
+      } else {
+        hubAutosaveHold = true; hubAutosaveHoldWhy = e.message;
+        $('stat').textContent = 'autosave paused — save failed: ' + e.message + '; press Save to try again';
+        hubAutosaveNoticeSync();
+      }
+    }
     else $('stat').textContent = 'save failed: ' + e.message;
     markDirty();
     return false;
@@ -19034,6 +19138,21 @@ let hubAutosaveTimer = 0;
 let hubAutosaveHold = false;   // a 409 or a failure: wait for a press of Save
 let hubSaveBusy = false;       // a store Save in flight
 let hubSavedAt = 0;            // when the last store Save landed
+let hubAutosaveFails = 0;      // failures in a row, before the hold
+let hubAutosaveHoldWhy = '';   // what the last one said
+/** The band above the page says autosave is paused, while it is. */
+function hubAutosaveNoticeSync() {
+  const d = $('out') && $('out').contentDocument;
+  if (d && d.body && typeof renderNotices === 'function') renderNotices(d);
+}
+/** The session is back: a hold from a failure while it was away lifts, and
+ *  the edits made meanwhile save. A hold from a 409 stays - that one is a
+ *  question, and only a press of Save answers it. */
+function hubAutosaveResume() {
+  if (!hubAutosaveHold || !hubAutosaveHoldWhy) return;
+  hubAutosaveHold = false; hubAutosaveFails = 0; hubAutosaveHoldWhy = '';
+  hubAutosaveNoticeSync(); hubSaveLabel(); hubAutosaveSchedule();
+}
 const AUTOSAVE_QUIET_MS = 300;
 let hubAutosaveFlush = false;  // a box just closed: the next dirty is a Save now, not after the quiet
 /** A paragraph, chart, image or box editor has just closed. Its value lands
