@@ -13194,6 +13194,22 @@ window.addEventListener('blur', () => { collabPointerAt = 0; });
 /** Local -> document. One transaction; nothing if nothing changed. With a
  *  paragraph open, its live words ride along — a flush of `source` alone
  *  would read as deleting them. */
+/** The room's roster: from the client's peers message, and again on a
+ *  reconnect from what the client already holds. */
+function collabPeersArrived(peers) {
+  collabPeers = peers;
+  if (peers.some(p => p.comments && p.comments > hubCommentsHeard)) {
+    hubCommentsHeard = Math.max(...peers.map(p => p.comments || 0));
+    hubCommentsLoad();
+  }
+  collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, name: p.name, color: p.color, sel: p.sel, slot: p.slot,
+                                                          cursor: collab ? collab.resolveCursor(p.cursor) : null,
+                                                          agent: p.agent })) };
+  const d = $('out') && $('out').contentDocument;
+  if (d) collabPaintPeers(d);
+  collabFollowTick();
+  collabChip();
+}
 let collabRenderTimer = 0;
 const COLLAB_RENDER_QUIET_MS = 300;
 function collabRenderSoon() {
@@ -13576,6 +13592,13 @@ async function startCollab() {
         const d = $('out') && $('out').contentDocument;
         if (d && d.body) collabPaintPeers(d);
       }
+      // ...and back: the client still holds the roster it had, and a peer
+      // who has not moved sends nothing new, so it is asked for what it
+      // knows rather than waited on (found with two tabs: a reconnect left
+      // the other person invisible until they typed).
+      if (st.status === 'live' && !collabPeers.length && collab && Array.isArray(collab.peers) && collab.peers.length) {
+        collabPeersArrived(collab.peers);
+      }
       collabChip();
     },
     onHistory: syncHistoryButtons,
@@ -13625,20 +13648,7 @@ async function startCollab() {
                fit: fitReport() };
     },
     presence: collabPresence,
-    onPeers: peers => {
-      collabPeers = peers;
-      if (peers.some(p => p.comments && p.comments > hubCommentsHeard)) {
-        hubCommentsHeard = Math.max(...peers.map(p => p.comments || 0));
-        hubCommentsLoad();
-      }
-      collabInfo = { ...collabInfo, peerList: peers.map(p => ({ login: p.login, name: p.name, color: p.color, sel: p.sel, slot: p.slot,
-                                                              cursor: collab ? collab.resolveCursor(p.cursor) : null,
-                                                              agent: p.agent })) };
-      const d = $('out') && $('out').contentDocument;
-      if (d) collabPaintPeers(d);
-      collabFollowTick();
-      collabChip();
-    },
+    onPeers: peers => collabPeersArrived(peers),
     debug: !!localStorage.getItem('collab-debug'),
   });
   // The snapshot stack is meaningless from here on: its entries predate the
