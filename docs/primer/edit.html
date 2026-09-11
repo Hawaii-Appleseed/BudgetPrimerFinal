@@ -5462,11 +5462,20 @@ function startRotate(d, el, e0) {
 
 /** The CSS a shadow means, asked of the engine — same rule as cssFor: a
  *  JavaScript twin of shadow_css would drift from it silently and forever. */
+const shadowCssMemo = new Map();
 function shadowCssFor(sh, forShape) {
-  py.globals.set('SH_JSON', JSON.stringify(sh || {}));
-  return py.runPython(
+  // The sliders paint on every pointer tick, and each paint was a trip into
+  // Python. The same value gives the same CSS: asked once.
+  const json = JSON.stringify(sh || {}), key = (forShape ? 'S' : 'B') + json;
+  const hit = shadowCssMemo.get(key);
+  if (hit !== undefined) return hit;
+  py.globals.set('SH_JSON', json);
+  const css = py.runPython(
     'import json\nfrom docsync.layout import shadow_css, shape_shadow_css\n'
     + (forShape ? 'shape_shadow_css' : 'shadow_css') + '(json.loads(SH_JSON))');
+  if (shadowCssMemo.size > 2000) shadowCssMemo.clear();
+  shadowCssMemo.set(key, css);
+  return css;
 }
 
 function paintShadow(d, el) {
@@ -5590,9 +5599,15 @@ function cropMode(d, el) {
 const FIT_TOL_IN = 0.02;
 
 function fitCheck(d) {
-  const s = d.createElement('style');
-  s.textContent = '.noprint{display:none!important}';
-  d.head.appendChild(s);
+  // One permanent rule, toggled by a class on the root, instead of a
+  // stylesheet inserted and removed around every check (two whole-document
+  // style invalidations per render).
+  if (!d.getElementById('ds-fitcheck-css')) {
+    const s = d.createElement('style'); s.id = 'ds-fitcheck-css';
+    s.textContent = '.ds-fitcheck .noprint{display:none!important}';
+    d.head.appendChild(s);
+  }
+  d.documentElement.classList.add('ds-fitcheck');
   const bad = [];
   d.querySelectorAll('section.page').forEach((pg, i) => {
     const pr = pg.getBoundingClientRect();
@@ -5607,13 +5622,15 @@ function fitCheck(d) {
     pg.querySelectorAll('*').forEach(el => {
       const r = el.getBoundingClientRect();
       if (!r.width && !r.height) return;                    // display:none
-      const pos = d.defaultView.getComputedStyle(el).position;
+      const b = (r.bottom - pr.top) / px;
+      if (b <= low) return;                                 // not the lowest: its position is moot
       // Absolute children never grow the page; they are checked below, and
       // counting them here would flag every folio (which sits by design in the
-      // bottom padding).
+      // bottom padding). Asked only of a candidate - a computed style per
+      // element per page per render was most of this check's cost.
+      const pos = d.defaultView.getComputedStyle(el).position;
       if (pos === 'absolute' || pos === 'fixed') return;
-      const b = (r.bottom - pr.top) / px;
-      if (b > low) { low = b; who = el.dataset.slot || el.tagName.toLowerCase(); }
+      low = b; who = el.dataset.slot || el.tagName.toLowerCase();
     });
     if (low > PAGE_H_IN + FIT_TOL_IN)
       bad.push({ page: i + 1, over: +(low - PAGE_H_IN).toFixed(2), who, kind: 'flow' });
@@ -5627,7 +5644,7 @@ function fitCheck(d) {
                    who: el.dataset.el || el.dataset.box, kind: 'placed' });
     });
   });
-  s.remove();
+  d.documentElement.classList.remove('ds-fitcheck');
   return bad;
 }
 
@@ -6278,10 +6295,13 @@ function wireCells(d, roots) {
           const [rr, cc] = over.dataset.cell.split(',').map(Number);
           if (rr === cellSel.r1 && cc === cellSel.c1) return;
           cellSel.r1 = rr; cellSel.c1 = cc;
-          paintCells(d); renderTablePanel();
+          paintCells(d);            // the panel (a full rebuild, presets and all) waits for the release
+          swept = true;
         };
+        let swept = false;
         const up = () => {
           dragUnlisten(d, move, up);
+          if (swept) renderTablePanel();
         };
         dragListen(d, move, up);
       });
@@ -11341,7 +11361,11 @@ function placer(d, el, page) {
     el.parentNode.insertBefore(spacer, el);
   };
 
-  const lines = snapLines(d, page, el);
+  // The snap table is a querySelectorAll over the page plus a rect per hit -
+  // and nudges, Align and Distribute call put(..., false) and never consult
+  // it. Built on the first put that snaps, not per placer.
+  let linesMemo = null;
+  const lines = () => linesMemo || (linesMemo = snapLines(d, page, el));
 
   // One rule for the width, used by the drag AND by what gets saved — they had
   // two, and the drag's was "none". An absolutely positioned block with no
@@ -11357,8 +11381,8 @@ function placer(d, el, page) {
   const put = (x, y, snap = true) => {
     let vx = null, hy = null;
     if (snap) {
-      const sx = snapAxis(lines.xs, x, box.w);
-      const sy = snapAxis(lines.ys, y, box.h);
+      const sx = snapAxis(lines().xs, x, box.w);
+      const sy = snapAxis(lines().ys, y, box.h);
       if (sx) { x = +sx.at.toFixed(3); vx = sx.line; }
       if (sy) { y = +sy.at.toFixed(3); hy = sy.line; }
     }
@@ -11789,9 +11813,12 @@ function layoutSaid(o) {
   return JSON.stringify(c);
 }
 
+let layoutOrigSaidFor = null, layoutOrigSaid = '';
 function markDirty() {
-  dirty = source !== original
-       || layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}'));
+  // layoutSaid clones the whole layout; the BASELINE's was being cloned
+  // again on every call - once per moved element per drop.
+  if (layoutOrigSaidFor !== layoutOrig) { layoutOrigSaidFor = layoutOrig; layoutOrigSaid = layoutSaid(JSON.parse(layoutOrig || '{}')); }
+  dirty = source !== original || layoutSaid(layout) !== layoutOrigSaid;
   $('save').disabled = !dirty || hubViewOnly();
   // Discard stays live while a saved draft exists: with nothing unsaved it
   // offers to throw the whole draft away (see its handler).
@@ -12589,6 +12616,7 @@ function collabEditTarget() {
 /** Polled by the session 4×/s. Also the tick for the open paragraph: its
  *  words go into the document (collabLiveFlush) and its caret rides along as
  *  a relative position, so the two are never out of step. */
+let collabCaretsKey = '';
 function collabPresence() {
   collabLiveFlush();
   const key = collabParaOpen();
@@ -12604,7 +12632,14 @@ function collabPresence() {
   }
   // A collaborator's caret is a position into text this editor may be
   // changing: repaint it as the words move, not only when they move it.
-  if (collabPeers.some(p => p.cursor)) collabPaintCarets($('out').contentDocument);
+  if (collabPeers.some(p => p.cursor)) {
+    // Not every tick: when a caret's position or the words around it moved,
+    // or a render dropped the marks.
+    const d = $('out').contentDocument;
+    const ckey = JSON.stringify(collabPeers.map(p => p.cursor)) + '|' + source.length + '|'
+      + (richHost ? richHost.textContent.length : -1) + '|' + (d && d.querySelector('.ds-peer-caret, .ds-peer-range') ? 1 : 0);
+    if (ckey !== collabCaretsKey) { collabCaretsKey = ckey; collabPaintCarets(d); }
+  }
   const ag = agentActive();
   return {
     sel: [...selIds], page: selPage, slot: collabEditTarget(),
@@ -12782,6 +12817,18 @@ function collabHostCaretIndex(which = 'focus') {
     if (!t) return null;
     node = t;
   }
+  // Four times a second, for focus and again for anchor: a deep clone and a
+  // markdown pass each. Same selection over the same words is the same
+  // answer.
+  const html = richHost.innerHTML;
+  const memo = collabCaretMemo[which];
+  if (memo && memo.host === richHost && memo.node === node && memo.off === off && memo.html === html) return memo.val;
+  const val = collabHostCaretIndexCompute(d, node, off);
+  collabCaretMemo[which] = { host: richHost, node, off, html, val };
+  return val;
+}
+const collabCaretMemo = { focus: null, anchor: null };
+function collabHostCaretIndexCompute(d, node, off) {
   const clone = richHost.cloneNode(true);
   const n = node === richHost ? clone : nodeAt(clone, nodePath(richHost, node));
   if (!n) return null;
@@ -13373,17 +13420,24 @@ function collabPeerPlace(d, p) {
  *  what a person is looking at, whether or not they have anything in hand.
  *  Order rather than id, because the two sides need only agree with each
  *  other and a page's id differs between renderers (see visiblePageId). */
+let collabViewMemo = null;
 function collabViewPage(d) {
   if (!d || !d.body || !d.defaultView) return null;
   const pages = [...d.querySelectorAll('section.page')];
   if (!pages.length) return null;
-  const mid = d.defaultView.innerHeight / 2;
+  // A rect per page, four times a second, while nothing scrolled: the
+  // answer is the same until the scroll or the page count moves.
+  const sc = d.scrollingElement ? d.scrollingElement.scrollTop : 0;
+  const vh = d.defaultView.innerHeight;
+  if (collabViewMemo && collabViewMemo.d === d && collabViewMemo.sc === sc && collabViewMemo.n === pages.length && collabViewMemo.vh === vh) return collabViewMemo.v;
+  const mid = vh / 2;
   let best = 0, dist = Infinity;
   pages.forEach((pg, i) => {
     const r = pg.getBoundingClientRect();
     const dd = r.top <= mid && r.bottom >= mid ? 0 : Math.min(Math.abs(r.top - mid), Math.abs(r.bottom - mid));
     if (dd < dist) { dist = dd; best = i; }
   });
+  collabViewMemo = { d, sc, n: pages.length, vh, v: best + 1 };
   return best + 1;
 }
 const collabInView = el => {
