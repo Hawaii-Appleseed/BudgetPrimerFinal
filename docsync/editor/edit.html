@@ -1817,8 +1817,9 @@
          up full Pyodide boots was a real annoyance), so wanting two at once —
          two projects side by side, or one report on two pages — is asked for
          here instead. -->
-    <!-- On the hub, where the store is the record, every quiet two seconds
-         after an edit is a Save (hubAutosaveSchedule). Per browser. -->
+    <!-- On the hub, where the store is the record, a short quiet after an
+         edit is a Save, and closing a box is one at once (hubAutosaveSchedule).
+         Per browser. -->
     <button class="shp" id="file-autosave" hidden><svg class="shp-i" viewBox="0 0 16 16"
       ><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v4h5v-4M5 13v-4h6v4"
       /></svg><span class="shp-t">Autosave on the hub: on</span></button>
@@ -6287,6 +6288,7 @@ function editCell(d, td, seed) {
   const finish = async keep => {
     if (host.dataset.done) return; host.dataset.done = '1';
     editing = false;
+    hubAutosaveFlushNext();
     const newVal = keep ? htmlToMd(host, { inline: true }) : null;
     // De-editorify immediately — see edit()'s finish: the old document stays
     // visible while the re-render loads, and a live editor there is a trap.
@@ -7278,6 +7280,7 @@ function editChartText(d, node) {
   const finish = async keep => {
     if (done) return; done = true;
     editing = false;
+    hubAutosaveFlushNext();
     const val = inp.value;
     inp.remove();
     if (keep && val !== chartText(s.chart, hook)) {
@@ -7421,6 +7424,7 @@ function editBox(d, el) {
     if (host.dataset.done) return;
     host.dataset.done = '1';
     editing = false;
+    hubAutosaveFlushNext();
     richHost = null; syncMarksBar();
     const newVal = keep ? htmlToMd(host, { allowLists: true }) : null;
     // De-editorify immediately — the old document stays visible during the
@@ -7503,6 +7507,7 @@ function editEndnote(d, li, sid) {
     if (wrap.dataset.done) return;
     wrap.dataset.done = '1';
     editing = false;
+    hubAutosaveFlushNext();
     // De-editorify immediately — see edit()'s finish: the old document stays
     // visible while the re-render loads, and live inputs there are a trap.
     txt.disabled = url.disabled = true;
@@ -16024,6 +16029,7 @@ function edit(d, key) {
     if (host.dataset.done) return;
     host.dataset.done = '1';
     editing = false;
+    hubAutosaveFlushNext();
     richHost = null; syncMarksBar();
     const newVal = keep
       ? rehead(!allowMd ? (inline ? host.textContent : host.innerText)
@@ -18864,7 +18870,7 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     const j = await hubJson(r);
     if (r.status === 409) {
       // The Save that beat this one may be a collaborator's, of the very
-      // state this room shows: two editors autosave two seconds after the
+      // state this room shows: two editors autosave a moment after the
       // same change, and the loser was told the document "changed outside
       // this session" and had its autosave paused until somebody pressed
       // Save. Someone IN the room saving is not outside it. The room records
@@ -18913,7 +18919,8 @@ async function docStoreSave(layoutText, force = false, auto = false) {
 }
 
 // --- autosave on the hub ----------------------------------------------------------
-// With the store as the record, a quiet two seconds after an edit is a Save:
+// With the store as the record, a short quiet (AUTOSAVE_QUIET_MS) after an
+// edit is a Save, and closing a paragraph or box editor is one at once:
 // the room already carries the live document, so nothing is lost either way -
 // this only takes the button out of people's minds, the way Docs never has
 // one. Not while a paragraph or box editor is open (a half-typed sentence is
@@ -18926,7 +18933,16 @@ let hubAutosaveTimer = 0;
 let hubAutosaveHold = false;   // a 409 or a failure: wait for a press of Save
 let hubSaveBusy = false;       // a store Save in flight
 let hubSavedAt = 0;            // when the last store Save landed
-const AUTOSAVE_QUIET_MS = 2000;
+const AUTOSAVE_QUIET_MS = 300;
+let hubAutosaveFlush = false;  // a box just closed: the next dirty is a Save now, not after the quiet
+/** A paragraph, chart, image or box editor has just closed. Its value lands
+ *  through markDirty a moment later; that Save goes at once rather than after
+ *  the quiet period, so closing a box is saving it. Cleared if nothing dirties
+ *  (the box was cancelled), so a later drag is not hurried. */
+function hubAutosaveFlushNext() {
+  hubAutosaveFlush = true;
+  setTimeout(() => { hubAutosaveFlush = false; }, 1500);
+}
 function hubAutosaveOn() {
   if (!docStore()) return false;
   try { return localStorage.getItem('primer-autosave') !== 'off'; } catch (e) { return true; }
@@ -18934,7 +18950,9 @@ function hubAutosaveOn() {
 function hubAutosaveSchedule() {
   clearTimeout(hubAutosaveTimer); hubAutosaveTimer = 0;
   if (!hubAutosaveOn() || !dirty || hubViewOnly() || hubAutosaveHold) return;
-  hubAutosaveTimer = setTimeout(hubAutosaveTick, AUTOSAVE_QUIET_MS);
+  const ms = hubAutosaveFlush ? 0 : AUTOSAVE_QUIET_MS;
+  hubAutosaveFlush = false;
+  hubAutosaveTimer = setTimeout(hubAutosaveTick, ms);
 }
 async function hubAutosaveTick() {
   hubAutosaveTimer = 0;
@@ -18946,7 +18964,7 @@ async function hubAutosaveTick() {
  *  all.
  *
  *  A button is a VERB. With autosave on there is nothing to press: the store
- *  commits a quiet two seconds after every edit, and #stat already says so in
+ *  commits a moment after every edit, and #stat already says so in
  *  words the whole way through ("saving…", "saved automatically — anyone
  *  opening this document gets this version", "autosave paused — save failed:
  *  …"). What was left was a disabled button reading "Saved · just now" —
@@ -18980,7 +18998,7 @@ $('file-autosave').onclick = () => {
   hubAutosaveMenu();
   hubSaveLabel();     // turning autosave off puts Save back on the bar, and on takes it away
   hubAutosaveSchedule();
-  $('stat').textContent = hubAutosaveOn() ? 'autosave on — a quiet two seconds after an edit is a Save' : 'autosave off — Save is yours to press';
+  $('stat').textContent = hubAutosaveOn() ? 'autosave on — a moment after an edit is a Save' : 'autosave off — Save is yours to press';
   togglePop($('filepop'), $('file'));
 };
 
