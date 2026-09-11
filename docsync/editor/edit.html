@@ -16628,10 +16628,27 @@ function hubMarkSeen(version) {
   // history panel lists it. Only a NEW one - the room re-announces the same
   // version as people come and go, and a reload then would rebuild the rows
   // under someone typing a name.
-  if (version !== hubHistorySeen && $('hpanel') && !$('hpanel').hidden) hubHistoryLoad();
+  if (version !== hubHistorySeen && $('hpanel') && !$('hpanel').hidden
+      && !hubHistoryVersions.some(v => v.version === version)) hubHistoryLoadSoon();
   hubHistorySeen = version;
 }
 let hubHistorySeen = null;
+/** A collaborator's Saves arrive as fast as they edit; the panel asks the
+ *  store once for a burst of them, not once each. */
+let hubHistoryLoadTimer = 0;
+function hubHistoryLoadSoon() {
+  clearTimeout(hubHistoryLoadTimer);
+  hubHistoryLoadTimer = setTimeout(() => { hubHistoryLoadTimer = 0; hubHistoryLoad(); }, 2500);
+}
+/** A Save that landed here: its meta goes to the top of the list, and the
+ *  open panel redraws from memory - no fetch, no flicker. */
+function hubHistoryAdd(meta) {
+  if (!meta || !meta.version) return;
+  if (hubHistoryVersions.some(v => v.version === meta.version)) return;
+  if (!hubHistoryVersions.length && !($('hpanel') && !$('hpanel').hidden)) return;   // never loaded: nothing to keep current
+  hubHistoryVersions.unshift(meta);
+  if ($('hpanel') && !$('hpanel').hidden) hubHistoryRender();
+}
 
 // --- every saved version (step 07) ------------------------------------------
 // The store keeps every Save whole under history/<version>/; this shows the
@@ -18861,7 +18878,13 @@ async function docStoreSave(layoutText, force = false, auto = false) {
                    // Where these files belong in the repository, for the
                    // export: only the editor knows, so every Save says.
                    paths: { content: M.content, layout: M.layout || null, assets: M.assets || null, branch: BRANCH } };
-    if (source !== original) body.content = source;
+    // The bytes this Save carries, held apart from the live `source`: a
+    // collaborator's edit, an undo or a suggestion can move `source` during
+    // the round trip, and the baseline must be what the store received,
+    // not what is on screen when the answer comes - or the edit in between
+    // reads as saved and is never sent.
+    const sent = source;
+    if (sent !== original) body.content = sent;
     if (M.layout && layoutText !== layoutOrig) body.layout = layoutText;
     if (body.content == null && body.layout == null) { markDirty(); return true; }
     const r = await fetch(docStore(), {
@@ -18898,9 +18921,10 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     }
     if (!r.ok) throw new Error(j.error || `the store answered ${r.status}`);
     docVersion = j.version;
+    hubHistoryAdd(j);                            // the open panel lists it without asking the store again
     hubMarkSeen(j.version);
     if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
-    original = source; layoutOrig = layoutText;
+    original = sent; layoutOrig = layoutText;
     clearDraftCache();
     hubAutosaveHold = false;                    // a Save that landed: automatic ones may resume
     hubSavedAt = Date.now();
@@ -18957,7 +18981,10 @@ function hubAutosaveSchedule() {
 async function hubAutosaveTick() {
   hubAutosaveTimer = 0;
   if (!hubAutosaveOn() || !dirty || hubViewOnly() || hubAutosaveHold) return;
-  if (editing || modalOpen || hubSaveBusy) { hubAutosaveSchedule(); return; }   // not mid-word, not mid-Save
+  // Not mid-word, not mid-Save - and not mid-drag: placer.put writes the live
+  // layout on every mouse move, and a version of a box half-way across the
+  // page is not a version anyone asked for.
+  if (editing || modalOpen || hubSaveBusy || collabPointerAt) { hubAutosaveSchedule(); return; }
   await docStoreSave(JSON.stringify(layout, null, 2) + '\n', false, true);
 }
 /** The Save button's face on the store path — and whether it is on the bar at
