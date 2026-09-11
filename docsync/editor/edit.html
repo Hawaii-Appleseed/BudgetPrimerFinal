@@ -17996,6 +17996,10 @@ function hubCommentsRenderInner() {
     if (canWrite) {
       const box = document.createElement('div'); box.className = 'cmt-replybox';
       const open = draft => {
+        // Focus and click both open it, and the second must not rebuild a
+        // box the first already filled - it would drop the words typed since.
+        const had = box.querySelector('textarea');
+        if (had && draft == null) { had.focus(); return; }
         box.textContent = '';
         const ta = document.createElement('textarea'); ta.rows = 2; ta.placeholder = 'Reply or add others with @'; ta.className = 'cmt-reply-text';
         const btns = document.createElement('div'); btns.className = 'cmt-btns';
@@ -18012,7 +18016,9 @@ function hubCommentsRenderInner() {
       const line = document.createElement('input'); line.type = 'text'; line.readOnly = true;
       line.placeholder = c.resolved && !sug ? 'Adding a reply will reopen this discussion…' : 'Reply or add others with @';
       line.className = 'cmt-reply-line';
-      line.addEventListener('focus', open); line.addEventListener('click', open);
+      // Not `open` itself as the listener: it takes a DRAFT, and handed the
+      // event it put "[object FocusEvent]" into the box ahead of the words.
+      line.addEventListener('focus', () => open()); line.addEventListener('click', () => open());
       box.appendChild(line);
       el.appendChild(box);
       if (c.__draft != null) open(c.__draft);   // the words of a reply the hub refused
@@ -18826,6 +18832,20 @@ async function docStoreLoad(urls, files) {
 }
 
 /** Save to the store. `force` after the person has said so to a 409. */
+/** Whether the version a 409 names was saved from inside this room: the room
+ *  already records it as the saved one, or whoever saved it is here. Waits a
+ *  little for the room's record, since the Save that won may be milliseconds
+ *  ahead of this answer. */
+async function collabSavedByPeer(j) {
+  const same = (a, b) => a && b && String(a).toLowerCase() === String(b).toLowerCase();
+  const here = () => (collabPeers || []).some(p => same(p.login, j.updated_by)) || same(collabInfo.login, j.updated_by);
+  const deadline = Date.now() + 1500;
+  for (;;) {
+    if (collab.baseSha() === j.version || here()) return true;
+    if (Date.now() > deadline) return false;
+    await new Promise(r => setTimeout(r, 100));
+  }
+}
 async function docStoreSave(layoutText, force = false, auto = false) {
   $('save').disabled = true;
   hubSaveBusy = true;
@@ -18843,6 +18863,18 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     });
     const j = await hubJson(r);
     if (r.status === 409) {
+      // The Save that beat this one may be a collaborator's, of the very
+      // state this room shows: two editors autosave two seconds after the
+      // same change, and the loser was told the document "changed outside
+      // this session" and had its autosave paused until somebody pressed
+      // Save. Someone IN the room saving is not outside it. The room records
+      // a Save in meta.baseSha (collabSaved follows it), but that record can
+      // be a moment behind the 409, so the roster is asked as well.
+      if (collab && j.version && await collabSavedByPeer(j)) {
+        collabSaved(j.version);
+        $('stat').textContent = `saved a moment ago by ${hubNameOf(j.updated_by)} — it holds what is on screen`;
+        return true;
+      }
       const who = j.updated_by ? ` by ${j.updated_by}` : '';
       const when = j.updated_at ? ` at ${new Date(j.updated_at).toLocaleString()}` : '';
       if (auto) {
