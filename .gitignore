@@ -91,3 +91,20 @@ local_settings.py
 # Project specific
 budget_processing.log
 .import-lab/
+
+# Engine local state. The editor is vendored from ~/primer-editor, so the
+# files it writes about THIS computer land here too — but primer-editor's
+# own .gitignore does not travel with the vendored copy, so they arrive
+# unignored. Each is per-machine, and none is part of a report.
+#   .primer-github-token      the token File ▸ Connect GitHub stores for the
+#                             server's own pushes. Never, ever committed.
+#   .primer-previous-version  written by tools/selfupdate.py before it moves
+#                             the checkout — the way back from a bad update.
+#   .docsync-agent-log.json   the agent-change journal (who edited a report
+#                             and what was rewound). Local, like a draft.
+# docs/primer/projects.json is deliberately NOT here: in primer-editor it is a
+# per-machine path registry, but the copy this repo tracks names only the repo
+# and carries no local paths, and the deployed editor reads it.
+.primer-github-token
+.primer-previous-version
+.docsync-agent-log.json
