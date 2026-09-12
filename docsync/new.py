@@ -2,6 +2,17 @@
 
     python3 -m docsync.new --id my-report --name "My report" [--w 8.5 --h 11]
 
+There are two kinds, and each has exactly ONE renderer:
+
+  · the PLACED canvas (default, and with --template a designed starting
+    point) — everything on the page lives in layout.json, and a template is
+    data riding this renderer, never code;
+  · a TESTIMONY analysis (--data <report_data.json>) — a shim calling
+    docsync.testimony_report.render, whose page is generated from measured
+    figures rather than placed by hand. Also one renderer for every such
+    project: the shim carries no rendering code, so a fix in the shared
+    module reaches every testimony report.
+
 This is the LOCAL twin of start.html's "+ New report" flow, which scaffolds
 through the GitHub API and therefore needs a repo and a token before a person
 has typed a word. Here the same files land straight on disk: a placed-canvas
@@ -140,6 +151,153 @@ _CONTENT_MD = """<!--
 [example]: Replace or delete this placeholder source — https://example.com
 """
 
+# A TESTIMONY project's renderer. Unlike the placed-canvas one above this is a
+# shim: every testimony report runs the same docsync.testimony_report.render,
+# parameterised by its own report_data.json. The rule the placed template keeps
+# ("a template is data, never code") is kept here too, just one level up — there
+# is one testimony renderer, not a copy of it per project.
+_TESTIMONY_RENDERER = '''#!/usr/bin/env python3
+"""Testimony analysis — rendered by the shared engine renderer.
+
+There is deliberately no rendering code in this file. Every testimony project
+calls docsync.testimony_report.render() with its own report_data.json,
+content.md and layout.json, so a fix in the shared module reaches every
+testimony report at once.
+
+report_data.json is written by, and only by:
+
+    python -m testimony export --project {slug} [--themes themes/<session>/<f>.yml]
+
+in ~/repos/Legislative-Research-Tool. Never hand-edit a figure in it — the
+whole point of the file is that no number on this page was typed.
+"""
+from pathlib import Path
+import sys
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from docsync.testimony_report import render      # noqa: E402
+
+out = render(HERE, page=({w}, {h}))
+print(f"wrote {{out}} ({{out.stat().st_size:,}} bytes)")
+'''
+
+_TESTIMONY_BINDING = """
+  # Added by docsync/new.py --kind testimony — {origin}.
+  - id: {slug}
+    name: "{name}"
+    content: projects/{slug}/content.md
+    editability: strict
+    build: python3 projects/{slug}/render_report.py && python3 -m docsync.stage --id {slug}
+    outputs:
+      - projects/{slug}/index.html
+    editor:
+      dir: docs/{slug}
+      render: projects/{slug}/render_report.py
+      out: projects/{slug}/index.html
+      layout: projects/{slug}/layout.json
+      palette: [{palette}]
+      page: [{w}, {h}]
+      margins: [0.5, 0.55]
+      engine:
+        # Measured figures. An undeclared data file builds on disk and then
+        # fails in Pyodide, where the editor has only the staged copies.
+        - projects/{slug}/report_data.json
+"""
+
+# The one-pager's swatches plus the two validated chart poles, so recolouring
+# in the editor stays on-palette.
+_TESTIMONY_PALETTE = ["#FFFFFF", "#2F3E46", "#354F52", "#52796F", "#84A98C",
+                      "#CAD2C5", "#00907A", "#C4602F"]
+
+
+def _testimony_content_md(name: str, fig: dict) -> str:
+    """content.md with one heading slot per measured theme.
+
+    The headings are SEEDED from report_data.json rather than left blank, and
+    that is the whole trick: the page reads correctly the moment it is
+    scaffolded, and `_check_headings` is armed from then on, so a later
+    re-tally that reorders two themes fails loudly instead of pairing a
+    heading with another argument's number.
+    """
+    def slots(pre: str, themes: list) -> str:
+        return "".join(f"\n[[{pre}.{i}.h]]\n{t['theme']}\n"
+                       for i, t in enumerate(themes, 1))
+
+    args = fig["arguments"]
+    bills = ", ".join(b["bill"] for b in fig["bills"]) or "the measure"
+    return f"""<!--
+  Testimony analysis, rendered by docsync.testimony_report.
+
+  Every FIGURE on the page comes from report_data.json and none of them is in
+  this file — regenerate them with `testimony export`, never by typing. What
+  lives here is the prose around them, plus one heading per ranked argument.
+
+  The [[arg.N.h]] / [[sup.N.h]] headings were seeded from the tally that
+  scaffolded this project. Reword them freely; do NOT reorder them. They are
+  checked against the tally's own order on every build, because a heading
+  that has drifted from its number is worse than no page.
+-->
+
+[[title]]
+{name}
+
+[[hero.eyebrow]]
+Testimony analysis
+
+[[hero.h1]]
+{name}
+
+[[hero.standfirst]]
+Every figure on this page is measured from the testimony filed on {bills},
+as submitted to the Legislature and published at data.capitol.hawaii.gov.
+Counts overlap: one submission usually makes several of these arguments.
+
+[[chart.title]]
+Support and opposition, by bill
+
+[[chart.axis.oppose]]
+oppose
+
+[[chart.axis.support]]
+support
+
+[[chart.note]]
+Submissions filed, by position. A raw count includes every copy of an
+organised form letter; the distinct count below deduplicates them.
+
+[[arg.head.h2]]
+What opponents argued
+
+[[arg.head.contd]]
+continued
+{slots("arg", args["oppose"]["themes"])}
+[[sup.head.h2]]
+What supporters argued
+
+[[sup.head.contd]]
+continued
+{slots("sup", args["support"]["themes"])}
+[[orgs.h2]]
+Who filed
+
+[[orgs.oppose.h3]]
+Opposed
+
+[[orgs.support.h3]]
+Supported
+
+[[sources.h2]]
+Sources
+
+[[sources]]
+[capitol]: Testimony as filed, Hawaiʻi State Legislature — https://data.capitol.hawaii.gov
+"""
+
+
 _BINDING = """
   # Added by "+ New report" (docsync/new.py) — {origin}.
   - id: {slug}
@@ -172,7 +330,7 @@ class NewProjectError(Exception):
 def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
            root: Path = ROOT, pages: int = 1, notices=None,
            layout: dict | None = None, template: str = "",
-           scheme: str = "") -> Path:
+           scheme: str = "", data: Path | str | None = None) -> Path:
     """Write the project and register it in docsync.yml. Returns its dir.
 
     Refuses rather than overwrites: an existing binding or directory means
@@ -197,6 +355,28 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     tpl_assets: list = []
     content_md = _CONTENT_MD.format(name=name.strip())
     origin = "a blank local project"
+    figures: dict | None = None
+    if data is not None:
+        if template:
+            raise NewProjectError(
+                "a testimony project is not a placed-canvas template — pass "
+                "--data or --template, not both")
+        src = Path(data).expanduser()
+        if not src.is_file():
+            raise NewProjectError(f"no report_data.json at {src}")
+        try:
+            figures = json.loads(src.read_text(encoding="utf-8"))
+        except ValueError as e:
+            raise NewProjectError(f"{src} is not readable JSON: {e}") from e
+        missing = [k for k in ("bills", "arguments", "organisations", "source")
+                   if k not in figures]
+        if missing:
+            raise NewProjectError(
+                f"{src} is missing {', '.join(missing)} — that is not a "
+                f"`testimony export` artifact")
+        content_md = _testimony_content_md(name.strip(), figures)
+        palette = _TESTIMONY_PALETTE
+        origin = f"seeded from {src.name}"
     if scheme and not template:
         raise NewProjectError("a colour scheme needs a template — the blank "
                               "canvas has nothing to recolour")
@@ -273,11 +453,20 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
         raise NewProjectError("a report needs at least one page")
     proj.mkdir(parents=True)
     (proj / "content.md").write_text(content_md)
-    # json.dumps for both, so a notice carrying an apostrophe or a quote cannot
-    # end the Python string it is baked into.
-    (proj / "render_report.py").write_text(_RENDERER.format(
-        w=w, h=h, pages=int(pages),
-        notes=json.dumps([str(m) for m in (notices or [])])))
+    if figures is not None:
+        # The data lands in the project so the very next render works, and so
+        # `testimony export --project <slug>` has something to overwrite.
+        (proj / "report_data.json").write_text(
+            json.dumps(figures, indent=1, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+        (proj / "render_report.py").write_text(
+            _TESTIMONY_RENDERER.format(slug=slug, w=w, h=h))
+    else:
+        # json.dumps for both, so a notice carrying an apostrophe or a quote
+        # cannot end the Python string it is baked into.
+        (proj / "render_report.py").write_text(_RENDERER.format(
+            w=w, h=h, pages=int(pages),
+            notes=json.dumps([str(m) for m in (notices or [])])))
     (proj / "layout.json").write_text(
         json.dumps(layout if layout is not None else {"positions": {}}, indent=2) + "\n")
     # Template assets land beside the OUTPUT, where the page's own relative
@@ -292,8 +481,9 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     # append of well-formed text at the end — never a parse-and-rewrite that
     # would strip its comments.
     with yml.open("a") as f:
-        f.write(_BINDING.format(
-            slug=slug, w=w, h=h, origin=origin,
+        tpl = _TESTIMONY_BINDING if figures is not None else _BINDING
+        f.write(tpl.format(
+            slug=slug, w=w, h=h, origin=origin, name=name.strip(),
             palette=", ".join(f'"{c}"' for c in palette)))
     return proj
 
@@ -309,10 +499,15 @@ def main(argv=None) -> int:
     ap.add_argument("--scheme", default="",
                     help="one of the template's colour schemes (see "
                          "docsync.templates.SCHEMES); default its own")
+    ap.add_argument("--data", default=None,
+                    help="a report_data.json from `testimony export` — makes "
+                         "this a TESTIMONY project: the shared "
+                         "docsync.testimony_report renderer, and a heading "
+                         "slot seeded per measured argument")
     a = ap.parse_args(argv)
     try:
         proj = create(a.slug, a.name, a.w, a.h, template=a.template,
-                      scheme=a.scheme)
+                      scheme=a.scheme, data=a.data)
     except NewProjectError as e:
         print(f"  new: {e}", file=sys.stderr)
         return 1
