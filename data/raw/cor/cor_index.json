@@ -14,6 +14,20 @@
       "meeting_date": "2026-05-21",
       "title": "DOTAX Presentation"
     },
+    "https://files.hawaii.gov/tax/useful/cor/2026-09-03-COR-GF-Presentation-DOTAX.pdf": {
+      "doc_type": "presentation",
+      "first_seen": "2026-09-14",
+      "meeting_date": "2026-09-03",
+      "title": "DOTAX Presentation"
+    },
+    "https://files.hawaii.gov/tax/useful/cor/2026-09-03-GF-Rpt2-GOV_Final.pdf": {
+      "doc_type": "gf_forecast",
+      "first_seen": "2026-09-14",
+      "meeting_date": "2026-09-03",
+      "pdf": "data/raw/cor/pdfs/2026-09-03-GF-Rpt2-GOV_Final.pdf",
+      "text": "data/raw/cor/extracted/2026-09-03-GF-Rpt2-GOV_Final.txt",
+      "title": "General Fund Forecast \u2013 September 3, 2026"
+    },
     "https://files.hawaii.gov/tax/useful/cor/2026gf01-07_attach_1.pdf": {
       "doc_type": "attachment",
       "first_seen": "2026-08-17",
@@ -108,11 +122,23 @@
       "meeting_date": "2026-05-21",
       "title": "May 21, 2026 minutes"
     },
-    "https://files.hawaii.gov/tax/useful/cor/2026gf09-03.pdf": {
-      "doc_type": "other",
-      "first_seen": "2026-08-17",
+    "https://files.hawaii.gov/tax/useful/cor/2026gf09-03_attach_1.pdf": {
+      "doc_type": "attachment",
+      "first_seen": "2026-09-14",
       "meeting_date": "2026-09-03",
-      "title": "Thursday, September 3, 2026 2:00 P.M."
+      "title": "Attachment 1"
+    },
+    "https://files.hawaii.gov/tax/useful/cor/2026gf09-03_attach_2.pdf": {
+      "doc_type": "attachment",
+      "first_seen": "2026-09-14",
+      "meeting_date": "2026-09-03",
+      "title": "Attachment 2"
+    },
+    "https://files.hawaii.gov/tax/useful/cor/2026gf09-03_attach_3.pdf": {
+      "doc_type": "attachment",
+      "first_seen": "2026-09-14",
+      "meeting_date": "2026-09-03",
+      "title": "Attachment 3"
     },
     "https://files.hawaii.gov/tax/useful/cor/2026tpi07-30RptGov.pdf": {
       "doc_type": "tpi_forecast",
@@ -128,11 +154,11 @@
       "meeting_date": "2026-07-30",
       "title": "DOTAX Presentation"
     },
-    "https://files.hawaii.gov/tax/useful/cor/2026tpi07_30_min-draft.pdf": {
+    "https://files.hawaii.gov/tax/useful/cor/2026tpi07_30_min.pdf": {
       "doc_type": "minutes",
-      "first_seen": "2026-08-17",
+      "first_seen": "2026-09-14",
       "meeting_date": "2026-07-30",
-      "title": "July 30, 2026 minutes \u2013 Draft"
+      "title": "July 30, 2026 minutes"
     },
     "https://files.hawaii.gov/tax/useful/cor/COR-Minutes-March-10-2026-GF-Final.pdf": {
       "doc_type": "minutes",
@@ -163,14 +189,16 @@
       "first_seen": "2026-08-17",
       "meeting_date": "2026-05-21",
       "title": "May 21, 2026 VIDEO"
+    },
+    "https://youtu.be/RbY4TnMtfKI?si=0VGEKnGe8n8YEggo": {
+      "doc_type": "video",
+      "first_seen": "2026-09-14",
+      "meeting_date": "2026-09-03",
+      "title": "September 3, 2026 VIDEO"
     }
   },
-  "generated": "2026-09-07",
-  "next_meeting": {
-    "date": "2026-09-03",
-    "title": "Thursday, September 3, 2026 2:00 P.M.",
-    "url": "https://files.hawaii.gov/tax/useful/cor/2026gf09-03.pdf"
-  },
-  "page_last_updated": "August 6, 2026",
+  "generated": "2026-09-14",
+  "next_meeting": null,
+  "page_last_updated": "September 9, 2026",
   "source": "https://tax.hawaii.gov/useful/a9_1cor/"
 }
