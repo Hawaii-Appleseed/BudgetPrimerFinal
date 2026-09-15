@@ -13317,6 +13317,16 @@ function collabChip() {
       text = '○ offline';
       title = 'The collaboration relay is unreachable. Keep working — edits are kept and sent when it is back.';
       break;
+    // Not offline: this tab let go of the session on purpose, because nobody
+    // had touched it for a while and an open connection keeps the document's
+    // server awake at a cost (collab-client, "sleeping an idle tab"). Said as
+    // its own state so it reads as a rest rather than a fault — and there is
+    // nothing to do about it, which the sentence should make obvious.
+    case 'asleep':
+      text = '○ asleep';
+      title = 'This tab stepped out of the live session after a while with no input, so it is not '
+            + 'holding the document open. It rejoins the moment you type — keep working.';
+      break;
     case 'error':
       text = '⚠ not shared';
       title = 'Collaboration unavailable: ' + (s.error || 'unknown error');
