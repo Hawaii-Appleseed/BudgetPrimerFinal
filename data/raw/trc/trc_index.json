@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-09-10T19:27:49+00:00",
+  "checked_at": "2026-09-17T20:01:10+00:00",
   "documents": {
     "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-01-15-TRC_Presentation-DOTAX-TRP.pdf": {
       "doc_type": "presentation",
@@ -170,6 +170,18 @@
       "meeting_date": "2026-09-01",
       "title": "September 1, 2026 at 2:00 P.M."
     },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-01_min_draft.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-09-01",
+      "pdf": "data/raw/trc/pdfs/2026trc09-01_min_draft.pdf",
+      "text": "data/raw/trc/extracted/2026trc09-01_min_draft.txt",
+      "title": "September 1, 2026 Minutes"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-18.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-09-18",
+      "title": "September 18, 2026 at 2:00 P.M."
+    },
     "https://www.youtube.com/watch?v=-YIVfkYDMSE": {
       "doc_type": "video",
       "meeting_date": "2026-02-17",
@@ -221,5 +233,5 @@
       "title": "September 1, 2026 VIDEO"
     }
   },
-  "page_last_updated": "September 2, 2026"
+  "page_last_updated": "September 11, 2026"
 }
