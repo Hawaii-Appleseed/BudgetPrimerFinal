@@ -226,20 +226,19 @@ its *text* model, and the whole idea of a named, redefinable style.
    deleted blank drops its entry. Pilot: `master(page, name)`,
    `masterFrom(page, name)`, `detachMaster(page)`.
 
-   Deliberately not: master shapes are shown but locked in the editor (the
-   shape pipeline looks shapes up in `layout.shapes` in thirty places, and a
-   page instance is not there — retext and move the master's boxes, detach to
-   move a shape), tables are not master items, and there is no per-page
+   Master shapes move too (2026-09-18): the thirty-odd shape lookups now go
+   through one `shapeOf()`, which resolves `rule@3` to the master's one shape,
+   so a drag on any page lands on every page — the same rule as its boxes.
+   Deliberately not: tables are not master items, and there is no per-page
    override of one item short of detaching the whole master. The primer's
    own designed pages are the renderer's, as before: a master dresses blank
    and template pages, which is where the copying was.
 
 ## Tier 3 — real, but not what is stopping anyone
 
-8. **Named layers.** The panel exists and is deliberately switched off
-   (`#layers { display:none !important }` — "hidden for now", one line to
-   bring back). What it offers is per-page restacking, not InDesign's named
-   layers with lock and hide across the document.
+8. **Named layers. — The panel is back, 2026-09-18.** Per-page restacking of
+   the page's objects, master items included. Still not InDesign's named
+   layers with lock and hide across the document; nothing here needs those.
 9. **Baseline grid.** Nothing aligns type across columns or facing pages.
    Matters once (4) exists; before that there is nothing to align to.
 10. **Table headers that repeat across a break, and cell styles. —
@@ -276,9 +275,8 @@ shape: opt-in keys, every existing render byte-identical (checked across all
 twelve bindings in both modes on every commit), one resolver or one runtime
 string shared by the page and the editor rather than two that could drift.
 
-What is left is Tier 3: (8) the layers panel, one CSS line if wanted; (9) a
-baseline grid, which waits on threading; (11) bleed, only if a report goes to
-a printer. Threading between frames stays in "Not coming". The next real
+What is left is Tier 3: (9) a baseline grid, which waits on threading; (11)
+bleed, only if a report goes to a printer. (8) is back. Threading between frames stays in "Not coming". The next real
 work on this editor is not a gap in this list — it is the follow-ups each
 closed item named: a pilot verb for object styles, tables as master items and
 as anchors, per-item master overrides, `shape-outside` if a wrapped image ever

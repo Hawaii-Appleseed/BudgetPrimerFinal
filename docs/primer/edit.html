@@ -212,10 +212,6 @@
         background:rgba(20,26,31,.6); padding:4px 12px; border-radius:99px;
         pointer-events:none; transition:opacity .6s; }
   #present-hint.gone { opacity:0; }
-  /* Layers, hidden for now — same treatment as the two above: the button and
-     its popover stay wired, so bringing it back is deleting this one line. */
-  #layers { display:none !important; }
-
   /* The File menu's own picker surfaces. Doc sizes read as a gallery of
      shapes rather than a list of names: the whole point of choosing one is
      the proportion, which a word cannot show. */
@@ -4192,7 +4188,7 @@ function svgMarkEl(id) {
 }
 
 function fillTargets(id) {
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   if (sh) return {
     label: sh.kind === 'line' ? 'Line colour' : 'Fill',
     get: () => (sh.kind === 'line' ? dressedObj(sh).stroke : dressedObj(sh).fill),
@@ -4477,7 +4473,7 @@ function cssFill(v) {
 // so it never offers the gradient modes.
 function fillRow(d, m, id) {
   const t = fillTargets(id);
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   const isLine = sh && sh.kind === 'line';
   let val = t.get();
   let mode = (val && typeof val === 'object') ? val.type : 'solid';
@@ -4618,14 +4614,14 @@ function fillRow(d, m, id) {
 // Right-click is where "which thing is on top" has lived for thirty years, so
 // it lives there here too.
 const zOf = id => {
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   if (sh) return typeof sh.z === 'number' ? sh.z : (sh.z === 'front' ? 2 : -1);
   const b = boxOf(id);
   if (b) return b.z ?? 2;
   return layout.positions[id]?.z ?? 1;
 };
 const setZ = (id, z) => {
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   const b = boxOf(id);
   if (sh) sh.z = z;
   else if (b) b.z = z;
@@ -4770,7 +4766,7 @@ function layerMenu(d, el, e) {
   const surface = !el.dataset.shape && !el.dataset.el;
   // Only a moved element has a layer to change: an untouched one is still
   // wherever the design put it, and z-index would not apply to it anyway.
-  const known = layout.shapes.some(s => s.id === id) || !!layout.positions[id] || !!boxOf(id);
+  const known = !!shapeOf(id) || !!layout.positions[id] || !!boxOf(id);
   const m = d.createElement('div');
   m.className = 'ds-menu';
   m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
@@ -4837,7 +4833,7 @@ function layerMenu(d, el, e) {
     // stay put and the bars grow out of the baseline in turn. Offered first,
     // because for a chart it is the one people mean. Bar-family only — a pie
     // has no bars to grow, and the engine refuses the kind there.
-    const chartOf = (layout.shapes.find(s => s.id === id) || {});
+    const chartOf = (shapeOf(id) || {});
     const barChart = chartOf.kind === 'chart'
       && !['pie', 'donut', 'line', 'scatter', 'radar', 'funnel', 'packed',
            'treemap'].includes((chartOf.chart || {}).type || 'bar');
@@ -4941,7 +4937,7 @@ function layerMenu(d, el, e) {
   // through the menu selects the clicked element first, so it operates on what
   // was right-clicked rather than a stale selection.
   if (!surface) {
-    const clonable = layout.shapes.some(s => s.id === id) || !!boxOf(id);
+    const clonable = !!shapeOf(id) || !!boxOf(id);
     item('Copy', () => { if (!selIds.has(id)) setSel(d, [id]); copySel(d); }, clonable);
     if (clip) item('Paste', () => pasteClip(d));
     item('Copy style', () => { setSel(d, [id]); copyStyle(d); }, !!styleType(d, id));
@@ -5029,7 +5025,7 @@ function layerMenu(d, el, e) {
 
   // Shadows belong to the things that own their whole silhouette — shapes and
   // text boxes. A designed card's edge is the design's business.
-  const shOwner = layout.shapes.find(s => s.id === id) || boxOf(id);
+  const shOwner = shapeOf(id) || boxOf(id);
   if (shOwner) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     if (!shOwner.shadow) {
@@ -5056,7 +5052,7 @@ function layerMenu(d, el, e) {
 
   // Shape styling: corners, border, dash, arrowheads — the schema the
   // renderer already honours, finally reachable without hand-editing JSON.
-  const shp = layout.shapes.find(s => s.id === id);
+  const shp = shapeOf(id);
   if (shp) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     menuHead(shp.kind === 'line' ? 'line style' : 'border');
@@ -5198,7 +5194,7 @@ function layerMenu(d, el, e) {
       });
     }
   }
-  if (layout.shapes.some(s => s.id === id)) {
+  if (!!shapeOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Delete shape', async () => {
       layout.shapes = layout.shapes.filter(s => s.id !== id);
@@ -5506,7 +5502,7 @@ function startResize(d, el, e0, dir) {
     h = Math.min(h, PAGE_H_IN - y);
     const vertical = dir.includes('s') || dir.includes('n');
     if (shapeId) {
-      const sh = layout.shapes.find(s => s.id === shapeId);
+      const sh = shapeOf(shapeId);
       if (sh) {
         sh.x = +x.toFixed(2); sh.y = +y.toFixed(2);
         sh.w = +w.toFixed(2); sh.h = +h.toFixed(2);
@@ -5578,7 +5574,7 @@ function startResize(d, el, e0, dir) {
  *  first — rotating or fading a thing IS placing it. */
 function ensureStore(d, el) {
   const id = idOf(el);
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   if (sh) return sh;
   const b = boxOf(id);
   if (b) return b;
@@ -5589,7 +5585,7 @@ function ensureStore(d, el) {
   }
   return layout.positions[id];
 }
-const storeOf = id => layout.shapes.find(s => s.id === id) || boxOf(id)
+const storeOf = id => shapeOf(id) || boxOf(id)
                     || layout.positions[id];
 
 /** Paint a store's rotation onto the live node — the same declaration the
@@ -5942,6 +5938,14 @@ function masterItemOf(id) {
   if (!kind) return null;
   return { name, kind, item: m[kind].find(x => x.id === base), page };
 }
+/** A shape by id — a page's own, or a master's item on a page ('rule@3'),
+ *  which is the master's ONE shape: every shape-pipeline site goes through
+ *  here, so a drag or a restyle of an instance lands on every page. */
+const shapeOf = id => {
+  const mi = masterItemOf(id);
+  if (mi) return mi.kind === 'shapes' ? mi.item : undefined;
+  return layout.shapes.find(s => s.id === id);
+};
 const boxOf = id => {
   const mi = masterItemOf(id);
   if (mi) return mi.kind === 'boxes' ? mi.item : undefined;
@@ -9153,7 +9157,7 @@ function placeAnchors(d) {
   if (!w.__dsAnchor) { try { w.eval(anchorSrc()); } catch (e) { return; } }
   try { w.__dsAnchor(); } catch (e) { /* a half-built document; the next render places */ }
 }
-const anchorable = id => !!id && !id.startsWith('table.') && !layout.shapes.some(s => s.id === id)
+const anchorable = id => !!id && !id.startsWith('table.') && !!!shapeOf(id)
   && !!$('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"]`);
 /** The host slot's box, in page inches — the union of its paragraphs, so a
  *  slot of three paragraphs has one top and one bottom, like the runtime's. */
@@ -9351,12 +9355,12 @@ const objStyleNames = kind =>
  *  page have no store of their own for a style to dress. */
 function objKindOf(id) {
   if (!id) return null;
-  if (layout.shapes.find(s => s.id === id)) return 'shape';
+  if (shapeOf(id)) return 'shape';
   if (boxOf(id)) return 'box';
   if (tableOf(id)) return 'table';
   return null;
 }
-const objOf = id => layout.shapes.find(s => s.id === id) || boxOf(id) || tableOf(id) || null;
+const objOf = id => shapeOf(id) || boxOf(id) || tableOf(id) || null;
 // What a style of each kind may set — the engine's own list, asked once, so
 // the editor cannot save a key the validator would then refuse.
 let OBJ_KEYS = null;
@@ -9858,8 +9862,7 @@ const selEls = d => [...selIds].map(id =>
   d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`))
   .filter(Boolean);
 const lockedList = () => (layout.locked = layout.locked || []);
-const isLocked = id => (layout.locked || []).includes(id)
-  || (!!masterItemOf(id) && masterItemOf(id).kind === 'shapes');
+const isLocked = id => (layout.locked || []).includes(id);
 const hiddenList = () => (layout.hidden = layout.hidden || []);
 const isHidden = id => (layout.hidden || []).includes(id);
 
@@ -9932,7 +9935,7 @@ function pageLabel(pid) {
  *  truth. Shared by the selection ring and the resize handles so the two can
  *  never disagree about where a shape is. */
 function shapeBox(el, page) {
-  const s = el.dataset.shape && layout.shapes.find(x => x.id === el.dataset.shape);
+  const s = el.dataset.shape && shapeOf(el.dataset.shape);
   if (s && s.kind === 'chart' && s.x !== undefined)
     return { x: +s.x, y: +s.y, w: +s.w, h: +s.h };
   return inchBox(el, page);
@@ -10245,7 +10248,7 @@ function arrangeBar(d) {
   $('ar-style').hidden = $('ar-style-more').hidden = $('ar-stylesep').hidden = !showSty;
   if (showSty) fillObjStylePicker($('ar-style'), objOf(fillId), styKind);
   else $('ar-stylepop').hidden = true;
-  const canFill = !!fillId && (layout.shapes.some(s => s.id === fillId) || !!boxOf(fillId) || !!svgMarkEl(fillId));
+  const canFill = !!fillId && (!!shapeOf(fillId) || !!boxOf(fillId) || !!svgMarkEl(fillId));
   $('ar-fill').hidden = !canFill;
   if (!canFill) $('ar-fillpop').hidden = true;
   // An open colour panel follows the selection, and closes when there is
@@ -10265,7 +10268,7 @@ function arrangeBar(d) {
   // The rest of the Canva strip, by what the selection can actually take:
   // border and effects need a shape/box behind them; transparency needs any
   // store to keep the alpha in (a designed element grows one when moved).
-  const oneSh = fillId && layout.shapes.find(x => x.id === fillId);
+  const oneSh = fillId && shapeOf(fillId);
   // A selected table gets its own way into the styling panel, and a selection
   // that moves OFF the table drops the cell range with it — otherwise the
   // panel would keep acting on cells nothing is pointing at any more.
@@ -10332,7 +10335,7 @@ arField('ar-y', (d, el, page, v) => {
 });
 arField('ar-w', (d, el, page, v) => {
   const id = idOf(el);
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   const b = boxOf(id);
   if (sh) { sh.w = v; paintShape(d, id); }
   else if (b) { b.w = v; el.style.width = v + 'in'; }
@@ -10340,7 +10343,7 @@ arField('ar-w', (d, el, page, v) => {
 });
 arField('ar-h', (d, el, page, v) => {
   const id = idOf(el);
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   if (sh) { sh.h = v; paintShape(d, id); }
   else { ensureStore(d, el).h = v; el.style.height = v + 'in'; }
 });
@@ -10453,7 +10456,7 @@ async function deleteSel(d) {
       $('stat').textContent = `that is on the master "${masterItemOf(id).name}" — right-click it for Remove from master, or detach the master to this page`;
       return;
     }
-    if (layout.shapes.some(s => s.id === id)) {
+    if (!!shapeOf(id)) {
       layout.shapes = layout.shapes.filter(s => s.id !== id); touched = true; gone.push(id);
     } else if (boxOf(id)) {
       layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, '')); touched = true; gone.push(id);
@@ -10534,7 +10537,7 @@ const freeTId = () => {
   let n = 1;
   const taken = id => boxes().some(b => b.id === id)
                    || tables().some(t => t.id === id)
-                   || layout.shapes.some(s => s.id === id)
+                   || !!shapeOf(id)
                    || masterIds().includes(id);
   while (taken('t' + n)) n++;
   return 't' + n;
@@ -10557,7 +10560,7 @@ const freeShapeId = kind => {
  *             list, and reordering — not duplication — is its drag story). */
 function dupModeOf(d, id) {
   if ((id || '').startsWith('endnote.')) return null;
-  if (layout.shapes.some(s => s.id === id) || boxOf(id) || tableOf(id)) return 'clone';
+  if (!!shapeOf(id) || boxOf(id) || tableOf(id)) return 'clone';
   const el = d && d.querySelector(`[data-el="${CSS.escape(id)}"]`);
   if (!el) return null;
   const img = el.tagName === 'IMG' ? el : el.querySelector('img');
@@ -10601,7 +10604,7 @@ async function duplicateSel(d) {
     asBoxCount++;
   };
   const dup = id => {
-    const sh = layout.shapes.find(s => s.id === id);
+    const sh = shapeOf(id);
     const b = boxOf(id);
     const t = tableOf(id);
     if (sh) {
@@ -10656,7 +10659,7 @@ function copySel(d) {
   if (!selIds.size) return;
   const items = [];
   [...selIds].forEach(id => {
-    const sh = layout.shapes.find(s => s.id === id);
+    const sh = shapeOf(id);
     const b = boxOf(id);
     if (sh) items.push({ kind: 'shape', data: clone(sh) });
     else if (b) items.push({ kind: 'box', data: clone(b) });
@@ -10729,7 +10732,7 @@ const STYLE_SUBSET = {
   box:   ['fill', 'shadow', 'alpha', 'style'],
 };
 function styleType(d, id) {
-  if (layout.shapes.some(s => s.id === id)) return 'shape';
+  if (!!shapeOf(id)) return 'shape';
   if (boxOf(id)) return 'box';
   const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
   if (!el) return null;
@@ -10742,7 +10745,7 @@ function copyStyle(d) {
   const id = [...selIds][0];
   const type = styleType(d, id);
   let data;
-  if (type === 'shape') data = pick(layout.shapes.find(s => s.id === id), STYLE_SUBSET.shape);
+  if (type === 'shape') data = pick(shapeOf(id), STYLE_SUBSET.shape);
   else if (type === 'box') data = pick(boxOf(id), STYLE_SUBSET.box);
   else if (type === 'image') data = {                      // image style lives in TWO stores
     img: pick((layout.img || {})[id] || {}, ['radius', 'filter']),
@@ -10768,7 +10771,7 @@ async function pasteStyle(d) {
       styleClip.data.flip !== undefined ? p.flip = styleClip.data.flip : delete p.flip;
       if (!Object.keys(p).length) delete layout.positions[id];
     } else {
-      const obj = styleClip.type === 'shape' ? layout.shapes.find(s => s.id === id) : boxOf(id);
+      const obj = styleClip.type === 'shape' ? shapeOf(id) : boxOf(id);
       if (!obj) return;
       STYLE_SUBSET[styleClip.type].forEach(k =>
         styleClip.data[k] !== undefined ? obj[k] = clone(styleClip.data[k]) : delete obj[k]);
@@ -12189,14 +12192,14 @@ function pageEl(d) {
 function layerItems(d, pg) {
   return [...pg.querySelectorAll('[data-el], [data-shape]')]
     .map((el, dom) => ({ el, dom, id: idOf(el) }))
-    .filter(o => layout.shapes.some(s => s.id === o.id) || boxOf(o.id)
+    .filter(o => !!shapeOf(o.id) || boxOf(o.id)
               || layout.positions[o.id])
     .map(o => ({ ...o, z: zOf(o.id) }))
     .sort((a, b) => (b.z - a.z) || (b.dom - a.dom));      // top first
 }
 
 function kindOf(id, el) {
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   if (sh) return sh.kind === 'line' ? '─' : sh.kind === 'ellipse' ? '◯'
         : sh.kind === 'triangle' ? '△' : sh.kind === 'arrow' ? '➔' : '▭';
   if (boxOf(id)) return 'T';
@@ -12290,7 +12293,7 @@ async function layerStep(d, dir, extreme) {
   pushHistory();
   els.forEach(el => {
     const id = idOf(el);
-    if (!layout.shapes.some(s => s.id === id) && !boxOf(id)
+    if (!!!shapeOf(id) && !boxOf(id)
         && !layout.positions[id]) ensureStore(d, el);
     const pg = el.closest('section.page') || d.querySelector('section.page');
     const zs = [...pg.querySelectorAll('[data-el], [data-shape]')]
@@ -12421,7 +12424,7 @@ $('ar-border').addEventListener('click', () => {
   const d = $('out').contentDocument;
   const els = selEls(d);
   if (els.length !== 1) return;
-  const shp = layout.shapes.find(x => x.id === idOf(els[0]));
+  const shp = shapeOf(idOf(els[0]));
   if (!shp) return;
   // What the page draws — the shape's own stroke, or its style's — is what
   // the controls start from; a change is written to the shape itself.
@@ -12530,7 +12533,7 @@ $('ar-fxbtn').addEventListener('click', () => {
   const els = selEls(d);
   if (els.length !== 1) return;
   const id = idOf(els[0]);
-  const owner = layout.shapes.find(x => x.id === id) || boxOf(id);
+  const owner = shapeOf(id) || boxOf(id);
   if (!owner) return;
   const body = $('ar-fxbody');
   const commit = async () => { markDirty(); await render(); paintSel($('out').contentDocument); };
@@ -13363,7 +13366,7 @@ function placer(d, el, page) {
                 y: +(ab.y + (parseFloat(acs.borderTopWidth) || 0) / 96).toFixed(3) };
     }
   }
-  const stored = shapeId ? layout.shapes.find(s => s.id === shapeId)
+  const stored = shapeId ? shapeOf(shapeId)
                          : (bx || layout.positions[id]);
   const box = stored && stored.x !== undefined
     ? { ...measured, x: +stored.x + delta.x, y: +stored.y + delta.y }
@@ -13437,7 +13440,7 @@ function placer(d, el, page) {
     x = Math.min(Math.max(x, 0), PAGE_W_IN - Math.min(box.w, PAGE_W_IN));
     y = Math.min(Math.max(y, 0), PAGE_H_IN - Math.min(box.h, PAGE_H_IN));
     if (shapeId) {
-      const sh = layout.shapes.find(s => s.id === shapeId);
+      const sh = shapeOf(shapeId);
       if (sh) {
         sh.x = +x.toFixed(2); sh.y = +y.toFixed(2); paintShape(d, shapeId);
         // Carry the selection ring along. It used to be painted once and left
@@ -13498,7 +13501,7 @@ function altClone(d, members, page) {
     return null;
   return members.map(m => {
     if (m.dataset.shape) {
-      const sh = layout.shapes.find(s => s.id === m.dataset.shape);
+      const sh = shapeOf(m.dataset.shape);
       const nid = freeShapeId(sh.kind);
       layout.shapes.push({ ...sh, id: nid });
       const node = m.cloneNode(true);
@@ -13788,7 +13791,7 @@ const ptsAttr = pts => pts.map(p => p.map(v => +v.toFixed(4)).join(',')).join(' 
  *  resizes stay smooth. All of it, not just x/y: a resized rect that does not
  *  grow until the next render looks like a resize that did not take. */
 function paintShape(d, id) {
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   const node = d.querySelector(`[data-shape="${id}"]`);
   if (!sh || !node) return;
   if (sh.kind === 'rect' || sh.kind === 'icon') {
@@ -23070,7 +23073,7 @@ function _pilotApplySetSlot(key, md) { writeSlot(key, md); return { key }; }
 // An element a pilot can address is USUALLY in the DOM — but inside a batch,
 // an op can name a box/shape an earlier op just created, which exists only in
 // the layout store until the batch's own render runs. Both count as existing.
-const _pilotStoreOf = id => layout.shapes.find(s => s.id === id) || boxOf(id) || tableOf(id);
+const _pilotStoreOf = id => shapeOf(id) || boxOf(id) || tableOf(id);
 function _pilotValidateExists(id) {
   const d = $('out').contentDocument;
   const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
@@ -23109,7 +23112,7 @@ function _pilotApplyPlace(id, { x, y, w, h } = {}) {
   // Explicit size lands where each kind keeps it — the same fields the
   // resize handles write. A designed element has no free height (its
   // content decides), so h applies to shapes and boxes only.
-  const sh = layout.shapes.find(s => s.id === id);
+  const sh = shapeOf(id);
   const bx = boxOf(id);
   if (w != null) {
     if (sh) sh.w = +w;
@@ -23128,7 +23131,7 @@ function _pilotMeasure(id) {
   if (!el) return null;
   const pg = el.closest('section.page') || d.querySelector('section.page');
   try {
-    const sh = layout.shapes.find(s => s.id === id);
+    const sh = shapeOf(id);
     const b = sh ? shapeBox(el, pg) : inchBox(el, pg);
     return { x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) };
   } catch (err) { return null; }         // report the op without geometry
@@ -23382,7 +23385,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         const id = idOf(el);
         if (!id || seen.has(id)) return;
         seen.add(id);
-        const sh = layout.shapes.find(s => s.id === id);
+        const sh = shapeOf(id);
         let box = null;
         try {
           const b = sh ? shapeBox(el, pg) : inchBox(el, pg);
