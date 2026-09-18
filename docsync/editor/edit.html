@@ -1211,7 +1211,7 @@
   #ty-style.ty-style-over { font-style:italic; }
   #ty-style.ty-style-over::after { content:'+'; }
   #ty-style-more { font-weight:700; letter-spacing:1px; }
-  #ty-stylepop { min-width:266px; }
+  #ty-stylepop { width:280px; }
   /* Find & Change. The hits are the panel's whole point, so they get the
      height: a list that shows four and says "12 hits" is a count, not a
      result you can act on. */
@@ -1245,8 +1245,8 @@
   #ar-style { width:112px; }
   #ar-style.ty-style-over, #ty-boxstyle.ty-style-over { font-style:italic; }
   #ar-style-more { font-weight:700; letter-spacing:1px; }
-  #ar-stylepop { min-width:266px; }
-  #ty-boxpop { min-width:286px; }
+  #ar-stylepop { width:280px; }
+  #ty-boxpop { width:330px; }
   #ty-boxpop .tp-row { margin-bottom:6px; }
   #ty-boxstyle { flex:1; min-width:0; }
   /* The Box panel's rows: a label column, a control, a readout. */
@@ -4200,7 +4200,7 @@ function fillTargets(id) {
   if (b) return {
     label: 'Background',
     get: () => dressedObj(b).fill,
-    set: c => { if (c) b.fill = c; else delete b.fill; },
+    set: c => { if (c) { b.fill = c; boxReadable(b, c); } else delete b.fill; },
     resettable: !!b.fill,
     resetLabel: 'No background',
   };
@@ -4213,6 +4213,31 @@ function fillTargets(id) {
     resettable: !!(layout.fill && layout.fill[id]),
     resetLabel: mark ? 'Original artwork' : 'Reset colour',
   };
+}
+
+/** A filled text box keeps its words readable. A box inherits the page's
+ *  text colour — white, on the primer's green pages — so a pale panel dropped
+ *  onto one made white words on cream, and nothing said so. Only when the box
+ *  has no colour of its own, only when what it inherits would not read on the
+ *  new fill, and written as an ordinary style key the person can see, change
+ *  and undo — never a hidden rule in the renderer, which keeps every existing
+ *  page byte-for-byte. */
+function boxReadable(b, fill) {
+  if (!b || typeof fill !== 'string' || (b.style && b.style.color)) return;
+  const d = $('out').contentDocument;
+  // Not rendered yet (just created): the type colour of the PAGE it lands
+  // on, found through the engine's mount marker — the cover's colour says
+  // nothing about page 2's.
+  const mount = d && b.page != null && d.querySelector(`[data-ds-mount="${CSS.escape(String(b.page))}"]`);
+  const el = (d && d.querySelector(`[data-el="text.${CSS.escape(b.id)}"]`))
+    || (mount && mount.closest('section.page'))
+    || (d && d.querySelector('section.page'));
+  const m = el && /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(el).color);
+  if (!m) return;
+  const L = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) / 255;
+  const want = onColor(fill);
+  const lightText = L > 0.62, lightFill = want === '#2F3E46';
+  if (lightText === lightFill) b.style = { ...(b.style || {}), color: want };
 }
 
 // The screen already holds colours worth reusing — every fill, stroke, box and
@@ -22952,7 +22977,7 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
                 w: +w, z: 2, md };
   if (h != null) box.h = +h;      // same field place()'s h writes — one call, not two
   if (style && Object.keys(style).length) box.style = { ...style };
-  if (fill) box.fill = fill;
+  if (fill) { box.fill = fill; boxReadable(box, fill); }
   boxes().push(box);
   return { id: 'text.' + id, page: pid };
 }
