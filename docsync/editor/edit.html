@@ -1232,6 +1232,31 @@
   .find-go { cursor:pointer; }
   .find-go:hover { background:#EDF4EE; }
   #ty-stylepop .tp-row { margin-bottom:6px; }
+  /* Object styles: the same picker at the head of the arrange strip (a shape,
+     a table) and inside the type bar's Box panel (a text box, which is text
+     first and takes the type bar). The + for "wearing a style, with changes of
+     its own" is the text picker's rule, reused. */
+  #ar-style { width:112px; }
+  #ar-style.ty-style-over, #ty-boxstyle.ty-style-over { font-style:italic; }
+  #ar-style-more { font-weight:700; letter-spacing:1px; }
+  #ar-stylepop { min-width:266px; }
+  #ty-boxpop { min-width:286px; }
+  #ty-boxpop .tp-row { margin-bottom:6px; }
+  #ty-boxstyle { flex:1; min-width:0; }
+  /* The Box panel's rows: a label column, a control, a readout. */
+  .bx-row { display:flex; align-items:center; gap:7px; margin:7px 0 0;
+        font:11px system-ui; color:#52796F; }
+  .bx-row > span:first-child { width:62px; flex:none; }
+  .bx-row input[type=range] { flex:1; min-width:0; }
+  .bx-row select { font:11.5px system-ui; }
+  .bx-row .bx-val { width:40px; text-align:right; flex:none;
+        font:11px ui-monospace,monospace; color:var(--dim); }
+  .bx-row .swgrid { grid-template-columns:repeat(9, 18px); gap:4px; }
+  .bx-row .sw { width:18px; height:18px; border-radius:4px; }
+  .bx-row .ar-dashrow { margin-top:0; gap:3px; }
+  .bx-row .ar-dashrow button { padding:3px 6px; }
+  .bx-row .tp-btn { flex:0 0 auto; padding:4px 9px; }
+  #ar-blendrow select { font:11.5px system-ui; margin-left:6px; }
   #ty-weight { width:78px; }
   #type input[type=number], #arrange input[type=number] { width:54px; }
   #type button, #arrange button { display:inline-flex; align-items:center;
@@ -2241,6 +2266,15 @@
        wears none, which is what every slot did before there were any. -->
   <select id="ty-style" title="Text style"></select>
   <button id="ty-style-more" aria-label="Text styles — save, redefine, apply">…</button>
+  <!-- A text BOX is also an object: the style it wears as one, its
+       background, rule, padding, corners and columns — InDesign's object
+       style plus its Text Frame Options, one panel because a box is one
+       thing. Hidden for the report's own slots, which have no box to dress. -->
+  <button id="ty-box" hidden aria-label="Box — style, background, border, padding, columns">Box</button>
+  <div class="pop" id="ty-boxpop" hidden>
+    <p class="pop-h">Box</p>
+    <div id="ty-boxbody"></div>
+  </div>
   <span class="ty-sep"></span>
   <select id="ty-font" title="Font"></select>
   <select id="ty-weight" title="Weight"></select>
@@ -2321,6 +2355,17 @@
 <div id="arrange" hidden>
   <span class="ar-count" id="ar-count"></span>
   <span class="ty-sep"></span>
+  <!-- The object style a selected shape or table wears — InDesign's object
+       styles, at the head of the strip the way the text style leads the type
+       bar. A designed element or a page has no store a style could dress, so
+       for those it is hidden; a text box dresses through its Box panel. -->
+  <select id="ar-style" title="Object style" hidden></select>
+  <button id="ar-style-more" aria-label="Object styles — save, redefine, apply" hidden>…</button>
+  <span class="ty-sep" id="ar-stylesep" hidden></span>
+  <div class="pop" id="ar-stylepop" hidden>
+    <p class="pop-h">Object styles</p>
+    <div id="ar-stylebody"></div>
+  </div>
   <!-- Shown only for a selected table: opens its full panel on the left, the
        way Canva puts table styling in a surface rather than a popover. -->
   <button id="ar-table" aria-label="Table — rows, columns, fills and borders" hidden>
@@ -2349,6 +2394,9 @@
   <div class="pop" id="ar-alphapop" hidden>
     <p class="pop-h">Transparency</p>
     <label class="ar-slide"><input id="ar-alphain" type="range" min="0.1" max="1" step="0.05"></label>
+    <!-- mix-blend-mode, for a shape, box or table: what the transparency
+         slider is a special case of. Hidden for a designed element. -->
+    <label class="ar-slide" id="ar-blendrow" hidden>blend<select id="ar-blend" title="How this blends into what is under it"></select></label>
   </div>
   <button id="ar-fxbtn" hidden>Effects</button>
   <div class="pop" id="ar-fxpop" hidden>
@@ -4119,7 +4167,7 @@ function fillTargets(id) {
   const sh = layout.shapes.find(s => s.id === id);
   if (sh) return {
     label: sh.kind === 'line' ? 'Line colour' : 'Fill',
-    get: () => (sh.kind === 'line' ? sh.stroke : sh.fill),
+    get: () => (sh.kind === 'line' ? dressedObj(sh).stroke : dressedObj(sh).fill),
     set: c => { if (sh.kind === 'line') sh.stroke = c || '#52796F';
                 else sh.fill = c || '#6B9E78'; },
     resettable: false,             // a shape's colour is intrinsic — no "default"
@@ -4127,7 +4175,7 @@ function fillTargets(id) {
   const b = boxOf(id);
   if (b) return {
     label: 'Background',
-    get: () => b.fill,
+    get: () => dressedObj(b).fill,
     set: c => { if (c) b.fill = c; else delete b.fill; },
     resettable: !!b.fill,
     resetLabel: 'No background',
@@ -8846,6 +8894,10 @@ function showType(key) {
   $('ty-u').classList.toggle('on', !!eff.underline);
   document.querySelectorAll('.ty-al').forEach(b =>
     b.classList.toggle('on', b.dataset.a === eff.align));
+  // The Box panel belongs to a text BOX; a slot has no box of its own.
+  const isBox = !!boxOf(key);
+  $('ty-box').hidden = !isBox;
+  if (!isBox) $('ty-boxpop').hidden = true;
   $('type').hidden = false;
   $('arrange').hidden = true;            // the fixed row holds one toolbar at a time
 }
@@ -8973,6 +9025,376 @@ function renderStylePop() {
   }
   host.appendChild(n);
 }
+
+// ------------------------------------------------------- object styles
+// InDesign's object styles: the same idea as a text style, for the things
+// that are not text. A pull quote is a fill, a padding, a rule and a text
+// style, and the fourth one was built by hand exactly like the first. A style
+// says which KIND it dresses — a shape, a text box and a table are three key
+// sets, not one — and an object says `use`; its own keys still win. The rule
+// lives in layout.py's resolve_object() and is mirrored here only so the
+// controls can SHOW what the page does. `kind` and `from` are bookkeeping.
+const OBJECT_STYLE_META = ['use', 'from', 'kind'];
+const BLENDS = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten',
+                'difference', 'luminosity'];
+const objectStyles = () => layout.objectStyles || {};
+const objStyleNames = kind =>
+  Object.keys(objectStyles()).filter(n => (objectStyles()[n] || {}).kind === kind).sort();
+/** Which of the three kinds an id names, or null: a designed element and a
+ *  page have no store of their own for a style to dress. */
+function objKindOf(id) {
+  if (!id) return null;
+  if (layout.shapes.find(s => s.id === id)) return 'shape';
+  if (boxOf(id)) return 'box';
+  if (tableOf(id)) return 'table';
+  return null;
+}
+const objOf = id => layout.shapes.find(s => s.id === id) || boxOf(id) || tableOf(id) || null;
+// What a style of each kind may set — the engine's own list, asked once, so
+// the editor cannot save a key the validator would then refuse.
+let OBJ_KEYS = null;
+function objStyleKeys(kind) {
+  if (!OBJ_KEYS) {
+    try {
+      OBJ_KEYS = JSON.parse(py.runPython(
+        'import json\nfrom docsync.layout import OBJECT_STYLE_KEYS\njson.dumps(OBJECT_STYLE_KEYS)'));
+    } catch (e) {
+      // An engine staged before object styles existed: these are the keys its
+      // page can draw, and its validator ignores a `use`, so nothing breaks.
+      OBJ_KEYS = { shape: ['fill', 'stroke', 'sw', 'dash', 'r', 'ends', 'alpha', 'shadow', 'blend'],
+                   box: ['fill', 'pad', 'radius', 'border', 'alpha', 'shadow', 'style', 'blend', 'cols', 'gap'],
+                   table: ['border', 'fill', 'band', 'headerFill', 'headerColor', 'header', 'alpha', 'style', 'blend'] };
+    }
+  }
+  return OBJ_KEYS[kind] || [];
+}
+const cloneJson = v => v === undefined ? v : JSON.parse(JSON.stringify(v));
+/** The look an object carries ITSELF — its style keys and nothing else. */
+function objLook(obj, kind) {
+  const out = {};
+  objStyleKeys(kind).forEach(k => { if (obj && obj[k] !== undefined) out[k] = cloneJson(obj[k]); });
+  return out;
+}
+function resolvedObjStyle(name, seen) {
+  const all = objectStyles(), st = all[name];
+  if (!st || (seen || []).includes(name)) return {};
+  const base = st.from ? resolvedObjStyle(st.from, (seen || []).concat([name])) : {};
+  const out = { ...base };
+  Object.keys(st).forEach(k => { if (!OBJECT_STYLE_META.includes(k)) out[k] = cloneJson(st[k]); });
+  return out;
+}
+/** Mirrors resolve_object(): the worn style under the object's own keys, the
+ *  text style merged one level down. An object wearing nothing is itself. */
+function dressedObj(obj) {
+  if (!obj || !obj.use) return obj || {};
+  const base = resolvedObjStyle(obj.use);
+  const out = { ...base };
+  Object.keys(obj).forEach(k => {
+    if (k === 'use') return;
+    if (k === 'style' && obj.style && typeof obj.style === 'object'
+        && base.style && typeof base.style === 'object') out.style = { ...base.style, ...obj.style };
+    else out[k] = obj[k];
+  });
+  return out;
+}
+/** Take every look key off an object — what wearing a style means. */
+function stripLook(obj, kind) { objStyleKeys(kind).forEach(k => { delete obj[k]; }); }
+/** One string per look, keys sorted, so two objects that render the same
+ *  compare the same whatever order their keys were written in. */
+function lookKey(obj, kind) {
+  const look = objLook(dressedObj(obj), kind);
+  return JSON.stringify(look, Object.keys(look).sort());
+}
+/** Every object of one kind, so "apply to matching" cannot miss one. */
+const objectsOf = kind => kind === 'shape' ? layout.shapes : kind === 'box' ? boxes() : tables();
+function fillObjStylePicker(sel, obj, kind) {
+  const names = objStyleNames(kind);
+  sel.textContent = '';
+  const none = document.createElement('option');
+  none.value = ''; none.textContent = names.length ? 'No style' : 'No styles yet';
+  sel.appendChild(none);
+  names.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  });
+  sel.value = (obj && obj.use) || '';
+  const over = obj && obj.use && Object.keys(objLook(obj, kind)).length;
+  sel.classList.toggle('ty-style-over', !!over);
+  sel.title = over ? `${obj.use}, with changes of its own` : 'Object style';
+}
+/** Wear a style: the object's own look goes, or the first thing anyone ever
+ *  styled by hand would ignore the style it was just given. */
+async function wearObjStyle(obj, kind, name, after) {
+  pushHistory();
+  stripLook(obj, kind);
+  if (name) obj.use = name; else delete obj.use;
+  markDirty(); await render(); after();
+}
+/** The four verbs that make a stylesheet a stylesheet, built into `host` for
+ *  one object. Shared by the arrange strip (shapes, tables) and the type bar's
+ *  Box panel (text boxes), so the two cannot disagree about what saving a
+ *  style means. `after` repaints whichever bar owns the pop. */
+function renderObjStyleVerbs(host, obj, kind, after) {
+  const worn = obj.use;
+  const noun = kind;
+  const btn = (label, title, fn, dis) => {
+    const b = document.createElement('button');
+    b.className = 'tp-btn'; b.textContent = label; b.title = title;
+    b.disabled = !!dis;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const row = document.createElement('div');
+  row.className = 'tp-row';
+  host.appendChild(row);
+  row.appendChild(btn('+ Save as a style',
+    `Name what this ${noun} looks like, and reuse it`, async () => {
+      const look = objLook(obj, kind);
+      if (!Object.keys(look).length) {
+        $('stat').textContent = `nothing to save — this ${noun} has no look of its own`;
+        return;
+      }
+      const hint = { box: 'e.g. Pull quote', table: 'e.g. Data table', shape: 'e.g. Hairline' }[kind];
+      const got = await dsForm(`Save as a ${noun} style`, [
+        { name: 'name', label: 'Name', placeholder: hint, required: true },
+      ]);
+      if (!got || !got.name.trim()) return;
+      const name = got.name.trim();
+      pushHistory();
+      layout.objectStyles = { ...objectStyles(), [name]: { kind, ...look } };
+      // The object it came from WEARS it, with nothing left over: otherwise
+      // the very thing that defined the style is the one a redefine can't move.
+      stripLook(obj, kind);
+      obj.use = name;
+      markDirty(); await render(); after();
+      $('stat').textContent = `saved the style "${name}"`;
+    }));
+  row.appendChild(btn(`Redefine ${worn || ''}`.trim(),
+    `Make this style look like this ${noun} — everything wearing it follows`,
+    async () => {
+      const own = objLook(obj, kind);
+      pushHistory();
+      layout.objectStyles = { ...objectStyles(), [worn]: { ...objectStyles()[worn], ...own } };
+      stripLook(obj, kind);
+      markDirty(); await render(); after();
+      $('stat').textContent = `"${worn}" now looks like this, everywhere`;
+    }, !worn || !Object.keys(objLook(obj, kind)).length));
+  const row2 = document.createElement('div');
+  row2.className = 'tp-row';
+  host.appendChild(row2);
+  row2.appendChild(btn('Apply to matching',
+    `Give this style to every other ${noun} that already looks like it`,
+    async () => {
+      const want = lookKey(obj, kind);
+      const hit = objectsOf(kind).filter(o => o !== obj && !o.use && lookKey(o, kind) === want);
+      if (!hit.length) {
+        $('stat').textContent = 'nothing else looks like this';
+        return;
+      }
+      pushHistory();
+      hit.forEach(o => { stripLook(o, kind); o.use = worn; });
+      markDirty(); await render(); after();
+      $('stat').textContent = `${hit.length} more now wear "${worn}"`;
+    }, !worn));
+  row2.appendChild(btn('Unlink', 'Keep the look, stop following the style',
+    async () => {
+      const look = objLook(dressedObj(obj), kind);
+      pushHistory();
+      delete obj.use;
+      Object.assign(obj, look);
+      markDirty(); await render(); after();
+    }, !worn));
+  const n = document.createElement('p');
+  n.className = 'side-note';
+  if (worn) {
+    const users = objectsOf(kind).filter(o => o.use === worn).length;
+    n.textContent = `"${worn}" is worn by ${users} ${users === 1 ? noun : noun + 's'}`
+      + ' in this document. Change the look, then Redefine, and all of them follow.';
+  } else {
+    n.textContent = `A style is a name for a look. Set this ${noun} how you want it,`
+      + ` save it as a style, and every other ${noun} can wear the same one —`
+      + ' and change when it does.';
+  }
+  host.appendChild(n);
+}
+// The arrange strip's picker and its pop: one selected shape or table.
+$('ar-style').addEventListener('change', async () => {
+  const els = selEls($('out').contentDocument);
+  if (els.length !== 1) return;
+  const id = idOf(els[0]), obj = objOf(id);
+  if (!obj) return;
+  await wearObjStyle(obj, objKindOf(id), $('ar-style').value || null,
+    () => paintSel($('out').contentDocument));
+});
+$('ar-style-more').addEventListener('click', () => {
+  const els = selEls($('out').contentDocument);
+  if (els.length !== 1) return;
+  const id = idOf(els[0]), kind = objKindOf(id), obj = objOf(id);
+  if (!obj) return;
+  const host = $('ar-stylebody');
+  const build = () => { host.textContent = ''; renderObjStyleVerbs(host, obj, kind, refresh); };
+  const refresh = () => {
+    paintSel($('out').contentDocument);
+    if (!$('ar-stylepop').hidden) build();
+  };
+  build();
+  togglePop($('ar-stylepop'), $('ar-style-more'));
+});
+
+// The type bar's Box panel — a text box's everything-but-the-words: the
+// object style it wears, its background, rule, padding, corners and columns.
+// InDesign keeps the second half in Text Frame Options; here it is one panel,
+// because a box is one thing. Every control READS the dressed box (what the
+// page draws) and WRITES the box itself (the nearer author is the stronger),
+// so a slider moved on a box wearing a style creates an override, which the
+// picker then marks with a +.
+function renderBoxPanel() {
+  const host = $('ty-boxbody');
+  host.textContent = '';
+  const bx = boxOf(selected);
+  if (!bx) return;
+  const kind = 'box';
+  const refresh = () => { showType(selected); if (!$('ty-boxpop').hidden) renderBoxPanel(); };
+  const commit = async () => { markDirty(); await render(); refresh(); };
+  const eff = dressedObj(bx);
+  const node = () => $('out').contentDocument.querySelector(`[data-el="${CSS.escape(selected)}"]`);
+
+  const prow = document.createElement('div');
+  prow.className = 'tp-row';
+  const sel = document.createElement('select');
+  sel.id = 'ty-boxstyle';
+  fillObjStylePicker(sel, bx, kind);
+  sel.addEventListener('change', () => wearObjStyle(bx, kind, sel.value || null, refresh));
+  prow.appendChild(sel);
+  host.appendChild(prow);
+  renderObjStyleVerbs(host, bx, kind, refresh);
+
+  const row = label => {
+    const r = document.createElement('div');
+    r.className = 'bx-row';
+    const s = document.createElement('span');
+    s.textContent = label;
+    r.appendChild(s);
+    host.appendChild(r);
+    return r;
+  };
+  const small = (label, on, fn, cls = 'tp-btn') => {
+    const b = document.createElement('button');
+    b.className = cls; b.textContent = label; b.classList.toggle('on', !!on);
+    b.addEventListener('click', fn);
+    return b;
+  };
+  /** A slider with a readout: drag paints the node live, release commits. */
+  const slide = (r, { id, min, max, step, value, unit, paint, write }) => {
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.id = id; inp.min = min; inp.max = max; inp.step = step;
+    inp.value = value;
+    const val = document.createElement('span');
+    val.className = 'bx-val';
+    const show = () => { val.textContent = (+inp.value).toFixed(unit === 'px' ? 0 : 2) + unit; };
+    show();
+    inp.addEventListener('pointerdown', () => pushHistory());
+    inp.addEventListener('input', () => { show(); write(+inp.value); paint(+inp.value); });
+    inp.addEventListener('change', commit);
+    r.appendChild(inp); r.appendChild(val);
+  };
+
+  // Background: the colour panel is where every fill is chosen.
+  const bg = row('Background');
+  bg.appendChild(small(eff.fill ? 'Change…' : 'Add…', false, () => openColorPanel(selected)));
+  if (eff.fill) {
+    bg.appendChild(small('None', false, async () => {
+      pushHistory();
+      // A fill that came from the style needs an explicit "none" to beat it;
+      // the box's own fill just goes.
+      delete bx.fill;
+      if (dressedObj(bx).fill) bx.fill = null;
+      await commit();
+    }));
+  }
+
+  // Border: none, or a colour from the palette; then weight and which edge.
+  const cur = eff.border && eff.border.style !== 'none' ? eff.border : null;
+  const setBorder = async patch => {
+    pushHistory();
+    bx.border = { ...(cur || { w: 1, color: (M.palette || ['#52796F'])[0] }), ...patch };
+    await commit();
+  };
+  const br = row('Border');
+  br.appendChild(small('None', !cur, async () => {
+    pushHistory();
+    delete bx.border;
+    // Wearing a style with a rule: the box says "no rule" of its own.
+    if (dressedObj(bx).border) bx.border = { style: 'none' };
+    await commit();
+  }));
+  const grid = document.createElement('div');
+  grid.className = 'swgrid';
+  (M.palette || []).filter(c => !/^#f{3,6}$/i.test(c)).slice(0, 9).forEach(c => {
+    const b = document.createElement('button');
+    b.className = 'sw' + (cur && (cur.color || '').toUpperCase() === c.toUpperCase() ? ' on' : '');
+    b.style.background = c; b.title = c;
+    b.addEventListener('click', () => setBorder({ color: c, style: 'solid' }));
+    grid.appendChild(b);
+  });
+  br.appendChild(grid);
+  if (cur) {
+    const bw = row('Weight');
+    slide(bw, { id: 'bx-bw', min: 0.5, max: 6, step: 0.5, value: cur.w ?? 1, unit: 'px',
+      paint: v => { const n = node(); if (n) n.style.borderWidth = v + 'px'; },
+      write: v => { bx.border = { ...cur, w: v }; } });
+    const sd = row('Edge');
+    const sides = document.createElement('div');
+    sides.className = 'ar-dashrow';
+    [['all', 'All'], ['left', 'Left'], ['right', 'Right'], ['top', 'Top'], ['bottom', 'Bottom']]
+      .forEach(([v, label]) => sides.appendChild(
+        small(label, (cur.sides || 'all') === v, () => setBorder({ sides: v }), '')));
+    sd.appendChild(sides);
+  }
+
+  // Padding and corners. A filled box has default breathing room (.08in
+  // .12in) the engine gives it; the slider shows the box's own value or 0.
+  const pd = row('Padding');
+  const padNow = Array.isArray(eff.pad) ? eff.pad[0] : eff.pad;
+  slide(pd, { id: 'bx-pad', min: 0, max: 0.6, step: 0.02,
+    value: padNow ?? (eff.fill ? 0.1 : 0), unit: 'in',
+    paint: v => { const n = node(); if (n) n.style.padding = v + 'in'; },
+    write: v => { bx.pad = v; } });
+  const rd = row('Corners');
+  slide(rd, { id: 'bx-radius', min: 0, max: 24, step: 1,
+    value: eff.radius ?? (eff.fill ? 8 : 0), unit: 'px',
+    paint: v => { const n = node(); if (n) n.style.borderRadius = v + 'px'; },
+    write: v => { bx.radius = v; } });
+
+  // Columns inside this one box — CSS flows the words between them, which
+  // is the two-column page without any text-threading machinery.
+  const cl = row('Columns');
+  const csel = document.createElement('select');
+  csel.id = 'bx-cols';
+  [1, 2, 3, 4].forEach(nn => {
+    const o = document.createElement('option');
+    o.value = nn; o.textContent = nn === 1 ? '1 column' : `${nn} columns`;
+    csel.appendChild(o);
+  });
+  csel.value = String(eff.cols || 1);
+  csel.addEventListener('change', async () => {
+    pushHistory();
+    const nn = +csel.value;
+    if (nn > 1) bx.cols = nn; else { delete bx.cols; if (dressedObj(bx).cols > 1) bx.cols = 1; }
+    await commit();
+  });
+  cl.appendChild(csel);
+  if ((eff.cols || 1) > 1) {
+    slide(cl, { id: 'bx-gap', min: 0.1, max: 0.6, step: 0.02, value: eff.gap ?? 0.2, unit: 'in',
+      paint: v => { const n = node(); if (n) n.style.columnGap = v + 'in'; },
+      write: v => { bx.gap = v; } });
+  }
+}
+$('ty-box').addEventListener('click', () => {
+  renderBoxPanel();
+  togglePop($('ty-boxpop'), $('ty-box'));
+});
 
 /** input -> paint (fast, local). change -> commit and re-render, because the
  *  cascade and is_light_bg are the renderer's job, not something to fake. */
@@ -9412,7 +9834,11 @@ function arrangeBar(d) {
   document.dispatchEvent(new CustomEvent('ds:selection'));
   // A selected PAGE gets its own strip: the only things that mean anything to
   // a sheet are its colour and making another one.
-  if (!n && selPage != null) { pageBar(d); return; }
+  if (!n && selPage != null) {
+    $('ar-style').hidden = $('ar-style-more').hidden = $('ar-stylesep').hidden = true;
+    $('ar-stylepop').hidden = true;
+    pageBar(d); return;
+  }
   document.querySelectorAll('.ds-pageonly').forEach(x => { x.hidden = true; });
   // Nothing selected, nothing to arrange, no card. It used to be always
   // present and greyed out, first because it sat in a fixed-height row (a card
@@ -9486,6 +9912,13 @@ function arrangeBar(d) {
   // Fill control: one selected shape or text box carries its own colour, so it
   // gets a Fill swatch right here in the toolbar (no more right-click needed).
   const fillId = one ? idOf(one) : null;
+  // The object style picker: one selected shape or table. A text box is text
+  // here (it took the type bar above) and dresses through its Box panel.
+  const styKind = fillId ? objKindOf(fillId) : null;
+  const showSty = !!styKind && styKind !== 'box';
+  $('ar-style').hidden = $('ar-style-more').hidden = $('ar-stylesep').hidden = !showSty;
+  if (showSty) fillObjStylePicker($('ar-style'), objOf(fillId), styKind);
+  else $('ar-stylepop').hidden = true;
   const canFill = !!fillId && (layout.shapes.some(s => s.id === fillId) || !!boxOf(fillId) || !!svgMarkEl(fillId));
   $('ar-fill').hidden = !canFill;
   if (!canFill) $('ar-fillpop').hidden = true;
@@ -9522,7 +9955,9 @@ function arrangeBar(d) {
     tablePanelId = tblId; renderTablePanel();
   }
   $('ar-border').hidden = !oneSh || ['line', 'icon'].includes(oneSh.kind);
-  $('ar-alpha').hidden = !fillId || !(storeOf(fillId) || (layout.positions || {})[fillId]);
+  // A table has an alpha (and a blend) of its own too; it was left out only
+  // because it is not in storeOf(), which is about geometry.
+  $('ar-alpha').hidden = !fillId || !(storeOf(fillId) || tableOf(fillId) || (layout.positions || {})[fillId]);
   $('ar-fxbtn').hidden = !fillId || !(oneSh || boxOf(fillId));
   if ($('ar-border').hidden) $('ar-borderpop').hidden = true;
   if ($('ar-alpha').hidden) $('ar-alphapop').hidden = true;
@@ -11540,6 +11975,9 @@ $('ar-border').addEventListener('click', () => {
   if (els.length !== 1) return;
   const shp = layout.shapes.find(x => x.id === idOf(els[0]));
   if (!shp) return;
+  // What the page draws — the shape's own stroke, or its style's — is what
+  // the controls start from; a change is written to the shape itself.
+  const dsh = dressedObj(shp);
   const commit = async () => { markDirty(); await render(); paintSel($('out').contentDocument); };
   const grid = $('ar-bswgrid');
   grid.innerHTML = '';
@@ -11558,13 +11996,13 @@ $('ar-border').addEventListener('click', () => {
   grid.appendChild(none);
   (M.palette || []).forEach(c => {
     const b = document.createElement('button');
-    b.className = 'sw' + (c.toUpperCase() === (shp.stroke || '').toUpperCase() ? ' on' : '');
+    b.className = 'sw' + (c.toUpperCase() === (dsh.stroke || '').toUpperCase() ? ' on' : '');
     b.style.background = c; b.title = c;
     b.addEventListener('click', () => strokePaint(c));
     grid.appendChild(b);
   });
   const bw = $('ar-bw');
-  bw.value = shp.sw ?? 0.02;
+  bw.value = dsh.sw ?? 0.02;
   bw.onpointerdown = () => pushHistory();
   bw.oninput = () => {
     shp.sw = +bw.value;
@@ -11573,7 +12011,7 @@ $('ar-border').addEventListener('click', () => {
   };
   bw.onchange = commit;
   const presets = { Solid: null, Dashed: [0.08, 0.05], Dotted: [0.02, 0.04] };
-  const cur = !shp.dash ? 'Solid' : (shp.dash[0] <= 0.03 ? 'Dotted' : 'Dashed');
+  const cur = !dsh.dash ? 'Solid' : (dsh.dash[0] <= 0.03 ? 'Dotted' : 'Dashed');
   const drow = $('ar-dashrow');
   drow.innerHTML = '';
   Object.keys(presets).forEach(kk => {
@@ -11599,10 +12037,32 @@ $('ar-alpha').addEventListener('click', () => {
   if (els.length !== 1) return;
   const el = els[0], id = idOf(el);
   const ain = $('ar-alphain');
-  ain.value = (storeOf(id) || (layout.positions || {})[id] || {}).alpha ?? 1;
+  ain.value = dressedObj(storeOf(id) || tableOf(id) || (layout.positions || {})[id] || {}).alpha ?? 1;
   ain.onpointerdown = () => pushHistory();
+  // Blend: a shape, box or table (a designed element has no store for it).
+  const bkind = objKindOf(id);
+  $('ar-blendrow').hidden = !bkind;
+  if (bkind) {
+    const bsel = $('ar-blend');
+    bsel.textContent = '';
+    BLENDS.forEach(bm => {
+      const o = document.createElement('option');
+      o.value = bm; o.textContent = bm;
+      bsel.appendChild(o);
+    });
+    const o = objOf(id);
+    bsel.value = dressedObj(o).blend || 'normal';
+    bsel.onchange = async () => {
+      pushHistory();
+      delete o.blend;
+      // "normal" on an object whose STYLE blends has to be said out loud.
+      if (bsel.value !== 'normal') o.blend = bsel.value;
+      else if ((dressedObj(o).blend || 'normal') !== 'normal') o.blend = 'normal';
+      markDirty(); await render(); paintSel($('out').contentDocument);
+    };
+  }
   ain.oninput = () => {
-    const st = ensureStore(d, el);
+    const st = tableOf(id) || ensureStore(d, el);
     const v = +ain.value;
     if (v >= 0.999) delete st.alpha; else st.alpha = v;
     if (el.dataset.shape) {
@@ -11626,9 +12086,11 @@ $('ar-fxbtn').addEventListener('click', () => {
   if (!owner) return;
   const body = $('ar-fxbody');
   const commit = async () => { markDirty(); await render(); paintSel($('out').contentDocument); };
+  // The shadow the page DRAWS — the object's own, or its style's.
+  const shadowOf = () => dressedObj(owner).shadow;
   const build = () => {
     body.innerHTML = '';
-    if (!owner.shadow) {
+    if (!shadowOf()) {
       const add = document.createElement('button');
       add.id = 'ar-fx-add';
       add.className = 'sw-default';
@@ -11647,8 +12109,11 @@ $('ar-fxbtn').addEventListener('click', () => {
       w.textContent = label;
       const r = document.createElement('input');
       r.type = 'range'; r.min = min; r.max = max; r.step = step;
-      r.value = owner.shadow[key];
-      r.addEventListener('pointerdown', () => pushHistory());
+      r.value = shadowOf()[key];
+      r.addEventListener('pointerdown', () => {
+        pushHistory();
+        if (!owner.shadow) owner.shadow = { ...shadowOf() };
+      });
       r.addEventListener('input', () => { owner.shadow[key] = +r.value; });
       r.addEventListener('change', commit);
       w.appendChild(r);
@@ -11662,7 +12127,11 @@ $('ar-fxbtn').addEventListener('click', () => {
     rm.className = 'sw-default';
     rm.textContent = 'Remove shadow';
     rm.addEventListener('click', async () => {
-      pushHistory(); delete owner.shadow; build(); await commit();
+      pushHistory();
+      delete owner.shadow;
+      // A shadow that came from the style needs an explicit no to beat it.
+      if (shadowOf()) owner.shadow = null;
+      build(); await commit();
     });
     body.appendChild(rm);
   };

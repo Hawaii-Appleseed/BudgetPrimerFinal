@@ -833,9 +833,39 @@ def text_css(st: dict) -> str:
 
 # Everything a named style may hold beyond the style keys themselves.
 TEXT_STYLE_META = ("from",)
+# Object styles — the same idea for the things that are not text. A style
+# names a `kind`, because a shape, a text box and a table are three key sets
+# and not one: "the same machinery pointed at a different map" turned out to
+# be three maps, and a style that could be worn by any of them would be a
+# style that could say nothing checkable. `kind` and `from` are bookkeeping,
+# never CSS, so they are stripped when a style is resolved.
+OBJECT_STYLE_META = ("from", "kind")
+OBJECT_KINDS = ("shape", "box", "table")
+# What a style of each kind may set — and, by omission, what it may not: never
+# geometry (x/y/w/h/rot/z), never identity (id, page), never content (md, rows,
+# a chart's data). A style is a look. Everything here is opt-in and validated
+# by the same checker the object itself goes through, so wearing a style can
+# never smuggle in a value the object could not have carried directly.
+OBJECT_STYLE_KEYS = {
+    "shape": ("fill", "stroke", "sw", "dash", "r", "ends", "alpha", "shadow",
+              "blend"),
+    "box": ("fill", "pad", "radius", "border", "alpha", "shadow", "style",
+            "blend", "cols", "gap"),
+    "table": ("border", "fill", "band", "headerFill", "headerColor", "header",
+              "alpha", "style", "blend"),
+}
+# mix-blend-mode, the six people reach for plus the two that matter for
+# type over a photograph. "normal" is accepted so a style can UNDO a blend
+# an object inherited from the style it comes from.
+BLENDS = ("normal", "multiply", "screen", "overlay", "darken", "lighten",
+          "difference", "luminosity")
+# A text box's border: one rule on every edge, or a single rule on one edge —
+# the left rule of a pull quote is the whole reason `sides` exists here.
+BOX_BORDER_SIDES = ("all", "left", "right", "top", "bottom")
 
 
-def resolve_style(st: dict, styles: dict, _seen=None) -> dict:
+def resolve_style(st: dict, styles: dict, _seen=None,
+                  meta=TEXT_STYLE_META) -> dict:
     """One style, with whatever it inherits already folded in.
 
     The rule, and it is the only one: **the nearer the author, the stronger.**
@@ -857,12 +887,39 @@ def resolve_style(st: dict, styles: dict, _seen=None) -> dict:
         if name not in seen:
             seen.add(name)
             base = resolve_style(dict(styles[name], use=styles[name].get("from")),
-                                 styles, seen)
+                                 styles, seen, meta)
     out = dict(base)
     for k, v in st.items():
-        if k in ("use",) + TEXT_STYLE_META:
+        if k in ("use",) + tuple(meta):
             continue
         out[k] = v
+    return out
+
+
+def resolve_object(obj: dict, styles: dict) -> dict:
+    """A shape, box or table with the object style it wears folded in.
+
+    Same rule as text — the nearer the author, the stronger — with one more
+    line: a box's `style` (its TEXT style) is itself a dict, and an object
+    style that sets `style: {use: "Body"}` under a box that says
+    `style: {size: 14}` should give a 14px Body, not lose Body. So that one
+    key merges one level down; every other key is whole.
+
+    An object wearing nothing comes back AS IT IS — the same dict, not a copy
+    — so an untouched layout renders through exactly the object it always
+    did and the byte-for-byte promise costs nothing to keep.
+    """
+    if not obj or not obj.get("use"):
+        return obj
+    base = resolve_style({"use": obj["use"]}, styles, meta=OBJECT_STYLE_META)
+    out = dict(base)
+    for k, v in obj.items():
+        if k == "use":
+            continue
+        if k == "style" and isinstance(v, dict) and isinstance(base.get("style"), dict):
+            out[k] = {**base["style"], **v}
+        else:
+            out[k] = v
     return out
 
 
@@ -2496,7 +2553,8 @@ def _check_chart_style(st, where: str) -> None:
     _check_chart(probe, where)
 
 
-def _check_uses(st: dict, styles: dict, where: str) -> None:
+def _check_uses(st: dict, styles: dict, where: str,
+                what: str = "text style") -> None:
     """A `use` has to name a style that exists. Refused at load rather than
     resolving to nothing: a slot silently wearing no style looks exactly like
     a slot someone forgot to style, and the two want different fixes."""
@@ -2504,27 +2562,159 @@ def _check_uses(st: dict, styles: dict, where: str) -> None:
     if name is None:
         return
     if not isinstance(name, str) or not name:
-        raise LayoutError(f"{where}.use: expected the name of a text style")
+        raise LayoutError(f"{where}.use: expected the name of a {what}")
     if name not in styles:
         known = ", ".join(sorted(styles)) or "none are defined"
-        raise LayoutError(f"{where}.use: no text style called {name!r} — {known}")
+        raise LayoutError(f"{where}.use: no {what} called {name!r} — {known}")
 
 
-def _check_style_chain(styles: dict) -> None:
+def _check_style_chain(styles: dict, what: str = "textStyle") -> None:
     """Every `from` names a real style, and no chain eats itself. A loop
     resolves to something harmless at render time, but it is always a mistake
-    and the person who typed it should hear about it here."""
+    and the person who typed it should hear about it here.
+
+    An object style may only come from one of its own kind: a box that
+    inherits a shape's stroke width would be a box carrying a key it cannot
+    have, which the key check below would refuse anyway — but "inherits from
+    a shape style" is the message that says what went wrong."""
+    noun = "text style" if what == "textStyle" else "object style"
     for name, st in styles.items():
         seen, cur = [name], st.get("from")
         while cur is not None:
             if not isinstance(cur, str) or cur not in styles:
-                raise LayoutError(f"textStyle '{name}': inherits from "
-                                  f"{cur!r}, which is not a text style")
+                raise LayoutError(f"{what} '{name}': inherits from "
+                                  f"{cur!r}, which is not a {noun}")
             if cur in seen:
-                raise LayoutError(f"textStyle '{name}': inherits from itself "
+                raise LayoutError(f"{what} '{name}': inherits from itself "
                                   f"through {' -> '.join(seen + [cur])}")
+            if what == "objectStyle" and styles[cur].get("kind") != st.get("kind"):
+                raise LayoutError(f"{what} '{name}' is a {st.get('kind')} style "
+                                  f"and cannot inherit from '{cur}', a "
+                                  f"{styles[cur].get('kind')} style")
             seen.append(cur)
             cur = styles[cur].get("from")
+
+
+def _check_object_use(obj: dict, kind: str, styles: dict, where: str) -> None:
+    """An object's `use` names an object style that exists AND is for this
+    kind of object — a table wearing a box style has nothing to wear."""
+    _check_uses(obj, styles, where, "object style")
+    name = obj.get("use")
+    if name is not None and styles[name].get("kind") != kind:
+        raise LayoutError(f"{where}.use: '{name}' is a {styles[name].get('kind')} "
+                          f"style, and this is a {kind}")
+
+
+def _check_border(b, where: str, sides: tuple) -> None:
+    """One border spec — weight in px, a colour, a line style, which edges.
+    Shared by tables (all/outer/inner/none) and text boxes (all or one edge),
+    so the two cannot disagree about what a border is."""
+    if not isinstance(b, dict):
+        raise LayoutError(f"{where}: expected an object")
+    if b.get("w") is not None:
+        w = _num(b["w"], f"{where}.w")
+        if not 0 <= w <= 12:
+            raise LayoutError(f"{where}.w: {w} is outside 0–12px")
+    if b.get("color"):
+        _hex(b["color"], f"{where}.color")
+    if b.get("style") and b["style"] not in TABLE_BORDER_STYLES:
+        raise LayoutError(f"{where}.style: expected one of "
+                          f"{', '.join(TABLE_BORDER_STYLES)}")
+    if b.get("sides") and b["sides"] not in sides:
+        raise LayoutError(f"{where}.sides: expected one of "
+                          f"{', '.join(sides)}")
+
+
+def _check_blend(v, where: str) -> None:
+    if v is not None and v not in BLENDS:
+        raise LayoutError(f"{where}.blend: {v!r} must be one of {', '.join(BLENDS)}")
+
+
+def _check_shape_look(s: dict, where: str) -> None:
+    """The presentation half of a shape — everything an object style may set.
+    Run on the RESOLVED shape, so a style cannot hand a shape a value the
+    shape could not have carried itself; and on a style's own keys, so a bad
+    style fails where it is defined and not on the first shape to wear it."""
+    # These land verbatim inside SVG attributes: a malformed value does not
+    # error, it renders an invisible shape. Fill may be a gradient; stroke
+    # stays a solid hex.
+    if s.get("fill") not in (None, "none"):
+        _fill(s["fill"], f"{where}.fill")
+    if s.get("stroke") not in (None, "none"):
+        _hex(s["stroke"], f"{where}.stroke")
+    if s.get("sw") is not None:
+        _num(s["sw"], f"{where}.sw")
+    if s.get("alpha") is not None:
+        _alpha(s["alpha"], f"{where}.alpha")
+    if s.get("shadow") is not None:
+        _check_shadow(s["shadow"], f"{where}.shadow")
+    if s.get("r") is not None and _num(s["r"], f"{where}.r") < 0:
+        raise LayoutError(f"{where}: corner radius cannot be negative")
+    if s.get("dash") is not None:
+        d = s["dash"]
+        if not isinstance(d, list) or not 1 <= len(d) <= 2 or any(
+                _num(v, f"{where}.dash") <= 0 for v in d):
+            raise LayoutError(f"{where}: dash must be one or two positive "
+                              f"lengths, like [0.08, 0.05]")
+    if s.get("ends") is not None and s["ends"] not in LINE_ENDS:
+        raise LayoutError(f"{where}: ends {s['ends']!r} must be one of "
+                          f"{', '.join(LINE_ENDS)}")
+    _check_blend(s.get("blend"), where)
+
+
+def _check_box_look(b: dict, where: str) -> None:
+    """The presentation half of a text box. `pad`, `radius`, `border`, `cols`
+    and `gap` are new with object styles, because a pull-quote style with no
+    padding and no rule is not a pull-quote style; all opt-in, and a box that
+    names none of them renders exactly as it did."""
+    if b.get("fill"):
+        _fill(b["fill"], f"{where}.fill")
+    if b.get("alpha") is not None:
+        _alpha(b["alpha"], f"{where}.alpha")
+    if b.get("shadow") is not None:
+        _check_shadow(b["shadow"], f"{where}.shadow")
+    if b.get("style"):
+        _check_text(b["style"], f"{where}.style")
+    pad = b.get("pad")
+    if pad is not None:
+        vals = pad if isinstance(pad, list) else [pad]
+        if len(vals) not in (1, 2, 4):
+            raise LayoutError(f"{where}.pad: one, two or four inches, like "
+                              f"0.1 or [0.08, 0.12]")
+        for v in vals:
+            if not 0 <= _num(v, f"{where}.pad") <= 2:
+                raise LayoutError(f"{where}.pad: {v} is outside 0–2in")
+    if b.get("radius") is not None:
+        r = _num(b["radius"], f"{where}.radius")
+        if not 0 <= r <= 200:
+            raise LayoutError(f"{where}.radius: {r:g} is outside 0–200px")
+    if b.get("border") is not None:
+        _check_border(b["border"], f"{where}.border", BOX_BORDER_SIDES)
+    if b.get("cols") is not None:
+        c = b["cols"]
+        if not isinstance(c, int) or isinstance(c, bool) or not 1 <= c <= 4:
+            raise LayoutError(f"{where}.cols: {c!r} — a whole number of "
+                              f"columns, 1 to 4")
+    if b.get("gap") is not None and not 0 <= _num(b["gap"], f"{where}.gap") <= 2:
+        raise LayoutError(f"{where}.gap: {b['gap']} is outside 0–2in")
+    _check_blend(b.get("blend"), where)
+
+
+def box_pad_css(pad) -> str:
+    vals = pad if isinstance(pad, list) else [pad]
+    return "padding:" + " ".join(f"{float(v):g}in" for v in vals)
+
+
+def box_border_css(b: dict) -> str:
+    """A text box's border as CSS: every edge, or the one edge `sides` names.
+    Same spec as a table's, drawn by the box's own declaration."""
+    style = b.get("style", "solid")
+    w = b.get("w", 1)
+    if style == "none" or not w:
+        return ""
+    side = b.get("sides", "all")
+    prop = "border" if side == "all" else f"border-{side}"
+    return f'{prop}:{float(w):g}px {style} {b.get("color", "#C9D6CD")}'
 
 
 def _check_shadow(sh, where: str) -> None:
@@ -2553,20 +2743,14 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
     layout.json valid."""
     b = t.get("border")
     if b is not None:
-        if not isinstance(b, dict):
-            raise LayoutError(f"{where}.border: expected an object")
-        if b.get("w") is not None:
-            w = _num(b["w"], f"{where}.border.w")
-            if not 0 <= w <= 12:
-                raise LayoutError(f"{where}.border.w: {w} is outside 0–12px")
-        if b.get("color"):
-            _hex(b["color"], f"{where}.border.color")
-        if b.get("style") and b["style"] not in TABLE_BORDER_STYLES:
-            raise LayoutError(f"{where}.border.style: expected one of "
-                              f"{', '.join(TABLE_BORDER_STYLES)}")
-        if b.get("sides") and b["sides"] not in TABLE_BORDER_SIDES:
-            raise LayoutError(f"{where}.border.sides: expected one of "
-                              f"{', '.join(TABLE_BORDER_SIDES)}")
+        _check_border(b, f"{where}.border", TABLE_BORDER_SIDES)
+    if t.get("alpha") is not None:
+        _alpha(t["alpha"], f"{where}.alpha")
+    if t.get("style"):
+        _check_text(t["style"], f"{where}.style")
+    if t.get("header") is not None and not isinstance(t["header"], bool):
+        raise LayoutError(f"{where}.header: expected true or false")
+    _check_blend(t.get("blend"), where)
     # band: tints every OTHER body row — the zebra half of a table style, as
     # one property rather than a fill override per cell, so it survives rows
     # being inserted and deleted underneath it.
@@ -2703,6 +2887,10 @@ class Layout:
         # how "Body small" is Body at a smaller size and stays Body when Body
         # changes. Absent, every one of those is exactly what it was.
         self.text_styles = raw.get("textStyles") or {}
+        # Named object styles — the same for shapes, text boxes and tables.
+        # Each says which `kind` it dresses; an object says `use: "<name>"`
+        # and its own keys still win. See resolve_object().
+        self.object_styles = raw.get("objectStyles") or {}
         self.boxes = raw.get("boxes") or []
         self.tables = raw.get("tables") or []
         self.fills = raw.get("fill") or {}
@@ -2819,36 +3007,19 @@ class Layout:
                 raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
             for k in ("x", "y", "w", "h"):
                 _num(s.get(k), f"{where}.{k}")
-            # These land verbatim inside SVG attributes: a malformed value
-            # does not error, it renders an invisible shape. Fill may be a
-            # gradient; stroke stays a solid hex.
-            if s.get("fill") not in (None, "none"):
-                _fill(s["fill"], f"{where}.fill")
-            if s.get("stroke") not in (None, "none"):
-                _hex(s["stroke"], f"{where}.stroke")
+            # The look is checked on the RESOLVED shape — the one the page
+            # will draw — so a style cannot hand it a value it could not
+            # carry; the style's own keys were checked where it is defined.
+            _check_object_use(s, "shape", self.object_styles, where)
+            _check_shape_look(self.dressed(s), where)
             if s.get("rot") is not None:
                 _num(s["rot"], f"{where}.rot")
-            if s.get("alpha") is not None:
-                _alpha(s["alpha"], f"{where}.alpha")
             if s.get("anim") is not None:
                 # A chart is the one shape with parts of its own to animate.
                 _anim_check(s["anim"], where,
                             "bars" if s.get("kind") == "chart" else "")
-            if s.get("shadow") is not None:
-                _check_shadow(s["shadow"], f"{where}.shadow")
-            if s.get("r") is not None and _num(s["r"], f"{where}.r") < 0:
-                raise LayoutError(f"{where}: corner radius cannot be negative")
             if s.get("kind") == "chart":
                 _check_chart(s.get("chart"), f"{where}.chart")
-            if s.get("dash") is not None:
-                d = s["dash"]
-                if not isinstance(d, list) or not 1 <= len(d) <= 2 or any(
-                        _num(v, f"{where}.dash") <= 0 for v in d):
-                    raise LayoutError(f"{where}: dash must be one or two positive "
-                                      f"lengths, like [0.08, 0.05]")
-            if s.get("ends") is not None and s["ends"] not in LINE_ENDS:
-                raise LayoutError(f"{where}: ends {s['ends']!r} must be one of "
-                                  f"{', '.join(LINE_ENDS)}")
             if s.get("kind") == "icon":
                 check_icon_svg(s.get("svg"), where)
                 vb = s.get("vb", "0 0 24 24")
@@ -2871,6 +3042,34 @@ class Layout:
                                   f"'from', not 'use'")
             _check_text(st, f"textStyle '{name}'")
         _check_style_chain(self.text_styles)
+        if not isinstance(self.object_styles, dict):
+            raise LayoutError("objectStyles: expected an object keyed by name")
+        for name, st in self.object_styles.items():
+            w = f"objectStyle '{name}'"
+            if not isinstance(st, dict):
+                raise LayoutError(f"{w}: expected a style object")
+            kind = st.get("kind")
+            if kind not in OBJECT_KINDS:
+                raise LayoutError(f"{w}: kind {kind!r} must be one of "
+                                  f"{', '.join(OBJECT_KINDS)} — a style dresses "
+                                  f"one kind of thing")
+            if st.get("use") is not None:
+                raise LayoutError(f"{w}: a style inherits with 'from', not 'use'")
+            bad = [k for k in st if k not in OBJECT_STYLE_META
+                   and k not in OBJECT_STYLE_KEYS[kind]]
+            if bad:
+                raise LayoutError(
+                    f"{w}: {bad[0]!r} is not something a {kind} style can set — "
+                    f"a style is a look, not a place or a content. One of: "
+                    f"{', '.join(OBJECT_STYLE_KEYS[kind])}")
+            look = {k: v for k, v in st.items() if k not in OBJECT_STYLE_META}
+            if kind == "shape":
+                _check_shape_look(look, w)
+            elif kind == "box":
+                _check_box_look(look, w)
+            else:
+                _check_table_look(look, w, 0, 0)
+        _check_style_chain(self.object_styles, "objectStyle")
         for key, st in self.text.items():
             if not isinstance(st, dict):
                 raise LayoutError(f"text '{key}': expected a style object")
@@ -2879,12 +3078,6 @@ class Layout:
             # to clear the legibility floor: a slot wearing a style is not
             # excused a size the style set for it.
             _check_text(self.styled_as(st), f"text '{key}'")
-        for i, b in enumerate(self.boxes):
-            if isinstance(b.get("style"), dict):
-                _check_uses(b["style"], self.text_styles, f"box #{i + 1}.style")
-        for i, t in enumerate(self.tables):
-            if isinstance(t.get("style"), dict):
-                _check_uses(t["style"], self.text_styles, f"table #{i + 1}.style")
         for el, c in self.fills.items():
             _fill(c, f"fill '{el}'")
         if not isinstance(self.locked, list) or any(
@@ -3026,16 +3219,10 @@ class Layout:
                                           "box, shape or table on this layout")
             if "z" in b and not isinstance(b["z"], int):
                 raise LayoutError(f"{where}: z {b['z']!r} is not a layer number")
-            if b.get("fill"):
-                _fill(b["fill"], f"{where}.fill")
             if b.get("rot") is not None:
                 _num(b["rot"], f"{where}.rot")
-            if b.get("alpha") is not None:
-                _alpha(b["alpha"], f"{where}.alpha")
-            if b.get("shadow") is not None:
-                _check_shadow(b["shadow"], f"{where}.shadow")
-            if b.get("style"):
-                _check_text(b["style"], f"{where}.style")
+            _check_object_use(b, "box", self.object_styles, where)
+            _check_box_look(self.dressed(b), where)
 
         for i, t in enumerate(self.tables):
             where = f"table #{i + 1}"
@@ -3069,11 +3256,24 @@ class Layout:
                 raise LayoutError(f"{where}: z {t['z']!r} is not a layer number")
             if t.get("rot") is not None:
                 _num(t["rot"], f"{where}.rot")
-            if t.get("alpha") is not None:
-                _alpha(t["alpha"], f"{where}.alpha")
-            if t.get("style"):
-                _check_text(t["style"], f"{where}.style")
-            _check_table_look(t, where, len(rows), width)
+            _check_object_use(t, "table", self.object_styles, where)
+            _check_table_look(self.dressed(t), where, len(rows), width)
+        # The DRESSED box or table: a text style named by the object style it
+        # wears has to exist too, and the resolved size has to clear the floor.
+        for i, b in enumerate(self.boxes):
+            st = self.dressed(b).get("style")
+            if isinstance(st, dict):
+                _check_uses(st, self.text_styles, f"box #{i + 1}.style")
+                _check_text(self.styled_as(st), f"box #{i + 1}.style")
+        for i, t in enumerate(self.tables):
+            st = self.dressed(t).get("style")
+            if isinstance(st, dict):
+                _check_uses(st, self.text_styles, f"table #{i + 1}.style")
+                _check_text(self.styled_as(st), f"table #{i + 1}.style")
+        for name, st in self.object_styles.items():
+            if isinstance(st.get("style"), dict):
+                _check_uses(st["style"], self.text_styles,
+                            f"objectStyle '{name}'.style")
 
     # ---- positions -------------------------------------------------------
 
@@ -3374,6 +3574,13 @@ class Layout:
 
     # ---- text ------------------------------------------------------------
 
+    def dressed(self, obj: dict) -> dict:
+        """A shape, box or table with the object style it wears folded in —
+        the ONE place `use` on an object is honoured, so the three renderers
+        cannot disagree about what wearing a style means. An object wearing
+        nothing is returned as itself."""
+        return resolve_object(obj, self.object_styles)
+
     def styled_as(self, st) -> dict:
         """A style as authored, with any named style it uses folded in. The
         one place a `use` is honoured, so a slot, a text box and a table cannot
@@ -3423,10 +3630,12 @@ class Layout:
         # which loads every family. Named styles are scanned whole so one
         # defined and not yet worn still travels with the document.
         styles = ([self.styled_as(st) for st in self.text.values()]
-                  + [self.styled_as(b.get("style")) for b in self.boxes]
-                  + [self.styled_as(t.get("style")) for t in self.tables]
+                  + [self.styled_as(self.dressed(b).get("style")) for b in self.boxes]
+                  + [self.styled_as(self.dressed(t).get("style")) for t in self.tables]
                   + [self.styled_as(dict(st, use=st.get("from")))
-                     for st in self.text_styles.values()])
+                     for st in self.text_styles.values()]
+                  + [self.styled_as(st["style"]) for st in self.object_styles.values()
+                     if isinstance(st.get("style"), dict)])
         for st in styles:
             fam = st.get("font")
             if not fam:
@@ -3709,6 +3918,7 @@ class Layout:
                     "btn.setAttribute('aria-expanded',String(open))}"
                     '</script>')
         for b in mine:
+            b = self.dressed(b)
             act = b.get("act")
             an = anim_attrs(b.get("anim"))
             css = (f'position:absolute;left:{b["x"]}in;top:{b["y"]}in;'
@@ -3733,6 +3943,27 @@ class Layout:
                 css += f';opacity:{b["alpha"]:g}'
             if b.get("shadow"):
                 css += f';box-shadow:{shadow_css(b["shadow"])}'
+            # The look keys object styles brought. Each is written AFTER the
+            # fill's own padding/radius above, so the later declaration wins
+            # — an explicit pad replaces the default breathing room, and a box
+            # that names none of these emits nothing new.
+            if b.get("pad") is not None:
+                css += ";" + box_pad_css(b["pad"])
+            if b.get("radius") is not None:
+                css += f';border-radius:{float(b["radius"]):g}px'
+            if b.get("border"):
+                bc = box_border_css(b["border"])
+                if bc:
+                    css += ";" + bc
+            # Columns inside one box — CSS sets them, so the words flow between
+            # them as they are edited, which is the InDesign two-column page
+            # without a text engine. Released on a phone (see mobile_css).
+            if b.get("cols") and int(b["cols"]) > 1:
+                css += f';column-count:{int(b["cols"])}'
+                if b.get("gap") is not None:
+                    css += f';column-gap:{float(b["gap"]):g}in'
+            if b.get("blend") and b["blend"] != "normal":
+                css += f';mix-blend-mode:{b["blend"]}'
             style = text_css(self.styled_as(b.get("style")))
             # Style FIRST, geometry second — the geometry must win their one
             # collision: align's inline-slot compensation appends width:100%
@@ -3861,12 +4092,15 @@ class Layout:
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
         out = []
         for t in mine:
+            t = self.dressed(t)
             css = (f'position:absolute;left:{t["x"]}in;top:{t["y"]}in;'
                    f'width:{t["w"]}in;z-index:{int(t.get("z", 2))}')
             if t.get("rot"):
                 css += f';transform:rotate({t["rot"]}deg)'
             if t.get("alpha") is not None:
                 css += f';opacity:{t["alpha"]:g}'
+            if t.get("blend") and t["blend"] != "normal":
+                css += f';mix-blend-mode:{t["blend"]}'
             style = text_css(self.styled_as(t.get("style")))
             tag = f' data-el="table.{t["id"]}"' if edit else ""
             header = bool(t.get("header"))
@@ -4047,7 +4281,13 @@ class Layout:
             # max-width, not width: a narrow table keeps its natural size and
             # only one that genuinely overflows starts scrolling.
             ".page table{display:block;max-width:100%;overflow-x:auto}"
-            "}</style>")
+            # Two columns of 11px type in 375px is two unreadable columns.
+            # Only when some box asked for columns, so a layout without them
+            # keeps emitting the bytes it always did.
+            + (".ds-textbox{column-count:auto !important}"
+               if any(int(self.dressed(b).get("cols") or 1) > 1 for b in self.boxes)
+               else "")
+            + "}</style>")
 
     def _mobile_css_once(self) -> str:
         """Rides out with the first layer(), like _page_style_once() and for
@@ -4156,6 +4396,7 @@ class Layout:
                 f'z-index:{z}" viewBox="0 0 {self.page_w} {self.page_h}">{defs}{body}</svg>')
 
     def _shape(self, s: dict) -> str:
+        s = self.dressed(s)
         x, y, w, h = (float(s[k]) for k in ("x", "y", "w", "h"))
         # Publish-mode hook for a shape some toggle reveals — on the same one
         # node that carries data-shape, whatever kind it is. .ds-tglable's
@@ -4190,8 +4431,15 @@ class Layout:
                        f'{round(x + w / 2, 4)} {round(y + h / 2, 4)})"')
         if s.get("alpha") is not None:
             common += f' opacity="{s["alpha"]:g}"'
+        # ONE style attribute: a second on the same element is dropped by the
+        # parser, not merged, so the shadow and the blend share it.
+        sty = []
         if s.get("shadow"):
-            common += f' style="{shape_shadow_css(s["shadow"])}"'
+            sty.append(shape_shadow_css(s["shadow"]))
+        if s.get("blend") and s["blend"] != "normal":
+            sty.append(f'mix-blend-mode:{s["blend"]}')
+        if sty:
+            common += f' style="{";".join(sty)}"'
         if s.get("dash"):
             d = s["dash"]
             common += f' stroke-dasharray="{" ".join(str(v) for v in d)}"'
@@ -4207,6 +4455,8 @@ class Layout:
                              f'{round(x + w / 2, 4)} {round(y + h / 2, 4)})"')
             if s.get("alpha") is not None:
                 attrs.append(f'opacity="{s["alpha"]:g}"')
+            if s.get("blend") and s["blend"] != "normal":
+                attrs.append(f'style="mix-blend-mode:{s["blend"]}"')
             bg = s.get("fill")
             bg = bg if isinstance(bg, str) and bg != "none" else "none"
             # The hit area is the background RECT, not the <g>. A container has
@@ -4236,6 +4486,8 @@ class Layout:
             css = [f'color:{icon_color(s.get("fill"))}']
             if s.get("shadow"):
                 css.append(shape_shadow_css(s["shadow"]))
+            if s.get("blend") and s["blend"] != "normal":
+                css.append(f'mix-blend-mode:{s["blend"]}')
             bits.append(f'style="{";".join(css)}"')
             if s.get("rot"):
                 bits.append(f'transform="rotate({s["rot"]} '

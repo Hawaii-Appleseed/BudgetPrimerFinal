@@ -1602,6 +1602,141 @@ check_page_raises("text style: a text box's style is held to the same rule",
                   "no text style called 'Nope'")
 
 
+# ---- object styles: the stylesheet for things that are not text -------------
+# The same argument as text styles, for shapes, text boxes and tables: a pull
+# quote is a fill, a padding, a rule and a text style, and the fourth one was
+# built by hand like the first. A style names its kind because the three are
+# three key sets; an object says `use` and its own keys still win.
+from docsync.layout import resolve_object as _ro                # noqa: E402
+
+_OS = {"Callout": {"kind": "box", "fill": "#FFF6D8", "pad": 0.15, "radius": 4,
+                   "border": {"color": "#6B9E78", "w": 3, "sides": "left"},
+                   "style": {"use": "Body"}},
+       "Callout tight": {"kind": "box", "from": "Callout", "pad": 0.06},
+       "Rule": {"kind": "shape", "fill": "none", "stroke": "#2F3E46", "sw": 0.02,
+                "dash": [0.08, 0.05]},
+       "Data": {"kind": "table", "border": {"w": 1, "color": "#6E7A7E"},
+                "headerFill": "#6E7A7E", "headerColor": "#FFFFFF",
+                "band": "#F1F4F2", "header": True}}
+_box = {"id": "b", "page": 1, "x": 1, "y": 1, "w": 3, "md": "hi", "use": "Callout"}
+check_eq("object style: a box wearing one gets the whole look, never the meta",
+         _ro(_box, _OS),
+         {"id": "b", "page": 1, "x": 1, "y": 1, "w": 3, "md": "hi",
+          "fill": "#FFF6D8", "pad": 0.15, "radius": 4,
+          "border": {"color": "#6B9E78", "w": 3, "sides": "left"},
+          "style": {"use": "Body"}})
+check_eq("object style: inherits, and overrides only what it names",
+         _ro(dict(_box, use="Callout tight"), _OS)["pad"], 0.06)
+check_eq("object style: the box's own keys beat the style",
+         _ro(dict(_box, fill="#FFFFFF"), _OS)["fill"], "#FFFFFF")
+check_eq("object style: the TEXT style merges one level down — a box's own "
+         "size on top of the style's Body is a 14px Body, not a lost Body",
+         _ro(dict(_box, style={"size": 14}), _OS)["style"],
+         {"use": "Body", "size": 14})
+_plain = {"id": "b", "page": 1, "x": 1, "y": 1, "w": 3, "md": "hi"}
+check_eq("object style: an object wearing nothing is returned AS ITSELF",
+         _ro(_plain, _OS) is _plain, True)
+check_eq("object style: a name that does not exist resolves to the rest",
+         _ro(dict(_plain, use="Nope"), _OS), _plain)
+
+_ts2 = {"Body": {"font": "Manrope", "size": 14}}
+_ol = _layout({"positions": {}, "textStyles": _ts2, "objectStyles": _OS,
+               "shapes": [{"id": "s", "page": 1, "kind": "line", "x": 1, "y": 1,
+                           "w": 3, "h": 0, "use": "Rule"}],
+               "boxes": [dict(_box, style={"size": 18}),
+                         {"id": "c", "page": 1, "x": 1, "y": 5, "w": 6,
+                          "md": "two columns", "cols": 2, "gap": 0.25,
+                          "blend": "multiply"}],
+               "tables": [{"id": "t", "page": 1, "x": 1, "y": 7, "w": 5,
+                           "rows": [["a", "b"], ["1", "2"], ["3", "4"]],
+                           "use": "Data"}]})
+_lay = _ol.layer(1)
+check("object style: a shape draws the stroke its style gave it",
+      _lay, 'stroke="#2F3E46" stroke-width="0.02"')
+check("object style: and the dash", _lay, 'stroke-dasharray="0.08 0.05"')
+_bx = _ol.text_boxes(1)
+check("object style: a box gets the style's fill", _bx, "background:#FFF6D8")
+check("object style: its padding replaces the fill's default breathing room",
+      _bx, "padding:.08in .12in;border-radius:8px;padding:0.15in;border-radius:4px")
+check("object style: a left rule is one edge, not four",
+      _bx, "border-left:3px solid #6B9E78")
+check("object style: the merged text style reaches the CSS — the style's "
+      "font and the box's own size", _bx, "font-family:'Manrope';font-size:18px")
+check("columns in one box: CSS sets them", _bx, "column-count:2;column-gap:0.25in")
+check("blend: a box can multiply into what is under it", _bx, "mix-blend-mode:multiply")
+check("columns in one box: a phone gets one column back",
+      _ol.mobile_css(), ".ds-textbox{column-count:auto !important}")
+_tb = _ol.tables_html(1) if hasattr(_ol, "tables_html") else _ol.table_boxes(1)
+check("object style: a table's header band comes from its style",
+      _tb, "background:#6E7A7E")
+check("object style: and so does the banding", _tb, "background:#F1F4F2")
+check("object style: the style's `header: true` makes the first row a <th>",
+      _tb, "<th")
+check("object style: a family named only through an object style's text "
+      "style is still fetched", _ol.font_link(), "Manrope")
+
+# Byte-for-byte: a layout that defines styles and wears none renders exactly
+# as it did without the map.
+_a = _layout({"positions": {}, "shapes": [], "boxes": [_plain]})
+_b = _layout({"positions": {}, "shapes": [], "boxes": [_plain], "objectStyles": _OS,
+              "textStyles": _ts2})
+check_eq("object style: defining styles nobody wears changes not one byte",
+         _a.text_boxes(1), _b.text_boxes(1))
+check_eq("object style: nor does the mobile rule appear without columns",
+         ".ds-textbox{column-count" in _a.mobile_css(), False)
+
+check_page_raises("object style: a style must say what kind of thing it dresses",
+                  {"positions": {}, "shapes": [],
+                   "objectStyles": {"X": {"fill": "#FFFFFF"}}},
+                  "kind None must be one of shape, box, table")
+check_page_raises("object style: a style is a look, not a place",
+                  {"positions": {}, "shapes": [],
+                   "objectStyles": {"X": {"kind": "shape", "x": 1}}},
+                  "'x' is not something a shape style can set")
+check_page_raises("object style: nor a content",
+                  {"positions": {}, "shapes": [],
+                   "objectStyles": {"X": {"kind": "table", "rows": [["a"]]}}},
+                  "'rows' is not something a table style can set")
+check_page_raises("object style: a bad value fails where the style is defined",
+                  {"positions": {}, "shapes": [],
+                   "objectStyles": {"X": {"kind": "box", "blend": "glow"}}},
+                  "blend: 'glow' must be one of")
+check_page_raises("object style: a table wearing a box style has nothing to wear",
+                  {"positions": {}, "shapes": [], "objectStyles": _OS,
+                   "tables": [{"id": "t", "page": 1, "x": 1, "y": 1, "w": 3,
+                               "rows": [["a"]], "use": "Callout"}]},
+                  "'Callout' is a box style, and this is a table")
+check_page_raises("object style: a `use` must name a style that exists",
+                  {"positions": {}, "shapes": [{"id": "s", "page": 1, "kind": "rect",
+                                                "x": 1, "y": 1, "w": 1, "h": 1,
+                                                "use": "Nope"}]},
+                  "no object style called 'Nope'")
+check_page_raises("object style: a style inherits from its own kind only",
+                  {"positions": {}, "shapes": [], "objectStyles": {
+                      "A": {"kind": "shape"}, "B": {"kind": "box", "from": "A"}}},
+                  "is a box style and cannot inherit from 'A', a shape style")
+check_page_raises("object style: a chain cannot eat itself",
+                  {"positions": {}, "shapes": [], "objectStyles": {
+                      "A": {"kind": "box", "from": "B"}, "B": {"kind": "box", "from": "A"}}},
+                  "inherits from itself")
+check_page_raises("object style: the text style it names has to exist",
+                  {"positions": {}, "shapes": [], "objectStyles": {
+                      "A": {"kind": "box", "style": {"use": "Nope"}}}},
+                  "objectStyle 'A'.style.use: no text style called 'Nope'")
+check_page_raises("object style: a worn style is not a way under the legibility floor",
+                  {"positions": {}, "shapes": [],
+                   "objectStyles": {"A": {"kind": "box", "style": {"size": 4}}}},
+                  "below the 7.875pt legibility floor")
+check_page_raises("box look: columns are a whole number, 1 to 4",
+                  {"positions": {}, "shapes": [],
+                   "boxes": [dict(_plain, cols=7)]},
+                  "cols: 7 — a whole number of columns, 1 to 4")
+check_page_raises("box look: a box border names one edge or all of them",
+                  {"positions": {}, "shapes": [],
+                   "boxes": [dict(_plain, border={"sides": "inner"})]},
+                  "border.sides: expected one of all, left, right, top, bottom")
+
+
 # ---- the expand button's chevron -------------------------------------------
 # Drawn art, not a glyph: it turns to point up when the section opens, it is
 # present on the EDITOR canvas too (where the button used to have none), and

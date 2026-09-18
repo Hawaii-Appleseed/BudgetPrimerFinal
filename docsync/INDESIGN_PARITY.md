@@ -75,10 +75,52 @@ its *text* model, and the whole idea of a named, redefinable style.
    identical and points it at the style — the cheap way to adopt a stylesheet
    in a document that was styled by hand.
 
-2. **Object styles.** The same argument for boxes, shapes and tables. A
-   pull-quote box is a fill, a padding, a border and a text style; the fourth
-   one is built by hand like the first. Cheaper than (1) once (1) exists,
-   because it is the same machinery pointed at a different map.
+2. **Object styles. — CLOSED 2026-09-17.**
+   `layout.objectStyles` is a map of named looks, each saying which `kind` it
+   dresses — `shape`, `box` or `table` — because re-scoping confirmed the
+   worry below: the three are three key sets, and a style any of them could
+   wear would be a style that could say nothing checkable. `OBJECT_STYLE_KEYS`
+   in `layout.py` is the whole list per kind; a key not on it (geometry,
+   identity, content) is refused where the style is defined, with the list in
+   the message. An object says `use: "<name>"`; a style may say `from` (same
+   kind only). `resolve_object()` is the rule — the nearer the author, the
+   stronger — with one line more than text: a box's `style` (its TEXT style)
+   merges one level down, so a box that says `size: 14` over a style that says
+   `style: {use: "Body"}` is a 14px Body and not a lost Body.
+
+   The three renderers each go through `Layout.dressed()`, so they cannot
+   disagree about what wearing a style means; an object wearing nothing is
+   returned as itself, which is what keeps every existing render byte-for-byte
+   (checked across all twelve bindings, published and edit mode). The
+   validator checks the DRESSED object, so a style cannot hand a shape a value
+   the shape could not carry, and a style's own keys are checked where it is
+   defined, so a bad style fails on load and not on the first thing to wear it.
+
+   Because a pull-quote style with no padding and no rule is not a pull-quote
+   style, text boxes grew the look keys they were missing, all opt-in:
+   `pad` (inches; one, two or four), `radius` (px), `border` (the table's
+   border spec, with `sides` = all or ONE edge — the left rule), and — see (4)
+   — `cols`/`gap`. And every kind took `blend` (`mix-blend-mode`), which
+   closes (12) on the way past.
+
+   In the editor: a shape or table gets the picker at the head of the arrange
+   strip, where the text picker leads the type bar, with the same four verbs
+   (Save as a style / Redefine / Apply to matching / Unlink) built by ONE
+   function for both places. A text box is text — one click puts the type bar
+   in hand — so it dresses through a **Box** button there: the picker and
+   verbs, then background, border (colour, weight, edge), padding, corners and
+   columns. Every control reads the dressed object and writes the object
+   itself, so a slider moved on a box wearing a style creates an override and
+   the picker marks it `+`. The strip's border, transparency and effects pops
+   read the dressed object too, and "none"/"remove" on something the style
+   gave the object writes an explicit `null`/`normal` rather than a silent
+   nothing, because a deletion has to beat the style it is deleting against.
+
+   Not done, and said so: the table panel's presets still write keys onto the
+   table rather than offering to save a style — the strip's picker covers a
+   table, so this is a convenience and not a gap. There is no pilot verb yet
+   for wearing or defining a style; the JSON is one `use` key, so a pilot can
+   write it through the announce-then-edit route.
 
 3. **Find and Change. — CLOSED 2026-09-17.** ⌘F in either document (the
    chrome and the report iframe are separate documents and a key pressed over
@@ -102,15 +144,19 @@ its *text* model, and the whole idea of a named, redefinable style.
 ## Tier 2 — the ones with no way to say it at all
 
 4. **Text that flows between frames, and columns inside one.** A box is one
-   frame, one column, and text that overruns it simply overruns. A two-column
-   page is two boxes and a manual split of the prose — re-split by hand every
-   time a sentence is added. This is the most *InDesign* thing on the list and
-   the most work: it needs a measured text layout, which the engine
-   deliberately does not have (it hands text to the browser and lets CSS set
-   it). A cheap first cut that is not a lie: **columns inside one box**, which
-   CSS does natively (`column-count`, `column-gap`), gets the common
-   two-column page without any flow machinery at all. Threading between
-   frames should be scoped separately, and honestly, as a large piece.
+   frame, and text that overruns it simply overruns. **The cheap half is
+   CLOSED 2026-09-17:** a box says `cols: 2` (1–4) and `gap` (inches), CSS
+   sets the columns, the words flow between them as they are edited, and a
+   phone gets one column back (`mobile_css` emits the release only when some
+   box asked for columns). That is the common two-column page with no flow
+   machinery at all; it lives in the Box panel with the rest of the box's
+   look, and an object style can carry it.
+
+   The other half — threading between frames — is still the most *InDesign*
+   thing on the list and the most work: it needs a measured text layout, which
+   the engine deliberately does not have (it hands text to the browser and
+   lets CSS set it). Scoped separately, and honestly, as a large piece; see
+   "Not coming".
 
 5. **Text wrap around an object.** An image or pull-quote dropped into a
    column does not push prose aside; it sits on top of it or below it. CSS
@@ -138,15 +184,21 @@ its *text* model, and the whole idea of a named, redefinable style.
    layers with lock and hide across the document.
 9. **Baseline grid.** Nothing aligns type across columns or facing pages.
    Matters once (4) exists; before that there is nothing to align to.
-10. **Table headers that repeat across a break, and cell styles.** The engine
-    emits no `<thead>` at all, so a table split by a page break loses its
-    header on the second half.
+10. **Table headers that repeat across a break, and cell styles. —
+    RECLASSIFIED 2026-09-17.** A placed table is pinned by inch to one page
+    and never breaks, so a repeating `<thead>` has nothing to repeat across;
+    the case the item described is a report renderer's own flowed table,
+    which is that report's business. Cell styles exist as per-cell
+    overrides (`cells`), and a table style (2) now carries the grid's look.
+    Nothing left here that stops anyone.
 11. **Print production — bleed, slug, spot colour, preflight, package.** The
     deliverable here is HTML plus a Chrome-printed PDF, so most of this is
     genuinely out of scope. Bleed is the exception and only for a report that
     is actually going to a printer.
-12. **Blend modes.** Opacity yes, `mix-blend-mode` no. One CSS property and a
-    picker; almost never asked for in this kind of document.
+12. **Blend modes. — CLOSED 2026-09-17**, on the way past (2): `blend` on a
+    shape, box or table, in the transparency pop, which is what a blend is a
+    generalisation of. `normal` is accepted so an object can undo the blend
+    its style gave it.
 
 ## Not coming, and why
 
@@ -159,14 +211,13 @@ its *text* model, and the whole idea of a named, redefinable style.
 
 ## The order to do them in
 
-(1) and (3) are done. (3) went first of the two remaining because writing
-this file made the estimate for (2) look wrong: "the same machinery pointed at
-a different map" is true of text styles and charts, which are one key set
-each. An object style is THREE — a shape is fill/stroke/radius/shadow/opacity,
-a box is fill plus a text style plus padding, a table is borders, fills,
-column widths and per-cell overrides — so it is three maps and three pickers,
-not one, and it should be scoped again before it is started.
+(1), (2), (3) and (12) are done, (4)'s cheap half is done and (10) turned out
+not to be a gap. The re-scope of (2) was right to insist on: it took three
+key sets, three checkers and two places in the UI — but ONE resolver and ONE
+verbs builder, which is what kept it a day's work rather than a week's.
 
-So: (2) next, re-scoped. Then (6) before (4) — anchored objects are cheap and
-they are what keeps (1) from making a mess, since redefining a style reflows
-the text that every pinned figure was positioned against.
+Next is **(6) anchored objects**, and it is more urgent than it was: (1) and
+(2) both make text reflow — redefine Body, or give a box a padding — and
+every figure pinned by inch against that text is now wrong by however much it
+moved. Then (5) text wrap, which is cheap once an object knows what paragraph
+it belongs to; then (7) master pages, which is (2) pointed at page furniture.
