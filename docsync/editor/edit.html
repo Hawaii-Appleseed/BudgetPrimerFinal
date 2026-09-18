@@ -3033,6 +3033,18 @@ const writeSlot = (k, v) => {
       return;
     }
   }
+  // A slot the RENDERER asks for that this document has not got yet — docsync
+  // draws it as a "new slot" placeholder in edit mode rather than failing the
+  // build (content.py's raw()), and this is the other half of that bargain:
+  // the first edit CREATES the block. Without it the replace below matched
+  // nothing, the assignment was a silent no-op, and the person's words went
+  // nowhere — which is a worse answer than the hard failure it replaced.
+  // Appended at the end, like addExtra's first section: parse_content builds a
+  // dict, so where a block sits has never decided anything.
+  if (!slotRe(k).test(source)) {
+    source = source.replace(/\s*$/, '') + `\n\n[[${k}]]\n${v.trim()}\n`;
+    return;
+  }
   source = source.replace(slotRe(k), (m, head) => head + v.trim() + '\n');
 };
 
@@ -16926,6 +16938,14 @@ open('/repo/' + OUT).read()
     $('out').srcdoc = `<pre style="color:#b00020;white-space:pre-wrap;padding:24px;
       font:12px/1.5 ui-monospace,monospace">This draft does not build:\n\n${
       tail.replace(/&/g,'&amp;').replace(/</g,'&lt;')}\n\nYour text is still here — fix it and it recovers.</pre>`;
+    // The warm-boot preview sits ON TOP of #out, and only the successful swap
+    // below ever takes it down — so a FIRST render that fails painted this
+    // error underneath the stand-in and left the last render on screen under
+    // "the live engine is warming up…", forever. The editor looked hung when
+    // it was in fact telling you exactly what was wrong, one layer down. A
+    // failure is an answer: show it.
+    const warmFr = $('ds-warm'); if (warmFr) warmFr.remove();
+    const warmChip = $('ds-warmchip'); if (warmChip) warmChip.remove();
     $('stat').textContent = 'draft does not build';
     // What stands in #out is now an error page, not a render — so the next
     // successful one has nothing to diff against and must swap in full.

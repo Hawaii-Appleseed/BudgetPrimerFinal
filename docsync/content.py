@@ -211,6 +211,13 @@ def bullets(block: str) -> list[str]:
     return items
 
 
+# What a slot the RENDERER asks for but the document has not got looks like,
+# in edit mode. Plain text, deliberately: it flows out through paragraph(),
+# text(), t() and bullets() alike, half of which escape markup — an <i> here
+# would render as literal tags in the other half.
+NEW_SLOT = "\u26a0 new slot [[{key}]] — click and type to fill it"
+
+
 def _unhead(block: str) -> str:
     return _HEADING_RE.sub("", block)
 
@@ -410,6 +417,7 @@ class Content:
         self.sources = parse_sources(self._raw.pop("sources"))
         self.fn = Footnotes(self.sources)
         self._used: set[str] = set()
+        self._new: set[str] = set()
         # The editor can place an endnotes list as a BOX (layout.json), and a
         # box is rendered by Layout — which has no footnotes of its own. Hand
         # it this one, so text_boxes() can render the list without every
@@ -420,6 +428,26 @@ class Content:
 
     def raw(self, key: str) -> str:
         if key not in self._raw:
+            # EDIT MODE: a slot the renderer asks for that this document has
+            # not got is a mid-move state, not a wall.
+            #
+            # A collab room IS the document once seeded and never re-reads
+            # git, so a renderer that GROWS a section can reach an open room
+            # no other way — and raising here took the whole report down for
+            # everyone who opened it, with no way back but a hand reseed
+            # (rxkids-fiscal's page 2, 2026-09-17: every open for a day
+            # rendered nothing but this exception). Draw the slot instead. The
+            # page builds, the new slot is visible and editable, and the first
+            # edit writes it into the document — writeSlot() in the editor
+            # creates a block it cannot find.
+            #
+            # Publishing is untouched: renderClean() pops DOCSYNC_EDIT, so an
+            # export still hits the raise below and an unfilled slot still
+            # cannot ship. Same bargain as the missing-source marker in
+            # Footnotes.resolve() and the empty-list note in bullets().
+            if os.environ.get("DOCSYNC_EDIT"):
+                self._new.add(key)
+                return NEW_SLOT.format(key=key)
             raise ContentError(
                 f"{self.path.name}: missing '[[{key}]]'.\n"
                 f"  The Google Doc must keep every [[key]] marker intact.")
@@ -559,7 +587,13 @@ class Content:
         return body
 
     def list(self, key: str) -> list[str]:
-        return bullets(self.raw(key))
+        raw = self.raw(key)
+        # A NEW slot would otherwise fall into bullets()' generic "empty list"
+        # note, which is true but says nothing about why this list is empty.
+        # Every new slot says the same sentence, whatever shape it renders in.
+        if key in self._new:
+            return [NEW_SLOT.format(key=key)]
+        return bullets(raw)
 
     def ul_attr(self, key: str) -> str:
         """data-slot + style for a <ul> the caller builds itself."""
@@ -596,3 +630,9 @@ class Content:
 
     def unused_keys(self) -> list[str]:
         return sorted(set(self._raw) - self._used)
+
+    def new_keys(self) -> list[str]:
+        """Slots the renderer asked for that this document has not got — the
+        ones standing as NEW_SLOT placeholders. Empty outside edit mode, where
+        a missing slot raises instead."""
+        return sorted(self._new)
