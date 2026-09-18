@@ -158,11 +158,23 @@ its *text* model, and the whole idea of a named, redefinable style.
    lets CSS set it). Scoped separately, and honestly, as a large piece; see
    "Not coming".
 
-5. **Text wrap around an object.** An image or pull-quote dropped into a
-   column does not push prose aside; it sits on top of it or below it. CSS
-   `shape-outside` / a float gets the rectangular and simple-shape cases,
-   which is most of them; InDesign's contour-from-alpha-channel wrap is not
-   the part anyone here needs.
+5. **Text wrap around an object. — CLOSED 2026-09-17**, the rectangular
+   case, which is the case. `wrap: "left" | "right"` (and `wrapPad`, inches)
+   on an ANCHORED box or designed element: the same runtime that positions
+   anchors moves the object to just before its paragraph in the same flow, as
+   a CSS float, and the paragraph's lines shorten around it — the browser's
+   own wrap, no measuring. A previous sibling, never a child, so the
+   paragraph's markup stays exactly what content.md says and editing it in
+   place can never swallow the figure. Wrap without an anchor is refused at
+   load: text flows around what belongs somewhere. A wrapped object's place
+   IS its paragraph's, so it refuses drags and `place()` (both say to turn
+   wrap off first), and a phone gets the flow back (`float:none`). In the
+   editor: a Text wrap row in the Position pop (designed elements) and the
+   Box panel (text boxes), shown once the object is anchored; pilot
+   `wrap(id, side)` / `wrap(id, null)`.
+
+   InDesign's contour-from-alpha wrap (`shape-outside` from the image) is not
+   here and is not what anyone here needs; the CSS exists if it ever is.
 
 6. **Anchored objects. — CLOSED 2026-09-17**, for text boxes and designed
    elements. `anchor: {to: <slot>, dy, edge}` on a box or a `positions` entry:
@@ -232,16 +244,19 @@ its *text* model, and the whole idea of a named, redefinable style.
 
 ## The order to do them in
 
-(1), (2), (3), (6) and (12) are done, (4)'s cheap half is done and (10)
+(1), (2), (3), (5), (6) and (12) are done, (4)'s cheap half is done and (10)
 turned out not to be a gap. The re-scope of (2) was right to insist on: it
 took three key sets, three checkers and two places in the UI — but ONE
 resolver and ONE verbs builder, which is what kept it a day's work rather
-than a week's. (6) went the same way: one runtime string, run by the page
-and by the editor, rather than two positioners that would have drifted.
+than a week's. (6) and (5) went the same way: one runtime string, run by the
+page and by the editor, rather than two positioners that would have drifted —
+and wrap turned out to be four lines of that string once an object knew what
+paragraph it belonged to.
 
-Next is **(5) text wrap**, which is cheap now that an object can know what
-paragraph it belongs to — a float inside the host is the honest CSS answer
-and the anchor already names the host. Then (7) master pages, which is (2)
-pointed at page furniture; then (8) if the layers panel is wanted back
-(`#layers { display:none !important }` is the one line). (9) waits on
-threading, which is not coming.
+What is left, and in what order: **(7) master pages**, which is (2) pointed
+at page furniture — a named set of boxes/shapes a page `use`s, so the running
+footer changes in one place; scope it against the report templates' section
+page, which is the thing people copy today. **(8)** if the layers panel is
+wanted back (`#layers { display:none !important }` is the one line). **(9)**
+waits on threading, which is not coming; **(11)** only if a report actually
+goes to a printer.

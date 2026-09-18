@@ -2428,6 +2428,14 @@
   </span>
   <div class="pop pop-wide" id="ar-pospop" hidden>
     <p class="pop-h">Position &amp; arrange</p>
+    <!-- Text wrap, for an anchored figure: the paragraph's lines flow around
+         it. Hidden until the object follows a paragraph. -->
+    <div class="bx-row" id="ar-wraprow" hidden><span>Text wrap</span>
+      <div class="ar-dashrow">
+        <button data-w="" title="The text runs under it">None</button>
+        <button data-w="left" title="Sits at the left; text flows on the right">Left</button>
+        <button data-w="right" title="Sits at the right; text flows on the left">Right</button>
+      </div></div>
     <div class="ar-posrows">
 <span class="ty-seg" title="Align horizontally (to the page; to the selection when several)">
     <button class="ar-al" data-al="left" aria-label="Align left"><svg width="14" height="14"
@@ -9110,6 +9118,7 @@ function anchorButtonsPaint() {
     const st = mine ? storeOf(mine) : null;
     b.classList.toggle('on', !!(st && st.anchor));
     b.classList.toggle('arming', !!mine && anchorArm === mine);
+    if (typeof wrapRowsPaint === 'function' && $('ar-wraprow')) wrapRowsPaint();
     b.title = st && st.anchor ? `Anchored to "${st.anchor.to}" — click to release it where it stands`
       : anchorArm === mine ? 'Click the paragraph this should follow (Esc cancels)'
       : 'Anchor — make this follow a paragraph, so it moves when the text does';
@@ -9132,6 +9141,18 @@ async function anchorSet(d, id, key, edge) {
   if (edge === 'bottom') st.anchor.edge = 'bottom';
   markDirty(); await render();
   const nd = $('out').contentDocument;
+  // A designed element its renderer places through style() — a css string
+  // with nowhere to hang an attribute — never receives data-anc, so the page
+  // could not follow with it. Say so now, not after the next reflow.
+  const placed = nd.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  if (placed && !placed.hasAttribute('data-anc')) {
+    delete st.anchor;
+    markDirty(); await render();
+    paintSel($('out').contentDocument);
+    anchorButtonsPaint();
+    $('stat').textContent = `${id} is placed by its renderer's own style rule — the page cannot make it follow a paragraph`;
+    return { ok: false, error: `'${id}' is placed by its renderer's own style rule, not by an attribute the anchor runtime can read` };
+  }
   paintSel(nd);
   if (selected === id) showType(id);
   anchorButtonsPaint();
@@ -9144,6 +9165,7 @@ async function anchorRelease(d, id) {
   if (!st || !st.anchor) return { ok: true, id, anchor: null };
   const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
   pushHistory();
+  delete st.wrap;                       // text wraps only around what belongs somewhere
   if (el) {
     // Where it is NOW, in the store's own frame, so releasing never moves it.
     const page = el.closest('section.page') || d.querySelector('section.page');
@@ -9175,6 +9197,43 @@ $('ar-anchor').addEventListener('click', () => {
   if (ids.length === 1) anchorClick(ids[0]);
 });
 $('ty-anchor').addEventListener('click', () => anchorClick(selected));
+
+// Text wrap. An anchored object may FLOAT beside its paragraph instead of
+// sitting on top of it: the runtime puts it just before the paragraph in the
+// same flow, as a CSS float, and the lines shorten around it. Wrap needs the
+// anchor — text flows around what belongs to it — and a wrapped object is not
+// dragged (its place IS the paragraph's); turn wrap off to move it.
+async function wrapSet(id, side) {
+  const d = $('out').contentDocument;
+  const st = storeOf(id);
+  if (!st || !st.anchor) {
+    $('stat').textContent = 'anchor it to a paragraph first — text wraps around what it belongs to';
+    return { ok: false, error: `'${id}' is not anchored — anchor(id, slot) first; text wraps around what it belongs to` };
+  }
+  pushHistory();
+  if (side) st.wrap = side; else delete st.wrap;
+  markDirty(); await render();
+  paintSel($('out').contentDocument);
+  if (selected === id) showType(id);
+  wrapRowsPaint();
+  $('stat').textContent = side ? `text now flows around ${id}, on the ${side === 'left' ? 'right' : 'left'}`
+                               : `${id} sits on the text again`;
+  return { ok: true, id, wrap: side || null };
+}
+/** The two Wrap rows (Position pop, Box panel): shown for an anchored
+ *  object, lit on its side. */
+function wrapRowsPaint() {
+  const ids = [...selIds];
+  const arId = ids.length === 1 ? ids[0] : null;
+  const arSt = arId ? storeOf(arId) : null;
+  $('ar-wraprow').hidden = !(arSt && arSt.anchor);
+  [...$('ar-wraprow').querySelectorAll('button')].forEach(b =>
+    b.classList.toggle('on', (arSt && arSt.wrap || '') === b.dataset.w));
+}
+[...$('ar-wraprow').querySelectorAll('button')].forEach(b => b.addEventListener('click', () => {
+  const ids = [...selIds];
+  if (ids.length === 1) wrapSet(ids[0], b.dataset.w || null);
+}));
 /** Bound once per document (a patch keeps the document): the armed click,
  *  in the capture phase so the page's own select-and-drag never sees it. */
 function anchorWire(d) {
@@ -9566,6 +9625,22 @@ function renderBoxPanel() {
     slide(cl, { id: 'bx-gap', min: 0.1, max: 0.6, step: 0.02, value: eff.gap ?? 0.2, unit: 'in',
       paint: v => { const n = node(); if (n) n.style.columnGap = v + 'in'; },
       write: v => { bx.gap = v; } });
+  }
+
+  // Text wrap: the paragraph this box is anchored to flows around it.
+  const wr = row('Text wrap');
+  if (!bx.anchor) {
+    const note = document.createElement('span');
+    note.className = 'bx-val'; note.style.width = 'auto'; note.style.textAlign = 'left';
+    note.textContent = 'anchor it to a paragraph first';
+    wr.appendChild(note);
+  } else {
+    const sides = document.createElement('div');
+    sides.className = 'ar-dashrow';
+    [['', 'None'], ['left', 'Left'], ['right', 'Right']].forEach(([v, label]) =>
+      sides.appendChild(small(label, (bx.wrap || '') === v, () => wrapSet(selected, v || null), '')));
+    sides.id = 'bx-wrap';
+    wr.appendChild(sides);
   }
 }
 $('ty-box').addEventListener('click', () => {
@@ -12320,7 +12395,7 @@ $('ar-fxbtn').addEventListener('click', () => {
 
 // Position: the geometry machinery — align, distribute, layer, group, the
 // inch inputs — parked behind one button, as Canva parks it.
-$('ar-pos').addEventListener('click', () => togglePop($('ar-pospop'), $('ar-pos')));
+$('ar-pos').addEventListener('click', () => { wrapRowsPaint(); togglePop($('ar-pospop'), $('ar-pos')); });
 
 // ------------------------------------------------------- the colour panel
 // Colour needs more room than a 46px row's popover can give: a search, the
@@ -13262,6 +13337,12 @@ function startDrag(d, el, e0, drillIn = false) {
   // the width, so this only trips if someone forces 100% in a narrow pane.
   if (page.offsetWidth < PAGE_W_IN * DPI * 0.98) {
     $('stat').textContent = 'the page is squeezed below print width — use Fit zoom to move things';
+    return;
+  }
+  // A wrapped object's place IS its paragraph's: the text flows around it
+  // where the paragraph is. Turn wrap off to move it by hand.
+  if ((storeOf(idOf(el)) || {}).wrap) {
+    $('stat').textContent = 'text wraps around this — turn Text wrap off (Position, or the Box panel) to move it';
     return;
   }
   // Somebody else has hold of this. Both moves are whole-value writes to
@@ -22807,6 +22888,8 @@ function _pilotValidatePlace(id) {
   const v = _pilotValidateExists(id);
   if (!v.ok) return v;
   if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+  if ((_pilotStoreOf(id) || {}).wrap)
+    return { ok: false, error: `text wraps around '${id}' — its place is its paragraph's; wrap(id, null) first` };
   return { ok: true };
 }
 function _pilotApplyPlace(id, { x, y, w, h } = {}) {
@@ -23053,7 +23136,7 @@ const PILOT_BATCH_VERBS = {
 // The verbs a relayed pilot op may run ALONE — the ones batch() refuses
 // because they push their own history and render. Named here so a room
 // message cannot reach an arbitrary property of docsync.api.
-const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor']);
+const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap']);
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
@@ -23246,6 +23329,18 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     const v = _pilotValidateAnchor(String(id), key);
     if (!v.ok) return v;
     return _pilotApplyAnchor(String(id), key, opts || {});
+  },
+
+  /** wrap(id, 'left'|'right') floats an ANCHORED box or designed element
+   *  beside its paragraph, whose lines flow around it; wrap(id, null) puts it
+   *  back on top of the text at its anchor distance. */
+  async wrap(id, side) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateExists(String(id));
+    if (!v.ok) return v;
+    if (side != null && !['left', 'right'].includes(side))
+      return { ok: false, error: `wrap side must be 'left', 'right' or null — not ${JSON.stringify(side)}` };
+    return wrapSet(String(id), side || null);
   },
 
   /** A blank page after `at` (order index) or after the page in view. */

@@ -1786,6 +1786,30 @@ check_page_raises("anchor: an edge is top or bottom",
                   {"positions": {}, "shapes": [],
                    "boxes": [dict(_plain, anchor={"to": "a", "edge": "middle"})]},
                   "anchor.edge: 'middle' must be one of top, bottom")
+# Text wrap rides the anchor: the runtime floats the object just before its
+# paragraph, in the same flow, and CSS shortens the lines around it.
+_wr = _layout({"positions": {"fig.1": {"x": 1, "y": 3, "w": 2, "wrap": "right",
+                                        "wrapPad": 0.2, "anchor": {"to": "a.b"}}},
+               "shapes": [],
+               "boxes": [{"id": "n", "page": 1, "x": 5, "y": 4, "w": 2, "md": "note",
+                          "anchor": {"to": "a.b", "dy": 0}, "wrap": "left"}]})
+check("wrap: a designed element says which side, and its gutter",
+      _wr.attr("fig.1"), 'data-wrap="right" data-wrap-pad="0.2"')
+check("wrap: a box says which side; the default gutter is the runtime's",
+      _wr.text_boxes(1), 'data-anc="a.b" data-anc-dy="0" data-wrap="left"')
+# The runtime string itself — it rode out with text_boxes() above, once.
+from docsync.layout import ANCHOR_JS as _AJS                     # noqa: E402
+check("wrap: the runtime floats it", _AJS, "el.style.cssFloat=wrap")
+check("wrap: as a previous sibling of the paragraph, never a child", _AJS, "par.insertBefore(el,host)")
+check("wrap: a phone gets the flow back", _wr.mobile_css(), "[data-wrap]{float:none !important}")
+check_eq("wrap: no wrap, no phone rule", "[data-wrap]" in _an.mobile_css(), False)
+check_page_raises("wrap: needs an anchor — text flows around what belongs somewhere",
+                  {"positions": {}, "shapes": [], "boxes": [dict(_plain, wrap="left")]},
+                  "wrap: needs an anchor")
+check_page_raises("wrap: a side is left or right",
+                  {"positions": {}, "shapes": [],
+                   "boxes": [dict(_plain, wrap="around", anchor={"to": "a"})]},
+                  "wrap: 'around' must be one of left, right")
 check_page_raises("anchor: a designed element is held to the same shape",
                   {"positions": {"f": {"x": 1, "y": 1, "anchor": "a.b"}}, "shapes": []},
                   "position 'f'.anchor: expected an object")

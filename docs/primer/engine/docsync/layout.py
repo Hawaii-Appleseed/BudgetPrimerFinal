@@ -2701,6 +2701,22 @@ def _check_box_look(b: dict, where: str) -> None:
 
 
 ANCHOR_EDGES = ("top", "bottom")
+WRAP_SIDES = ("left", "right")
+
+
+def _check_wrap(obj: dict, where: str) -> None:
+    """Text wraps around an object only if the object belongs to a paragraph
+    — wrap without an anchor has no text to wrap."""
+    w = obj.get("wrap")
+    if w is None:
+        return
+    if w not in WRAP_SIDES:
+        raise LayoutError(f"{where}.wrap: {w!r} must be one of {', '.join(WRAP_SIDES)}")
+    if not isinstance(obj.get("anchor"), dict):
+        raise LayoutError(f"{where}.wrap: needs an anchor — say which paragraph "
+                          f"the text flows around it in")
+    if obj.get("wrapPad") is not None and not 0 <= _num(obj["wrapPad"], f"{where}.wrapPad") <= 1:
+        raise LayoutError(f"{where}.wrapPad: {obj['wrapPad']} is outside 0–1in")
 
 
 def _check_anchor(a, where: str) -> None:
@@ -2723,15 +2739,21 @@ def _check_anchor(a, where: str) -> None:
                           f"{', '.join(ANCHOR_EDGES)}")
 
 
-def anchor_attrs(a) -> str:
+def anchor_attrs(obj: dict) -> str:
     """The data the runtime reads: which slot, how far below its top (or
-    bottom), in inches. Emitted in BOTH modes — the editor positions anchored
-    objects through the same runtime the published page runs."""
+    bottom), in inches — and, for text wrap, which side. Emitted in BOTH
+    modes: the editor positions anchored objects through the same runtime the
+    published page runs."""
+    a = obj.get("anchor") if obj else None
     if not a:
         return ""
     out = f' data-anc="{a["to"]}" data-anc-dy="{float(a.get("dy") or 0):g}"'
     if a.get("edge") == "bottom":
         out += ' data-anc-edge="bottom"'
+    if obj.get("wrap"):
+        out += f' data-wrap="{obj["wrap"]}"'
+        if obj.get("wrapPad") is not None:
+            out += f' data-wrap-pad="{float(obj["wrapPad"]):g}"'
     return out
 
 
@@ -2766,6 +2788,20 @@ ANCHOR_JS = (
     "var bottom=el.getAttribute('data-anc-edge')==='bottom';"
     "var host=bottom?hs[hs.length-1]:hs[0];"
     "if(host===el||el.contains(host)||host.contains(el))continue;"
+    # Text wrap: the object becomes a FLOAT just before its paragraph, in the
+    # same flow, so the paragraph's lines shorten around it — CSS's own wrap,
+    # no measuring. A previous sibling, never a child: the paragraph's own
+    # markup stays exactly what content.md says, so editing it in place can
+    # never swallow the figure. Pinned geometry is undone inline (position,
+    # top, left); the width in inches stays, which is what a figure keeps.
+    "var wrap=el.getAttribute('data-wrap');"
+    "if(wrap){var par=host.parentNode;"
+    "if(el.parentNode!==par||el.nextSibling!==host)par.insertBefore(el,host);"
+    "var pad=(el.getAttribute('data-wrap-pad')||'0.12')+'in';"
+    "el.style.position='static';el.style.top='';el.style.left='';"
+    "el.style.cssFloat=wrap;el.style.zIndex='';"
+    "el.style.margin=wrap==='right'?'0 0 '+pad+' '+pad:'0 '+pad+' '+pad+' 0';"
+    "continue;}"
     "var pr=pg.getBoundingClientRect();if(!pr.width)continue;"
     "var op=el.offsetParent;var ar=(op&&op!==pg&&pg.contains(op))?op.getBoundingClientRect():pr;"
     "var hr=host.getBoundingClientRect();var ppi=pr.width/W;"
@@ -3079,6 +3115,7 @@ class Layout:
                 _anim_check(p["anim"], f"position '{el}'")
             if p.get("anchor") is not None:
                 _check_anchor(p["anchor"], f"position '{el}'")
+            _check_wrap(p, f"position '{el}'")
         seen = set()
         for i, s in enumerate(self.shapes):
             where = f"shape #{i + 1}"
@@ -3311,6 +3348,7 @@ class Layout:
                 _num(b["rot"], f"{where}.rot")
             if b.get("anchor") is not None:
                 _check_anchor(b["anchor"], where)
+            _check_wrap(b, where)
             _check_object_use(b, "box", self.object_styles, where)
             _check_box_look(self.dressed(b), where)
 
@@ -3594,7 +3632,7 @@ class Layout:
         if p and p.get("anim"):
             bits.append(anim_attrs(p["anim"]).strip())
         if p and p.get("anchor"):
-            bits.append(anchor_attrs(p["anchor"]).strip())
+            bits.append(anchor_attrs(p).strip())
         return (" " + " ".join(bits)) if bits else ""
 
     def spacer(self, el_id: str) -> str:
@@ -4022,7 +4060,7 @@ class Layout:
         for b in mine:
             b = self.dressed(b)
             act = b.get("act")
-            an = anim_attrs(b.get("anim")) + anchor_attrs(b.get("anchor"))
+            an = anim_attrs(b.get("anim")) + anchor_attrs(b)
             css = (f'position:absolute;left:{b["x"]}in;top:{b["y"]}in;'
                    f'width:{b["w"]}in;z-index:{int(b.get("z", 2))}')
             if b.get("h"):
@@ -4272,7 +4310,7 @@ class Layout:
                 extra = f' id="ds-x-{t["id"]}"'
                 tglSty = f';--ds-tgl-d:{self.toggle_speed.get(t["id"], 0.3):g}s'
             out.append(f'<table class="{klass}"{extra}{tag}{PLACED}'
-                       f'{anim_attrs(t.get("anim"))}{anchor_attrs(t.get("anchor"))} '
+                       f'{anim_attrs(t.get("anim"))}{anchor_attrs(t)} '
                        f'style="{css}{";" + style if style else ""}{tglSty}">'
                        f'{colgroup}{body}</table>')
         return "".join(out)
@@ -4388,6 +4426,12 @@ class Layout:
             # keeps emitting the bytes it always did.
             + (".ds-textbox{column-count:auto !important}"
                if any(int(self.dressed(b).get("cols") or 1) > 1 for b in self.boxes)
+               else "")
+            # A float in a one-column phone page is a figure with three
+            # words beside it; back in the flow, like everything else placed.
+            + ("[data-wrap]{float:none !important}"
+               if any(o.get("wrap") for o in list(self.boxes)
+                      + [p for p in self.positions.values() if isinstance(p, dict)])
                else "")
             + "}</style>")
 
