@@ -876,7 +876,14 @@
   #side-x { border:0; background:none; font-size:15px; line-height:1; cursor:pointer;
           color:#7A8E92; padding:5px; border-radius:50%; }
   #side-x:hover { color:var(--ink); background:#EDF1EE; }
-  #side-body { flex:1; min-height:0; overflow-y:auto; padding:0 14px 16px; }
+  /* The page rail is a full-width band along the bottom at a higher z-index,
+     so it lies OVER the foot of this panel and swallows clicks on whatever
+     control scrolls to there. The panel therefore has to be able to scroll
+     its last control clear of the rail: 112px is the rail at its tallest (a
+     67px thumbnail, its label, and the band's own padding). Without this the
+     bottom section of a long panel is visible and unclickable, which is worse
+     than being hidden. */
+  #side-body { flex:1; min-height:0; overflow-y:auto; padding:0 14px 112px; }
   #side-body h4 { display:flex; align-items:center; gap:7px; font:600 12.5px system-ui;
           margin:16px 0 9px; color:var(--ink); }
   #side-search { width:100%; box-sizing:border-box; font:13px system-ui;
@@ -1033,6 +1040,19 @@
   .ch-grid { display:grid; gap:4px; align-items:center; margin-bottom:7px; }
   .ch-dot { width:9px; height:9px; border-radius:50%; justify-self:center;
         border:1px solid rgba(0,0,0,.12); }
+  /* The same dot, but a control: a single-series bar chart and a pie are both
+     coloured per ROW, so the row's colour is set where the row is. Kept to
+     the dot's own width so the grid does not grow a column. */
+  .ch-dotsw { width:14px !important; height:16px; padding:0 !important;
+        justify-self:center; cursor:pointer; border:1px solid #DCE4DE !important;
+        border-radius:4px !important; background:#fff; }
+  /* A reference line: value, label, colour, and a way to take it off again. */
+  .ch-rule { display:flex; gap:5px; align-items:center; margin-bottom:5px; }
+  .ch-rule input[type=text] { min-width:0; font:12px system-ui; padding:5px 6px;
+        border:1px solid #DCE4DE; border-radius:6px; color:var(--ink);
+        background:#fff; box-sizing:border-box; }
+  .ch-rule .ch-rv { flex:0 0 62px; text-align:right; }
+  .ch-rule .ch-rl { flex:1 1 auto; }
   .ch-num { text-align:right; }
   .ch-num.ch-bad { outline: 2px solid #b00020; outline-offset: -1px; }
   .ch-hd { font:600 10px system-ui; color:#7A8E92; text-transform:uppercase;
@@ -6931,7 +6951,8 @@ const CHART_KINDS = [
   ['bar', 'Bar chart'], ['stacked-bar', 'Stacked bar chart'],
   ['row', 'Row chart'], ['stacked-row', 'Stacked row chart'],
   ['pie', 'Pie chart'], ['donut', 'Donut chart'],
-  ['line', 'Line chart'], ['scatter', 'Scatter plot'],
+  ['line', 'Line chart'], ['area', 'Area chart'],
+  ['stacked-area', 'Stacked area chart'], ['scatter', 'Scatter plot'],
   ['histogram', 'Histogram chart'], ['radar', 'Radar chart'],
   ['funnel', 'Funnel chart'], ['packed', 'Packed circles chart'],
   ['treemap', 'Treemap chart'],
@@ -6942,7 +6963,12 @@ const CHART_BY_ITEM = ['pie', 'donut', 'funnel', 'packed', 'treemap', 'histogram
 // Types drawn in a value plane, and so the only ones with axes and gridlines
 // to configure — offering an axis colour for a treemap would be a lie.
 const CHART_WITH_AXES = ['bar', 'stacked-bar', 'row', 'stacked-row', 'column',
-                         'line', 'scatter', 'histogram'];
+                         'line', 'area', 'stacked-area', 'scatter', 'histogram'];
+// The bar family proper: the only types where one series can be drawn as
+// something else (the combo chart) and where a bar has a width to set.
+const CHART_BAR_FAMILY = ['bar', 'stacked-bar', 'row', 'stacked-row', 'column'];
+const CHART_LEGEND_POS = [['bottom', 'Bottom'], ['top', 'Top'],
+                          ['left', 'Left'], ['right', 'Right']];
 let chartPanelId = null;
 
 /** The chart the panel is editing, whichever of the two kinds it is.
@@ -6993,9 +7019,20 @@ function openChartPanel(id) {
 }
 
 async function chartWrite(fn) {
-  const t = chartOf(chartPanelId);
-  if (!t) return;
+  if (!chartOf(chartPanelId)) return;
   pushHistory();
+  chartApply(chartPanelId, fn);
+  markDirty();
+  await render();
+  renderChartPanel();
+}
+
+/** One chart's data changed, with no history entry and no render — the caller
+ *  owns both, so applying a style to fifteen charts is one undo step and one
+ *  redraw rather than fifteen of each. chartWrite is this plus those two. */
+function chartApply(id, fn) {
+  const t = chartOf(id);
+  if (!t) return false;
   if (t.inline) {
     // Only what the edit ACTUALLY changed is recorded. Writing the whole
     // effective spec back would pin the numbers too, and a figure computed
@@ -7021,9 +7058,44 @@ async function chartWrite(fn) {
   } else {
     fn(t.chart, t.shape);
   }
-  markDirty();
-  await render();
-  renderChartPanel();
+  return true;
+}
+
+// Mirrors CHART_LOOK in layout.py: the keys that make up a chart's LOOK, as
+// against this figure's own data or its own subject. A style deliberately
+// does not carry the type, the numbers, the title, the axis titles, the axis
+// bounds or the reference lines — those are about one figure, and a style
+// that moved them would be a way of quietly rewriting a chart's meaning.
+const CHART_LOOK = ['colors', 'titleColor', 'labelColor', 'axisColor',
+  'gridColor', 'legend', 'legendPos', 'values', 'grid', 'tips', 'sliceLabel',
+  'format', 'labelFormat', 'axis2Format', 'barGap', 'labelAngle',
+  'wrapLabels', 'axisTicks'];
+
+/** The look of one chart, as a style object. `seriesColors` is not a chart
+ *  key: it is the ordered palette the series take theirs from, pulled out so
+ *  a style can recolour a chart with a different number of series. */
+function chartLookOf(c) {
+  const st = {};
+  CHART_LOOK.forEach(k => { if (c[k] !== undefined) st[k] = clone(c[k]); });
+  const cols = (c.series || []).map(se => se.color).filter(Boolean);
+  if (cols.length) st.seriesColors = cols;
+  return st;
+}
+
+/** Wear a saved look. Every look key the style names is written; every one it
+ *  does NOT name is removed, so applying a style twice to two charts leaves
+ *  them looking the same — a style that only ever added keys would let the
+ *  first chart's leftovers survive, which is the opposite of what a style is
+ *  for. Data, type, title, axis titles, bounds and rules are untouched. */
+function chartWearLook(ch, st) {
+  CHART_LOOK.forEach(k => {
+    if (st[k] === undefined) delete ch[k];
+    else ch[k] = clone(st[k]);
+  });
+  const pal = st.seriesColors;
+  if (pal && pal.length) {
+    (ch.series || []).forEach((se, i) => { se.color = pal[i % pal.length]; });
+  }
 }
 
 /** A tiny drawing of a chart type, for the picker. */
@@ -7074,8 +7146,14 @@ function chartKindIcon(kind) {
 // open. Kept outside the render so a redraw (every data edit re-renders the
 // whole panel) does not throw you back to the top.
 let chartTab = 'data';
-const chartOpen = { text: true, xaxis: false, yaxis: false, numbers: false,
+const chartOpen = { style: false, text: true, xaxis: false, yaxis: false,
+                    rules: false, series: false, numbers: false,
                     settings: false };
+// Which saved look the Style section is pointed at. Panel state, not document
+// state: the chart itself wears the look, it does not remember its name — so
+// a chart hand-tweaked after a style was applied is not quietly claiming to
+// still be that style.
+let chartStyleName = '';
 
 // A line break inside a chart label, shown where a text input cannot show a
 // real one. Chosen because a pilcrow is not a character anyone types into a
@@ -7193,6 +7271,69 @@ function renderChartPanelInner() {
   else renderChartCustomize(pop, s, c, isPie, mk);
 }
 
+/** A block of cells copied out of a spreadsheet, dropped into the grid.
+ *
+ *  Until now every cell was typed by hand: pasting a column of figures put
+ *  the WHOLE block into one input, where chartNumber refused it — so the way
+ *  to get a table of numbers into a chart was to retype it. This reads the
+ *  block and fills from the cell you pasted into, growing rows and series to
+ *  fit, which is the cheap half of InDesign's "import data" and the half
+ *  people actually use.
+ *
+ *  Tabs first, because that is what a spreadsheet puts on the clipboard;
+ *  commas only when there is not a tab anywhere in the block, so a pasted
+ *  "1,234" is a number and not two cells.
+ */
+function chartGridPaste(e) {
+  const txt = (e.clipboardData || window.clipboardData).getData('text/plain');
+  if (!txt || !/[\t\r\n]/.test(txt)) return;        // one cell: normal paste
+  const at = e.target && e.target.dataset ? e.target.dataset.ck : null;
+  const m = /^([lv])(\d+)(?:\.(\d+))?$/.exec(at || '');
+  if (!m) return;
+  e.preventDefault();
+  const lines = txt.replace(/\r\n?/g, '\n').split('\n')
+    .filter(l => l.trim() !== '');
+  if (!lines.length) return;
+  const sep = txt.includes('\t') ? '\t' : ',';
+  const rows = lines.map(l => l.split(sep).map(x => x.trim()));
+  const row0 = +m[2];
+  const intoLabels = m[1] === 'l';
+  const col0 = intoLabels ? 0 : +m[3];
+  // A block pasted at the very top-left whose first row is not numbers is a
+  // spreadsheet's header row — the series names, which is what people expect
+  // to survive the paste.
+  let head = null;
+  if (intoLabels && row0 === 0 && rows.length > 1
+      && rows[0].slice(1).every(x => x !== '' && chartNumber(x) === null)) {
+    head = rows.shift().slice(1);
+  }
+  chartWrite(ch => {
+    const need = row0 + rows.length;
+    while (ch.labels.length < need) ch.labels.push('Item ' + (ch.labels.length + 1));
+    const wide = Math.max(...rows.map(r => r.length)) - (intoLabels ? 1 : 0);
+    const pie = CHART_BY_ITEM.includes(ch.type);
+    const cols = pie ? 1 : col0 + Math.max(1, wide);
+    while (ch.series.length < cols) {
+      ch.series.push({ name: 'Series ' + (ch.series.length + 1), data: [] });
+    }
+    ch.series.forEach(se => {
+      while (se.data.length < ch.labels.length) se.data.push(0);
+    });
+    if (head) head.forEach((nm, i) => { if (ch.series[i]) ch.series[i].name = nm; });
+    rows.forEach((cells, ri) => {
+      const r = row0 + ri;
+      cells.forEach((raw, ci) => {
+        if (intoLabels && ci === 0) { ch.labels[r] = chLabelOut(raw); return; }
+        const si = col0 + ci - (intoLabels ? 1 : 0);
+        if (!ch.series[si]) return;
+        const n = chartNumber(raw);
+        if (n !== null) ch.series[si].data[r] = n;
+      });
+    });
+  });
+  $('stat').textContent = rows.length + ' rows pasted';
+}
+
 /** The data table: labels down the side, one column per series, and a colour
  *  dot on each row so the sheet says which bar or slice it feeds. */
 function renderChartData(pop, s, c, isPie, mk) {
@@ -7214,16 +7355,35 @@ function renderChartData(pop, s, c, isPie, mk) {
   });
   cell(document.createElement('span'));
 
+  // A pie has always been coloured per row (slice). So, now, is a bar chart
+  // with ONE series: `colors[i]` overrides that bar, which is how you say
+  // "this year" or "the proposal" in a colour — the single commonest ask of a
+  // budget chart, and until now the thing that sent a figure out of the
+  // engine and into hand-written SVG. With two or more series the colour
+  // still belongs to the series, so the dot stays a hint.
+  const perPoint = isPie || c.series.length === 1;
   (c.labels || []).forEach((lab, ri) => {
-    // A pie is coloured per row (slice); a bar chart per column (series), so
-    // the row dot only means something for a pie — for bars it shows the
-    // first series' colour as a hint rather than pretending to be a control.
-    const dot = document.createElement('span');
-    dot.className = 'ch-dot';
-    dot.style.background = isPie
-      ? ((c.colors || [])[ri] || CHART_FALLBACK[ri % CHART_FALLBACK.length])
+    const cur = (isPie || c.series.length === 1)
+      ? ((c.colors || [])[ri]
+         || (isPie ? CHART_FALLBACK[ri % CHART_FALLBACK.length]
+                   : (c.series[0].color || CHART_FALLBACK[0])))
       : (c.series[0].color || CHART_FALLBACK[0]);
-    cell(dot);
+    if (perPoint) {
+      const dot = document.createElement('input');
+      dot.type = 'color'; dot.className = 'ch-dotsw'; dot.value = cur;
+      dot.title = isPie ? 'Colour of this slice' : 'Colour of this bar';
+      dot.addEventListener('change', () => chartWrite(ch => {
+        ch.colors = (ch.colors || []).slice();
+        while (ch.colors.length < ch.labels.length) ch.colors.push(null);
+        ch.colors[ri] = dot.value.toUpperCase();
+      }));
+      cell(dot);
+    } else {
+      const dot = document.createElement('span');
+      dot.className = 'ch-dot';
+      dot.style.background = cur;
+      cell(dot);
+    }
     const li = document.createElement('input');
     // A label may be two lines — "Second 20%" over its income range. A text
     // input strips the newline on its way in, so the break is shown as a
@@ -7270,6 +7430,7 @@ function renderChartData(pop, s, c, isPie, mk) {
     }));
     cell(del);
   });
+  grid.addEventListener('paste', chartGridPaste);
   pop.appendChild(grid);
 
   const rowBtns = document.createElement('div');
@@ -7306,7 +7467,9 @@ function renderChartData(pop, s, c, isPie, mk) {
   const note = document.createElement('p');
   note.className = 'side-note';
   note.textContent = 'Double-click the title or any label on the page to rename it. '
-    + 'A ' + CH_BREAK + ' in a label splits it across two lines.';
+    + 'A ' + CH_BREAK + ' in a label splits it across two lines. '
+    + 'Paste a block of cells from a spreadsheet into any cell to fill the '
+    + 'table from there.';
   pop.appendChild(note);
 }
 
@@ -7323,6 +7486,9 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
     if (!chartOpen[key]) return;
     const body = document.createElement('div');
     body.className = 'ch-secbody';
+    // The head and the body are SIBLINGS, not nested, so a selector for
+    // "a row inside this section" needs the section's name on the body.
+    body.dataset.sec = key;
     pop.appendChild(body);
     build(body);
   };
@@ -7341,11 +7507,15 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
     row.append(lab, sw);
     host.appendChild(row);
   };
-  const textField = (host, label, get, set, placeholder) => {
+  const textField = (host, label, get, set, placeholder, ck) => {
     const l = document.createElement('p');
     l.className = 'ch-fieldlab'; l.textContent = label;
     const i = document.createElement('input');
     i.className = 'ch-title'; i.value = get() || ''; i.placeholder = placeholder || '';
+    // Named, so the re-render after an edit can put the caret back where it
+    // was — and so three text fields in one section are three things, not one
+    // ambiguous selector.
+    if (ck) i.dataset.ck = ck;
     i.addEventListener('change', () => chartWrite(ch => set(ch, i.value)));
     host.append(l, i);
   };
@@ -7417,17 +7587,115 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
     text: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg>',
     bars: '<svg viewBox="0 0 14 14" width="14" height="14" fill="currentColor"><rect x="2" y="8" width="2.6" height="4.5" rx="0.6"/><rect x="5.7" y="5" width="2.6" height="7.5" rx="0.6"/><rect x="9.4" y="2" width="2.6" height="10.5" rx="0.6"/></svg>',
     cog: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4h10M2 10h10"/><circle cx="5" cy="4" r="1.5"/><circle cx="9.5" cy="10" r="1.5"/></svg>',
+    style: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M7 1.4l1.7 3.5 3.9.55-2.8 2.7.66 3.85L7 10.2l-3.46 1.8.66-3.85-2.8-2.7 3.9-.55z"/></svg>',
+    rule: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 5.5h11" stroke-dasharray="2.4 1.8"/><path d="M3 12V8.5M7 12V7M11 12V9.5"/></svg>',
     num: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4.4 2.2 3.1 11.8M9.9 2.2 8.6 11.8M1.9 5.1h10.2M1.4 8.9h10.2"/></svg>',
   };
 
+  // --- saved looks ---------------------------------------------------------
+  // The fifteenth chart in a report was styled by hand exactly like the
+  // first: a template carries a palette, but nothing carried a chart's look.
+  section('style', I.style, 'Style', body => {
+    const styles = layout.chartStyles || {};
+    const names = Object.keys(styles).sort();
+    if (names.length) {
+      fieldRow(body, [
+        { label: 'Saved look', get: () => chartStyleName || '',
+          options: [['', 'Pick one…']].concat(names.map(n => [n, n])),
+          set: (ch, v) => {
+            // set() runs inside chartWrite, so the chart it is handed is the
+            // one to dress; the name is remembered outside it for the picker.
+            chartStyleName = v;
+            if (v && styles[v]) chartWearLook(ch, styles[v]);
+          } },
+      ]);
+    }
+    // Two rows: three buttons in a 252px panel truncated the first one's
+    // label, and "+ Save this" is a different offer from "+ Save this look".
+    const row = document.createElement('div');
+    row.className = 'tp-row';
+    const row2 = document.createElement('div');
+    row2.className = 'tp-row';
+    body.append(row, row2);
+    mk(row, '+ Save this look', 'Name what this chart looks like, and reuse it',
+      async () => {
+        const got = await dsForm('Save this look', [
+          { name: 'name', label: 'Name', value: chartStyleName || '',
+            placeholder: 'e.g. Budget figure', required: true },
+        ]);
+        if (!got || !got.name.trim()) return;
+        pushHistory();
+        layout.chartStyles = Object.assign({}, layout.chartStyles);
+        layout.chartStyles[got.name.trim()] = chartLookOf(c);
+        chartStyleName = got.name.trim();
+        markDirty();
+        renderChartPanel();
+        $('stat').textContent = 'saved the look as "' + chartStyleName + '"';
+      });
+    mk(row2, 'Apply to all', 'Dress every chart in this document the same way',
+      async () => {
+        const st = (layout.chartStyles || {})[chartStyleName];
+        if (!st) return;
+        // One history entry and one redraw for the whole document — this is
+        // "redefine across a report", and it should undo as one thing.
+        pushHistory();
+        const ids = layout.shapes.filter(x => x.kind === 'chart').map(x => x.id)
+          .concat(inlineChartIds());
+        ids.forEach(id => chartApply(id, ch => chartWearLook(ch, st)));
+        markDirty();
+        await render();
+        renderChartPanel();
+        $('stat').textContent = ids.length + ' charts now wear "'
+          + chartStyleName + '"';
+      }, !chartStyleName || !(layout.chartStyles || {})[chartStyleName]);
+    mk(row2, 'Delete', 'Forget this saved look',
+      () => {
+        pushHistory();
+        delete layout.chartStyles[chartStyleName];
+        if (!Object.keys(layout.chartStyles).length) delete layout.chartStyles;
+        chartStyleName = '';
+        markDirty();
+        renderChartPanel();
+      }, !chartStyleName || !(layout.chartStyles || {})[chartStyleName]);
+    const n = document.createElement('p');
+    n.className = 'ch-eg';
+    n.textContent = 'A look is the colours, the legend, the number format and '
+      + 'the spacing — never the numbers, the title or the axis bounds.';
+    body.appendChild(n);
+  });
+
   section('text', I.text, 'Text', body => {
     toggleRow(body, 'Legend', 'legend', false);
+    if (c.legend) {
+      // Always along the bottom, spread across the full width, was the whole
+      // of the old story — so long series names ran into each other with
+      // nowhere to go. Down one side is usually the answer for a chart with
+      // more than three of them.
+      fieldRow(body, [
+        { label: 'Legend at', get: () => c.legendPos || 'bottom',
+          options: CHART_LEGEND_POS,
+          set: (ch, v) => {
+            if (v === 'bottom') delete ch.legendPos; else ch.legendPos = v;
+          } },
+      ]);
+    }
     toggleRow(body, 'Data labels', 'values', false);
     // On the published page only: the editor suppresses the runtime so a
     // tooltip does not chase the pointer while a chart is being dragged.
     toggleRow(body, 'Hover tooltips', 'tips', false);
     textField(body, 'Title', () => c.title,
-      (ch, v) => { if (v.trim()) ch.title = v.trim(); else delete ch.title; }, 'Add title');
+      (ch, v) => { if (v.trim()) ch.title = v.trim(); else delete ch.title; },
+      'Add title', 'title');
+    if (CHART_WITH_AXES.includes(c.type)) {
+      // What the numbers are, and what the categories are. Said with a
+      // floating text box until now — which did not move when the chart did.
+      textField(body, 'Value axis title', () => c.axisTitle,
+        (ch, v) => { if (v.trim()) ch.axisTitle = v.trim(); else delete ch.axisTitle; },
+        'e.g. Millions of dollars', 'axisTitle');
+      textField(body, 'Category axis title', () => c.catTitle,
+        (ch, v) => { if (v.trim()) ch.catTitle = v.trim(); else delete ch.catTitle; },
+        'e.g. Fiscal year', 'catTitle');
+    }
     inkRow(body, 'Title colour', 'titleColor', '#2F3E46');
     inkRow(body, 'Label colour', 'labelColor', '#52796F');
   });
@@ -7450,10 +7718,153 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
             else ch.axisTicks = Math.max(2, Math.min(11, Math.round(v)));
           } },
       ]);
+      if ((c.series || []).some(se => se.axis === 'right')) {
+        // The secondary scale. Its tick COUNT is the left axis's, because two
+        // scales drawn against one set of gridlines have to divide the same
+        // number of times or neither can be read off them.
+        fieldRow(body, [
+          { label: 'Right min', get: () => c.axis2Min,
+            set: (ch, v) => { if (v === null) delete ch.axis2Min; else ch.axis2Min = v; } },
+          { label: 'Right max', get: () => c.axis2Max,
+            set: (ch, v) => { if (v === null) delete ch.axis2Max; else ch.axis2Max = v; } },
+        ]);
+      }
       inkRow(body, 'Axis colour', 'axisColor', '#7A8E92');
       inkRow(body, 'Gridline colour', 'gridColor', '#E4EBE6');
       toggleRow(body, 'Wrap long labels', 'wrapLabels', false);
+      // Wrapping and shrink-to-fit cover most crowded rows; past that the
+      // only room left is at an angle. Paired with the bar width in one row:
+      // a caption in this column is about fourteen characters wide, and
+      // "Gap between bars" on its own line lost its last word.
+      const shape = [];
+      if (!['row', 'stacked-row', 'column'].includes(c.type)) {
+        shape.push({ label: 'Labels', get: () => String(c.labelAngle || 0),
+          options: [['0', 'Flat'], ['-45', 'Tilted'], ['-90', 'Vertical']],
+          set: (ch, v) => {
+            if (v === '0') delete ch.labelAngle; else ch.labelAngle = +v;
+          } });
+      }
+      if (CHART_BAR_FAMILY.includes(c.type)) {
+        shape.push({ label: 'Bar gap', get: () => c.barGap, placeholder: '0.22',
+          set: (ch, v) => {
+            if (v === null) delete ch.barGap;
+            else ch.barGap = Math.max(0, Math.min(0.9, v));
+          } });
+      }
+      if (shape.length) fieldRow(body, shape);
+      if (c.type.startsWith('stacked')) {
+        // Composition rather than size: every column the same height, so the
+        // shares can be compared across categories of different totals.
+        toggleRow(body, 'Show as 100%', 'stackPct', false);
+      }
     });
+
+    // --- reference lines -------------------------------------------------
+    section('rules', I.rule, 'Reference lines', body => {
+      const rules = c.rules || [];
+      rules.forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = 'ch-rule';
+        const val = document.createElement('input');
+        val.type = 'text'; val.inputMode = 'decimal'; val.className = 'ch-rv';
+        val.value = r.value; val.title = 'Where the line sits on the value axis';
+        val.dataset.ck = `rv${i}`;
+        val.addEventListener('change', () => {
+          const n = chartNumber(val.value);
+          if (n === null) {
+            val.value = r.value; val.classList.add('ch-bad');
+            setTimeout(() => val.classList.remove('ch-bad'), 900);
+            $('stat').textContent = 'not a number - the line kept its value';
+            return;
+          }
+          chartWrite(ch => { ch.rules[i].value = n; });
+        });
+        const lab = document.createElement('input');
+        lab.type = 'text'; lab.className = 'ch-rl';
+        lab.placeholder = 'Label'; lab.value = typeof r.label === 'string' ? r.label : '';
+        lab.dataset.ck = `rl${i}`;
+        lab.addEventListener('change', () => chartWrite(ch => {
+          if (lab.value.trim()) ch.rules[i].label = lab.value.trim();
+          else delete ch.rules[i].label;
+        }));
+        const sw = document.createElement('input');
+        sw.type = 'color'; sw.className = 'ch-colsw';
+        sw.value = r.color || '#2F3E46';
+        sw.addEventListener('change', () =>
+          chartWrite(ch => { ch.rules[i].color = sw.value.toUpperCase(); }));
+        const del = document.createElement('button');
+        del.className = 'ch-rowdel'; del.textContent = '✕';
+        del.title = 'Remove this line';
+        del.addEventListener('click', () => chartWrite(ch => {
+          ch.rules.splice(i, 1);
+          if (!ch.rules.length) delete ch.rules;
+        }));
+        row.append(val, lab, sw, del);
+        body.appendChild(row);
+      });
+      const add = document.createElement('div');
+      add.className = 'tp-row';
+      body.appendChild(add);
+      mk(add, '+ Reference line', 'A target, a prior-year level, a threshold',
+        () => chartWrite(ch => {
+          ch.rules = (ch.rules || []).concat([{ value: 0, label: 'Target' }]);
+        }));
+      if (!rules.length) {
+        const n2 = document.createElement('p');
+        n2.className = 'ch-eg';
+        n2.textContent = 'A line across the plot at one value — the FY26 level, '
+          + 'a target, a threshold.';
+        body.appendChild(n2);
+      }
+    });
+
+    // --- combo: what each series is drawn as ------------------------------
+    if (CHART_BAR_FAMILY.includes(c.type) && c.series.length > 1) {
+      section('series', I.bars, 'Bars & lines', body => {
+        c.series.forEach((se, i) => {
+          const row = document.createElement('div');
+          row.className = 'ch-colrow';
+          const lab = document.createElement('span');
+          lab.className = 'ch-collab';
+          lab.textContent = se.name || `#${i + 1}`;
+          row.appendChild(lab);
+          const pick = (opts, get, set, title) => {
+            const sel2 = document.createElement('select');
+            sel2.title = title;
+            sel2.style.cssText = 'flex:none;font:11.5px system-ui;padding:4px 5px;'
+              + 'border:1px solid #DCE4DE;border-radius:6px;background:#fff;color:var(--ink)';
+            opts.forEach(([v, t]) => {
+              const o = document.createElement('option');
+              o.value = v; o.textContent = t;
+              sel2.appendChild(o);
+            });
+            sel2.value = get();
+            sel2.addEventListener('change', () => chartWrite(ch => set(ch, sel2.value)));
+            row.appendChild(sel2);
+          };
+          // A line over columns, read against its own scale: nominal dollars
+          // as bars, the inflation-adjusted series as a line.
+          pick([['bar', 'Bars'], ['line', 'Line'], ['area', 'Area']],
+            () => se.type || 'bar',
+            (ch, v) => {
+              if (v === 'bar') delete ch.series[i].type;
+              else ch.series[i].type = v;
+            }, 'How this series is drawn');
+          pick([['left', 'Left axis'], ['right', 'Right axis']],
+            () => se.axis || 'left',
+            (ch, v) => {
+              if (v === 'left') delete ch.series[i].axis;
+              else ch.series[i].axis = v;
+            }, 'Which scale this series is read against');
+          body.appendChild(row);
+        });
+        const n3 = document.createElement('p');
+        n3.className = 'ch-eg';
+        n3.textContent = 'A row chart draws every series as bars — a line across '
+          + 'a sideways value axis is not a chart.';
+        body.appendChild(n3);
+      });
+    }
   }
 
   section('numbers', I.num, 'Numbers', body => {
@@ -7586,6 +7997,11 @@ function chartText(c, hook, value) {
   if (what === 'title') {
     if (value === undefined) return c.title || '';
     if (value.trim()) c.title = value.trim(); else delete c.title;
+  } else if (what === 'axisTitle' || what === 'catTitle') {
+    // An axis title is text on the page like any other, so it is edited
+    // where it is read — the panel field and this are the same key.
+    if (value === undefined) return c[what] || '';
+    if (value.trim()) c[what] = value.trim(); else delete c[what];
   } else if (what === 'label') {
     if (value === undefined) return (c.labels || [])[n] || '';
     c.labels[n] = value;

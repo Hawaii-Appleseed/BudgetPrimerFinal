@@ -116,11 +116,37 @@ LINE_ENDS = ("none", "start", "end", "both")
 # Deliberately ABSENT: an animated bar-chart race, which has no meaning in a
 # report that is printed — every type here has to survive being a PDF.
 CHART_TYPES = ("bar", "stacked-bar", "row", "stacked-row", "column",
-               "pie", "donut", "line", "scatter", "histogram",
-               "radar", "funnel", "packed", "treemap")
+               "pie", "donut", "line", "area", "stacked-area", "scatter",
+               "histogram", "radar", "funnel", "packed", "treemap")
 # Which types read a value PER LABEL (one series) rather than per series, and
 # so name their key by label the way a pie does.
 CHART_BY_ITEM = ("pie", "donut", "funnel", "packed", "treemap", "histogram")
+# Which types are drawn in a value plane, and so have an axis to title, a
+# scale to pin and reference lines to hang off. Mirrored in the editor as
+# CHART_WITH_AXES — a treemap offered an axis colour would be a lie.
+CHART_AXIS_TYPES = ("bar", "stacked-bar", "row", "stacked-row", "column",
+                    "line", "area", "stacked-area", "scatter", "histogram")
+# Where the legend may sit. Absent is "bottom", and bottom is what every
+# chart drawn before this got — see _legend_svg for why that matters.
+CHART_LEGEND_POS = ("bottom", "top", "left", "right")
+# What ONE series may be drawn as inside a bar chart. This is the combo
+# chart: a line of "inflation-adjusted" over columns of nominal dollars,
+# which is the shape half the budget figures actually want.
+CHART_SERIES_KINDS = ("bar", "line", "area")
+# A chart STYLE is the look, saved under a name and applied to the next chart.
+# These are the keys that make up a look — everything that is not this
+# figure's own data or its own subject. `type`, `labels`, `series` data,
+# `title`, the axis titles, `axisMin`/`axisMax` and `rules` are all about one
+# particular figure and are deliberately absent; `seriesColors` is not a chart
+# key at all but the ORDERED palette a style hands to `series[i].color`.
+#
+# A style is applied by WRITING these keys onto the chart, never by the
+# renderer looking one up: a published report must not depend on a style
+# definition still existing, or say something different once someone edits it.
+CHART_LOOK = ("colors", "titleColor", "labelColor", "axisColor", "gridColor",
+              "legend", "legendPos", "values", "grid", "tips", "sliceLabel",
+              "format", "labelFormat", "axis2Format", "barGap", "labelAngle",
+              "wrapLabels", "axisTicks")
 CHART_COLORS = ("#6B9E78", "#52796F", "#95B7A2", "#354F52",
                 "#CAD2C5", "#2F3E46", "#A8C4B0", "#7A8E92")
 # What a number label may be scaled by, and what a pie slice may say about
@@ -411,12 +437,21 @@ def _label_parts(s, size: float, wrap: float = 0.0, max_lines: int = 2) -> list:
     return out
 
 
-def _cat_label(name, budget: float, base: float, wrap_lines: int) -> tuple:
+def _cat_label(name, budget: float, base: float, wrap_lines: int,
+               fit_single: bool = False) -> tuple:
     """A category label's final size and lines. One function so the measuring
-    pass and the drawing pass ask exactly the same question."""
+    pass and the drawing pass ask exactly the same question.
+
+    `fit_single` shrinks a ONE-LINE label to its budget too. A row chart's
+    names sit in a fixed gutter and are anchored at its right edge, so a long
+    one ran off the left of the drawing and lost its first letters — there is
+    no wrapping to save it and nothing else to give. Off by default: under a
+    vertical bar a single line has always kept its size, and every chart drawn
+    that way has to keep rendering the same.
+    """
     multi = "\n" in str(name) or wrap_lines > 1
     if not multi:
-        return base, [str(name)]
+        return (_fit_size(name, budget, base) if fit_single else base), [str(name)]
     size = _fit_size(name, budget, base)
     lmax = max(wrap_lines, str(name).count("\n") + 2)
     return size, _label_parts(name, size, wrap=budget, max_lines=lmax)
@@ -1060,15 +1095,40 @@ def fill_repr(v) -> str:
 
 
 def _chart_series(c: dict) -> list:
-    """Normalised series: every one has a name, a data list and a colour."""
+    """Normalised series: every one has a name, a data list and a colour —
+    and, since the combo pass, what it is DRAWN as and which axis it is drawn
+    against. Both default to what every series was before ("bar" for the bar
+    family, the left axis), so a spec that names neither is unchanged."""
     out = []
     for i, s in enumerate(c.get("series") or []):
+        kind = s.get("type")
         out.append({
             "name": s.get("name") or f"Series {i + 1}",
             "data": [float(v or 0) for v in (s.get("data") or [])],
             "color": s.get("color") or CHART_COLORS[i % len(CHART_COLORS)],
+            # Per-point colour. A series colour says "this measure"; a point
+            # colour says "this one bar" — the highlight that used to mean
+            # leaving the engine and drawing the figure by hand.
+            "colors": list(s.get("colors") or []),
+            "kind": kind if kind in CHART_SERIES_KINDS else "bar",
+            "axis": "right" if s.get("axis") == "right" else "left",
         })
     return out
+
+
+def _point_color(c: dict, s: dict, gi: int, nseries: int) -> str:
+    """The fill for ONE bar. A series' own `colors[]` wins; a single-series
+    chart also reads the chart-level `colors[]`, which is what a pie has
+    always meant by that key — one colour per item. Everything else is the
+    series colour, so a chart that sets neither draws exactly as before."""
+    cols = s.get("colors") or []
+    if gi < len(cols) and cols[gi]:
+        return cols[gi]
+    if nseries == 1:
+        top = c.get("colors") or []
+        if gi < len(top) and top[gi]:
+            return top[gi]
+    return s["color"]
 
 
 def _ch_hook(c: dict, what: str) -> str:
@@ -1132,17 +1192,43 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
                      f'{_ch_hook(c, "title")}>{_xml(title)}</text>')
         top = y + fs * 2.0
     legend = bool(c.get("legend")) and len(series) > 0
-    legend_h = fs * 1.9 if legend else 0.0
-    body_h = max(0.2, (y + h) - top - legend_h)
+    pos = _legend_pos(c)
+    keys = _legend_keys(c, kind, labels, series) if legend else []
+    legend = legend and bool(keys)   # a series with no data names nothing
+    lg_w = lg_h = 0.0
+    if legend:
+        if pos in ("left", "right"):
+            lg_w = min(w * 0.36, max(_legend_w(k, fs) for k in keys))
+        else:
+            lg_h = len(_legend_rows(keys, w, fs)[0]) * fs * 1.9
+
+    # Axis titles are carved out HERE rather than inside each plot routine:
+    # the body is simply handed a smaller box, so "Millions of dollars" costs
+    # one strip of the drawing and no change to four different pad
+    # calculations. A chart that names neither is handed the box it always was.
+    horizontal = kind in ("row", "column", "stacked-row")
+    axis_t = str(c.get("axisTitle") or "") if kind in CHART_AXIS_TYPES else ""
+    cat_t = str(c.get("catTitle") or "") if kind in CHART_AXIS_TYPES else ""
+    t_left = fs * 1.35 if (cat_t if horizontal else axis_t) else 0.0
+    t_bot = fs * 1.35 if (axis_t if horizontal else cat_t) else 0.0
+
+    body_x = x + lg_w if pos == "left" else x
+    body_w = max(0.2, w - lg_w)
+    body_top = top + (lg_h if pos == "top" else 0.0)
+    body_h = max(0.2, (y + h) - body_top - (lg_h if pos == "bottom" else 0.0))
 
     ink = {"label": c_label, "axis": c_axis, "grid": c_grid}
-    args = (c, kind, labels, series, x, top, w, body_h, fs, ink)
+    args = (c, kind, labels, series, body_x + t_left, body_top,
+            body_w - t_left, body_h - t_bot, fs, ink)
     # Only the bar family has bars to grow; every other chart type takes a
     # whole-element entrance instead, which needs nothing drawn into it.
-    bar_anim = anim if kind not in ("pie", "donut", "line", "scatter", "radar",
+    bar_anim = anim if kind not in ("pie", "donut", "line", "area",
+                                    "stacked-area", "scatter", "radar",
                                     "funnel", "packed", "treemap") else None
     if kind in ("pie", "donut"):
         parts.append(_pie_svg(*args))
+    elif kind in ("area", "stacked-area"):
+        parts.append(_area_svg(*args))
     elif kind in ("line", "scatter"):
         parts.append(_xy_svg(*args))
     elif kind == "radar":
@@ -1158,25 +1244,43 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
     else:
         parts.append(_bars_svg(*args, anim=bar_anim))
 
+    if axis_t or cat_t:
+        parts.append(_axis_titles_svg(
+            c, axis_t, cat_t, horizontal, body_x, body_top,
+            body_w, body_h, t_left, t_bot, fs, c_label))
     if legend:
-        ly = y + h - fs * 0.5
-        # A by-item chart's legend names the ITEMS (slices, bins, blocks); a
-        # bar or line legend names the series. Either way each entry is
-        # editable in place — a legend IS the label.
-        by_item = kind in CHART_BY_ITEM and series
-        keys = ([{"name": labels[i] if i < len(labels) else f"#{i + 1}",
-                  "color": _slice_color(c, i), "hook": f"label:{i}"}
-                 for i in range(len(series[0]["data"]))]
-                if by_item else [{**s, "hook": f"series:{i}"} for i, s in enumerate(series)])
-        gap = w / max(1, len(keys))
-        for i, k in enumerate(keys):
-            kx = x + i * gap
-            parts.append(f'<rect x="{kx:.4f}" y="{ly - fs * 0.75:.4f}" '
-                         f'width="{fs * 0.72:.4f}" height="{fs * 0.72:.4f}" rx="{fs * 0.16:.4f}" '
-                         f'fill="{k["color"]}"/>')
-            parts.append(f'<text x="{kx + fs:.4f}" y="{ly - fs * 0.12:.4f}" '
-                         f'font-size="{_lfs(fs * 0.85):.4f}" fill="{c_label}"'
-                         f'{_ch_hook(c, k["hook"])}>{_xml(k["name"])}</text>')
+        parts.append(_legend_svg(c, keys, pos, x, y, w, h, top, lg_w, lg_h,
+                                 body_top, body_h, fs, c_label))
+    return "".join(parts)
+
+
+def _axis_titles_svg(c, axis_t, cat_t, horizontal, bx, by, bw, bh,
+                     t_left, t_bot, fs, col) -> str:
+    """"Millions of dollars" down the side, "Fiscal year" along the foot.
+
+    Until now the only way to say either was a floating text box, which did
+    not move when the chart moved and did not rotate at all.
+    """
+    parts = []
+    sz = _lfs(fs * 0.85)
+    left_t = cat_t if horizontal else axis_t
+    bot_t = axis_t if horizontal else cat_t
+    if left_t:
+        # Rotated about its own centre, reading upwards, which is how every
+        # value axis in print is set.
+        cx, cy = bx + fs * 0.75, by + (bh - t_bot) / 2
+        parts.append(f'<text x="{cx:.4f}" y="{cy:.4f}" text-anchor="middle" '
+                     f'font-size="{sz:.4f}" fill="{col}" font-weight="600" '
+                     f'transform="rotate(-90 {cx:.4f} {cy:.4f})"'
+                     f'{_ch_hook(c, "axisTitle" if not horizontal else "catTitle")}'
+                     f'>{_xml(left_t)}</text>')
+    if bot_t:
+        cx = bx + t_left + (bw - t_left) / 2
+        parts.append(f'<text x="{cx:.4f}" y="{by + bh - fs * 0.25:.4f}" '
+                     f'text-anchor="middle" font-size="{sz:.4f}" fill="{col}" '
+                     f'font-weight="600"'
+                     f'{_ch_hook(c, "catTitle" if not horizontal else "axisTitle")}'
+                     f'>{_xml(bot_t)}</text>')
     return "".join(parts)
 
 
@@ -1187,39 +1291,297 @@ def _slice_color(c: dict, i: int) -> str:
     return CHART_COLORS[i % len(CHART_COLORS)]
 
 
+def _rules_svg(c, px, py, pw, ph, vmin, vmax, horizontal, fs, ink,
+               fmt=None) -> str:
+    """Reference lines across the value plane — "the FY26 level", "the
+    inflation-adjusted line", a target.
+
+    Drawn OVER the data and under the axis, because the point of one is to be
+    read against the bars it crosses. A rule whose value falls off the scale
+    is skipped rather than clamped: a line drawn at the top of the plot that
+    does not mean the top of the plot is worse than no line.
+    """
+    rules = c.get("rules")
+    if not rules:
+        return ""
+    span = (vmax - vmin) or 1.0
+    out = []
+    for r in rules:
+        if not isinstance(r, dict):
+            continue
+        v = r.get("value")
+        if v is None:
+            continue
+        t = (float(v) - vmin) / span
+        if t < -0.0001 or t > 1.0001:
+            continue
+        col = r.get("color") or "#2F3E46"
+        wdt = r.get("width")
+        wdt = 0.012 if not isinstance(wdt, (int, float)) or isinstance(wdt, bool) \
+            else max(0.002, min(0.08, float(wdt)))
+        dash = "" if r.get("dash") is False else \
+            f' stroke-dasharray="{fs * 0.34:.4f} {fs * 0.22:.4f}"'
+        lab = r.get("label")
+        if lab is True:
+            lab = _fmt_val(float(v), fmt)
+        lab = "" if lab in (None, False) else str(lab)
+        lsz = _lfs(fs * 0.74)
+        if horizontal:
+            gx = px + pw * t
+            out.append(f'<line x1="{gx:.4f}" y1="{py:.4f}" x2="{gx:.4f}" '
+                       f'y2="{py + ph:.4f}" stroke="{col}" '
+                       f'stroke-width="{wdt:.4f}"{dash}/>')
+            if lab:
+                # Inside the plot, hugging the line, at the top — the one
+                # place on a horizontal chart that is never a bar's own row.
+                out.append(f'<text x="{gx + fs * 0.16:.4f}" y="{py + lsz:.4f}" '
+                           f'font-size="{lsz:.4f}" fill="{col}" '
+                           f'font-weight="600">{_xml(lab)}</text>')
+        else:
+            gy = py + ph - ph * t
+            out.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
+                       f'y2="{gy:.4f}" stroke="{col}" '
+                       f'stroke-width="{wdt:.4f}"{dash}/>')
+            if lab:
+                out.append(f'<text x="{px + pw:.4f}" y="{gy - fs * 0.18:.4f}" '
+                           f'text-anchor="end" font-size="{lsz:.4f}" '
+                           f'fill="{col}" font-weight="600">{_xml(lab)}</text>')
+    return "".join(out)
+
+
+def _legend_keys(c, kind, labels, series) -> list:
+    """What the legend names. A by-item chart's legend names the ITEMS
+    (slices, bins, blocks); a bar or line legend names the series. Either way
+    each entry is editable in place — a legend IS the label."""
+    if kind in CHART_BY_ITEM and series:
+        return [{"name": labels[i] if i < len(labels) else f"#{i + 1}",
+                 "color": _slice_color(c, i), "hook": f"label:{i}"}
+                for i in range(len(series[0]["data"]))]
+    return [{"name": s["name"], "color": s["color"], "hook": f"series:{i}"}
+            for i, s in enumerate(series)]
+
+
+def _legend_pos(c) -> str:
+    p = c.get("legendPos")
+    return p if p in CHART_LEGEND_POS else "bottom"
+
+
+def _legend_w(k, fs: float) -> float:
+    """One entry's ink: the swatch, the gap the text starts after, the text
+    itself at the 0.58em estimate, and a little air before the next one."""
+    return fs + len(str(k["name"])) * _EM_W * _lfs(fs * 0.85) + fs * 0.4
+
+
+def _legend_rows(keys, w: float, fs: float) -> list:
+    """Entries packed into rows that fit `w`, or a single evenly-spread row
+    when they already do.
+
+    Returned as `(rows, spread)`: `spread` True means every entry fits in its
+    even share of the width, which is how the legend has ALWAYS been laid out
+    — and so is what has to keep being emitted, character for character, for
+    every chart already in a published report. The packed layout fires only
+    where the even spread would have run two names into each other, which is
+    a collision, not a style.
+    """
+    gap = w / max(1, len(keys))
+    if all(fs + len(str(k["name"])) * _EM_W * _lfs(fs * 0.85) <= gap
+           for k in keys):
+        return [list(keys)], True
+    rows, cur, used = [], [], 0.0
+    for k in keys:
+        kw = _legend_w(k, fs)
+        if cur and used + kw > w and len(rows) < 2:
+            rows.append(cur)
+            cur, used = [], 0.0
+        cur.append(k)
+        used += kw
+    if cur:
+        rows.append(cur)
+    return rows, False
+
+
+def _legend_svg(c, keys, pos, x, y, w, h, top, lg_w, lg_h, body_top, body_h,
+                fs, c_label) -> str:
+    """The legend, wherever it was asked to sit."""
+    parts = []
+    sw = fs * 0.72
+    if pos in ("left", "right"):
+        lx = x if pos == "left" else x + w - lg_w
+        step = fs * 1.6
+        ly = body_top + max(0.0, (body_h - step * len(keys)) / 2) + fs * 0.9
+        for i, k in enumerate(keys):
+            ky = ly + i * step
+            parts.append(f'<rect x="{lx:.4f}" y="{ky - sw:.4f}" '
+                         f'width="{sw:.4f}" height="{sw:.4f}" rx="{fs * 0.16:.4f}" '
+                         f'fill="{k["color"]}"/>')
+            parts.append(f'<text x="{lx + fs:.4f}" y="{ky - fs * 0.12:.4f}" '
+                         f'font-size="{_lfs(fs * 0.85):.4f}" fill="{c_label}"'
+                         f'{_ch_hook(c, k["hook"])}>{_xml(k["name"])}</text>')
+        return "".join(parts)
+    rows, spread = _legend_rows(keys, w, fs)
+    # The LAST row keeps the baseline the single row has always had — written
+    # as that expression, not as one derived from lg_h, so the arithmetic
+    # cannot drift by a float bit and move every published legend.
+    base = (top + fs * 1.4) if pos == "top" \
+        else (y + h - fs * 0.5 - (len(rows) - 1) * fs * 1.9)
+    for ri, row in enumerate(rows):
+        ly = base + ri * fs * 1.9
+        if spread:
+            gap = w / max(1, len(row))
+            xs = [x + i * gap for i in range(len(row))]
+        else:
+            total = sum(_legend_w(k, fs) for k in row)
+            run = x + max(0.0, (w - total) / 2)
+            xs = []
+            for k in row:
+                xs.append(run)
+                run += _legend_w(k, fs)
+        for kx, k in zip(xs, row):
+            parts.append(f'<rect x="{kx:.4f}" y="{ly - fs * 0.75:.4f}" '
+                         f'width="{sw:.4f}" height="{sw:.4f}" rx="{fs * 0.16:.4f}" '
+                         f'fill="{k["color"]}"/>')
+            parts.append(f'<text x="{kx + fs:.4f}" y="{ly - fs * 0.12:.4f}" '
+                         f'font-size="{_lfs(fs * 0.85):.4f}" fill="{c_label}"'
+                         f'{_ch_hook(c, k["hook"])}>{_xml(k["name"])}</text>')
+    return "".join(parts)
+
+
+def _stack_pct(series, n):
+    """Each category's values rewritten as a share of that category's total.
+
+    The 100%-stacked chart: the question is composition, not size, and every
+    column reaching the same height is what makes the shares comparable
+    across categories of wildly different totals. Copies the data rather than
+    scaling it in place — the caller's spec is the document, and a render must
+    not rewrite it."""
+    out = [dict(s, data=list(s["data"])) for s in series]
+    for i in range(n):
+        tot = sum(abs(s["data"][i]) for s in out if i < len(s["data"]))
+        if not tot:
+            continue
+        for s in out:
+            if i < len(s["data"]):
+                s["data"][i] = s["data"][i] / tot * 100.0
+    return out
+
+
+def _stack_totals(group, n):
+    """The two running totals a stack needs: how far the positive half of
+    each category reaches, and how far the negative half does."""
+    tot = []
+    for i in range(n):
+        vals = [s["data"][i] if i < len(s["data"]) else 0 for s in group]
+        tot.append(sum(v for v in vals if v > 0))
+        tot.append(sum(v for v in vals if v < 0))
+    return tot
+
+
+def _axis2_bounds(c, vals):
+    """The secondary axis. Reads its own min and max but shares the tick
+    COUNT, because two scales drawn against one set of gridlines have to
+    have the same number of divisions or neither can be read off them."""
+    shim = {"axisMin": c.get("axis2Min"), "axisMax": c.get("axis2Max"),
+            "axisTicks": c.get("axisTicks")}
+    return _axis_bounds(shim, vals)
+
+
+def _bar_gap(c) -> float:
+    """The share of each category's slot the bars FILL — `barGap` is the share
+    left empty, and this is its complement.
+
+    Written so the default is the literal 0.78 the multiplier has always
+    been, not 1 - 0.22: those are different floats, and the difference shows
+    up in the fourth decimal of a bar's width."""
+    g = c.get("barGap")
+    if not isinstance(g, (int, float)) or isinstance(g, bool):
+        return 0.78
+    return 1.0 - max(0.0, min(0.9, float(g)))
+
+
+def _label_angle(c) -> float:
+    a = c.get("labelAngle")
+    if not isinstance(a, (int, float)) or isinstance(a, bool):
+        return 0.0
+    return max(-90.0, min(90.0, float(a)))
+
+
+def _rotated_label(name, cx, cy, size, angle, col, hook) -> str:
+    """One category label turned on its side. A rotated label anchors at the
+    END for a left lean and the START for a right one, so the text runs away
+    from the tick it belongs to rather than across its neighbours."""
+    anchor = "end" if angle < 0 else "start" if angle > 0 else "middle"
+    return (f'<text x="{cx:.4f}" y="{cy:.4f}" text-anchor="{anchor}" '
+            f'font-size="{size:.4f}" fill="{col}" '
+            f'transform="rotate({angle:g} {cx:.4f} {cy:.4f})"{hook}>'
+            f'{_xml(str(name).replace(chr(10), " "))}</text>')
+
+
 def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     """'bar' = vertical columns, 'row' = horizontal bars ('column' is the old
     name for row), each also available STACKED. Stacking is the same geometry
     with the bars laid end to end instead of side by side, so it shares every
-    axis, gridline and label decision rather than forking the whole routine."""
+    axis, gridline and label decision rather than forking the whole routine.
+
+    A series may also say it is drawn as a `line` (or an `area`) and read
+    against a `right` axis — the combo chart, where nominal dollars are
+    columns and the inflation-adjusted series is a line over them.
+    """
     if not series:
         return ""
     n = max(len(labels), max((len(s["data"]) for s in series), default=0))
     if not n:
         return ""
     stacked = kind.startswith("stacked")
-    if stacked:
-        # The axis has to reach the tallest TOTAL, not the tallest single bar.
-        # Negative and positive parts of a stack grow in opposite directions
-        # from zero, so each end needs its own running total.
-        totals = []
-        for i in range(n):
-            vals = [s["data"][i] if i < len(s["data"]) else 0 for s in series]
-            totals.append(sum(v for v in vals if v > 0))
-            totals.append(sum(v for v in vals if v < 0))
-        vmin, vmax, nticks = _axis_bounds(c, totals)
+    horizontal = kind in ("row", "column", "stacked-row")
+    if stacked and c.get("stackPct"):
+        series = _stack_pct(series, n)
+    # A horizontal chart's value axis runs sideways; a line drawn across it is
+    # not a chart anyone draws, so a row chart keeps every series as bars.
+    if horizontal:
+        bars, over = list(series), []
     else:
-        vmin, vmax, nticks = _axis_bounds(
-            c, [v for s in series for v in s["data"]])
+        bars = [s for s in series if s["kind"] == "bar"]
+        over = [s for s in series if s["kind"] != "bar"]
+    two_ax = any(s["axis"] == "right" for s in series) and not horizontal
+
+    bar_ids = {id(s) for s in bars}
+
+    def _bounds(side):
+        grp = [s for s in series if s["axis"] == side]
+        if not grp:
+            return None
+        bs = [s for s in grp if id(s) in bar_ids]
+        vals = _stack_totals(bs, n) if (stacked and bs) else \
+            [v for s in bs for v in s["data"]]
+        vals += [v for s in grp if id(s) not in bar_ids for v in s["data"]]
+        return grp, vals
+
+    left = _bounds("left")
+    vmin, vmax, nticks = _axis_bounds(c, left[1] if left else [0])
+    vmin2 = vmax2 = None
+    if two_ax:
+        right = _bounds("right")
+        vmin2, vmax2, _ = _axis2_bounds(c, right[1] if right else [0])
     grid = c.get("grid") is not False
     show_vals = bool(c.get("values"))
     afmt = _num_format(c)
     lfmt = _num_format(c, "labelFormat")
     wrap_lines = _wrap_lines(c)
+    angle = _label_angle(c)
     parts = []
-    horizontal = kind in ("row", "column", "stacked-row")
     # Room for the tick labels along the value axis and the category names.
     pad_l = (fs * 2.6) if not horizontal else (fs * 3.4)
+    pad_r = (fs * 2.6) if two_ax else (fs * 0.4)
+    if horizontal and labels:
+        # A row chart's names live in this gutter, anchored at its right edge,
+        # and nothing wraps them: a name wider than 3.4 label-heights ran off
+        # the LEFT of the drawing and lost its first letters. So the gutter is
+        # measured from the names, up to a cap — past which the plot would be
+        # all margin and the label shrinks to fit instead.
+        _sz = _lfs(fs * 0.82)
+        _widest = max((len(ln) for nm in labels
+                       for ln in str(nm).split("\n")), default=0)
+        pad_l = max(pad_l, min(w * 0.4, _widest * _EM_W * _sz / 0.9))
     # How deep the category band has to be — measured, not guessed. The
     # horizontal plot's width does not depend on pad_b, so the labels can be
     # laid out first and the band sized from the lines they ACTUALLY take:
@@ -1227,19 +1589,36 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     # and the extra line was drawn straight through the prose below.
     band = max(_label_lines(labels), wrap_lines)
     if not horizontal:
-        probe_slot = max(0.1, w - pad_l - fs * 0.4) / n
+        probe_slot = max(0.1, w - pad_l - pad_r) / n
         base_sz = _lfs(fs * 0.82)
         band = max(band, max(
             (len(_cat_label(nm, probe_slot * 0.95, base_sz, wrap_lines)[1])
              for nm in labels if nm), default=1))
     pad_b = fs * (1.6 + 0.95 * (band - 1))
+    rot_sz = _lfs(fs * 0.82)
+    if angle and not horizontal:
+        # A turned label is as deep as its own length leaning over, so the
+        # band is measured off the longest name rather than off a line count.
+        rad = math.radians(abs(angle))
+        chars = max((len(str(nm).replace("\n", " ")) for nm in labels),
+                    default=0)
+        # The leftmost label leans back past its own tick, and the only room
+        # it has to lean into is the tick-label gutter. Shrink until it fits,
+        # never below the legibility floor — at which point it overflows,
+        # which is still better than a label nobody can read.
+        room = pad_l + max(0.1, w - pad_l - pad_r) / n / 2
+        if chars and math.cos(rad) > 0.01:
+            fit = room / (chars * _EM_W * math.cos(rad))
+            rot_sz = _lfs(min(rot_sz, rot_sz * fit))
+        longest = chars * _EM_W * rot_sz
+        pad_b = fs * 0.8 + longest * math.sin(rad) + rot_sz * math.cos(rad)
     # A bar below zero hangs its value label under itself, which is exactly
     # where the category names are. Give that row its own line.
     if show_vals and not horizontal and not stacked and min(
             (v for s in series for v in s["data"]), default=0) < 0:
         pad_b += fs * 0.9
     px, py = x + pad_l, y
-    pw, ph = max(0.1, w - pad_l - fs * 0.4), max(0.1, h - pad_b)
+    pw, ph = max(0.1, w - pad_l - pad_r), max(0.1, h - pad_b)
     span = vmax - vmin
     # Where zero sits in the plot. With no negatives this IS the axis line, so
     # every all-positive chart draws exactly where it used to.
@@ -1251,6 +1630,8 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     # gridlines + ticks
     if grid:
         ticklab = _tick_labels(vmin, vmax, nticks, afmt)
+        lab2 = _tick_labels(vmin2, vmax2, nticks, _num_format(c, "axis2Format")) \
+            if two_ax else None
         for i in range(nticks):
             t = i / (nticks - 1)
             if horizontal:
@@ -1266,25 +1647,32 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
                              f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
                              f'fill="{ink["axis"]}">{ticklab[i]}</text>')
+                if lab2 is not None:
+                    parts.append(f'<text x="{px + pw + fs * 0.3:.4f}" '
+                                 f'y="{gy + fs * 0.3:.4f}" '
+                                 f'font-size="{_lfs(fs * 0.8):.4f}" '
+                                 f'fill="{ink["axis"]}">{lab2[i]}</text>')
 
     slot = (ph if horizontal else pw) / n
-    inner = slot * 0.78
-    bw = inner if stacked else inner / max(1, len(series))
+    inner = slot * _bar_gap(c)
+    bw = inner if stacked else inner / max(1, len(bars))
+    nser = len(series)
     for gi in range(n):
         base = (py if horizontal else px) + gi * slot + (slot - inner) / 2
         name = labels[gi] if gi < len(labels) else ""
         up = 0.0                # how far the positive half of a stack has got
         down = 0.0              # and the negative half, in the other direction
-        for si, s in enumerate(series):
+        for si, s in enumerate(bars):
             v = s["data"][gi] if gi < len(s["data"]) else 0
             # The bar spans zero -> v, measured against the axis it is drawn
             # on. A negative value therefore grows the other way instead of
             # being clamped to nothing, which is what it used to do.
             frac = 0.0 if not span else abs(v) / span
+            col = _point_color(c, s, gi, nser)
             tip = ""
             if c.get("tips"):
                 who = name or f"#{gi + 1}"
-                if s.get("name") and len(series) > 1:
+                if s.get("name") and nser > 1:
                     who = f"{who} — {s['name']}"
                 tip = _tip(c, f"{who}: {_fmt_val(v, lfmt)}")
             if horizontal:
@@ -1297,7 +1685,7 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                     bx0 = zx if v >= 0 else zx - blen
                 parts.append(f'<rect class="ds-cbar ds-cbar-x" x="{bx0:.4f}" '
                              f'y="{by:.4f}" width="{blen:.4f}" '
-                             f'height="{bw * 0.86:.4f}" fill="{s["color"]}" '
+                             f'height="{bw * 0.86:.4f}" fill="{col}" '
                              f'rx="{min(0.02, bw * 0.2):.4f}"'
                              f'{bar_anim_attrs(anim, gi)}{tip}/>')
                 if stacked:
@@ -1333,7 +1721,7 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                     by0 = (zy - bh) if v >= 0 else zy
                 parts.append(f'<rect class="ds-cbar" x="{bx:.4f}" y="{by0:.4f}" '
                              f'width="{bw * 0.86:.4f}" height="{bh:.4f}" '
-                             f'fill="{s["color"]}" rx="{min(0.02, bw * 0.2):.4f}"'
+                             f'fill="{col}" rx="{min(0.02, bw * 0.2):.4f}"'
                              f'{bar_anim_attrs(anim, gi)}{tip}/>')
                 if stacked:
                     if v >= 0:
@@ -1365,18 +1753,59 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
             # what leaves every existing chart byte-for-byte unchanged.
             budget = (pad_l * 0.9) if horizontal else (slot * 0.95)
             # Same question the band measurement asked, same answer.
-            csize, cparts = _cat_label(name, budget, _lfs(fs * 0.82), wrap_lines)
+            csize, cparts = _cat_label(name, budget, _lfs(fs * 0.82),
+                                       wrap_lines, fit_single=horizontal)
             if horizontal:
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" '
                              f'y="{base + inner / 2 + fs * 0.3:.4f}" text-anchor="end" '
                              f'font-size="{csize:.4f}" fill="{ink["label"]}"'
                              f'{_ch_hook(c, f"label:{gi}")}>'
                              f'{_lines_from(cparts, px - fs * 0.3, csize, center=True)}</text>')
+            elif angle:
+                parts.append(_rotated_label(
+                    name, base + inner / 2, py + ph + fs * 0.72,
+                    rot_sz, angle, ink["label"],
+                    _ch_hook(c, f"label:{gi}")))
             else:
                 parts.append(f'<text x="{base + inner / 2:.4f}" y="{py + ph + fs:.4f}" '
                              f'text-anchor="middle" font-size="{csize:.4f}" '
                              f'fill="{ink["label"]}"{_ch_hook(c, f"label:{gi}")}'
                              f'>{_lines_from(cparts, base + inner / 2, csize)}</text>')
+    # Combo overlays, drawn over the bars they are read against. Each takes
+    # the scale of the axis it named, which is the whole point of a secondary
+    # axis: a line in percent over columns in dollars.
+    for s in over:
+        lo, hi = (vmin2, vmax2) if (two_ax and s["axis"] == "right") else (vmin, vmax)
+        sp = (hi - lo) or 1.0
+        pts = []
+        for gi in range(n):
+            v = s["data"][gi] if gi < len(s["data"]) else 0
+            cx = px + slot * gi + slot / 2
+            cy = py + ph - ph * ((v - lo) / sp)
+            pts.append((cx, cy, v, gi))
+        pl = " ".join(f"{a:.4f},{b:.4f}" for a, b, _, _ in pts)
+        if s["kind"] == "area":
+            zt = min(1.0, max(0.0, (0.0 - lo) / sp))
+            fy = py + ph - ph * zt
+            parts.append(f'<polygon points="{pts[0][0]:.4f},{fy:.4f} {pl} '
+                         f'{pts[-1][0]:.4f},{fy:.4f}" fill="{s["color"]}" '
+                         f'fill-opacity="0.35"/>')
+        parts.append(f'<polyline points="{pl}" fill="none" '
+                     f'stroke="{s["color"]}" stroke-width="0.022" '
+                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+        for cx, cy, v, gi in pts:
+            tip = ""
+            if c.get("tips"):
+                who = labels[gi] if gi < len(labels) and labels[gi] else f"#{gi + 1}"
+                tip = _tip(c, f"{who} — {s['name']}: {_fmt_val(v, lfmt)}")
+            parts.append(f'<circle cx="{cx:.4f}" cy="{cy:.4f}" '
+                         f'r="{fs * 0.26:.4f}" fill="{s["color"]}"{tip}/>')
+            if show_vals:
+                parts.append(f'<text x="{cx:.4f}" y="{cy - fs * 0.45:.4f}" '
+                             f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
+                             f'fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
+    parts.append(_rules_svg(c, px, py, pw, ph, vmin, vmax, horizontal, fs,
+                            ink, lfmt))
     # the axis itself, last so it sits over the gridlines. With negatives in
     # play it is the ZERO line, not the floor — a rule under the bars would be
     # drawn somewhere no bar starts from.
@@ -1391,7 +1820,7 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
 
 def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
                 xmin=None, xmax=None, nticks=5, fmt=None, wrap_lines=1,
-                hook_chart=None, xfmt=None) -> str:
+                hook_chart=None, xfmt=None, xspread=False) -> str:
     """Gridlines, ticks and the two axis rules — shared by every chart drawn in
     a value plane (line, scatter, histogram), so they cannot drift apart.
 
@@ -1416,9 +1845,22 @@ def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
         for i, name in enumerate(xlabels):
             if not name:
                 continue
-            gx = px + (pw * (i + 0.5) / len(xlabels) if len(xlabels) else 0)
-            slot = pw / max(1, len(xlabels))
-            parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
+            # A bar's label sits over the middle of its slot; an area's sits
+            # over the point it belongs to, which is on the plot's own edge at
+            # each end. Same labels, two different things to line up with.
+            anchor = "middle"
+            if xspread and len(xlabels) > 1:
+                gx = px + pw * i / (len(xlabels) - 1)
+                slot = pw / (len(xlabels) - 1)
+                # The first and last points ARE the plot's edges, so a label
+                # centred on one hangs half its width outside the drawing and
+                # loses that half. Tuck the two ends in instead.
+                anchor = "start" if i == 0 else \
+                    "end" if i == len(xlabels) - 1 else "middle"
+            else:
+                gx = px + (pw * (i + 0.5) / len(xlabels) if len(xlabels) else 0)
+                slot = pw / max(1, len(xlabels))
+            parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="{anchor}" '
                          f'font-size="{_lfs(fs * 0.82):.4f}" fill="{ink["label"]}"'
                          f'{_ch_hook(hook_chart if hook_chart is not None else {}, f"label:{i}")}>'
                          f'{_lines_inner(name, gx, _lfs(fs * 0.82), wrap=slot * 0.95 if wrap_lines > 1 else 0, max_lines=wrap_lines)}</text>')
@@ -1434,6 +1876,83 @@ def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
                  f'y2="{zy:.4f}" stroke="{ink["axis"]}" stroke-width="0.008"/>')
     parts.append(f'<line x1="{px:.4f}" y1="{py:.4f}" x2="{px:.4f}" y2="{py + ph:.4f}" '
                  f'stroke="{ink["axis"]}" stroke-width="0.008"/>')
+    return "".join(parts)
+
+
+def _area_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
+    """'area' fills each series down to the zero line; 'stacked-area' lays the
+    series on top of one another so the top edge is the total.
+
+    This is the shape `fig_obligated` is — and the reason that figure is
+    forty-five lines of hand-written polygon geometry in the primer's
+    renderer instead of data. The points span the plot edge to edge rather
+    than sitting at slot centres, because an area chart is a continuous
+    quantity over time and a gap at each end would say the series began after
+    the axis did.
+    """
+    if not series:
+        return ""
+    n = max(len(labels), max((len(s["data"]) for s in series), default=0))
+    if not n:
+        return ""
+    stacked = kind == "stacked-area"
+    if stacked and c.get("stackPct"):
+        series = _stack_pct(series, n)
+    pad_l, pad_b = fs * 2.6, fs * 1.6
+    px, py = x + pad_l, y
+    pw, ph = max(0.1, w - pad_l - fs * 0.4), max(0.1, h - pad_b)
+    afmt = _num_format(c)
+    lfmt = _num_format(c, "labelFormat")
+    vals = _stack_totals(series, n) if stacked else \
+        [v for s in series for v in s["data"]]
+    vmin, vmax, nticks = _axis_bounds(c, vals)
+    span = (vmax - vmin) or 1.0
+    parts = [_plot_frame(px, py, pw, ph, vmin, vmax, ink, fs,
+                         c.get("grid") is not False,
+                         xlabels=[labels[i] if i < len(labels) else ""
+                                  for i in range(n)],
+                         nticks=nticks, fmt=afmt, wrap_lines=_wrap_lines(c),
+                         hook_chart=c, xspread=True)]
+    xs = [px + (pw * i / (n - 1) if n > 1 else pw / 2) for i in range(n)]
+    zy = py + ph - ph * min(1.0, max(0.0, (0.0 - vmin) / span))
+    show_vals = bool(c.get("values"))
+    run = [0.0] * n                      # the top of the stack so far
+    for s in series:
+        lower = list(run)
+        tops = []
+        for i in range(n):
+            v = s["data"][i] if i < len(s["data"]) else 0
+            run[i] = run[i] + v if stacked else v
+            tops.append(run[i])
+        ty = [py + ph - ph * ((v - vmin) / span) for v in tops]
+        by = [py + ph - ph * ((v - vmin) / span) for v in lower] if stacked \
+            else [zy] * n
+        fwd = " ".join(f"{xs[i]:.4f},{ty[i]:.4f}" for i in range(n))
+        back = " ".join(f"{xs[i]:.4f},{by[i]:.4f}" for i in range(n - 1, -1, -1))
+        parts.append(f'<polygon points="{fwd} {back}" fill="{s["color"]}" '
+                     f'fill-opacity="{0.9 if stacked else 0.35:.2f}"/>')
+        parts.append(f'<polyline points="{fwd}" fill="none" '
+                     f'stroke="{s["color"]}" stroke-width="0.022" '
+                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+        for i in range(n):
+            v = s["data"][i] if i < len(s["data"]) else 0
+            if c.get("tips"):
+                who = labels[i] if i < len(labels) and labels[i] else f"#{i + 1}"
+                if len(series) > 1:
+                    who = f"{who} — {s['name']}"
+                # The band, not a point: an area chart has nothing small
+                # enough to aim at, so the whole segment answers.
+                parts.append(f'<rect x="{xs[i] - pw / max(1, n * 2):.4f}" '
+                             f'y="{min(ty[i], by[i]):.4f}" '
+                             f'width="{pw / max(1, n):.4f}" '
+                             f'height="{abs(by[i] - ty[i]):.4f}" fill="transparent"'
+                             f'{_tip(c, f"{who}: {_fmt_val(v, lfmt)}")}/>')
+            if show_vals:
+                parts.append(f'<text x="{xs[i]:.4f}" y="{ty[i] - fs * 0.35:.4f}" '
+                             f'text-anchor="middle" '
+                             f'font-size="{_lfs(fs * 0.72):.4f}" '
+                             f'fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
+    parts.append(_rules_svg(c, px, py, pw, ph, vmin, vmax, False, fs, ink, lfmt))
     return "".join(parts)
 
 
@@ -1478,6 +1997,8 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
             tip = _tip(c, f"{_fmt_val(xs[i], afmt)}, {_fmt_val(ys[i], lfmt)}") if c.get("tips") else ""
             parts.append(f'<circle cx="{cx:.4f}" cy="{cy:.4f}" r="{fs * 0.34:.4f}" '
                          f'fill="{col}" fill-opacity="0.85"{tip}/>')
+        parts.append(_rules_svg(c, px, py, pw, ph, ymin, ymax, False, fs, ink,
+                                lfmt))
         return "".join(parts)
 
     n = max(len(labels), max((len(s["data"]) for s in series), default=0))
@@ -1513,6 +2034,7 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
                 parts.append(f'<text x="{cx:.4f}" y="{cy - fs * 0.45:.4f}" '
                              f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
                              f'fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
+    parts.append(_rules_svg(c, px, py, pw, ph, vmin, vmax, False, fs, ink, lfmt))
     return "".join(parts)
 
 
@@ -1561,6 +2083,9 @@ def _histogram_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> s
             parts.append(f'<text x="{px + i * bw + bw / 2:.4f}" y="{py + ph - bh - fs * 0.22:.4f}" '
                          f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
                          f'fill="{ink["label"]}">{ct}</text>')
+    # A histogram's value axis counts observations, so a rule on it is drawn
+    # against that count — not against the bin axis the money format belongs to.
+    parts.append(_rules_svg(c, px, py, pw, ph, 0, cmax, False, fs, ink, None))
     return "".join(parts)
 
 
@@ -1825,21 +2350,69 @@ def _check_chart(c, where: str) -> None:
                 raise LayoutError(f"{w2}.data[{j}]: {v!r} is not a number")
         if s.get("color"):
             _hex(s["color"], f"{w2}.color")
+        for j, col in enumerate(s.get("colors") or []):
+            if col:
+                _hex(col, f"{w2}.colors[{j}]")
+        if s.get("type") is not None and s["type"] not in CHART_SERIES_KINDS:
+            raise LayoutError(f"{w2}.type: expected one of "
+                              f"{', '.join(CHART_SERIES_KINDS)}")
+        if s.get("axis") is not None and s["axis"] not in ("left", "right"):
+            raise LayoutError(f"{w2}.axis: expected left or right")
     for j, col in enumerate(c.get("colors") or []):
         if col:
             _hex(col, f"{where}.colors[{j}]")
-    for flag in ("legend", "values", "grid", "tips"):
+    for flag in ("legend", "values", "grid", "tips", "stackPct"):
         if c.get(flag) is not None and not isinstance(c[flag], bool):
             raise LayoutError(f"{where}.{flag}: expected true or false")
     for k in ("titleColor", "labelColor", "axisColor", "gridColor"):
         if c.get(k):
             _hex(c[k], f"{where}.{k}")
-    for k in ("axisMin", "axisMax"):
+    for k in ("axisMin", "axisMax", "axis2Min", "axis2Max"):
         if c.get(k) is not None:
             _num(c[k], f"{where}.{k}")
-    if c.get("axisMin") is not None and c.get("axisMax") is not None \
-            and c["axisMax"] <= c["axisMin"]:
-        raise LayoutError(f"{where}.axisMax: must be above axisMin")
+    for lo, hi in (("axisMin", "axisMax"), ("axis2Min", "axis2Max")):
+        if c.get(lo) is not None and c.get(hi) is not None \
+                and c[hi] <= c[lo]:
+            raise LayoutError(f"{where}.{hi}: must be above {lo}")
+    if c.get("legendPos") is not None and c["legendPos"] not in CHART_LEGEND_POS:
+        raise LayoutError(f"{where}.legendPos: expected one of "
+                          f"{', '.join(CHART_LEGEND_POS)}")
+    for k in ("axisTitle", "catTitle"):
+        if c.get(k) is not None and not isinstance(c[k], str):
+            raise LayoutError(f"{where}.{k}: expected text")
+    g = c.get("barGap")
+    if g is not None:
+        _num(g, f"{where}.barGap")
+        if not 0 <= g <= 0.9:
+            raise LayoutError(f"{where}.barGap: expected 0-0.9")
+    a = c.get("labelAngle")
+    if a is not None:
+        _num(a, f"{where}.labelAngle")
+        if not -90 <= a <= 90:
+            raise LayoutError(f"{where}.labelAngle: expected -90 to 90")
+    rules = c.get("rules")
+    if rules is not None:
+        if not isinstance(rules, list):
+            raise LayoutError(f"{where}.rules: expected a list")
+        for i, r in enumerate(rules):
+            w3 = f"{where}.rules[{i}]"
+            if not isinstance(r, dict):
+                raise LayoutError(f"{w3}: expected an object")
+            for bad in set(r) - {"value", "label", "color", "dash", "width"}:
+                raise LayoutError(f"{w3}.{bad}: not a reference-line field")
+            if r.get("value") is None:
+                raise LayoutError(f"{w3}.value: a reference line needs a value")
+            _num(r["value"], f"{w3}.value")
+            if r.get("color"):
+                _hex(r["color"], f"{w3}.color")
+            if r.get("width") is not None:
+                _num(r["width"], f"{w3}.width")
+            if r.get("dash") is not None and not isinstance(r["dash"], bool):
+                raise LayoutError(f"{w3}.dash: expected true or false")
+            if r.get("label") is not None \
+                    and not isinstance(r["label"], (str, bool)):
+                raise LayoutError(f"{w3}.label: expected text, or true for "
+                                  f"the value itself")
     t = c.get("axisTicks")
     if t is not None:
         if not isinstance(t, int) or isinstance(t, bool) or not 2 <= t <= 11:
@@ -1851,7 +2424,7 @@ def _check_chart(c, where: str) -> None:
     if c.get("sliceLabel") is not None and c["sliceLabel"] not in CHART_SLICE_LABELS:
         raise LayoutError(f"{where}.sliceLabel: expected one of "
                           f"{', '.join(CHART_SLICE_LABELS)}")
-    for k in ("format", "labelFormat"):
+    for k in ("format", "labelFormat", "axis2Format"):
         f = c.get(k)
         if f is None:
             continue
@@ -1869,6 +2442,23 @@ def _check_chart(c, where: str) -> None:
         if d is not None and (not isinstance(d, int) or isinstance(d, bool)
                               or not 0 <= d <= 6):
             raise LayoutError(f"{where}.{k}.decimals: expected a whole number 0-6")
+
+
+def _check_chart_style(st, where: str) -> None:
+    """One saved look. Checked by running the real chart validator over a
+    throwaway chart wearing it — so a style cannot hold a colour, a format or
+    a legend position the renderer would refuse, and there is exactly one
+    place that knows what any of those mean."""
+    if not isinstance(st, dict):
+        raise LayoutError(f"{where}: expected an object")
+    for bad in set(st) - set(CHART_LOOK) - {"seriesColors"}:
+        raise LayoutError(f"{where}.{bad}: not part of a chart's look")
+    for i, col in enumerate(st.get("seriesColors") or []):
+        if col:
+            _hex(col, f"{where}.seriesColors[{i}]")
+    probe = {k: v for k, v in st.items() if k != "seriesColors"}
+    probe.update(type="bar", labels=["A"], series=[{"name": "s", "data": [1]}])
+    _check_chart(probe, where)
 
 
 def _check_shadow(sh, where: str) -> None:
@@ -2033,6 +2623,10 @@ class Layout:
         # that wanted to be the latter, so all six were written as frozen SVG
         # by hand — see docsync/CHART_PARITY.md.
         self.charts = raw.get("charts") or {}
+        # Named looks, saved by the editor and applied by it. Nothing in the
+        # render path reads these: applying a style writes its keys onto the
+        # chart, so a built page never depends on the definition surviving.
+        self.chart_styles = raw.get("chartStyles") or {}
         self.shapes = raw.get("shapes") or []
         self.text = raw.get("text") or {}
         self.boxes = raw.get("boxes") or []
@@ -2115,6 +2709,10 @@ class Layout:
         for el, c in self.charts.items():
             if not isinstance(c, dict):
                 raise LayoutError(f"chart '{el}': expected an object")
+        if not isinstance(self.chart_styles, dict):
+            raise LayoutError("chartStyles: expected an object keyed by name")
+        for name, st in self.chart_styles.items():
+            _check_chart_style(st, f"chartStyle '{name}'")
         for el, p in self.positions.items():
             for k in ("x", "y"):
                 if k not in p:

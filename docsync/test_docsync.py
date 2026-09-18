@@ -1327,6 +1327,201 @@ check("chart pie: a slice can show its value, not only its share", _pie, "$4.1B"
 check_eq("chart pie: value and percent land on two lines",
          "(58.6%)" in _re.findall(r"<tspan[^>]*>([^<]+)</tspan>", _pie), True)
 
+# ---- charts: the InDesign gap, closed ---------------------------------------
+# Everything below is what CHART_PARITY.md listed as "still sends someone back
+# to InDesign". Each is opt-in: a chart that names none of these keys renders
+# byte-for-byte as it did, which is checked by comparing 20,174 old-vs-new
+# renders, not here.
+
+# 1. Per-point colour. Colour was per SERIES, so "highlight this year" — the
+# single commonest ask of a budget chart — was impossible, and the figure got
+# drawn by hand instead.
+_hl = _csvg({"type": "bar", "labels": ["FY25", "FY26", "FY27"],
+             "series": [{"name": "Total", "data": [3, 4, 5]}],
+             "colors": ["#CAD2C5", "#CAD2C5", "#6B9E78"]}, 0, 0, 4, 2.5)
+check_eq("chart colour: one bar can be picked out of a single-series chart",
+         _re.findall(r'<rect class="ds-cbar"[^>]*fill="(#[0-9A-F]{6})"', _hl),
+         ["#CAD2C5", "#CAD2C5", "#6B9E78"])
+# With two series the colour means the SERIES again — a legend has to be true.
+_two_c = _csvg({"type": "bar", "labels": ["A", "B"],
+                "series": [{"name": "x", "data": [1, 2], "color": "#111111"},
+                           {"name": "y", "data": [2, 1], "color": "#222222"}],
+                "colors": ["#FF0000", "#00FF00"]}, 0, 0, 4, 2.5)
+check_eq("chart colour: with two series the chart-level colours stay out of it",
+         sorted(set(_re.findall(r'<rect class="ds-cbar"[^>]*fill="(#[0-9A-Fa-f]{6})"',
+                                _two_c))), ["#111111", "#222222"])
+# A series may still colour its own points, which is the general form.
+_ptc = _csvg({"type": "bar", "labels": ["A", "B"],
+              "series": [{"name": "x", "data": [1, 2], "color": "#111111",
+                          "colors": [None, "#FF0000"]},
+                         {"name": "y", "data": [2, 1], "color": "#222222"}]},
+             0, 0, 4, 2.5)
+check("chart colour: a series can override one of its own points",
+      _ptc, 'fill="#FF0000"')
+
+# 2. Reference lines.
+_rule = _csvg({"type": "bar", "labels": ["A", "B"],
+               "series": [{"name": "s", "data": [8, 19]}],
+               "rules": [{"value": 15, "label": "Target", "color": "#B4432F"},
+                         {"value": 10, "label": True, "color": "#354F52"}]},
+              0, 0, 4, 2.5)
+check("chart rules: a target line is drawn across the plot", _rule, '#B4432F')
+check("chart rules: and says what it is", _rule, ">Target</text>")
+# In the RULE's own ink, not the axis's — "10" alone is also a tick label on
+# this scale, so a looser check would pass against an engine drawing no rules.
+check("chart rules: label true prints the value itself",
+      _rule, 'fill="#354F52" font-weight="600">10</text>')
+check_eq("chart rules: off the scale is not drawn at the edge of it",
+         "#B4432F" in _csvg({"type": "bar", "labels": ["A"],
+                             "series": [{"name": "s", "data": [8]}],
+                             "rules": [{"value": 9e9, "color": "#B4432F"}]},
+                            0, 0, 4, 2.5), False)
+check_page_raises("chart rules: a line with no value is refused",
+                  {"positions": {}, "shapes": [
+                      {"id": "c", "page": 1, "kind": "chart", "x": 1, "y": 1,
+                       "w": 2, "h": 2,
+                       "chart": {"type": "bar", "labels": ["A"],
+                                 "series": [{"name": "s", "data": [1]}],
+                                 "rules": [{"label": "Target"}]}}]},
+                  "a reference line needs a value")
+
+# 3. Legend position. Bottom, spread across the whole width, was the only
+# option — so long names collided with nowhere to go.
+_lr = _csvg({"type": "bar", "labels": ["A", "B"],
+             "series": [{"name": "General funds", "data": [1, 2]},
+                        {"name": "Special funds", "data": [2, 1]}],
+             "legend": True, "legendPos": "right"}, 0, 0, 4, 2.5)
+_lb = _csvg({"type": "bar", "labels": ["A", "B"],
+             "series": [{"name": "General funds", "data": [1, 2]},
+                        {"name": "Special funds", "data": [2, 1]}],
+             "legend": True}, 0, 0, 4, 2.5)
+check_eq("chart legend: down the right, the two keys share an x",
+         len(set(_re.findall(r'<rect x="([\d.]+)"[^>]*rx="0\.02', _lr))), 1)
+check_eq("chart legend: along the bottom, they do not", _lr == _lb, False)
+# The packed row only replaces the even spread where the even spread collided.
+_wide = ["Transportation", "Formal Education", "Economic Development"]
+_lp = _csvg({"type": "pie", "labels": _wide,
+             "series": [{"name": "s", "data": [3, 2, 1]}], "legend": True},
+            0, 0, 4, 2.5)
+check_eq("chart legend: names too wide for an even share wrap to a second row",
+         len(set(_re.findall(r'<text x="[\d.]+" y="([\d.]+)"[^>]*font-size="0\.1250"[^>]*>'
+                             r'(?:Transportation|Formal Education|Economic Development)',
+                             _lp))) > 1, True)
+
+# 4. Axis titles — said with a floating text box until now, which did not move
+# when the chart did.
+_at = _csvg({"type": "bar", "labels": ["A"], "series": [{"name": "s", "data": [1]}],
+             "axisTitle": "Millions of dollars", "catTitle": "Fiscal year"},
+            0, 0, 4, 2.5)
+check("chart axis titles: the value axis is named, turned on its side",
+      _at, "rotate(-90")
+check("chart axis titles: and the category axis along the foot",
+      _at, ">Fiscal year</text>")
+check_eq("chart axis titles: a treemap has no axis to name",
+         "Fiscal year" in _csvg({"type": "treemap", "labels": ["A"],
+                                 "series": [{"name": "s", "data": [1]}],
+                                 "catTitle": "Fiscal year"}, 0, 0, 4, 2.5),
+         False)
+
+# 5. Area, 100%-stacked, and combo with a secondary axis — between them, what
+# fig_obligated is made of.
+_area = _csvg({"type": "stacked-area", "labels": ["2019", "2020", "2021"],
+               "series": [{"name": "a", "data": [1, 2, 3]},
+                          {"name": "b", "data": [2, 2, 2]}]}, 0, 0, 4, 2.5)
+check("chart area: a band is a filled polygon, not a line", _area, "<polygon")
+check_eq("chart area: two series, two bands",
+         len(_re.findall(r"<polygon", _area)), 2)
+check("chart area: the first label sits at the plot's own left edge",
+      _area, 'text-anchor="start"')
+_pct = _csvg({"type": "stacked-bar", "labels": ["A", "B"],
+              "series": [{"name": "x", "data": [1, 3]},
+                         {"name": "y", "data": [3, 1]}],
+              "stackPct": True, "values": True,
+              "format": {"decimals": 0}}, 0, 0, 4, 2.5)
+check_eq("chart 100%: every column is read as a share of its own total",
+         sorted(set(_re.findall(r'fill="#fff">(\d+)</text>', _pct))), ["25", "75"])
+_combo = _csvg({"type": "bar", "labels": ["A", "B"],
+                "series": [{"name": "Nominal", "data": [3, 4]},
+                           {"name": "Real", "type": "line", "axis": "right",
+                            "data": [100, 92], "color": "#354F52"}],
+                "axis2Min": 80, "axis2Max": 110}, 0, 0, 4, 2.5)
+check("chart combo: the line series is drawn as a line", _combo, "<polyline")
+check_eq("chart combo: and takes no bar slot — one series of bars, two bars",
+         len(_re.findall(r'<rect class="ds-cbar"', _combo)), 2)
+check("chart combo: the right-hand scale is labelled too", _combo, ">110</text>")
+check_page_raises("chart combo: a series cannot be drawn as something invented",
+                  {"positions": {}, "shapes": [
+                      {"id": "c", "page": 1, "kind": "chart", "x": 1, "y": 1,
+                       "w": 2, "h": 2,
+                       "chart": {"type": "bar", "labels": ["A"],
+                                 "series": [{"name": "s", "data": [1],
+                                             "type": "sparkline"}]}}]},
+                  "expected one of bar, line, area")
+
+# 6. Category label rotation — the last resort when wrapping and shrinking
+# have run out.
+_rot = _csvg({"type": "bar", "labels": ["Department of Human Services", "Health"],
+              "series": [{"name": "s", "data": [1, 2]}], "labelAngle": -45},
+             0, 0, 4, 2.5)
+check("chart labels: a turned label carries its own rotation", _rot, "rotate(-45")
+check("chart labels: and anchors at the end, so it leans away from its tick",
+      _rot, 'text-anchor="end"')
+
+# 7. Gap width. Hard-coded at slot * 0.78 since the engine was written.
+_fat = _csvg({"type": "bar", "labels": ["A"], "series": [{"name": "s", "data": [1]}],
+              "barGap": 0.05}, 0, 0, 4, 2.5)
+_thin = _csvg({"type": "bar", "labels": ["A"], "series": [{"name": "s", "data": [1]}],
+               "barGap": 0.6}, 0, 0, 4, 2.5)
+_bw = lambda svg: float(_re.search(r'<rect class="ds-cbar"[^>]*width="([\d.]+)"', svg).group(1))
+check_eq("chart bars: a narrower gap makes a wider bar", _bw(_fat) > _bw(_thin), True)
+check_page_raises("chart bars: a gap wider than the slot is refused",
+                  {"positions": {}, "shapes": [
+                      {"id": "c", "page": 1, "kind": "chart", "x": 1, "y": 1,
+                       "w": 2, "h": 2,
+                       "chart": {"type": "bar", "labels": ["A"],
+                                 "series": [{"name": "s", "data": [1]}],
+                                 "barGap": 2}}]},
+                  "expected 0-0.9")
+
+# A row chart's names live in a fixed gutter, anchored at its right edge, and
+# nothing wraps them: anything over about six characters used to run off the
+# left of the drawing and lose its first letters.
+_row = _csvg({"type": "row", "labels": ["Education", "Health"],
+              "series": [{"name": "s", "data": [1, 2]}]}, 0, 0, 4, 2.5)
+_lx = float(_re.search(r'<text x="([\d.]+)"[^>]*text-anchor="end"[^>]*>Education',
+                       _row).group(1))
+check_eq("chart rows: the gutter is measured from the names, so they fit in it",
+         _lx > 0.58, True)
+
+
+# 9. Chart styles — a saved LOOK, applied to the next chart. Stored on the
+# document, never read by the renderer: applying a style writes its keys onto
+# the chart, so a published page cannot depend on a definition still existing.
+check_page_raises("chart style: a look cannot carry the figure's own numbers",
+                  {"positions": {}, "shapes": [],
+                   "chartStyles": {"House": {
+                       "series": [{"name": "s", "data": [1]}]}}},
+                  "not part of a chart's look")
+check_page_raises("chart style: nor its title, which is about one figure",
+                  {"positions": {}, "shapes": [],
+                   "chartStyles": {"House": {"title": "Figure 2"}}},
+                  "not part of a chart's look")
+check_page_raises("chart style: a colour in a look is checked like any other",
+                  {"positions": {}, "shapes": [],
+                   "chartStyles": {"House": {"labelColor": "teal"}}},
+                  "labelColor")
+check_page_raises("chart style: so is a legend position",
+                  {"positions": {}, "shapes": [],
+                   "chartStyles": {"House": {"legendPos": "middle"}}},
+                  "legendPos: expected one of")
+_styled = _layout({"positions": {}, "shapes": [], "chartStyles": {"House": {
+    "legend": True, "legendPos": "right", "labelColor": "#2F3E46",
+    "format": {"prefix": "$", "scale": "M"}, "barGap": 0.3,
+    "seriesColors": ["#6B9E78", "#354F52"]}}})
+check_eq("chart style: a whole look validates and survives the load",
+         _styled.chart_styles["House"]["seriesColors"], ["#6B9E78", "#354F52"])
+
+
 # ---- the expand button's chevron -------------------------------------------
 # Drawn art, not a glyph: it turns to point up when the section opens, it is
 # present on the EDITOR canvas too (where the button used to have none), and
