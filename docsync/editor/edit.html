@@ -4641,6 +4641,27 @@ const setZ = (id, z) => {
   else return false;
   return true;
 };
+/** One above the top of a page's stack — the layer a NEW floater takes: a
+ *  text box, a shape, an icon, a chart, a designed piece coming off the flow
+ *  for the first time. Every drawing tool puts a new object on top. This one
+ *  used to give each kind a fixed tier instead (a moved element 1, a text box
+ *  2, a shape 3) and let DOM order settle ties, so a heading dragged over a
+ *  text box went behind it on the drop, and which of two moved things covered
+ *  the other depended on their order in the markup — "moving elements
+ *  randomly puts them behind a bunch of other ones". `floor` is the kind's
+ *  old tier, so an empty page still hands out the number it always did.
+ *  `page` is the page's element or id (the visible page when omitted); only
+ *  what floats on THAT page counts — another page's ceiling is not its
+ *  business, the same rule Bring to front follows. */
+function nextZ(floor = 1, page = null) {
+  const d = $('out') && $('out').contentDocument;
+  const pg = !d ? null
+    : page && page.nodeType ? page
+    : page == null ? pageEl(d)
+    : d.querySelector(`section[data-page="${CSS.escape(String(page))}"]`);
+  const zs = pg ? layerItems(d, pg).map(o => o.z) : [];
+  return Math.max(floor, ...zs) + 1;
+}
 function closeMenu(d) {
   d.querySelectorAll('.ds-menu').forEach(m => m.remove());
 }
@@ -6123,7 +6144,8 @@ async function addTextBox(kind) {
   const page = visiblePageId();
   pushHistory();
   const id = freeBoxId();
-  const box = { id, page, x: placeX(preset.w), y: 2, w: preset.w, z: 2, md: preset.md };
+  const box = { id, page, x: placeX(preset.w), y: 2, w: preset.w,
+                z: nextZ(1, page), md: preset.md };   // on top of whatever floats there
   if (preset.style && Object.keys(preset.style).length) box.style = { ...preset.style };
   if (preset.fill) box.fill = preset.fill;
   if (preset.act) box.act = preset.act;
@@ -8308,7 +8330,7 @@ $('chart').onclick = async () => {
   pushHistory();
   const id = freeShapeId('chart');
   layout.shapes.push({
-    id, page, kind: 'chart', x: placeX(4), y: 1.6, w: 4, h: 2.8, z: 3, fill: 'none',
+    id, page, kind: 'chart', x: placeX(4), y: 1.6, w: 4, h: 2.8, z: nextZ(2, page), fill: 'none',
     chart: {
       type: 'bar',
       labels: ['First', 'Second', 'Third'],
@@ -12305,13 +12327,19 @@ async function layerStep(d, dir, extreme) {
   pushHistory();
   els.forEach(el => {
     const id = idOf(el);
+    // Read BEFORE pinning. A piece still in the flow sits at the content's
+    // level, and one step from THERE is what was asked; pinning it (placer)
+    // first carries it to the top of the stack, and "backward" from the top
+    // is nowhere near "behind the content". The right-click menu reads its
+    // zOf(id) before its zSet pins, so it already behaves this way.
+    const z0 = zOf(id);
     if (!!!shapeOf(id) && !boxOf(id)
         && !layout.positions[id]) ensureStore(d, el);
     const pg = el.closest('section.page') || d.querySelector('section.page');
     const zs = [...pg.querySelectorAll('[data-el], [data-shape]')]
       .map(x => zOf(idOf(x)));
     setZ(id, extreme ? (dir > 0 ? Math.max(...zs, 0) + 1 : Math.min(...zs, 0) - 1)
-                     : zOf(id) + dir);
+                     : z0 + dir);
   });
   markDirty();
   await render();
@@ -13383,6 +13411,13 @@ function placer(d, el, page) {
   const box = stored && stored.x !== undefined
     ? { ...measured, x: +stored.x + delta.x, y: +stored.y + delta.y }
     : measured;
+  // A designed piece taking a place for the first time — off the flow, or off
+  // the spot the design's own CSS gave it — lands on TOP of this page's stack
+  // (nextZ). Decided here at pick-up, painted inline through the drag so the
+  // lift shows the layer the drop will keep, written at commit. A piece that
+  // already has a place keeps the layer it has: moving is not layering.
+  const zNew = !shapeId && !bx && !(stored && stored.x !== undefined)
+    ? nextZ(1, page) : null;
   // A chart's DOM bbox is the union of everything it draws, and its axis
   // numbers and value labels sit OUTSIDE the box it declares — so measuring
   // it hands the drag a box wider and taller than the chart really is, and
@@ -13475,6 +13510,7 @@ function placer(d, el, page) {
       el.style.top = (y - delta.y).toFixed(2) + 'in';
       const w = pinW();
       if (w) el.style.width = w + 'in';     // what the renderer will do, now
+      if (zNew !== null) el.style.zIndex = String(zNew);   // and the layer it will keep
     }
     showGuides(d, page, vx, hy);
     $('stat').textContent = `${id} → ${x.toFixed(2)}in, ${y.toFixed(2)}in`
@@ -13495,7 +13531,8 @@ function placer(d, el, page) {
       layout.positions[id] = { ...prev,
                               x: +(x - delta.x).toFixed(2), y: +(y - delta.y).toFixed(2),
                               ...(w ? { w } : {}),
-                              ...(reserve ? { reserve } : {}) };
+                              ...(reserve ? { reserve } : {}),
+                              ...(zNew !== null && prev.z === undefined ? { z: zNew } : {}) };
       anchorRebase(d, page, layout.positions[id], y);
     }
     clearGuides(d);
@@ -14102,7 +14139,7 @@ async function addIcon(id) {
   // draws in currentColor, so the Fill control recolours the whole glyph.
   layout.shapes.push({ id: sid, page, kind: 'icon', x: placeX(0.6), y: 1, w: 0.6, h: 0.6,
                        icon: id, vb: it.vb, svg: it.body,
-                       fill: '#52796F', z: 3 });
+                       fill: '#52796F', z: nextZ(2, page) });
   setSel($('out').contentDocument, [sid]);
   markDirty();
   await render();
@@ -14139,14 +14176,15 @@ document.querySelectorAll('#shapepop .shp').forEach(b => b.addEventListener('cli
   // A new shape is a SOLID, visible object by default — a near-white fill read
   // as "just an outline". Sage is the report's own primary, clearly on the
   // page; recolour it from the Fill control in the toolbar (or right-click).
-  // z:3 — on TOP by default so a new shape is plainly visible, not hidden
-  // behind the page's own (often translucent) panels, which read as "just an
-  // outline". Send it back from the layers panel / right-click when it should
-  // sit behind content.
+  // On TOP by default — one above whatever already floats on the page
+  // (nextZ; 3 on an empty page) — so a new shape is plainly visible, not
+  // hidden behind the page's own (often translucent) panels or the last thing
+  // placed, which read as "just an outline". Send it back from the layers
+  // panel / right-click when it should sit behind content.
   layout.shapes.push({ id, page, kind, x: placeX(2), y: 1, w: 2, h: kind === 'line' ? 0 : 1,
                        fill: kind === 'line' ? 'none' : '#6B9E78',
                        stroke: kind === 'line' ? '#52796F' : 'none',
-                       sw: 0.02, z: 3 });
+                       sw: 0.02, z: nextZ(2, page) });
   setSel($('out').contentDocument, [id]);
   markDirty();
   await render();
@@ -17188,6 +17226,89 @@ function within(d, roots, sel) {
  *  the document's own listeners are already on it and must NOT be added
  *  again. Painters (selection, guides, thumbnails, fit) re-run either way;
  *  they rebuild from state rather than accumulate. */
+// ------------------------------------------------ the band under the last page
+/** The report scrolls inside the iframe; the stage's own vertical range is the
+ *  clearance band applyZoom leaves under it, so the last sheet can rise clear
+ *  of the floating page strip. Two nested scrollers are one too many for a
+ *  wheel: the browser latches a gesture to the scroller it began on, so a
+ *  flick that reached the report's end left the band for a SECOND gesture,
+ *  and after a visit to the band, scrolling back up moved the report while
+ *  the band stayed out — the top of page 1 hidden above the pane until one
+ *  more bump moved the stage ("scrolling all the way up takes an additional
+ *  bump"). This makes the pair behave as one scroller. A wheel that crosses
+ *  the report's end runs on into the band; a wheel heading up unwinds the
+ *  band before it moves the report — both in the report's own pixels, the
+ *  frame being scaled. Every other scroll (keys, the scrollbar, a
+ *  scrollIntoView, a restored place) that lifts the report off its end while
+ *  the band is out hands the band back, position-preserving: a point of the
+ *  page sits on screen at content*s - (report scroll*s + stage scroll), so
+ *  moving pixels from one scroller to the other moves nothing the eye can
+ *  see — the band's blank strip just fills with page. Only the two boundary
+ *  cases take the wheel at all; everywhere else the browser's own scrolling,
+ *  and its smoothing, stands. Same arithmetic as hubMarginWheel, which does
+ *  this for a wheel over the comments gutter. Once per report document. */
+function stageChainWire(d) {
+  const w = d && d.defaultView;
+  if (!w || d.__dsChain) return;
+  d.__dsChain = true;
+  const geo = () => {
+    const se = d.scrollingElement, stage = $('stage');
+    if (!se || !stage || document.body.classList.contains('ds-present')) return null;
+    return { se, stage, max: Math.max(0, se.scrollHeight - w.innerHeight),
+             band: stage.scrollHeight - stage.clientHeight, s: curScale || 1 };
+  };
+  // A scrollable thing under the pointer with room in that direction — a
+  // long table, a popover — keeps its own wheel, as it would anywhere.
+  const innerScrolls = (t, down) => {
+    for (let n = t; n && n !== d.documentElement && n !== d.body; n = n.parentElement) {
+      if (n.nodeType !== 1 || n.scrollHeight <= n.clientHeight + 1) continue;
+      const o = w.getComputedStyle(n).overflowY;
+      if (o !== 'auto' && o !== 'scroll') continue;
+      if (down ? n.scrollTop + n.clientHeight < n.scrollHeight - 1 : n.scrollTop > 0) return true;
+    }
+    return false;
+  };
+  d.addEventListener('wheel', e => {
+    if (e.defaultPrevented || e.ctrlKey || !e.deltaY) return;   // ctrl+wheel is a pinch, not a scroll
+    const g = geo();
+    if (!g || g.band <= 0.5) return;
+    const down = e.deltaY > 0;
+    if (innerScrolls(e.target, down)) return;
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? w.innerHeight : 1;
+    const dy = e.deltaY * unit / g.s;                        // report pixels
+    const from = g.se.scrollTop;
+    if (down) {
+      const room = g.max - from, spare = g.band - g.stage.scrollTop;
+      if (dy <= room + 0.5 || spare <= 0.5) return;           // the report takes it all, or the band is out already
+      e.preventDefault();
+      if (room > 0) w.scrollTo(w.scrollX, g.max);
+      g.stage.scrollBy(0, (dy - Math.max(0, room)) * g.s);
+    } else {
+      const out = g.stage.scrollTop;
+      if (out <= 0.5) return;                                 // nothing to unwind: the browser's own scroll
+      e.preventDefault();
+      const take = Math.min(out, -dy * g.s);                  // the band gives first
+      g.stage.scrollBy(0, -take);
+      const rest = -dy - take / g.s;
+      if (rest > 0.5) w.scrollTo(w.scrollX, Math.max(0, from - rest));
+    }
+  }, { passive: false });
+  w.addEventListener('scroll', () => {
+    // Cheapest test first: the band is almost always in, and this runs on
+    // every scroll event the report fires.
+    const stage = $('stage');
+    if (!stage || stage.scrollTop <= 0.5) return;
+    const g = geo();
+    if (!g) return;
+    const out = g.stage.scrollTop;
+    const off = (g.max - g.se.scrollTop) * g.s;              // how far off its end, in stage pixels
+    if (off <= 0.5) return;
+    const back = Math.min(out, off);
+    g.stage.scrollTop = out - back;
+    g.se.scrollTop += back / g.s;
+  }, { passive: true });
+}
+
 function wire(roots) {
   const d = $('out').contentDocument;
   const fresh = !(roots && roots.length);
@@ -17201,6 +17322,7 @@ function wire(roots) {
   });
   dragify(d, roots);
   collabWire(d);
+  stageChainWire(d);
   hubCommentsPaint(d);
   hubSlotFocus(d);
   hubHistoryPaint(d);
@@ -17450,9 +17572,15 @@ function wire(roots) {
        outline:1px dashed rgba(120,134,128,.55); outline-offset:2px; }
     .ds-locked.ds-sel { outline:2px solid #8A9691 !important; }
     /* Lifted: it should read as picked up off the page, not just outlined —
-       elevation and a hair of scale do that faster than any border. */
+       elevation and a hair of scale do that faster than any border. No
+       z-index: the lift used to hoist the thing in hand to 9999, so it rode
+       over everything while dragged and dropped back into its own layer on
+       release — a heading dragged over a text box vanished behind it the
+       moment it was let go. It keeps its real layer now, so what you see in
+       hand is what the drop keeps (a piece coming off the flow is given the
+       top of the stack at pick-up: placer, nextZ). */
     .ds-lifted { box-shadow:0 12px 32px rgba(47,62,70,.28) !important;
-                 transform:scale(1.015); opacity:.96; z-index:9999 !important;
+                 transform:scale(1.015); opacity:.96;
                  outline:2px solid #6B9E78 !important; outline-offset:2px; }
     /* …but none of that survives contact with an SVG child: the outline paints
        around the whole page-sized viewport (the recurring giant box — this was
@@ -23170,7 +23298,7 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
   const pid = page != null ? page : visiblePageId();
   const id = freeBoxId();
   const box = { id, page: pid, x: x != null ? +x : placeX(w), y: y != null ? +y : 2,
-                w: +w, z: 2, md };
+                w: +w, z: nextZ(1, pid), md };
   if (h != null) box.h = +h;      // same field place()'s h writes — one call, not two
   if (style && Object.keys(style).length) box.style = { ...style };
   if (fill) { box.fill = fill; boxReadable(box, fill); }
@@ -23198,7 +23326,7 @@ function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
                fill: fill || (kind === 'line' ? 'none' : '#6B9E78'),
                stroke: stroke || (kind === 'line' ? '#52796F' : 'none'),
                sw: sw != null ? +sw : 0.02,
-               z: z != null ? +z : 3 };
+               z: z != null ? +z : nextZ(2, pid) };
   if (rx != null) sh.rx = +rx;
   layout.shapes.push(sh);
   return { id, page: pid };
