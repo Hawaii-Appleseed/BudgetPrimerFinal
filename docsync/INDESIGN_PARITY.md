@@ -276,8 +276,53 @@ twelve bindings in both modes on every commit), one resolver or one runtime
 string shared by the page and the editor rather than two that could drift.
 
 What is left is Tier 3: (9) a baseline grid, which waits on threading; (11)
-bleed, only if a report goes to a printer. (8) is back. Threading between frames stays in "Not coming". The next real
-work on this editor is not a gap in this list — it is the follow-ups each
-closed item named: a pilot verb for object styles, tables as master items and
-as anchors, per-item master overrides, `shape-outside` if a wrapped image ever
-needs a contour.
+bleed, only if a report goes to a printer. (8) is back. Threading between
+frames stays in "Not coming". The next real work on this editor is not a gap
+in this list — it is the follow-ups each closed item named: tables as master
+items and as anchors, per-item master overrides, `shape-outside` if a wrapped
+image ever needs a contour.
+
+## The stylesheet from a pilot — 2026-09-18
+
+The first of those follow-ups, and the one that mattered most: driving the
+editor through `docsync.api` is the DEFAULT way this thing is meant to be
+changed, and the pilot could not see a style, let alone set one. So "make
+every pull-quote match" was a thing a person could do from the panel and an
+agent could not do at all — it would build the look by hand, once per quote,
+which is precisely what a stylesheet exists to stop.
+
+- **`inventory().styles`** reports both stylesheets with `wornBy` on each,
+  because the first question anyone asks of a style is how much would move if
+  it changed. Each element and slot also says what it wears (`use`,
+  `textStyle`), so "already dressed" can be told from "looks the same by
+  hand" — the two want opposite next moves. `styles()` returns the same thing
+  alone. It travels over the hub relay too.
+- **`dress(id, name | null)`** puts an object style on a shape, box or table,
+  or takes it off and keeps the look. Refuses a style written for another
+  kind, naming both.
+- **`defineStyle({scope, name, …})`** creates or redefines — one verb, because
+  redefining is defining a name already taken and everything wearing it
+  follows either way. Keys given REPLACE the style's own, so a style cannot
+  accumulate a look nobody asked for over several calls.
+- **`dropStyle(scope, name)`** unlinks every wearer first and leaves them the
+  look. A `use` naming a style that no longer exists is refused at load, so
+  the alternative is not one fewer style — it is a document that will not
+  open. Refused while another style inherits from it.
+- **`setStyle`** now refuses a `use` that names no text style, for the same
+  reason: writing one produced a document that failed to build several steps
+  away from the call that did it.
+
+Two things worth keeping. **`_pilotStyleHosts()` is the one list of everything
+that can wear a style, master items included.** They live in `layout.masters`,
+not `layout.boxes`, so a count taken off the page stores under-reports and a
+drop that skipped them breaks the load — one list, so counting, unlinking and
+dropping cannot disagree. And **the verbs are batchable, with `defineStyle`
+deferring its dependants' validation** the way a `@ref` already did: an op
+cannot be validated against a style an earlier op in the same batch has not
+created yet, and "define a style and put it on all twelve" is one undo. That
+is the whole argument for a stylesheet, and a batch that refused it would have
+been the feature not working.
+
+The MCP tool description had also drifted — it named neither these nor the
+master and anchor verbs that landed the night before, and an MCP client can
+only call what that string lists.

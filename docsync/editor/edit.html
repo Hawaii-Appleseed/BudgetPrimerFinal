@@ -15709,7 +15709,11 @@ async function startCollab() {
       // Elements as well as slots: every id a pilot verb takes, with its
       // box in page inches — what the hub's connector hands a person's
       // Claude so it can move, recolour or delete by id, measured here.
+      // The stylesheet travels too: a connector told "make the pull-quotes
+      // match" has to be able to see that a Pull-quote style already exists,
+      // or it will build the look by hand as many times as there are quotes.
       return { ok: true, inventory: { project: inv.project, pageOrder: inv.pageOrder,
+                                      styles: inv.styles,
                                       pages: inv.pages.map(p => ({ id: p.id, index: p.index, slots: p.slots, elements: p.elements })) },
                page: { w: PAGE_W_IN, h: PAGE_H_IN, pageless: !!(layout.page && layout.page.h == null) },
                fit: fitReport() };
@@ -23189,11 +23193,213 @@ function _pilotValidateSetStyle(key, patch) {
   const isBox = (key || '').startsWith('text.') && boxOf(key);
   if (!isBox && !slotRe(key).test(source))
     return { ok: false, error: `no slot or text box '${key}' — check inventory()` };
+  // A `use` naming a style that does not exist is refused by the engine at
+  // LOAD, so writing one here would not set a style — it would produce a
+  // document that will not open, several steps away from the call that did it.
+  if (patch.use !== undefined && patch.use !== null && patch.use !== '') {
+    if (!(layout.textStyles || {})[patch.use]) {
+      const known = Object.keys(layout.textStyles || {}).sort().join(', ')
+        || 'none are defined';
+      return { ok: false, error: `no text style '${patch.use}' — ${known}` };
+    }
+  }
   return { ok: true };
 }
 function _pilotApplySetStyle(key, patch) {
   setStyle(key, patch);
   return { key, style: styleOf(key) };
+}
+
+// --- the stylesheet, from a pilot ------------------------------------------
+// The editor's own UI grew four verbs for a named style — save, redefine,
+// apply to matching, unlink — and the pilot had none of them, which matters
+// more than it sounds: driving the editor through docsync.api is the DEFAULT
+// way this thing is meant to be changed (see CLAUDE.md), so "make every
+// pull-quote match" was a thing a person could do and an agent could not.
+//
+// Three verbs and one report cover it. They lean on the helpers the panels
+// already use — objStyleKeys, objKindOf, stripLook, objectsOf — so the pilot
+// and the panel cannot disagree about what wearing a style means.
+
+/** Every object a style can dress, with the id it answers to and the store to
+ *  write through.
+ *
+ *  A MASTER's items are in here too. They live in layout.masters, not in
+ *  layout.boxes, so a count taken off the page stores alone would under-report
+ *  — and, far worse, a drop that skipped them would leave a `use` naming a
+ *  style that no longer exists, which the engine refuses at LOAD. One list, so
+ *  counting, unlinking and dropping cannot disagree about who is wearing what.
+ */
+function _pilotStyleHosts() {
+  const out = [];
+  (layout.shapes || []).forEach(o => out.push({ id: o.id, kind: 'shape', obj: o }));
+  boxes().forEach(o => out.push({ id: 'text.' + o.id, kind: 'box', obj: o }));
+  tables().forEach(o => out.push({ id: 'table.' + o.id, kind: 'table', obj: o }));
+  Object.entries(masters()).forEach(([name, m]) => {
+    (m.shapes || []).forEach(o =>
+      out.push({ id: o.id, kind: 'shape', obj: o, master: name }));
+    (m.boxes || []).forEach(o =>
+      out.push({ id: 'text.' + o.id, kind: 'box', obj: o, master: name }));
+  });
+  return out;
+}
+
+/** Everything wearing one TEXT style: a slot, or any object's own text style. */
+function _pilotTextWearers(name) {
+  const out = [];
+  Object.entries(layout.text || {}).forEach(([k, st]) => {
+    if (st && st.use === name) out.push({ id: k, style: st });
+  });
+  _pilotStyleHosts().forEach(h => {
+    if (h.obj.style && h.obj.style.use === name)
+      out.push({ id: h.id, style: h.obj.style, master: h.master });
+  });
+  return out;
+}
+
+const _pilotObjWearers = name =>
+  _pilotStyleHosts().filter(h => h.obj.use === name);
+
+/** Both stylesheets, as inventory() reports them and the verbs validate
+ *  against. `wornBy` is the count, because the first question anyone asks of
+ *  a style is how much would move if it changed. */
+function _pilotStyles() {
+  const text = {};
+  Object.entries(layout.textStyles || {}).forEach(([n, st]) => {
+    text[n] = { ...cloneJson(st), wornBy: _pilotTextWearers(n).length };
+  });
+  const object = {};
+  Object.entries(objectStyles()).forEach(([n, st]) => {
+    object[n] = { ...cloneJson(st), wornBy: _pilotObjWearers(n).length };
+  });
+  return { text, object };
+}
+
+function _pilotValidateDress(id, name) {
+  const kind = objKindOf(id);
+  if (!kind) return { ok: false, error: `no shape, text box or table '${id}' `
+    + `— a designed element or a page has no store for a style to dress; `
+    + `check inventory()` };
+  if (name === null || name === undefined || name === '') return { ok: true };
+  const st = objectStyles()[name];
+  if (!st) {
+    const known = objStyleNames(kind).join(', ') || `none for a ${kind} yet`;
+    return { ok: false, error: `no object style '${name}' — ${known}` };
+  }
+  if (st.kind !== kind)
+    return { ok: false, error: `'${name}' dresses a ${st.kind}, and '${id}' `
+      + `is a ${kind} — a style is written for one kind of thing` };
+  return { ok: true };
+}
+/** Wearing a style takes the object's own look keys off, the same as the
+ *  panel's picker: an object that kept them would ignore the style it had
+ *  just been given, which reads as the feature not working. */
+function _pilotApplyDress(id, name) {
+  const kind = objKindOf(id), obj = objOf(id);
+  stripLook(obj, kind);
+  if (name) obj.use = name; else delete obj.use;
+  return { id, kind, use: obj.use || null };
+}
+
+const _pilotStyleScope = sc => sc === 'text' || sc === 'object' ? sc : null;
+
+function _pilotValidateDefineStyle(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec))
+    return { ok: false, error: 'defineStyle takes an object, e.g. '
+      + '{ scope: "text", name: "Body", size: 14 }' };
+  const scope = _pilotStyleScope(spec.scope);
+  if (!scope) return { ok: false, error: 'scope must be "text" or "object"' };
+  const name = (spec.name || '').trim();
+  if (!name) return { ok: false, error: 'a style needs a name' };
+  const all = scope === 'text' ? (layout.textStyles || {}) : objectStyles();
+  if (spec.from !== undefined && spec.from !== null) {
+    if (!all[spec.from])
+      return { ok: false, error: `no ${scope} style '${spec.from}' to inherit from` };
+    if (spec.from === name)
+      return { ok: false, error: `'${name}' cannot inherit from itself` };
+  }
+  if (scope === 'object') {
+    const kind = spec.kind || (all[name] || {}).kind;
+    if (!OBJECT_STYLE_META.includes('kind') || !kind)
+      return { ok: false, error: 'an object style needs a kind: '
+        + 'shape, box or table' };
+    if (!['shape', 'box', 'table'].includes(kind))
+      return { ok: false, error: `kind '${kind}' must be shape, box or table` };
+    if (all[name] && all[name].kind !== kind)
+      return { ok: false, error: `'${name}' already dresses a ${all[name].kind}`
+        + ` — a style cannot change kind under the things wearing it` };
+    if (spec.from && all[spec.from].kind !== kind)
+      return { ok: false, error: `'${spec.from}' dresses a ${all[spec.from].kind},`
+        + ` not a ${kind}` };
+    const legal = objStyleKeys(kind);
+    const bad = Object.keys(spec).filter(k =>
+      !['scope', 'name', 'from', 'kind'].includes(k) && !legal.includes(k));
+    if (bad.length)
+      return { ok: false, error: `'${bad[0]}' is not something a ${kind} style `
+        + `can set — a style is a look, not a place or a content. One of: `
+        + legal.join(', ') };
+  }
+  return { ok: true };
+}
+/** Create a style, or redefine one — the same verb, because "redefine" is
+ *  just defining a name that is already taken, and everything wearing it
+ *  follows either way. Keys given REPLACE the style's own; a key left out of
+ *  a redefine is dropped, so a style cannot accumulate a look nobody asked
+ *  for over several calls. */
+function _pilotApplyDefineStyle(spec) {
+  const scope = _pilotStyleScope(spec.scope);
+  const name = spec.name.trim();
+  const look = {};
+  Object.entries(spec).forEach(([k, v]) => {
+    if (!['scope', 'name', 'from', 'kind'].includes(k)) look[k] = cloneJson(v);
+  });
+  if (spec.from) look.from = spec.from;
+  if (scope === 'text') {
+    layout.textStyles = { ...(layout.textStyles || {}), [name]: look };
+  } else {
+    const kind = spec.kind || objectStyles()[name].kind;
+    layout.objectStyles = { ...objectStyles(), [name]: { kind, ...look } };
+  }
+  return { scope, name, style: look };
+}
+
+function _pilotValidateDropStyle(scope, name) {
+  if (!_pilotStyleScope(scope))
+    return { ok: false, error: 'scope must be "text" or "object"' };
+  const all = scope === 'text' ? (layout.textStyles || {}) : objectStyles();
+  if (!all[name]) return { ok: false, error: `no ${scope} style '${name}'` };
+  const child = Object.entries(all).find(([n, st]) => st.from === name);
+  if (child)
+    return { ok: false, error: `'${child[0]}' inherits from '${name}' — `
+      + `redefine that one first` };
+  return { ok: true };
+}
+/** Dropping a style UNLINKS everything wearing it first, keeping the look it
+ *  gave them. A `use` naming a style that does not exist is refused at load,
+ *  so a drop that left wearers behind would not produce a document with one
+ *  fewer style — it would produce a document that will not open. */
+function _pilotApplyDropStyle(scope, name) {
+  // The look the style was giving, written onto each wearer as it is unlinked
+  // — under anything the wearer already said for itself, which is the same
+  // "nearer the author, the stronger" rule the resolver uses.
+  const keep = scope === 'text' ? resolvedStyle({ use: name })
+                                : resolvedObjStyle(name);
+  const wearers = scope === 'text' ? _pilotTextWearers(name)
+                                   : _pilotObjWearers(name);
+  wearers.forEach(w => {
+    const host = scope === 'text' ? w.style : w.obj;
+    delete host.use;
+    Object.entries(keep).forEach(([p, v]) => {
+      if (host[p] === undefined) host[p] = cloneJson(v);
+    });
+  });
+  const key = scope === 'text' ? 'textStyles' : 'objectStyles';
+  const next = { ...(layout[key] || {}) };
+  delete next[name];
+  if (Object.keys(next).length) layout[key] = next;
+  else delete layout[key];
+  return { scope, name, unlinked: wearers.length,
+           ids: wearers.map(w => w.id) };
 }
 
 // A text box's words live in layout.json (b.md), not content.md — setSlot
@@ -23328,12 +23534,22 @@ const PILOT_BATCH_VERBS = {
   lock: { validate: id => _pilotValidateExists(id), apply: (id, on) => _pilotApplyLock(id, on) },
   group: { validate: ids => _pilotValidateGroup(ids), apply: ids => _pilotApplyGroup(ids) },
   ungroup: { validate: id => _pilotValidateUngroup(id), apply: id => _pilotApplyUngroup(id) },
+  // Batchable on purpose: dressing twelve pull-quotes, or defining a style
+  // and putting it on everything in one go, is ONE change and should be one
+  // undo. That is the whole argument for a stylesheet.
+  dress: { validate: (id, n) => _pilotValidateDress(id, n), apply: (id, n) => _pilotApplyDress(id, n) },
+  defineStyle: { validate: sp => _pilotValidateDefineStyle(sp), apply: sp => _pilotApplyDefineStyle(sp) },
+  dropStyle: { validate: (sc, n) => _pilotValidateDropStyle(sc, n), apply: (sc, n) => _pilotApplyDropStyle(sc, n) },
 };
 
 // The verbs a relayed pilot op may run ALONE — the ones batch() refuses
 // because they push their own history and render. Named here so a room
 // message cannot reach an arbitrary property of docsync.api.
-const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster']);
+// 'styles' is the odd one: it is a READ, not a write, so it pushes no history
+// and renders nothing — it is here because this set is also the allowlist of
+// what a room message may reach, and asking what styles exist has to be
+// possible before dressing anything in one.
+const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles']);
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
@@ -23392,6 +23608,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           box = { x: +b.x.toFixed(2), y: +b.y.toFixed(2),
                   w: +b.w.toFixed(2), h: +b.h.toFixed(2) };
         } catch (err) { /* an unmeasurable element still lists */ }
+        const store = objOf(id);
         elements.push({
           id,
           kind: sh ? (sh.kind || 'shape')
@@ -23401,6 +23618,11 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
             : id.startsWith('para.') ? 'prose' : 'designed',
           box,
           locked: isLocked(id),
+          // What it wears, so a pilot can tell "already dressed" from "looks
+          // the same by hand" — the two want opposite next moves.
+          ...(store && store.use ? { use: store.use } : {}),
+          ...(store && store.style && store.style.use
+              ? { textStyle: store.style.use } : {}),
           text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
         });
       });
@@ -23416,7 +23638,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         // where a slot is without measuring anything itself.
         const host = el.closest('[data-el]');
         const eid = host ? host.dataset.el : null;
+        const sst = (layout.text || {})[key];
         slots.push({ key, el: eid,
+          ...(sst && sst.use ? { textStyle: sst.use } : {}),
           kind: eid ? (eid.startsWith('text.') ? 'textbox'
                      : eid.startsWith('table.') ? 'table'
                      : eid.startsWith('endnote.') ? 'endnote'
@@ -23428,9 +23652,70 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       return { id: pg.dataset.page != null ? pg.dataset.page : String(i + 1),
                index: i, elements, slots };
     });
+    // The stylesheet. Without this a pilot could be TOLD to "make every
+    // pull-quote match" and have no way to see that a Pull-quote style
+    // already exists — so it would build the look by hand, twelve times,
+    // which is the exact thing a stylesheet is for.
     return { ok: true, project: M.id, pageOrder: pageOrder(), pages,
+             styles: _pilotStyles(),
              sources: parseSources(), ...docsync.api.status() };
   },
+
+  /** Dress a shape, text box or table in a named object style — or, with
+   *  null, stop wearing one and keep the look it gave. The object's own look
+   *  keys come off either way: an object that kept them would ignore the
+   *  style it had just been given. */
+  async dress(id, name) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateDress(id, name);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplyDress(id, name);
+    markDirty();
+    await render();
+    paintSel($('out').contentDocument);
+    return { ...docsync.api.status(), ...r };
+  },
+
+  /** Define a named style, or redefine one — the same verb, because
+   *  redefining is defining a name that is already taken, and everything
+   *  wearing it follows either way.
+   *
+   *    defineStyle({ scope: 'text', name: 'Body', font: 'Manrope', size: 14 })
+   *    defineStyle({ scope: 'object', kind: 'box', name: 'Pull quote',
+   *                  fill: '#F5F8F6', pad: 0.18, border: { sides: 'left' } })
+   *
+   *  Keys given REPLACE the style's own, so a style cannot accumulate a look
+   *  nobody asked for over several calls. `from` inherits (same kind only). */
+  async defineStyle(spec) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateDefineStyle(spec);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplyDefineStyle(spec);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
+  },
+
+  /** Forget a style. Everything wearing it is unlinked FIRST and keeps the
+   *  look — a `use` naming a style that no longer exists is refused at load,
+   *  so the alternative is not one fewer style but a document that will not
+   *  open. Refused while another style inherits from it. */
+  async dropStyle(scope, name) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateDropStyle(scope, name);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplyDropStyle(scope, name);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
+  },
+
+  /** Both stylesheets on their own, for a caller that wants the styles
+   *  without walking a whole inventory. */
+  styles() { return { ok: true, ...(_pilotStyles()) }; },
 
   /** A slot's current markdown, exactly as content.md holds it. */
   getSlot(key) {
@@ -23627,6 +23912,24 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     };
     const defined = new Set();
     const deferred = new Set();          // op indexes whose validate waits for apply
+    // Same argument as a '@ref', for a style rather than an id: an op cannot
+    // be validated against a style an EARLIER op in this batch has not defined
+    // yet, and "define a style and put it on all twelve" is the whole reason
+    // a stylesheet is worth having. Defer those the same way — the apply-time
+    // check and its rollback are already here.
+    const pendingStyles = new Set();
+    const wantsPending = (verb, args) => {
+      const a0 = args[0], a1 = args[1];
+      if (verb === 'dress')
+        return typeof a1 === 'string' && pendingStyles.has('object:' + a1);
+      if (verb === 'setStyle')
+        return a1 && typeof a1 === 'object' && a1.use
+          && pendingStyles.has('text:' + a1.use);
+      if (verb === 'defineStyle')
+        return a0 && a0.from && pendingStyles.has(a0.scope + ':' + a0.from);
+      if (verb === 'dropStyle') return pendingStyles.has(a0 + ':' + a1);
+      return false;
+    };
     for (let i = 0; i < ops.length; i++) {
       const op = ops[i];
       const spec = op && PILOT_BATCH_VERBS[op.verb];
@@ -23643,10 +23946,14 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         if (bad) return { ok: false, error: `op ${i} (${op.verb}): ref '${bad}' names `
           + `no earlier op's 'as' — refs only point backwards` };
         deferred.add(i);
+      } else if (wantsPending(op.verb, args)) {
+        deferred.add(i);
       } else {
         const v = spec.validate(...args);
         if (!v.ok) return { ok: false, error: `op ${i} (${op.verb}): ${v.error}` };
       }
+      if (op.verb === 'defineStyle' && args[0] && args[0].scope && args[0].name)
+        pendingStyles.add(args[0].scope + ':' + String(args[0].name).trim());
       if (op.as) defined.add(String(op.as));
     }
     pushHistory();
