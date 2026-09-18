@@ -2517,6 +2517,10 @@
   <!-- Shown only while a PAGE is selected (see pageBar): what the strip is
        talking about, and the one action a sheet has of its own. -->
   <span class="ar-count ds-pageonly" id="ar-pagelabel" hidden></span>
+  <!-- The master this page uses — InDesign's master page, as a picker on the
+       page's own strip. Its items draw on every page that uses it, and a
+       change to one of them lands on all of those pages. -->
+  <select id="ar-master" class="ds-pageonly" hidden title="Master — the boxes and shapes every page using it shares"></select>
   <button id="ar-pagedup" class="ds-pageonly" hidden
     aria-label="Duplicate page — adds a copy after this one">Duplicate page</button>
   <button id="ar-fill" aria-label="Fill colour" hidden><span class="A">◆</span><span
@@ -4747,6 +4751,9 @@ function pageMenu(d, pg, e) {
     await render();
   }, !!(pageClip || pageStyleClip));
   item('Duplicate page', () => duplicatePage(pid));
+  if (masterNameOf(pid)) {
+    item(`Detach master “${masterNameOf(pid)}” to this page`, () => masterDetach(pid));
+  }
   sep();
   submenuRow(d, m, 'Page colour ▸', sub => fillRow(d, sub, pageFillId(pid)));
   d.body.appendChild(m);
@@ -4778,7 +4785,17 @@ function layerMenu(d, el, e) {
   };
   // A locked element offers only its release — no fill, no layer, nothing. That
   // is the whole point of locking it, so this comes before everything else.
-  if (!surface && isLocked(id)) {
+  if (!surface && masterItemOf(id)) {
+    const mi = masterItemOf(id);
+    const head = d.createElement('div');
+    head.className = 'ds-menu-head';
+    head.textContent = `on master “${mi.name}”`;
+    m.appendChild(head);
+    item('Remove from master', () => masterRemoveItem(id));
+    item(`Detach master to this page`, () => masterDetach(mi.page));
+    const sep0 = d.createElement('div'); sep0.className = 'ds-menu-sep'; m.appendChild(sep0);
+  }
+  if (!surface && isLocked(id) && !masterItemOf(id)) {
     const head = d.createElement('div');
     head.className = 'ds-menu-head';
     head.textContent = `${id} · locked`;
@@ -5902,7 +5919,34 @@ function markCutChips(pages) {
 // A box carries data-el="text.<id>", so drag, resize, snap, layers, right-click
 // and undo all work on it already. Almost none of this is new machinery.
 const boxes = () => (layout.boxes = layout.boxes || []);
-const boxOf = id => boxes().find(b => b.id === (id || '').replace(/^text\./, ''));
+// Master pages. layout.masters is {name: {boxes, shapes}}; layout.pageMasters
+// is {pageId: name}. The engine draws a master's items on every page that
+// uses it as `<item>@<page>` — so boxOf('text.footer@3') resolves to the
+// master's ONE box, and an edit made through it (a drag, a retext, a restyle)
+// lands on every page at once. That is the whole point of a master, and the
+// reason the picker on the strip says so out loud.
+const masters = () => (layout.masters = layout.masters || {});
+const pageMasters = () => (layout.pageMasters = layout.pageMasters || {});
+const masterNameOf = pid => (layout.pageMasters || {})[String(pid)] || null;
+/** {name, kind, item, page} for a master item's page id, else null. */
+function masterItemOf(id) {
+  const raw = (id || '').replace(/^text\./, '');
+  const at = raw.indexOf('@');
+  if (at <= 0) return null;
+  const base = raw.slice(0, at), page = raw.slice(at + 1);
+  const name = masterNameOf(page);
+  const m = name && (layout.masters || {})[name];
+  if (!m) return null;
+  const kind = (m.boxes || []).some(b => b.id === base) ? 'boxes'
+    : (m.shapes || []).some(x => x.id === base) ? 'shapes' : null;
+  if (!kind) return null;
+  return { name, kind, item: m[kind].find(x => x.id === base), page };
+}
+const boxOf = id => {
+  const mi = masterItemOf(id);
+  if (mi) return mi.kind === 'boxes' ? mi.item : undefined;
+  return boxes().find(b => b.id === (id || '').replace(/^text\./, ''));
+};
 const tables = () => (layout.tables = layout.tables || []);
 const tableOf = id => tables().find(t => t.id === (id || '').replace(/^table\./, ''));
 
@@ -8899,8 +8943,10 @@ function showType(key) {
   const st = styleOf(key);
   const real = computedType(key);
   fillStylePicker(st);
-  $('ty-key').textContent = key;
-  $('ty-key').title = key;
+  $('ty-key').textContent = masterItemOf(key) ? `${key} · master “${masterItemOf(key).name}”` : key;
+  $('ty-key').title = masterItemOf(key)
+    ? `${key} — on the master "${masterItemOf(key).name}": a change here lands on every page that uses it`
+    : key;
   // text-align means nothing to SVG text — a curved label is centred on its
   // path by text-anchor, and display:inline-block is not a thing there either.
   // Hide the control rather than offer one that does nothing.
@@ -9812,7 +9858,8 @@ const selEls = d => [...selIds].map(id =>
   d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`))
   .filter(Boolean);
 const lockedList = () => (layout.locked = layout.locked || []);
-const isLocked = id => (layout.locked || []).includes(id);
+const isLocked = id => (layout.locked || []).includes(id)
+  || (!!masterItemOf(id) && masterItemOf(id).kind === 'shapes');
 const hiddenList = () => (layout.hidden = layout.hidden || []);
 const isHidden = id => (layout.hidden || []).includes(id);
 
@@ -9860,6 +9907,7 @@ function pageBar(d) {
     .forEach(x => { x.hidden = true; });
   document.querySelectorAll('.ds-pageonly').forEach(x => { x.hidden = false; });
   $('ar-pagelabel').textContent = 'Page ' + pageLabel(selPage);
+  masterPickerFill(selPage);
   // Fill points at the page — fillTargets already understands 'page.<id>'.
   const fid = pageFillId(selPage);
   const ft = fillTargets(fid);
@@ -10161,7 +10209,8 @@ function arrangeBar(d) {
   // is worth saying; one thing being selected is already obvious from the
   // handles around it. The id stays reachable on hover, where it costs nothing
   // and still answers "which slot is this?".
-  const label = !n ? '' : wholeGroup ? `group of ${n}` : n > 1 ? `${n} selected` : '';
+  const label = !n ? '' : wholeGroup ? `group of ${n}` : n > 1 ? `${n} selected`
+    : masterItemOf([...selIds][0]) ? `on master “${masterItemOf([...selIds][0]).name}”` : '';
   $('ar-count').textContent = label;
   $('ar-count').hidden = !label;
   $('ar-count').title = n === 1 ? [...selIds][0] : '';
@@ -10400,6 +10449,10 @@ async function deleteSel(d) {
   let touched = false;
   const gone = [];
   [...selIds].filter(id => !isLocked(id)).forEach(id => {
+    if (masterItemOf(id)) {
+      $('stat').textContent = `that is on the master "${masterItemOf(id).name}" — right-click it for Remove from master, or detach the master to this page`;
+      return;
+    }
     if (layout.shapes.some(s => s.id === id)) {
       layout.shapes = layout.shapes.filter(s => s.id !== id); touched = true; gone.push(id);
     } else if (boxOf(id)) {
@@ -10472,18 +10525,24 @@ function forgetInGroups(ids) {
  *  boxes and shapes, so a text box and a table both took 't1' and the very
  *  next render died on the validator — "This draft does not build". Both
  *  allocators now ask the same question. */
+// One namespace for everything placed — a master's items included: a page
+// copy that took a master item's id would be refused by the engine as a
+// duplicate, and the render with it.
+const masterIds = () => Object.values(layout.masters || {})
+  .flatMap(m => [...(m.boxes || []), ...(m.shapes || [])].map(x => x.id));
 const freeTId = () => {
   let n = 1;
   const taken = id => boxes().some(b => b.id === id)
                    || tables().some(t => t.id === id)
-                   || layout.shapes.some(s => s.id === id);
+                   || layout.shapes.some(s => s.id === id)
+                   || masterIds().includes(id);
   while (taken('t' + n)) n++;
   return 't' + n;
 };
 const freeBoxId = () => freeTId();
 const freeShapeId = kind => {
   let n = layout.shapes.length + 1;
-  while (layout.shapes.some(s => s.id === `s${n}-${kind}`)) n++;
+  while (layout.shapes.some(s => s.id === `s${n}-${kind}`) || masterIds().includes(`s${n}-${kind}`)) n++;
   return `s${n}-${kind}`;
 };
 
@@ -11279,6 +11338,10 @@ function chip(pid, pos, label, isHidden) {
       pushHistory();
       const blanks = pageBlanks().filter(b => b.id !== pid);
       writeOrder(pageOrder().filter(p => p !== pid), blanks);
+      if (layout.pageMasters) {
+        delete layout.pageMasters[String(pid)];
+        if (!Object.keys(layout.pageMasters).length) delete layout.pageMasters;
+      }
       // Nothing can render on a page that no longer exists — orphaned shapes/
       // boxes/tables would otherwise sit invisible in layout.json and silently
       // reappear if a future blank page reused this same id.
@@ -11400,6 +11463,111 @@ function pastePageContents(pid, c) {
   return n;
 }
 
+// ------------------------------------------------------------ masters
+/** Apply a master to a page (name null = none). The page's own items stay;
+ *  the master's join them. */
+async function masterApply(pid, name) {
+  if (name && !masters()[name]) return { ok: false, error: `no master "${name}"` };
+  pushHistory();
+  const pm = pageMasters();
+  if (name) pm[String(pid)] = name; else delete pm[String(pid)];
+  if (!Object.keys(pm).length) delete layout.pageMasters;
+  markDirty(); await render();
+  const d = $('out').contentDocument;
+  if (selPage != null) pageBar(d);
+  $('stat').textContent = name ? `page ${pageLabel(pid)} uses the master "${name}"`
+                               : `page ${pageLabel(pid)} uses no master`;
+  return { ok: true, page: pid, master: name || null };
+}
+/** MOVE a page's own boxes and shapes into a new master, and make the page
+ *  use it. Their page goes (the master supplies it), and so would an anchor
+ *  or a wrap — a master item is placed by the page, not by a paragraph. */
+async function masterFromPage(pid, name) {
+  name = String(name || '').trim();
+  if (!name) return { ok: false, error: 'a master needs a name' };
+  if (masters()[name]) return { ok: false, error: `there is already a master "${name}"` };
+  const c = pageContents(pid);
+  if (!c.boxes.length && !c.shapes.length)
+    return { ok: false, error: `nothing placed on page ${pageLabel(pid)} to make a master from` };
+  pushHistory();
+  const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; return y; };
+  masters()[name] = { boxes: c.boxes.map(strip), shapes: c.shapes.map(strip) };
+  layout.boxes = boxes().filter(b => String(b.page) !== String(pid));
+  layout.shapes = layout.shapes.filter(s => String(s.page) !== String(pid));
+  pageMasters()[String(pid)] = name;
+  markDirty(); await render();
+  if (selPage != null) pageBar($('out').contentDocument);
+  const n = c.boxes.length + c.shapes.length;
+  $('stat').textContent = `"${name}" is a master now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`;
+  return { ok: true, master: name, items: n };
+}
+/** Detach: the master's items become this page's own copies, and the page
+ *  stops using the master. `{page}` is written out as this page's number. */
+async function masterDetach(pid) {
+  const name = masterNameOf(pid);
+  if (!name) return { ok: false, error: `page ${pageLabel(pid)} uses no master` };
+  pushHistory();
+  const m = masters()[name];
+  const label = pageLabel(pid);
+  let n = 0;
+  (m.boxes || []).forEach(b => {
+    const x = clone(b); x.id = freeTId(); x.page = pid;
+    x.md = String(x.md || '').replace(/\{page\}/g, label);
+    boxes().push(x); n++;
+  });
+  (m.shapes || []).forEach(sh => {
+    const x = clone(sh); x.id = freeTId(); x.page = pid; layout.shapes.push(x); n++;
+  });
+  delete pageMasters()[String(pid)];
+  if (!Object.keys(pageMasters()).length) delete layout.pageMasters;
+  markDirty(); await render();
+  if (selPage != null) pageBar($('out').contentDocument);
+  $('stat').textContent = `page ${label} has its own copies now — ${n} item${n === 1 ? '' : 's'} — and no master`;
+  return { ok: true, page: pid, items: n };
+}
+/** Take one item off its master — off every page that uses it. */
+async function masterRemoveItem(id) {
+  const mi = masterItemOf(id);
+  if (!mi) return { ok: false, error: `'${id}' is not a master item` };
+  pushHistory();
+  const list = masters()[mi.name][mi.kind];
+  list.splice(list.indexOf(mi.item), 1);
+  selIds.delete(id);
+  markDirty(); await render();
+  paintSel($('out').contentDocument);
+  $('stat').textContent = `removed from the master "${mi.name}" — on every page that uses it`;
+  return { ok: true, master: mi.name };
+}
+/** The strip's picker: the master this page uses, the others, and a way to
+ *  make one from this page. */
+function masterPickerFill(pid) {
+  const sel = $('ar-master');
+  const names = Object.keys(masters()).sort();
+  sel.textContent = '';
+  const add = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; sel.appendChild(o); };
+  add('', names.length ? 'No master' : 'No master yet');
+  names.forEach(n => add(n, `Master: ${n}`));
+  add('__new', '+ New master from this page…');
+  sel.value = masterNameOf(pid) || '';
+  sel.hidden = false;
+}
+$('ar-master').addEventListener('change', async () => {
+  const pid = selPage;
+  if (pid == null) return;
+  const v = $('ar-master').value;
+  if (v === '__new') {
+    $('ar-master').value = masterNameOf(pid) || '';
+    const got = await dsForm('New master from this page', [
+      { name: 'name', label: 'Name', placeholder: 'e.g. Section page', required: true },
+    ]);
+    if (!got || !got.name.trim()) return;
+    const r = await masterFromPage(pid, got.name);
+    if (!r.ok) $('stat').textContent = r.error;
+    return;
+  }
+  await masterApply(pid, v || null);
+});
+
 /** A new blank page right after `pid`, carrying a copy of what was on it. */
 async function duplicatePage(pid) {
   pushHistory();
@@ -11413,6 +11581,7 @@ async function duplicatePage(pid) {
   writeOrder(order, [...blanks, { id: bid }]);
   const c = pageContents(pid);
   const moved = pastePageContents(bid, c);
+  if (masterNameOf(pid)) pageMasters()[bid] = masterNameOf(pid);
   markDirty();
   await render();
   setSelPage($('out').contentDocument, bid);
@@ -23161,7 +23330,7 @@ const PILOT_BATCH_VERBS = {
 // The verbs a relayed pilot op may run ALONE — the ones batch() refuses
 // because they push their own history and render. Named here so a room
 // message cannot reach an arbitrary property of docsync.api.
-const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap']);
+const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster']);
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
@@ -23366,6 +23535,29 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (side != null && !['left', 'right'].includes(side))
       return { ok: false, error: `wrap side must be 'left', 'right' or null — not ${JSON.stringify(side)}` };
     return wrapSet(String(id), side || null);
+  },
+
+  /** master(page, name) makes a page use a master (null: none). masterFrom(page,
+   *  name) MOVES the page's own boxes and shapes into a new master and applies
+   *  it; detachMaster(page) gives the page its own copies and no master. A
+   *  master's items render as '<item>@<page>' and edit as the one thing —
+   *  setBoxText('text.footer@3', …) changes every page. `{page}` in a master
+   *  box's words is each page's number. */
+  async master(page, name) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    if (!pageOrder().some(p => String(p) === String(page)))
+      return { ok: false, error: `no page '${page}' — check inventory().pages` };
+    return masterApply(page, name || null);
+  },
+  async masterFrom(page, name) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    if (!pageOrder().some(p => String(p) === String(page)))
+      return { ok: false, error: `no page '${page}' — check inventory().pages` };
+    return masterFromPage(page, name);
+  },
+  async detachMaster(page) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    return masterDetach(page);
   },
 
   /** A blank page after `at` (order index) or after the page in view. */

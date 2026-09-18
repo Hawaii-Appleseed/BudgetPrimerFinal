@@ -3061,6 +3061,12 @@ class Layout:
         # Everything page-keyed — shapes, boxes, fills, layers — stays keyed by
         # identity, so reordering never re-homes anyone's work.
         self.pages = raw.get("pages") or {}
+        # Master pages: a named set of boxes and shapes a page `use`s, so the
+        # running footer or the section hairline changes in one place. A page
+        # names its master in pageMasters (keys are page ids as strings, the
+        # way JSON keys are); master_items() expands them per page.
+        self.masters = raw.get("masters") or {}
+        self.page_masters = raw.get("pageMasters") or {}
         # An explicit endnote order, by source id. Endnotes are numbered by
         # first appearance in the prose; dragging one past another on the
         # Endnotes page records an override here instead of rewriting the
@@ -3116,44 +3122,32 @@ class Layout:
             if p.get("anchor") is not None:
                 _check_anchor(p["anchor"], f"position '{el}'")
             _check_wrap(p, f"position '{el}'")
+        if not isinstance(self.masters, dict):
+            raise LayoutError("masters: expected an object keyed by name")
+        for name, m in self.masters.items():
+            if not isinstance(m, dict):
+                raise LayoutError(f"master '{name}': expected an object with boxes/shapes")
+            for k in m:
+                if k not in ("boxes", "shapes"):
+                    raise LayoutError(f"master '{name}': only 'boxes' and 'shapes' — "
+                                      f"not {k!r}")
+                if not isinstance(m[k], list):
+                    raise LayoutError(f"master '{name}'.{k}: expected a list")
+        if not isinstance(self.page_masters, dict):
+            raise LayoutError("pageMasters: expected an object keyed by page id")
+        for pid, name in self.page_masters.items():
+            if name not in self.masters:
+                known = ", ".join(sorted(self.masters)) or "none are defined"
+                raise LayoutError(f"pageMasters['{pid}']: no master called {name!r} — {known}")
         seen = set()
         for i, s in enumerate(self.shapes):
-            where = f"shape #{i + 1}"
-            sid = s.get("id")
-            if not sid:
-                raise LayoutError(f"{where}: needs an 'id'")
-            if sid in seen:
-                raise LayoutError(f"{where}: duplicate id '{sid}'")
-            seen.add(sid)
-            if s.get("kind") not in KINDS:
-                raise LayoutError(
-                    f"{where}: kind {s.get('kind')!r} must be one of {', '.join(KINDS)}")
-            if not isinstance(s.get("page"), (int, str)) or isinstance(s.get("page"), bool):
-                raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
-            for k in ("x", "y", "w", "h"):
-                _num(s.get(k), f"{where}.{k}")
-            # The look is checked on the RESOLVED shape — the one the page
-            # will draw — so a style cannot hand it a value it could not
-            # carry; the style's own keys were checked where it is defined.
-            _check_object_use(s, "shape", self.object_styles, where)
-            _check_shape_look(self.dressed(s), where)
-            if s.get("rot") is not None:
-                _num(s["rot"], f"{where}.rot")
-            if s.get("anim") is not None:
-                # A chart is the one shape with parts of its own to animate.
-                _anim_check(s["anim"], where,
-                            "bars" if s.get("kind") == "chart" else "")
-            if s.get("kind") == "chart":
-                _check_chart(s.get("chart"), f"{where}.chart")
-            if s.get("kind") == "icon":
-                check_icon_svg(s.get("svg"), where)
-                vb = s.get("vb", "0 0 24 24")
-                # The viewBox lands verbatim in an SVG attribute; four numbers
-                # or nothing, so a stray quote cannot end the attribute early.
-                if not isinstance(vb, str) or not _VIEWBOX_RE.match(vb):
-                    raise LayoutError(f"{where}: viewBox {vb!r} must be four numbers, "
-                                      f"like '0 0 24 24'")
-            _z(s)          # a bad layer must fail at load, not mid-render
+            self._check_shape(s, f"shape #{i + 1}", seen)
+        # A master's items go through the same checks as a page's own, with
+        # a page they never have supplied for the check that wants one.
+        for name, m in self.masters.items():
+            for i, ms in enumerate(m.get("shapes") or []):
+                self._check_master_item(ms, f"master '{name}' shape #{i + 1}")
+                self._check_shape(dict(ms, page=0), f"master '{name}' shape #{i + 1}", seen)
         for el, p in self.positions.items():
             if "z" in p and not isinstance(p["z"], int):
                 raise LayoutError(f"position '{el}': z {p['z']!r} is not a layer number")
@@ -3290,68 +3284,11 @@ class Layout:
                     if _num(c[k], f"{where}.crop.{k}") < 0:
                         raise LayoutError(f"{where}.crop.{k} cannot be negative")
         for i, b in enumerate(self.boxes):
-            where = f"box #{i + 1}"
-            bid = b.get("id")
-            if not bid:
-                raise LayoutError(f"{where}: needs an 'id'")
-            # One namespace with shapes: the editor resolves an id to a thing by
-            # searching both, so a collision makes the right-click menu act on
-            # whichever it happens to find first.
-            if bid in seen:
-                raise LayoutError(f"{where}: duplicate id '{bid}' — already a shape")
-            seen.add(bid)
-            if not isinstance(b.get("page"), (int, str)) or isinstance(b.get("page"), bool):
-                raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
-            for k in ("x", "y", "w"):
-                _num(b.get(k), f"{where}.{k}")
-            if b.get("anim") is not None:
-                _anim_check(b["anim"], where)
-            if b.get("h") is not None:      # optional min-height (never clips)
-                _num(b["h"], f"{where}.h")
-            if not str(b.get("md", "")).strip():
-                raise LayoutError(f"{where}: has no text — 'md' is empty")
-            # A box may ACT: 'pdf' (a Download-PDF button) or 'toggle' (an
-            # expandable section — the button shows/hides another box). An
-            # allowlist, because act lands in the published page as behaviour
-            # — an unknown value must be a loud error here, not a dead button
-            # discovered by a reader.
-            if b.get("act") is not None and b["act"] not in ("pdf", "toggle", "endnotes"):
-                raise LayoutError(f"{where}: unknown act '{b['act']}' — "
-                                  "'pdf', 'toggle' or 'endnotes'")
-            if b.get("act") == "toggle":
-                tgt = b.get("target")
-                tgts = tgt if isinstance(tgt, list) else [tgt] if tgt else []
-                if not tgts:
-                    raise LayoutError(f"{where}: act 'toggle' needs a 'target' "
-                                      "— the id (or list of ids) it reveals")
-                if b.get("tglSpeed") is not None:
-                    spd = _num(b["tglSpeed"], f"{where}.tglSpeed")
-                    if not 0.1 <= spd <= 2:
-                        raise LayoutError(f"{where}: tglSpeed {spd!r} — "
-                                          "seconds, 0.1 to 2")
-                known = ({x.get("id") for x in self.boxes}
-                         | {x.get("id") for x in self.shapes}
-                         | {x.get("id") for x in self.tables})
-                for one in tgts:
-                    if not re.match(r"^[A-Za-z0-9_-]+$", str(one)):
-                        raise LayoutError(f"{where}: target '{one}' — letters, "
-                                          "digits, - and _ only (it lands "
-                                          "inside the button's own script)")
-                    if one == bid:
-                        raise LayoutError(f"{where}: a toggle cannot reveal itself")
-                    if one not in known:
-                        raise LayoutError(f"{where}: target '{one}' is not a "
-                                          "box, shape or table on this layout")
-            if "z" in b and not isinstance(b["z"], int):
-                raise LayoutError(f"{where}: z {b['z']!r} is not a layer number")
-            if b.get("rot") is not None:
-                _num(b["rot"], f"{where}.rot")
-            if b.get("anchor") is not None:
-                _check_anchor(b["anchor"], where)
-            _check_wrap(b, where)
-            _check_object_use(b, "box", self.object_styles, where)
-            _check_box_look(self.dressed(b), where)
-
+            self._check_box(b, f"box #{i + 1}", seen)
+        for name, m in self.masters.items():
+            for i, mb in enumerate(m.get("boxes") or []):
+                self._check_master_item(mb, f"master '{name}' box #{i + 1}")
+                self._check_box(dict(mb, page=0), f"master '{name}' box #{i + 1}", seen)
         for i, t in enumerate(self.tables):
             where = f"table #{i + 1}"
             if t.get("anim") is not None:
@@ -3714,6 +3651,151 @@ class Layout:
 
     # ---- text ------------------------------------------------------------
 
+    def _check_shape(self, s: dict, where: str, seen: set) -> None:
+        """One shape, as the loops below and a master's items both need it."""
+        sid = s.get("id")
+        if not sid:
+            raise LayoutError(f"{where}: needs an 'id'")
+        if sid in seen:
+            raise LayoutError(f"{where}: duplicate id '{sid}'")
+        if "@" in str(sid) and not where.startswith("master"):
+            raise LayoutError(f"{where}: an id cannot contain '@' — that marks a "
+                              f"master item on a page")
+        seen.add(sid)
+        if s.get("kind") not in KINDS:
+            raise LayoutError(
+                f"{where}: kind {s.get('kind')!r} must be one of {', '.join(KINDS)}")
+        if not isinstance(s.get("page"), (int, str)) or isinstance(s.get("page"), bool):
+            raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
+        for k in ("x", "y", "w", "h"):
+            _num(s.get(k), f"{where}.{k}")
+        # The look is checked on the RESOLVED shape — the one the page
+        # will draw — so a style cannot hand it a value it could not
+        # carry; the style's own keys were checked where it is defined.
+        _check_object_use(s, "shape", self.object_styles, where)
+        _check_shape_look(self.dressed(s), where)
+        if s.get("rot") is not None:
+            _num(s["rot"], f"{where}.rot")
+        if s.get("anim") is not None:
+            # A chart is the one shape with parts of its own to animate.
+            _anim_check(s["anim"], where,
+                        "bars" if s.get("kind") == "chart" else "")
+        if s.get("kind") == "chart":
+            _check_chart(s.get("chart"), f"{where}.chart")
+        if s.get("kind") == "icon":
+            check_icon_svg(s.get("svg"), where)
+            vb = s.get("vb", "0 0 24 24")
+            # The viewBox lands verbatim in an SVG attribute; four numbers
+            # or nothing, so a stray quote cannot end the attribute early.
+            if not isinstance(vb, str) or not _VIEWBOX_RE.match(vb):
+                raise LayoutError(f"{where}: viewBox {vb!r} must be four numbers, "
+                                  f"like '0 0 24 24'")
+        _z(s)          # a bad layer must fail at load, not mid-render
+
+    def _check_box(self, b: dict, where: str, seen: set) -> None:
+        """One text box, as the loops below and a master's items both need it."""
+        bid = b.get("id")
+        if not bid:
+            raise LayoutError(f"{where}: needs an 'id'")
+        # One namespace with shapes: the editor resolves an id to a thing by
+        # searching both, so a collision makes the right-click menu act on
+        # whichever it happens to find first.
+        if bid in seen:
+            raise LayoutError(f"{where}: duplicate id '{bid}' — already a shape")
+        if "@" in str(bid) and not where.startswith("master"):
+            raise LayoutError(f"{where}: an id cannot contain '@' — that marks a "
+                              f"master item on a page")
+        seen.add(bid)
+        if not isinstance(b.get("page"), (int, str)) or isinstance(b.get("page"), bool):
+            raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
+        for k in ("x", "y", "w"):
+            _num(b.get(k), f"{where}.{k}")
+        if b.get("anim") is not None:
+            _anim_check(b["anim"], where)
+        if b.get("h") is not None:      # optional min-height (never clips)
+            _num(b["h"], f"{where}.h")
+        if not str(b.get("md", "")).strip():
+            raise LayoutError(f"{where}: has no text — 'md' is empty")
+        # A box may ACT: 'pdf' (a Download-PDF button) or 'toggle' (an
+        # expandable section — the button shows/hides another box). An
+        # allowlist, because act lands in the published page as behaviour
+        # — an unknown value must be a loud error here, not a dead button
+        # discovered by a reader.
+        if b.get("act") is not None and b["act"] not in ("pdf", "toggle", "endnotes"):
+            raise LayoutError(f"{where}: unknown act '{b['act']}' — "
+                              "'pdf', 'toggle' or 'endnotes'")
+        if b.get("act") == "toggle":
+            tgt = b.get("target")
+            tgts = tgt if isinstance(tgt, list) else [tgt] if tgt else []
+            if not tgts:
+                raise LayoutError(f"{where}: act 'toggle' needs a 'target' "
+                                  "— the id (or list of ids) it reveals")
+            if b.get("tglSpeed") is not None:
+                spd = _num(b["tglSpeed"], f"{where}.tglSpeed")
+                if not 0.1 <= spd <= 2:
+                    raise LayoutError(f"{where}: tglSpeed {spd!r} — "
+                                      "seconds, 0.1 to 2")
+            known = ({x.get("id") for x in self.boxes}
+                     | {x.get("id") for x in self.shapes}
+                     | {x.get("id") for x in self.tables})
+            for one in tgts:
+                if not re.match(r"^[A-Za-z0-9_-]+$", str(one)):
+                    raise LayoutError(f"{where}: target '{one}' — letters, "
+                                      "digits, - and _ only (it lands "
+                                      "inside the button's own script)")
+                if one == bid:
+                    raise LayoutError(f"{where}: a toggle cannot reveal itself")
+                if one not in known:
+                    raise LayoutError(f"{where}: target '{one}' is not a "
+                                      "box, shape or table on this layout")
+        if "z" in b and not isinstance(b["z"], int):
+            raise LayoutError(f"{where}: z {b['z']!r} is not a layer number")
+        if b.get("rot") is not None:
+            _num(b["rot"], f"{where}.rot")
+        if b.get("anchor") is not None:
+            _check_anchor(b["anchor"], where)
+        _check_wrap(b, where)
+        _check_object_use(b, "box", self.object_styles, where)
+        _check_box_look(self.dressed(b), where)
+
+    @staticmethod
+    def _check_master_item(it: dict, where: str) -> None:
+        """What a master item may not be: anchored (it is placed by the page,
+        not by a paragraph), acting (a button copied onto every page is a
+        button nobody meant), or named with the @ the page-instance ids use."""
+        if "@" in str(it.get("id", "")):
+            raise LayoutError(f"{where}: an id cannot contain '@' — that marks a "
+                              f"master item on a page")
+        for k in ("anchor", "wrap", "act"):
+            if it.get(k) is not None:
+                raise LayoutError(f"{where}: a master item cannot carry '{k}'")
+
+    def _page_label(self, page) -> str:
+        """The number a folio shows for this page: its place in the final
+        order when one is set, otherwise the designed number itself."""
+        order = self.pages.get("order") or []
+        if page in order:
+            return str(order.index(page) + 1)
+        return str(page) if isinstance(page, int) and not isinstance(page, bool) else ""
+
+    def master_items(self, page, kind: str) -> list:
+        """The boxes or shapes the master this page uses puts on it, as page
+        instances: id `<item>@<page>`, this page, `{page}` in a box's words
+        replaced by the page's number. Stamped `_master` so edit mode can say
+        what they are. A page using no master gets an empty list — and so a
+        layout without masters renders exactly as it did."""
+        name = self.page_masters.get(str(page))
+        m = self.masters.get(name) if name else None
+        if not m:
+            return []
+        out = []
+        for it in m.get(kind) or []:
+            x = dict(it, id=f"{it['id']}@{page}", page=page, _master=name)
+            if kind == "boxes":
+                x["md"] = str(x.get("md", "")).replace("{page}", self._page_label(page))
+            out.append(x)
+        return out
+
     def dressed(self, obj: dict) -> dict:
         """A shape, box or table with the object style it wears folded in —
         the ONE place `use` on an object is honoured, so the three renderers
@@ -3775,7 +3857,9 @@ class Layout:
                   + [self.styled_as(dict(st, use=st.get("from")))
                      for st in self.text_styles.values()]
                   + [self.styled_as(st["style"]) for st in self.object_styles.values()
-                     if isinstance(st.get("style"), dict)])
+                     if isinstance(st.get("style"), dict)]
+                  + [self.styled_as(self.dressed(b).get("style"))
+                     for m in self.masters.values() for b in (m.get("boxes") or [])])
         for st in styles:
             fam = st.get("font")
             if not fam:
@@ -3957,7 +4041,8 @@ class Layout:
         editor) but never clips — if the words are taller than `h`, the box
         grows past it. A box with no `h` is auto-height, as before.
         """
-        mine = [b for b in self.boxes if b.get("page") == page]
+        mine = ([b for b in self.boxes if b.get("page") == page]
+                + self.master_items(page, "boxes"))
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
         # WHERE a new element may land, and under which number. Only the
         # Primer's own renderer stamps data-page on its sections; demo-report,
@@ -4113,6 +4198,8 @@ class Layout:
             # it MEANT to draw, flung it to the left margin.
             full = f'{style + ";" if style else ""}{css}'
             tag = f' data-el="text.{b["id"]}"' if edit else ""
+            if edit and b.get("_master"):
+                tag += f' data-master="{b["_master"]}"'
             if act == "endnotes":
                 # The endnotes SECTION, placed by the editor rather than built
                 # into a report's renderer (see Footnotes.endnotes_html). The
@@ -4507,7 +4594,8 @@ class Layout:
         page that holds no shapes."""
         head = (self._mobile_css_once() + self._page_style_once()
                 + self._chart_tip_once() + self._anchor_once())
-        mine = [s for s in self.shapes if s.get("page") == page]
+        mine = ([s for s in self.shapes if s.get("page") == page]
+                + self.master_items(page, "shapes"))
         if not mine:
             return head
         by_z: dict[int, list] = {}
@@ -4561,6 +4649,8 @@ class Layout:
         # Animation data attributes ride the same node — in both modes, since
         # presentation replay (an editor feature) reads them there too.
         tgl += anim_attrs(s.get("anim"))
+        if os.environ.get("DOCSYNC_EDIT") and s.get("_master"):
+            tgl += f' data-master="{s["_master"]}"'
         # A gradient fill becomes fill="url(#…)" and a <defs> entry that _svg
         # collects; a hex/none stays verbatim, so a solid shape is byte-identical.
         fill, _ = fill_svg_paint(s.get("fill"), f"ds-fill-{s['id']}")

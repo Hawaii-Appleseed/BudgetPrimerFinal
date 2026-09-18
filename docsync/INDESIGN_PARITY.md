@@ -204,10 +204,35 @@ its *text* model, and the whole idea of a named, redefinable style.
    nothing in a viewBox. Not tables yet: the table drag is its own path. Both
    said by the verb and by the hidden button.
 
-7. **Master pages.** Templates seed a new document, and page 4 of the report
-   template is a "replicable section page" you copy. Nothing propagates
-   afterwards: change the running footer and you change it on every page by
-   hand. Distinct from (1) only in what it applies to.
+7. **Master pages. — CLOSED 2026-09-18.** `layout.masters` is a map of
+   named masters, each a set of `boxes` and `shapes`; `layout.pageMasters`
+   says which master a page uses. The engine draws a master's items on every
+   page that uses it as page instances — id `<item>@<page>`, `{page}` in a
+   box's words as that page's number (its place in the order, so a blank page
+   numbers itself). A master's items go through exactly the checks a page's
+   own do, plus three refusals: no anchor or wrap (the page places them, not a
+   paragraph), no `act` (a button copied onto every page is a button nobody
+   meant), and no `@` in an id. A layout without masters renders byte-for-byte.
+
+   The editor resolves `text.folio@3` to the master's ONE box, so a drag, a
+   retext or a restyle made on any page lands on every page that uses the
+   master — which is what a master is for, and the strip says so ("on master
+   Section", and the type bar's chip). Made from a page: the strip's picker
+   (page mode) offers **New master from this page…**, which MOVES the page's
+   own boxes and shapes into the master; other pages take it from the same
+   picker; right-click a page for **Detach master to this page** (own,
+   numbered copies) and a master item for **Remove from master**. Delete on
+   a master item refuses and says why. A duplicated page keeps its master; a
+   deleted blank drops its entry. Pilot: `master(page, name)`,
+   `masterFrom(page, name)`, `detachMaster(page)`.
+
+   Deliberately not: master shapes are shown but locked in the editor (the
+   shape pipeline looks shapes up in `layout.shapes` in thirty places, and a
+   page instance is not there — retext and move the master's boxes, detach to
+   move a shape), tables are not master items, and there is no per-page
+   override of one item short of detaching the whole master. The primer's
+   own designed pages are the renderer's, as before: a master dresses blank
+   and template pages, which is where the copying was.
 
 ## Tier 3 — real, but not what is stopping anyone
 
@@ -244,19 +269,17 @@ its *text* model, and the whole idea of a named, redefinable style.
 
 ## The order to do them in
 
-(1), (2), (3), (5), (6) and (12) are done, (4)'s cheap half is done and (10)
-turned out not to be a gap. The re-scope of (2) was right to insist on: it
-took three key sets, three checkers and two places in the UI — but ONE
-resolver and ONE verbs builder, which is what kept it a day's work rather
-than a week's. (6) and (5) went the same way: one runtime string, run by the
-page and by the editor, rather than two positioners that would have drifted —
-and wrap turned out to be four lines of that string once an object knew what
-paragraph it belonged to.
+Done: (1) text styles, (2) object styles, (3) find and change, (4)'s cheap half
+(columns in a box), (5) text wrap, (6) anchored objects, (7) master pages,
+(12) blend modes; (10) turned out not to be a gap. Every one kept the same
+shape: opt-in keys, every existing render byte-identical (checked across all
+twelve bindings in both modes on every commit), one resolver or one runtime
+string shared by the page and the editor rather than two that could drift.
 
-What is left, and in what order: **(7) master pages**, which is (2) pointed
-at page furniture — a named set of boxes/shapes a page `use`s, so the running
-footer changes in one place; scope it against the report templates' section
-page, which is the thing people copy today. **(8)** if the layers panel is
-wanted back (`#layers { display:none !important }` is the one line). **(9)**
-waits on threading, which is not coming; **(11)** only if a report actually
-goes to a printer.
+What is left is Tier 3: (8) the layers panel, one CSS line if wanted; (9) a
+baseline grid, which waits on threading; (11) bleed, only if a report goes to
+a printer. Threading between frames stays in "Not coming". The next real
+work on this editor is not a gap in this list — it is the follow-ups each
+closed item named: a pilot verb for object styles, tables as master items and
+as anchors, per-item master overrides, `shape-outside` if a wrapped image ever
+needs a contour.

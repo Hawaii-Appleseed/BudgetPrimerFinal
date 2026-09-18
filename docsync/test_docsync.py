@@ -1815,6 +1815,65 @@ check_page_raises("anchor: a designed element is held to the same shape",
                   "position 'f'.anchor: expected an object")
 
 
+# ---- master pages: page furniture in one place ---------------------------------
+# Templates seed a document and page 4 is copied; afterwards nothing propagates,
+# so the running footer is changed on every page by hand. A master is a named
+# set of boxes and shapes; a page names its master and gets them all, as page
+# instances `<item>@<page>`, with `{page}` in a box's words as its number.
+_MS = {"masters": {"Section": {
+           "boxes": [{"id": "folio", "x": 0.7, "y": 10.5, "w": 3, "z": 2,
+                      "md": "{page} · YOUR REPORT", "style": {"font": "Manrope"}}],
+           "shapes": [{"id": "rule", "kind": "rect", "x": 0.7, "y": 1.6, "w": 7.1,
+                       "h": 0.03, "fill": "#1E6194"}]}},
+       "pageMasters": {"3": "Section", "p1": "Section"},
+       "pages": {"order": [1, 2, 3, "p1"], "blanks": [{"id": "p1"}]},
+       "positions": {}, "shapes": [],
+       "boxes": [{"id": "own", "page": 3, "x": 1, "y": 1, "w": 2, "md": "mine"}]}
+_ms = _layout(_MS)
+_p3 = _ms.text_boxes(3)
+check("master: a page using one gets its boxes, as instances", _p3, 'top:10.5in')
+check("master: {page} becomes the page's number", _p3, "<p>3 · YOUR REPORT</p>")
+check("master: the page's own boxes are still there", _p3, "<p>mine</p>")
+check("master: a blank page's number is its place in the order",
+      _ms.text_boxes("p1"), "<p>4 · YOUR REPORT</p>")
+check("master: the shapes come too", _ms.layer(3), 'data-shape="rule@3"')
+check_eq("master: a page that names none gets nothing", _ms.text_boxes(2), "")
+check_eq("master: nor shapes", 'data-shape' in _ms.layer(2), False)
+check("master: a family a master's box asks for is fetched", _ms.font_link(), "Manrope")
+check_eq("master: no data-master outside edit mode", "data-master" in _p3 + _ms.layer(3), False)
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _pe = _layout(_MS)
+    check("master: in edit mode an instance says which master it is on",
+          _pe.text_boxes(3), 'data-el="text.folio@3" data-master="Section"')
+    check("master: and so does a shape", _pe.layer(3), 'data-shape="rule@3" data-master="Section"')
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+check_eq("master: defining masters nobody uses changes not one byte",
+         _layout({"positions": {}, "shapes": [], "boxes": [_plain]}).text_boxes(1),
+         _layout({"positions": {}, "shapes": [], "boxes": [_plain],
+                  "masters": _MS["masters"]}).text_boxes(1))
+check_page_raises("master: a page must name a master that exists",
+                  {"positions": {}, "shapes": [], "masters": {},
+                   "pageMasters": {"1": "Nope"}},
+                  "no master called 'Nope'")
+check_page_raises("master: an item is checked like a page's own",
+                  {"positions": {}, "shapes": [], "masters": {"M": {
+                      "boxes": [{"id": "b", "x": 1, "y": 1, "w": 2, "md": ""}]}}},
+                  "master 'M' box #1: has no text")
+check_page_raises("master: an item cannot be anchored — the page places it",
+                  {"positions": {}, "shapes": [], "masters": {"M": {
+                      "boxes": [{"id": "b", "x": 1, "y": 1, "w": 2, "md": "x",
+                                 "anchor": {"to": "a"}}]}}},
+                  "a master item cannot carry 'anchor'")
+check_page_raises("master: only boxes and shapes",
+                  {"positions": {}, "shapes": [], "masters": {"M": {"tables": []}}},
+                  "only 'boxes' and 'shapes'")
+check_page_raises("master: '@' is the instance marker, not part of an id",
+                  {"positions": {}, "shapes": [], "boxes": [dict(_plain, id="a@1")]},
+                  "an id cannot contain '@'")
+
+
 # ---- the expand button's chevron -------------------------------------------
 # Drawn art, not a glyph: it turns to point up when the section opens, it is
 # present on the EDITOR canvas too (where the button used to have none), and
