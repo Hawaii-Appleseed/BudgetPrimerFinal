@@ -164,12 +164,33 @@ its *text* model, and the whole idea of a named, redefinable style.
    which is most of them; InDesign's contour-from-alpha-channel wrap is not
    the part anyone here needs.
 
-6. **Anchored objects.** A figure that belongs to a paragraph does not move
-   when the paragraph does. Every placed object is pinned to a page by inch.
-   Once text reflows for any reason — a style redefined, a sentence added —
-   every figure on the page has to be dragged back. This gets sharply worse
-   the moment (1) ships, because redefining a style is exactly what makes text
-   reflow.
+6. **Anchored objects. — CLOSED 2026-09-17**, for text boxes and designed
+   elements. `anchor: {to: <slot>, dy, edge}` on a box or a `positions` entry:
+   the object follows the slot it names, `dy` inches under its top (or, with
+   `edge: "bottom"`, under its bottom — a slot of several paragraphs has ONE
+   top and ONE bottom, so "under this text" means under all of it). Measured,
+   not computed: the engine hands text to CSS and cannot know where a
+   paragraph ends, so `ANCHOR_JS` — one string in `layout.py`, emitted once
+   per document and only when something is anchored — asks the layout that
+   just happened and writes `top`. It runs at parse, load, fonts-ready and
+   resize; the phone release rule (`top:auto !important`) beats it, so an
+   anchored object reads in order there like any other. `content.py` stamps
+   the followed slot with `data-anc-host` in BOTH modes, because `data-slot`
+   is edit-only and the published page needs a hook.
+
+   The editor runs that same string after every render (an imported page
+   node never runs its scripts), before it measures anything, so there is one
+   implementation. Anchoring never moves the thing: the Anchor button on the
+   type bar (a text box) or the arrange strip (a designed element) ARMS the
+   next click, the click names the paragraph, and `dy` is whatever distance
+   the object already had. A drag keeps the paragraph and changes the
+   distance (`anchorRebase` in the placer's one write path). Releasing writes
+   the object's current place back as a plain `y`. Pilot: `anchor(id, key,
+   {edge})` / `anchor(id, null)`, a single verb with its own history step.
+
+   Not shapes: the shape layer is the page's own SVG drawing and `top` means
+   nothing in a viewBox. Not tables yet: the table drag is its own path. Both
+   said by the verb and by the hidden button.
 
 7. **Master pages.** Templates seed a new document, and page 4 of the report
    template is a "replicable section page" you copy. Nothing propagates
@@ -211,13 +232,16 @@ its *text* model, and the whole idea of a named, redefinable style.
 
 ## The order to do them in
 
-(1), (2), (3) and (12) are done, (4)'s cheap half is done and (10) turned out
-not to be a gap. The re-scope of (2) was right to insist on: it took three
-key sets, three checkers and two places in the UI — but ONE resolver and ONE
-verbs builder, which is what kept it a day's work rather than a week's.
+(1), (2), (3), (6) and (12) are done, (4)'s cheap half is done and (10)
+turned out not to be a gap. The re-scope of (2) was right to insist on: it
+took three key sets, three checkers and two places in the UI — but ONE
+resolver and ONE verbs builder, which is what kept it a day's work rather
+than a week's. (6) went the same way: one runtime string, run by the page
+and by the editor, rather than two positioners that would have drifted.
 
-Next is **(6) anchored objects**, and it is more urgent than it was: (1) and
-(2) both make text reflow — redefine Body, or give a box a padding — and
-every figure pinned by inch against that text is now wrong by however much it
-moved. Then (5) text wrap, which is cheap once an object knows what paragraph
-it belongs to; then (7) master pages, which is (2) pointed at page furniture.
+Next is **(5) text wrap**, which is cheap now that an object can know what
+paragraph it belongs to — a float inside the host is the honest CSS answer
+and the anchor already names the host. Then (7) master pages, which is (2)
+pointed at page furniture; then (8) if the layers panel is wanted back
+(`#layers { display:none !important }` is the one line). (9) waits on
+threading, which is not coming.

@@ -1737,6 +1737,60 @@ check_page_raises("box look: a box border names one edge or all of them",
                   "border.sides: expected one of all, left, right, top, bottom")
 
 
+# ---- anchored objects: a figure that belongs to a paragraph -------------------
+# Every placed object was pinned by inch, so once text reflowed — a style
+# redefined, a sentence added — every figure on the page was wrong by however
+# much it moved. An anchored object names the paragraph it follows and its
+# distance from it; a runtime the engine emits puts it there after the browser
+# has set the type, in both the published page and the editor.
+# A fresh Layout per check that looks for the runtime: it rides out ONCE per
+# document, so the first emitter to be asked is the one that carries it.
+_mk_an = lambda: _layout({"positions": {"fig.1": {"x": 1, "y": 3, "w": 2,
+                                                   "anchor": {"to": "a.b", "dy": 0.25}}},
+                          "shapes": [],
+                          "boxes": [{"id": "n", "page": 1, "x": 5, "y": 4, "w": 2, "md": "note",
+                                     "anchor": {"to": "a.b", "dy": -0.1, "edge": "bottom"}}]})
+_an = _mk_an()
+check_eq("anchor: the layout knows which slots are followed", _an.anchor_hosts, {"a.b"})
+check("anchor: a box carries its paragraph and distance", _an.text_boxes(1),
+      'data-anc="a.b" data-anc-dy="-0.1" data-anc-edge="bottom"')
+check("anchor: a designed element carries them through attr()", _an.attr("fig.1"),
+      'data-anc="a.b" data-anc-dy="0.25"')
+check_eq("anchor: the top edge is the default and is not written",
+         'data-anc-edge' in _an.attr("fig.1"), False)
+check("anchor: the runtime rides out with the boxes", _mk_an().text_boxes(1), "window.__dsAnchor")
+check("anchor: or with the shape layer, whichever is asked first", _mk_an().layer(1), "window.__dsAnchor")
+_once = _mk_an()
+check_eq("anchor: and only once per document",
+         (_once.layer(1) + _once.text_boxes(1) + _once.layer(2)).count("window.__dsAnchor"), 1)
+check("anchor: the runtime measures in this report's page width",
+      _layout({"positions": {"f": {"x": 1, "y": 1, "anchor": {"to": "k"}}}, "shapes": [],
+               "page": {"w": 12.5, "h": None}}).layer(1), "var W=12.5;")
+# The host: content.py stamps the slot the object follows, in both modes,
+# because data-slot is edit-only and the published page needs a hook too.
+_host = _content(_an)
+check("anchor: the followed paragraph is stamped for the runtime",
+      _host.html("a.b"), '<p data-anc-host="a.b">')
+check("anchor: a heading that is followed becomes a span it can measure",
+      _host.t("a.b"), '<span data-anc-host="a.b">')
+check_eq("anchor: a slot nobody follows is exactly what it was",
+         _content(_an, body="[[c.d]]\nText.\n\n[[sources]]\n[x]: A. — https://a.gov\n").html("c.d"),
+         "<p>Text.</p>")
+check_eq("anchor: a layout without anchors emits no runtime and stamps nothing",
+         "__dsAnchor" in _a.text_boxes(1) + _a.layer(1), False)
+check_page_raises("anchor: names the slot it follows",
+                  {"positions": {}, "shapes": [],
+                   "boxes": [dict(_plain, anchor={"dy": 1})]},
+                  "anchor.to: the slot this follows")
+check_page_raises("anchor: an edge is top or bottom",
+                  {"positions": {}, "shapes": [],
+                   "boxes": [dict(_plain, anchor={"to": "a", "edge": "middle"})]},
+                  "anchor.edge: 'middle' must be one of top, bottom")
+check_page_raises("anchor: a designed element is held to the same shape",
+                  {"positions": {"f": {"x": 1, "y": 1, "anchor": "a.b"}}, "shapes": []},
+                  "position 'f'.anchor: expected an object")
+
+
 # ---- the expand button's chevron -------------------------------------------
 # Drawn art, not a glyph: it turns to point up when the section opens, it is
 # present on the EDITOR canvas too (where the button used to have none), and

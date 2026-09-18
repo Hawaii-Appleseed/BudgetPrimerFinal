@@ -2700,6 +2700,83 @@ def _check_box_look(b: dict, where: str) -> None:
     _check_blend(b.get("blend"), where)
 
 
+ANCHOR_EDGES = ("top", "bottom")
+
+
+def _check_anchor(a, where: str) -> None:
+    """An anchor: the slot this object follows, the offset from it, which edge.
+    The slot's existence is not checked here — a Layout knows nothing of
+    content.md — and at render the object simply stays at its stored y when
+    the host is missing, which is also what a page without JavaScript shows."""
+    if not isinstance(a, dict):
+        raise LayoutError(f"{where}.anchor: expected an object like "
+                          f'{{"to": "<slot>", "dy": 0.25}}')
+    to = a.get("to")
+    if not isinstance(to, str) or not to.strip():
+        raise LayoutError(f"{where}.anchor.to: the slot this follows, by key")
+    if not re.match(r"^[A-Za-z0-9_.:-]+$", to):
+        raise LayoutError(f"{where}.anchor.to: {to!r} is not a slot key")
+    if a.get("dy") is not None:
+        _num(a["dy"], f"{where}.anchor.dy")
+    if a.get("edge") is not None and a["edge"] not in ANCHOR_EDGES:
+        raise LayoutError(f"{where}.anchor.edge: {a['edge']!r} must be one of "
+                          f"{', '.join(ANCHOR_EDGES)}")
+
+
+def anchor_attrs(a) -> str:
+    """The data the runtime reads: which slot, how far below its top (or
+    bottom), in inches. Emitted in BOTH modes — the editor positions anchored
+    objects through the same runtime the published page runs."""
+    if not a:
+        return ""
+    out = f' data-anc="{a["to"]}" data-anc-dy="{float(a.get("dy") or 0):g}"'
+    if a.get("edge") == "bottom":
+        out += ' data-anc-edge="bottom"'
+    return out
+
+
+# The anchor runtime. Every pinned object has a y in inches; an ANCHORED one
+# has, instead of a place, a paragraph it belongs to and a distance from it,
+# and this puts it there once the browser has set the type. Measured, not
+# computed: the engine hands text to CSS and cannot know where a paragraph
+# ends, so the one thing that can — the layout that just happened — is asked.
+#
+# `top` is written against the object's offsetParent, not the page: an
+# element inside a positioned ancestor resolves its top there, and the
+# editor's placer stores such elements in that same local frame. Page inches
+# per px come from the sheet's own rendered width over its width in inches, so
+# zoom, a scaled export and a narrowed phone all measure the same.
+#
+# Runs at parse, at load, when fonts arrive and on resize. On a phone the
+# release rule (mobile_css) puts every pinned thing back in the flow with
+# `top:auto !important`, which beats the inline value this writes — so an
+# anchored object reads in order there, exactly as an unanchored one does.
+# One source: the editor evaluates this same string after an incremental
+# render (imported nodes do not run their scripts), so the two cannot drift.
+ANCHOR_JS = (
+    "(function(){var W=%(w)s;function go(){"
+    "var els=document.querySelectorAll('[data-anc]');"
+    "for(var i=0;i<els.length;i++){var el=els[i],pg=el.closest('.page');"
+    "if(!pg)continue;var key=el.getAttribute('data-anc');"
+    # A slot of several paragraphs is several hosts: its TOP is the first
+    # one's, its BOTTOM the last one's, so "under this text" means under all
+    # of it — and a paragraph added to the slot moves what hangs below it.
+    "var sel='[data-anc-host=\"'+key+'\"]';var hs=pg.querySelectorAll(sel);"
+    "if(!hs.length)hs=document.querySelectorAll(sel);if(!hs.length)continue;"
+    "var bottom=el.getAttribute('data-anc-edge')==='bottom';"
+    "var host=bottom?hs[hs.length-1]:hs[0];"
+    "if(host===el||el.contains(host)||host.contains(el))continue;"
+    "var pr=pg.getBoundingClientRect();if(!pr.width)continue;"
+    "var op=el.offsetParent;var ar=(op&&op!==pg&&pg.contains(op))?op.getBoundingClientRect():pr;"
+    "var hr=host.getBoundingClientRect();var ppi=pr.width/W;"
+    "var edge=bottom?hr.bottom:hr.top;"
+    "var top=(edge-ar.top)/ppi+parseFloat(el.getAttribute('data-anc-dy')||'0');"
+    "el.style.top=top.toFixed(3)+'in';}}"
+    "window.__dsAnchor=go;go();addEventListener('load',go);addEventListener('resize',go);"
+    "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
+)
+
+
 def box_pad_css(pad) -> str:
     vals = pad if isinstance(pad, list) else [pad]
     return "padding:" + " ".join(f"{float(v):g}in" for v in vals)
@@ -2893,6 +2970,15 @@ class Layout:
         self.object_styles = raw.get("objectStyles") or {}
         self.boxes = raw.get("boxes") or []
         self.tables = raw.get("tables") or []
+        # The slots some object follows. content.py stamps these with
+        # data-anc-host in BOTH modes, which is the one hook the published page
+        # has for the anchor runtime to measure against (data-slot is edit-only).
+        self.anchor_hosts = {
+            a["to"] for a in (o.get("anchor") for o in
+                              list(self.boxes) + list(self.tables)
+                              + [p for p in self.positions.values() if isinstance(p, dict)])
+            if isinstance(a, dict) and isinstance(a.get("to"), str) and a.get("to")}
+        self._anchor_sent = False
         self.fills = raw.get("fill") or {}
         # Editor affordances only: ids the editor refuses to drag, and groups
         # that select-and-move as one. The renderer reads neither, so they
@@ -2991,6 +3077,8 @@ class Layout:
                                   f"h, v or hv")
             if p.get("anim") is not None:
                 _anim_check(p["anim"], f"position '{el}'")
+            if p.get("anchor") is not None:
+                _check_anchor(p["anchor"], f"position '{el}'")
         seen = set()
         for i, s in enumerate(self.shapes):
             where = f"shape #{i + 1}"
@@ -3221,6 +3309,8 @@ class Layout:
                 raise LayoutError(f"{where}: z {b['z']!r} is not a layer number")
             if b.get("rot") is not None:
                 _num(b["rot"], f"{where}.rot")
+            if b.get("anchor") is not None:
+                _check_anchor(b["anchor"], where)
             _check_object_use(b, "box", self.object_styles, where)
             _check_box_look(self.dressed(b), where)
 
@@ -3256,6 +3346,8 @@ class Layout:
                 raise LayoutError(f"{where}: z {t['z']!r} is not a layer number")
             if t.get("rot") is not None:
                 _num(t["rot"], f"{where}.rot")
+            if t.get("anchor") is not None:
+                _check_anchor(t["anchor"], where)
             _check_object_use(t, "table", self.object_styles, where)
             _check_table_look(self.dressed(t), where, len(rows), width)
         # The DRESSED box or table: a text style named by the object style it
@@ -3346,6 +3438,14 @@ class Layout:
                 f'<path d="M3.5 6L8 10.5L12.5 6" fill="none" stroke="{ink}"'
                 f' stroke-width="2" stroke-linecap="round"'
                 f' stroke-linejoin="round"/></svg>')
+
+    def _anchor_once(self) -> str:
+        """The anchor runtime, once per document and only when something is
+        anchored — a layout with no anchors emits the bytes it always did."""
+        if self._anchor_sent or not self.anchor_hosts:
+            return ""
+        self._anchor_sent = True
+        return f"<script>{ANCHOR_JS % {'w': f'{float(self.page_w):g}'}}</script>"
 
     def _anim_block(self) -> str:
         """Keyframes for every animated element, and — published only — the
@@ -3493,6 +3593,8 @@ class Layout:
             bits.append(f'style="{both}"')
         if p and p.get("anim"):
             bits.append(anim_attrs(p["anim"]).strip())
+        if p and p.get("anchor"):
+            bits.append(anchor_attrs(p["anchor"]).strip())
         return (" " + " ".join(bits)) if bits else ""
 
     def spacer(self, el_id: str) -> str:
@@ -3843,7 +3945,7 @@ class Layout:
         # width is the one thing the editor's resize drags, so the picture
         # must follow it. Engine-owned so it holds in every project, not
         # just ones whose own stylesheet happens to style .inline-img.
-        out = [mount, self._anim_block(),
+        out = [mount, self._anim_block(), self._anchor_once(),
                '<style>.ds-textbox img.inline-img{display:block;width:100%;'
                'height:auto;margin:0}</style>']
         # Acting boxes are real controls in the PUBLISHED page, so they carry
@@ -3920,7 +4022,7 @@ class Layout:
         for b in mine:
             b = self.dressed(b)
             act = b.get("act")
-            an = anim_attrs(b.get("anim"))
+            an = anim_attrs(b.get("anim")) + anchor_attrs(b.get("anchor"))
             css = (f'position:absolute;left:{b["x"]}in;top:{b["y"]}in;'
                    f'width:{b["w"]}in;z-index:{int(b.get("z", 2))}')
             if b.get("h"):
@@ -4170,7 +4272,7 @@ class Layout:
                 extra = f' id="ds-x-{t["id"]}"'
                 tglSty = f';--ds-tgl-d:{self.toggle_speed.get(t["id"], 0.3):g}s'
             out.append(f'<table class="{klass}"{extra}{tag}{PLACED}'
-                       f'{anim_attrs(t.get("anim"))} '
+                       f'{anim_attrs(t.get("anim"))}{anchor_attrs(t.get("anchor"))} '
                        f'style="{css}{";" + style if style else ""}{tglSty}">'
                        f'{colgroup}{body}</table>')
         return "".join(out)
@@ -4360,7 +4462,7 @@ class Layout:
         for the page-size override, which has to reach the document even on a
         page that holds no shapes."""
         head = (self._mobile_css_once() + self._page_style_once()
-                + self._chart_tip_once())
+                + self._chart_tip_once() + self._anchor_once())
         mine = [s for s in self.shapes if s.get("page") == page]
         if not mine:
             return head

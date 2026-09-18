@@ -442,7 +442,16 @@ class Content:
         build say so when someone styles one that cannot.
         """
         self._styleable.add(key)
-        return self._styles.text_attr(key) if self._styles else ""
+        if not self._styles:
+            return ""
+        out = self._styles.text_attr(key)
+        # A slot some placed object FOLLOWS gets a hook the published page can
+        # measure — data-slot is edit-only, and the anchor runtime has to find
+        # its paragraph on the page a reader sees. Only for the slots named,
+        # so every other report emits exactly what it did.
+        if key in getattr(self._styles, "anchor_hosts", ()):
+            out += f' data-anc-host="{key}"'
+        return out
 
     def styleable(self) -> set:
         return set(self._styleable)
