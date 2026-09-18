@@ -298,6 +298,11 @@ def _fmt_val(v: float, fmt: dict = None) -> str:
     elif scale in ("K", "M", "B"):
         div = dict(_NUM_SCALES)[scale]
         v, unit = v / div, scale
+    # The scale's letter can be overridden, or dropped with "". A figure whose
+    # caption already says "($Millions)" wants "$2,262", not "$2,262M" — the
+    # unit is stated once, in prose, which is how the published primer says it.
+    if fmt.get("unit") is not None:
+        unit = fmt["unit"]
     dec = fmt.get("decimals")
     if isinstance(dec, int):
         body = f"{v:,.{max(0, min(6, dec))}f}"
@@ -1809,9 +1814,9 @@ def _check_chart(c, where: str) -> None:
             continue
         if not isinstance(f, dict):
             raise LayoutError(f"{where}.{k}: expected an object")
-        for bad in set(f) - {"prefix", "suffix", "scale", "decimals"}:
+        for bad in set(f) - {"prefix", "suffix", "scale", "decimals", "unit"}:
             raise LayoutError(f"{where}.{k}.{bad}: not a number-format field")
-        for s in ("prefix", "suffix"):
+        for s in ("prefix", "suffix", "unit"):
             if f.get(s) is not None and not isinstance(f[s], str):
                 raise LayoutError(f"{where}.{k}.{s}: expected text")
         if f.get("scale") is not None and f["scale"] not in CHART_NUM_SCALES:
