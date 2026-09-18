@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from docsync.content import Content, ContentError  # noqa: E402
-from docsync.blocks import chart_scroll, chart_scroll_css  # noqa: E402
+from docsync.blocks import chart, chart_scroll, chart_scroll_css  # noqa: E402
 from docsync.layout import (Layout, LayoutError, check_icon_svg,  # noqa: E402
                             fill_css, fill_repr, icon_color)
 
@@ -559,43 +559,43 @@ def fig1_lifecycle(size=560):
     # legibility over the at-a-glance whole.
     return chart_scroll("".join(out), smallest_label=12)
 
+FIG6_DATA = [("Lowest 20%", "Less than $21,900", 14.1),
+             ("Second 20%", "$21,900–$44,200", 13.7),
+             ("Middle 20%", "$44,200–$80,100", 14.2),
+             ("Fourth 20%", "$80,100–$136,600", 13.4),
+             ("Next 15%", "$136,600–$278,200", 11.8),
+             ("Next 4%", "$278,200–$594,900", 10.2),
+             ("Top 1%", "Over $594,900", 10.1)]
+
+
 def fig6_chart():
-    data = [("Lowest 20%", "Less than $21,900", 14.1), ("Second 20%", "$21,900–$44,200", 13.7),
-            ("Middle 20%", "$44,200–$80,100", 14.2), ("Fourth 20%", "$80,100–$136,600", 13.4),
-            ("Next 15%", "$136,600–$278,200", 11.8), ("Next 4%", "$278,200–$594,900", 10.2),
-            ("Top 1%", "Over $594,900", 10.1)]
-    # The SVG renders 720u across the 7.26in text column, so 1u = 0.726pt, and
-    # the rendered HEIGHT is whatever H is — .chart is width:100%/height:auto.
-    # Shrinking the chart therefore means shrinking H, and H is only shrinkable
-    # by shortening the bars: everything below BASE is the label block (~68u:
-    # quintile, then one or two range lines and their descenders) and everything
-    # above the tallest bar is just the value label's ascender.
-    #
-    # MAXH is the 15% gridline, so every bar scales by the same factor and the
-    # comparison the figure exists to make is untouched. 285 -> 230 takes the
-    # figure from 3.71in to about 3.2in, with BASE moved up to keep the label
-    # block and roughly 10u of headroom over the tallest value label.
-    W, H, BW = 720, 320, 80
-    BASE, MAXH = 252, 230          # 230u = 167pt tall for the 15% gridline
-    gap = (W - 40 - 7 * BW) / 6
-    out = [f'<svg viewBox="0 0 {W} {H}" class="chart" role="img">']
-    for i, (q, rng, v) in enumerate(data):
-        x = 20 + i * (BW + gap)
-        h = (v / 15) * MAXH
-        y = BASE - h
-        out.append(f'<rect x="{x:.0f}" y="{y:.0f}" width="{BW}" height="{h:.0f}" fill="{SAGE}" '
-                   f'class="iv" data-tip="{q} ({rng}): {v}% of income"/>')
-        out.append(f'<text x="{x+BW/2:.0f}" y="{y-10:.0f}" text-anchor="middle" class="vlab b">{v}%</text>')
-        # quintile name reads as the category; the income range is secondary detail
-        out.append(f'<text x="{x+BW/2:.0f}" y="{BASE+24:.0f}" text-anchor="middle" class="qlab">{q}</text>')
-        out.append(f'<text x="{x+BW/2:.0f}" y="{BASE+43:.0f}" text-anchor="middle" class="rlab">{rng.split("–")[0] if "–" in rng else rng}</text>')
-        if "–" in rng:
-            out.append(f'<text x="{x+BW/2:.0f}" y="{BASE+60:.0f}" text-anchor="middle" class="rlab">–{rng.split("–")[1]}</text>')
-    out.append(f'<line x1="16" y1="{BASE}" x2="{W-16}" y2="{BASE}" stroke="{INK}" stroke-width="1"/></svg>')
-    # Scrolls rather than shrinks on a phone; 14.6px is this chart's
-    # smallest label (.rlab), which is what sets how far it may scale
-    # down before the wrapper takes over.
-    return chart_scroll("".join(out), smallest_label=14.6)
+    """Share of income paid in state and local tax, by income group.
+
+    An ENGINE chart drawn inline by blocks.chart(), not the hand-written SVG
+    this was. That version predated the engine being able to express it — it
+    needs a fixed 15% ceiling so every bar scales by the same factor, per-cent
+    labels, and a two-line category of the quintile over its income range —
+    and the price of drawing it by hand was that nobody could change a word of
+    it in the editor. All three are engine features now, so the figure is data
+    rather than geometry and every label and number in it is editable on the
+    page.
+
+    7.26 x 3.23in keeps the aspect the hand-drawn one was cut down to when
+    page 10 ran out of room (720 x 320 user units at 7.26in to the column).
+    """
+    return chart(L, "whopays.fig6", {
+        "type": "bar",
+        "labels": [f"{q}\n{rng}" for q, rng, _ in FIG6_DATA],
+        "series": [{"name": "Share of income", "color": SAGE,
+                    "data": [v for _, _, v in FIG6_DATA]}],
+        "values": True,
+        "tips": True,
+        "grid": False,
+        "axisMax": 15,
+        "labelColor": INK,
+        "format": {"suffix": "%"},
+    }, w=7.26, h=3.23)
+
 
 # ---------- figure data (year-parameterized for the FY26/FY27 picker) ----------
 FIG3_ORDER = ["Transportation", "Formal Education", "All Others", "Economic Development", "Health"]
@@ -637,10 +637,41 @@ def fy_picker(fig_id, label27="FY2027", label26="FY2026"):
             f'<option value="2027">{label27}</option>'
             f'<option value="2026">{label26}</option></select>')
 
-def fy_pie_swap(fig_id, slices27, slices26, **kw):
-    """Both years' pies as sibling flex items; FY2026 starts hidden."""
-    return (pie(slices27, attrs=f' data-fig="{fig_id}" data-fy="2027"', **kw)
-            + pie(slices26, attrs=f' data-fig="{fig_id}" data-fy="2026" hidden', **kw))
+def pie_spec(slices, fmt, title=""):
+    """An engine chart from the (name, value, colour, label_lines) rows the
+    figures already build. The label LINES are not carried over: the engine
+    composes "value over percent" itself from sliceLabel + the number format,
+    which is what makes the numbers live rather than pre-rendered strings."""
+    return {
+        "type": "pie",
+        "labels": [n for n, _v, _c, _l in slices],
+        "series": [{"name": title or "share",
+                    "data": [v for _n, v, _c, _l in slices]}],
+        "colors": [c for _n, _v, c, _l in slices],
+        "values": True,
+        "tips": True,
+        "sliceLabel": "both" if any(len(l) > 1 for *_x, l in slices) else "value",
+        "format": fmt,
+    }
+
+
+def fy_chart_swap(fig_id, key, slices27, slices26, fmt, **kw):
+    """Both years' pies, FY2026 starting hidden — the year picker toggles the
+    WRAPPER, not the chart.
+
+    Two charts rather than one, because an engine chart holds a single dataset
+    and the swap is a real feature of the page. Each year is separately
+    editable under its own element id, which is also what a person would
+    expect: fixing a label on the 2027 pie should not silently rewrite 2026.
+    The toggled element is the div, so the chart's scroll wrapper and its
+    reserved width go with it instead of collapsing to an empty box.
+    """
+    return "".join(
+        f'<div data-fig="{fig_id}" data-fy="{yr}"'
+        + (' hidden' if yr == "2026" else '') + '>'
+        + chart(L, f"{key}.{yr}", pie_spec(sl, fmt), **kw)
+        + '</div>'
+        for yr, sl in (("2027", slices27), ("2026", slices26)))
 
 # ---------- page shells ----------
 # Header glyphs for the one-time / emergency appropriation tiles (page 8): a
@@ -1202,7 +1233,7 @@ pages.append(f"""
  </details>
  {L.spacer("cip.h3")}<h3 class="sub2"{L.attr("cip.h3")}>{C.t("cip.h3")}</h3>
  {L.spacer("cip.fig3.caption")}<p class="figcap"{L.attr("cip.fig3.caption")}><b>Figure 3.</b> {C.t("cip.fig3.caption")} {fy_picker("fig3")} ($Millions)</p>
- <div class="pie-row">{fy_pie_swap("fig3", fig3_slices_for(BUD), fig3_slices_for(BUD26), cls="pie-cip", width_in=4.05, label_pt=13.7)}{legend([(esc(n), c) for n, c in zip(FIG3_ORDER, FIG3_COLORS)])}</div>
+ <div class="pie-row">{fy_chart_swap("fig3", "cip.fig3", fig3_slices_for(BUD), fig3_slices_for(BUD26), {"prefix": "$", "scale": "M", "decimals": 0, "unit": ""}, cls="pie-cip", w=4.05, h=4.05)}{legend([(esc(n), c) for n, c in zip(FIG3_ORDER, FIG3_COLORS)])}</div>
  <p data-fig="fig3" data-fy="2027"{C.slot_attr("cip.body")}>{C("cip.body").format(fy=2027, cip_total=words(cip_total_for(BUD)))}</p>
  <p data-fig="fig3" data-fy="2026" hidden{C.slot_attr("cip.body")}>{C("cip.body").format(fy=2026, cip_total=words(cip_total_for(BUD26)))}</p>
 {L.spacer("onetime.h3")}<h3 class="sub2"{L.attr("onetime.h3")}>{C.t("onetime.h3")}</h3>
@@ -1223,7 +1254,7 @@ pages.append(f"""
 <section class="page"{L.fill_attr(f"page.8")}>
  {L.spacer("funding.h1")}<h1{L.attr("funding.h1")}>{C.t("funding.h1")}</h1>
  {L.spacer("funding.fig4.caption")}<p class="figcap"{L.attr("funding.fig4.caption")}><b>Figure 4.</b> {C.t("funding.fig4.caption")} {fy_picker("fig4")} {C.t("funding.fig4.caption.suffix")}</p>
- <div class="pie-row">{fy_pie_swap("fig4", fig4_slices_for(BUD), fig4_slices_for(BUD26), cls="pie-mof", width_in=4.65, label_pt=14.6)}{legend([(esc(n), c) for n, c in zip(FIG4_ORDER, FIG3_COLORS)])}</div>
+ <div class="pie-row">{fy_chart_swap("fig4", "funding.fig4", fig4_slices_for(BUD), fig4_slices_for(BUD26), {"prefix": "$", "scale": "B", "decimals": 1, "unit": ""}, cls="pie-mof", w=4.65, h=4.65)}{legend([(esc(n), c) for n, c in zip(FIG4_ORDER, FIG3_COLORS)])}</div>
  {C.html("funding.fig4.note", cls="fig-note")}
  {C.html("funding.p1")}
  <div class="cards3">
@@ -1239,7 +1270,7 @@ pages.append(f"""
 <section class="page"{L.fill_attr(f"page.9")}>
  {L.spacer("taxes.h2")}<h2 class="sub"{L.attr("taxes.h2")}>{C.t("taxes.h2")}</h2>
  {L.spacer("taxes.fig5.caption")}<p class="figcap"{L.attr("taxes.fig5.caption")}><b>Figure 5.</b> {C.t("taxes.fig5.caption")} {fy_picker("fig5")} {C.t("taxes.fig5.caption.suffix")}</p>
- <div class="pie-row">{fy_pie_swap("fig5", fig5_slices_for(REV), fig5_slices_for(REV26), cls="pie-tax", width_in=4.80, label_pt=13.1)}{legend([(esc(n), c) for (n, _v, c, _l) in fig5_slices_for(REV)])}</div>
+ <div class="pie-row">{fy_chart_swap("fig5", "taxes.fig5", fig5_slices_for(REV), fig5_slices_for(REV26), {"prefix": "$", "scale": "B", "decimals": 2, "unit": ""}, cls="pie-tax", w=4.80, h=4.80)}{legend([(esc(n), c) for (n, _v, c, _l) in fig5_slices_for(REV)])}</div>
  <div class="cards3">
   {card(C.t("taxes.cards.get.title"), C.list("taxes.cards.get.bullets"), DARK, key="taxes.cards.get.bullets", icon=GET_ICON, icon_id="taxes.cards.get.icon")}
   {card(C.t("taxes.cards.iit.title"), C.list("taxes.cards.iit.bullets"), SAGE_MID, key="taxes.cards.iit.bullets", icon=IIT_ICON, icon_id="taxes.cards.iit.icon")}

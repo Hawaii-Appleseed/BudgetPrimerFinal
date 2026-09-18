@@ -257,11 +257,11 @@ General-fund fixed costs have climbed from $3.64 billion in FY2018 to $5.03 bill
 **Figure 3.** Distribution of Capital Improvement Project Funding, FY2027 ($Millions)
 
 DATA:
-  Transportation: $2.7B
-  Formal Education: $880M
-  All Others: $419M
-  Economic Development: $342M
-  Health: $203M
+  Transportation: $2,691 (59.3%)
+  Formal Education: $880 (19.4%)
+  All Others: $419 (9.2%)
+  Economic Development: $342 (7.5%)
+  Health: $203 (4.5%)
 
 KEY: Transportation | Formal Education | All Others | Economic Development | Health
 
@@ -302,12 +302,6 @@ PAGE 8
 
 **Figure 4.** Hawaiʻi Budget Means of Finance, FY2027 ($Billions)[^18]
 
-DATA:
-  General Funds: $10.6B
-  Special Funds: $4.4B
-  Federal Funds: $3.7B
-  Other Funds: $1.6B
-
 KEY: General Funds | Special Funds | Federal Funds | Other Funds
 
 Note: A few smaller related categories, including “other federal funds,” are currently grouped into “Other Funds”
@@ -335,13 +329,6 @@ PAGE 9
 
 **Figure 5.** Projected Hawaiʻi State Tax Revenue, FY2027 ($Billions)[^19]
 
-DATA:
-  General Excise Tax: $5.6B
-  Individual Income Tax: $3B
-  Transient Accommodations Tax: $772M
-  All Other Taxes: $711M
-  Corporate Income Tax: $455M
-
 KEY: General Excise Tax | Individual Income Tax | Transient Accommodations Tax | All Other Taxes | Corporate Income Tax
 
 #### General Excise Tax
@@ -366,13 +353,13 @@ PAGE 10
 **Figure 6.** Percentage of Income Paid in State and Local Taxes by Household Income Quintile (2024)[^20]
 
 DATA:
-  Lowest 20% (Less than $21,900): 14.1% of income
-  Second 20% ($21,900–$44,200): 13.7% of income
-  Middle 20% ($44,200–$80,100): 14.2% of income
-  Fourth 20% ($80,100–$136,600): 13.4% of income
-  Next 15% ($136,600–$278,200): 11.8% of income
-  Next 4% ($278,200–$594,900): 10.2% of income
-  Top 1% (Over $594,900): 10.1% of income
+  Lowest 20% Less than $21,900: 14.1%
+  Second 20% $21,900–$44,200: 13.7%
+  Middle 20% $44,200–$80,100: 14.2%
+  Fourth 20% $80,100–$136,600: 13.4%
+  Next 15% $136,600–$278,200: 11.8%
+  Next 4% $278,200–$594,900: 10.2%
+  Top 1% Over $594,900: 10.1%
 
 In Hawaiʻi, low- and middle-income families spend a larger share of their already stretched income on state and local taxes than wealthy families do. This is mostly due to the GET: a low-income and a wealthy person pay the same dollar amount on the same purchase, but that amount is a far larger share of a low-income paycheck—making it harder to budget for, and often trapping families in cycles of poverty and debt.
 
