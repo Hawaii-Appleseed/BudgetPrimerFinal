@@ -284,6 +284,88 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "") -> str:
             f'<span class="{klass}"{L.attr(el_id, base)}>{_fit_svg(svg)}</span>')
 
 
+def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
+          cls: str = "", attrs: str = "", smallest_label: float = 0.0) -> str:
+    """A chart drawn INLINE, in the document's flow, that the editor can still
+    open in its Chart panel and edit.
+
+    The other kind of chart is a shape: pinned by inch in a page's SVG layer,
+    which is right for a designed sheet and wrong for a report whose figures
+    sit in the column with the prose. A flow report had no editable chart at
+    all before this — which is why the Budget Primer's six figures were each
+    written out as frozen SVG by hand, where nobody but the renderer can
+    change a label or a number.
+
+    `spec` is what the RENDERER knows: the type, the data it computed, the
+    colours it chose. The editor's changes live in layout.json under
+    `charts[el_id]` and are laid over it by `Layout.chart_spec()`, exactly as
+    `positions[el_id]` lays a drag over a graphic's default width. So a
+    rebuild with new numbers keeps the user's styling, and the renderer
+    remains the source of the figures.
+
+    Sized in inches like graphic(); `smallest_label` hands chart_scroll the
+    smallest type the chart draws, so a phone scrolls it rather than shrinking
+    it under the legibility floor.
+    """
+    from .layout import chart_svg, MIN_SUBLABEL_IN
+
+    c = L.chart_spec(el_id, spec)
+    # Drawn in its own INCH coordinate system, so the geometry is the same one
+    # chart_svg would emit for a shape of this size — one set of rules to
+    # reason about — and the viewBox does every bit of the scaling. w and h
+    # are therefore the design size and the aspect ratio, not the rendered
+    # width: by default the figure fills its column the way the primer's
+    # hand-built ones always have.
+    body = chart_svg(c, 0.0, 0.0, w, h)
+    svg = (f'<svg viewBox="0 0 {w:g} {h:g}" class="chart" role="img" '
+           f'aria-label="{_xml_attr(c.get("title") or el_id)}"{attrs}'
+           f' style="display:block;width:100%;height:auto">{body}</svg>')
+    klass = ("ds-graphic ds-chart " + cls).strip()
+    base = "display:block;line-height:0"
+    if not L.positions.get(el_id, {}).get("w"):
+        base += ";width:100%"
+    # The editor finds an inline chart by this hook, the way it finds a chart
+    # shape by kind:"chart". Edit mode only, like every other data-* the
+    # engine stamps — a published page carries no editing scaffolding.
+    # The editor finds an inline chart by data-chart, and reads what it is
+    # actually drawing off data-chart-spec. The EFFECTIVE spec has to travel
+    # with the markup because only this render knows it: the renderer's half
+    # is computed in Python from the project's data, and the browser has no
+    # other way to see it. Writes go back the other way, into
+    # layout.json's charts[el_id], so the renderer stays the source of the
+    # numbers and the override stays only what a person changed.
+    hook = ""
+    if os.environ.get("DOCSYNC_EDIT"):
+        import json as _json
+        hook = (f' data-chart="{el_id}"'
+                f' data-chart-spec="{_xml_attr(_json.dumps(c, separators=(",", ":")))}"')
+    # Phone behaviour comes free: _lfs() floors every label chart_svg draws
+    # at MIN_SUBLABEL_IN, so the smallest type in the drawing is known
+    # without the caller working it out — and it is already in the viewBox's
+    # units, which is what chart_scroll wants. It is the SUB-label floor, not
+    # MIN_LABEL_IN: a value or category label derived from the base size
+    # bottoms out a point lower, and sizing the scroller off the larger of
+    # the two leaves the real smallest label under the floor on a phone.
+    #
+    # The scroller wraps the svg DIRECTLY, inside the movable span:
+    # chart_scroll_css targets `.ds-chart-scroll>svg`, so a wrapper one level
+    # further out matches nothing at all, and the chart answers a 375px phone
+    # by shrinking its labels to 5.8px instead of scrolling. The span stays
+    # the element the editor moves; the div inside it is what scrolls.
+    scroller = chart_scroll(svg, smallest_label=smallest_label or MIN_SUBLABEL_IN)
+    el = f'<span class="{klass}"{L.attr(el_id, base)}{hook}>{scroller}</span>'
+    # An inline chart is invisible to layer()'s survey of the shapes, so if it
+    # wants tooltips it has to ask for the runtime itself. Once per document,
+    # like every other _once: the second chart on the page adds nothing.
+    tips = L.chart_tip_runtime() if c.get("tips") else ""
+    return f'{tips}{L.spacer(el_id)}{el}'
+
+
+def _xml_attr(s) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
 def card(C, L, title_key: str, bullets_key: str, bg, light=None,
          icon: str = "", icon_id: str = "", detachable: bool = False,
          min_h: float | None = None, ink: str = "#2F3E46",

@@ -42,6 +42,26 @@ Every one of these is opt-in or fires only where the old behaviour was wrong:
 byte-identical except stacked + `values`, which is the fix. **Keep that
 property.** A published report must not move because the engine grew.
 
+## Inline charts (2026-09-17)
+
+The Chart panel only ever recognised `layout.shapes` with `kind:"chart"` —
+pinned, absolutely-positioned. The Budget Primer's `layout.json` has **zero
+shapes**: it is a flow document, and a flow document could not have an
+editable chart at all. That, not the drawing gaps alone, is why all six
+figures were hand-written SVG.
+
+`blocks.chart()` draws a chart INLINE, where the renderer emits it, while its
+data lives in `layout.json` under `charts[el_id]` where the panel can edit
+it — the relationship `positions[el_id]` already had to a `graphic()`'s
+geometry, extended to chart data. The renderer's spec and the user's override
+meet in `Layout.chart_spec()`, and `chartWrite()` records **only the keys an
+edit actually changed**, so a figure computed from `report_data.json` keeps
+following the data after somebody retitles it.
+
+Also closed for the port: pie labels move OUTSIDE the rim for a slice too thin
+to hold them, staggered against their neighbours, which is what the
+hand-drawn pies did and the engine did not.
+
 ## Tier 2 — expressive gaps that still send someone back to InDesign
 
 Roughly in the order they bite.
@@ -94,11 +114,12 @@ difficulty:
 
 | Figure | Needs |
 |---|---|
-| `fig6_chart` (tax rate by quintile) | done — two-line categories, `%` format, fixed `axisMax` |
-| `fig3/4/5` (pies) | done — `sliceLabel: "both"`, `$`/`B` format |
+| `fig6_chart` (tax rate by quintile) | **ported** — inline chart, two-line categories, `%` format, fixed `axisMax` |
+| `fig3/4/5` (pies) | **ported** — inline charts, `sliceLabel: "both"`, outside labels for thin slices. Each is TWO charts, FY2026 and FY2027, toggled by the existing `fy_picker` — an engine chart holds one dataset, so the year swap stays the renderer's job |
 | `fig2` (branch/department rows) | per-point colour (1), grouped overlays |
 | `fig_obligated` | area type (5), reference lines (2) |
 | `fig1_lifecycle` | not a chart — a diagram; belongs in `graphic()` with slots |
 
-`fig6` and the three pies should port today. Doing so would also clear the
-`[editability]` findings those pages carry.
+`fig2` needs per-point colour (1); `fig_obligated` needs an area type (5) and
+reference lines (2); `fig1_lifecycle` is a diagram, not a chart, and belongs
+in `graphic()` with slots beside it rather than in the chart engine at all.

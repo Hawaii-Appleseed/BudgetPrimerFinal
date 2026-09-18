@@ -6945,14 +6945,44 @@ const CHART_WITH_AXES = ['bar', 'stacked-bar', 'row', 'stacked-row', 'column',
                          'line', 'scatter', 'histogram'];
 let chartPanelId = null;
 
-const chartOf = id => layout.shapes.find(s =>
-  s.id === (id || '').replace(/^chart\./, '') && s.kind === 'chart');
+/** The chart the panel is editing, whichever of the two kinds it is.
+ *
+ *  A chart SHAPE is pinned by inch in a page's SVG layer and its data lives
+ *  in layout.shapes. An INLINE chart is drawn in the document flow by
+ *  blocks.chart(), and only the render knows what it is actually drawing —
+ *  the renderer computes the numbers in Python — so the effective spec
+ *  travels out on data-chart-spec and edits go back as an OVERRIDE under
+ *  layout.charts[id]. Both arrive here as the same handle, so nothing
+ *  downstream has to care which it is.
+ */
+function chartOf(id) {
+  const key = (id || '').replace(/^chart\./, '');
+  if (!key) return null;
+  const sh = layout.shapes.find(s => s.id === key && s.kind === 'chart');
+  if (sh) return { id: key, chart: sh.chart, shape: sh, inline: false };
+  const d = $('out').contentDocument;
+  const node = d && d.querySelector(`[data-chart="${CSS.escape(key)}"]`);
+  if (node && node.dataset.chartSpec) {
+    try {
+      return { id: key, chart: JSON.parse(node.dataset.chartSpec),
+               shape: null, inline: true };
+    } catch (e) { return null; }
+  }
+  return null;
+}
+
+/** Every inline chart on the page, by id — the editor's only view of them,
+ *  since they are not in layout.shapes. */
+function inlineChartIds() {
+  const d = $('out').contentDocument;
+  if (!d) return [];
+  return [...d.querySelectorAll('[data-chart]')].map(n => n.dataset.chart);
+}
 
 function selectedChartId() {
   const ids = [...selIds];
   if (ids.length !== 1) return null;
-  const s = layout.shapes.find(x => x.id === ids[0] && x.kind === 'chart');
-  return s ? s.id : null;
+  return chartOf(ids[0]) ? ids[0] : null;
 }
 
 function openChartPanel(id) {
@@ -6963,10 +6993,34 @@ function openChartPanel(id) {
 }
 
 async function chartWrite(fn) {
-  const s = chartOf(chartPanelId);
-  if (!s) return;
+  const t = chartOf(chartPanelId);
+  if (!t) return;
   pushHistory();
-  fn(s.chart, s);
+  if (t.inline) {
+    // Only what the edit ACTUALLY changed is recorded. Writing the whole
+    // effective spec back would pin the numbers too, and a figure computed
+    // from the project's data would then stop following it the first time
+    // anyone touched its title — the exact freezing this was built to undo.
+    const was = JSON.parse(JSON.stringify(t.chart));
+    const now = JSON.parse(JSON.stringify(t.chart));
+    fn(now, null);
+    layout.charts = layout.charts || {};
+    const over = Object.assign({}, layout.charts[t.id]);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    for (const k of Object.keys(now)) {
+      if (!same(now[k], was[k])) over[k] = now[k];
+    }
+    // A key the edit DELETED (a colour reset, a cleared title) drops its
+    // override so the renderer's own value comes back, rather than being
+    // written as an explicit null the renderer would have to understand.
+    for (const k of Object.keys(was)) {
+      if (!(k in now)) delete over[k];
+    }
+    if (Object.keys(over).length) layout.charts[t.id] = over;
+    else delete layout.charts[t.id];
+  } else {
+    fn(t.chart, t.shape);
+  }
   markDirty();
   await render();
   renderChartPanel();
@@ -7485,7 +7539,10 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
       body.appendChild(row);
     });
     // The chart's own background rides the shape's fill — the same control
-    // every other shape uses, surfaced here so it is where you look.
+    // every other shape uses, surfaced here so it is where you look. An
+    // inline chart has no shape behind it: it sits in the flow and takes the
+    // page's background, so there is nothing here to offer.
+    if (s.inline) return;
     const bgRow = document.createElement('div');
     bgRow.className = 'ch-colrow';
     const bgLab = document.createElement('span');
@@ -7493,17 +7550,21 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
     const bgNone = document.createElement('button');
     bgNone.className = 'ch-reset'; bgNone.textContent = '⟲';
     bgNone.title = 'No background';
-    bgNone.disabled = !s.fill || s.fill === 'none';
+    // The fill belongs to the SHAPE the chart is drawn as, which the handle
+    // carries alongside the chart data — `s` itself is the handle, not the
+    // shape, and reading s.fill off it silently found nothing.
+    const shp = s.shape;
+    bgNone.disabled = !shp.fill || shp.fill === 'none';
     bgNone.addEventListener('click', () => chartWrite((ch, sh) => { sh.fill = 'none'; }));
     const bgSw = document.createElement('input');
     bgSw.type = 'color'; bgSw.className = 'ch-colsw';
-    const bgSet = typeof s.fill === 'string' && s.fill !== 'none';
-    bgSw.value = bgSet ? s.fill : '#FFFFFF';
+    const bgSet = typeof shp.fill === 'string' && shp.fill !== 'none';
+    bgSw.value = bgSet ? shp.fill : '#FFFFFF';
     // "No background" and "white background" are different states that looked
     // identical: an unset chart showed a white chip on a white panel, which
     // read as a white fill — or as nothing at all. Mark the unset one.
     bgSw.classList.toggle('unset', !bgSet);
-    bgSw.title = bgSet ? `Background ${s.fill}` : 'No background';
+    bgSw.title = bgSet ? `Background ${shp.fill}` : 'No background';
     bgSw.addEventListener('change', () =>
       chartWrite((ch, sh) => { sh.fill = bgSw.value.toUpperCase(); }));
     bgRow.append(bgLab, bgNone, bgSw);
@@ -7541,8 +7602,11 @@ function chartText(c, hook, value) {
  *  text where the hooks make the target unambiguous. */
 function editChartText(d, node) {
   if (editing) return;
+  // Either kind: a shape's text sits in the page's SVG layer under
+  // g[data-shape], an inline chart's inside the span blocks.chart() emits.
   const g = node.closest('g[data-shape]');
-  const s = g && layout.shapes.find(x => x.id === g.dataset.shape && x.kind === 'chart');
+  const sp = node.closest('[data-chart]');
+  const s = chartOf(g ? g.dataset.shape : (sp ? sp.dataset.chart : null));
   if (!s) return;
   const hook = node.dataset.ch;
   editing = true;
@@ -7551,6 +7615,12 @@ function editChartText(d, node) {
   // settlement needs to ask the room the same question of its copy.
   collabWarnShared(s.id, 'chart label', { merges: false });
   collabFieldOpen(L => {
+    // An inline chart's text lives in the room's charts map, a shape's in its
+    // shape — the same question asked of whichever holds it.
+    if (s.inline) {
+      const over = (L.charts || {})[s.id];
+      return over ? chartText(over, hook) : undefined;
+    }
     const sh = (L.shapes || []).find(x => x.id === s.id && x.kind === 'chart');
     return sh && sh.chart ? chartText(sh.chart, hook) : undefined;
   });
@@ -7577,7 +7647,19 @@ function editChartText(d, node) {
       const settled = await collabFieldSettle(val, 'chart label');
       if (settled === 'mine') {
         await collabFieldFirstTheirs();
-        const sh = layout.shapes.find(x => x.id === s.id && x.kind === 'chart') || s;
+        if (s.inline) {
+          // Through chartWrite, so an inline chart records the renamed label
+          // as an override and leaves the rest of the renderer's spec alone.
+          // It renders and repaints the panel itself.
+          const prev = chartPanelId;
+          chartPanelId = s.id;
+          await chartWrite(ch => { chartText(ch, hook, val); });
+          chartPanelId = prev;
+          collabFieldNote(settled, 'chart label');
+          return;
+        }
+        const sh = layout.shapes.find(x => x.id === s.id && x.kind === 'chart')
+          || s.shape;
         pushHistory(); chartText(sh.chart, hook, val); markDirty();
       }
       await render();

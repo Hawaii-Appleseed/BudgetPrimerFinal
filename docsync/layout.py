@@ -128,6 +128,28 @@ CHART_COLORS = ("#6B9E78", "#52796F", "#95B7A2", "#354F52",
 # offer different sets.
 CHART_NUM_SCALES = ("none", "auto", "K", "M", "B")
 CHART_SLICE_LABELS = ("percent", "value", "both")
+# Below this sweep a slice cannot hold its own label, and the label goes
+# outside the rim instead. 55 degrees is where the hand-drawn pies in the
+# published primer put the line, and they were tuned against real figures.
+_PIE_INSIDE_SWEEP = math.radians(55)
+
+
+def _is_light(hexc) -> bool:
+    """Whether a fill needs dark text on it. blocks.is_light_bg is the same
+    test, but blocks imports THIS module, so it cannot be imported back."""
+    h = str(hexc).lstrip("#")
+    if len(h) == 3:
+        h = "".join(ch * 2 for ch in h)
+    if len(h) < 6:
+        return False
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return False
+    if len(h) == 8:
+        a = int(h[6:8], 16) / 255
+        r, g, b = (v * a + 255 * (1 - a) for v in (r, g, b))
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 130
 
 
 def _nice_max(v: float) -> float:
@@ -412,7 +434,18 @@ def _tip(c: dict, text: str) -> str:
     """
     if not c.get("tips"):
         return ""
-    return f' class="iv" data-tip="{_xml(text)}"'
+    # data-tip ALONE, and the runtime selects on it. A class here would be a
+    # SECOND class attribute on a bar that already carries ds-cbar, and a
+    # parser keeps only the first — so the hook silently vanished on exactly
+    # the elements that most needed it.
+    #
+    # pointer-events has to be asked for as well: a page's shape layer is
+    # pointer-events:none so that a chart drawn over the prose does not eat
+    # clicks meant for it, which also meant no bar ever saw the mouse and no
+    # tooltip could fire. Only outside the editor — in it, a bar that took
+    # the pointer would be a bar you could not drag the chart by.
+    pe = "" if os.environ.get("DOCSYNC_EDIT") else ' pointer-events="auto"'
+    return f'{pe} data-tip="{_xml(text)}"'
 
 # --- icons ---------------------------------------------------------------
 # An icon is picked from an open-source set (Iconoir, Lucide, Heroicons,
@@ -1640,11 +1673,18 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     if total <= 0:
         return ""
     cx, cy = x + w / 2, y + h / 2
-    r = max(0.05, min(w, h) / 2 - fs * 0.4)
-    inner = r * 0.58 if kind == "donut" else 0.0
     show_vals = bool(c.get("values"))
     lfmt = _num_format(c, "labelFormat")
     slice_label = c.get("sliceLabel") or "percent"
+    # A pie with any thin slice hangs labels outside the rim, so the disc has
+    # to give that ring back. Only then — a pie whose slices are all fat draws
+    # exactly as large as it always did.
+    thin = show_vals and any(
+        0 < v and 2 * math.pi * (v / total) <= _PIE_INSIDE_SWEEP for v in data)
+    margin = fs * 3.2 if thin else fs * 0.4
+    r = max(0.05, min(w, h) / 2 - margin)
+    inner = r * 0.58 if kind == "donut" else 0.0
+    outside_n = 0
     parts = []
     ang = -math.pi / 2                                    # 12 o'clock, clockwise
     for i, v in enumerate(data):
@@ -1655,7 +1695,7 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         big = 1 if sweep > math.pi else 0
         x1, y1 = cx + r * math.cos(ang), cy + r * math.sin(ang)
         x2, y2 = cx + r * math.cos(a2), cy + r * math.sin(a2)
-        col = _slice_color(c, i)
+        col_hex = _slice_color(c, i)
         if inner:
             i1x, i1y = cx + inner * math.cos(a2), cy + inner * math.sin(a2)
             i2x, i2y = cx + inner * math.cos(ang), cy + inner * math.sin(ang)
@@ -1667,11 +1707,14 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         name = labels[i] if i < len(labels) else f"#{i + 1}"
         pct = v / total * 100
         tip = _tip(c, f"{name}: {_fmt_val(v, lfmt)} ({pct:.1f}%)") if c.get("tips") else ""
-        parts.append(f'<path d="{d}" fill="{col}" stroke="#fff" stroke-width="0.01"{tip}/>')
+        parts.append(f'<path d="{d}" fill="{col_hex}" stroke="#fff" stroke-width="0.01"{tip}/>')
         if show_vals:
             mid = ang + sweep / 2
-            lr = (inner + r) / 2 if inner else r * 0.62
-            tx, ty = cx + lr * math.cos(mid), cy + lr * math.sin(mid)
+            # A wedge wide enough to hold its label keeps it inside; a thin one
+            # puts it beyond the rim, anchored away from the circle and
+            # staggered against its neighbour. Cramming "$0.9B (9.9%)" into a
+            # 36-degree slice is what made the primer's three pies hand-drawn:
+            # the labels overlapped each other and ran off their own wedges.
             # What a slice says about itself. Percent alone is the default and
             # what every pie drew before; "value" and "both" exist because a
             # money pie that cannot show the money has to be redrawn by hand —
@@ -1682,9 +1725,32 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
                 txt = f"{_fmt_val(v, lfmt)}\n({pct:.1f}%)"
             else:
                 txt = f"{pct:.0f}%"
-            parts.append(f'<text x="{tx:.4f}" y="{ty + fs * 0.3:.4f}" text-anchor="middle" '
-                         f'font-size="{_lfs(fs * 0.8):.4f}" fill="#fff" font-weight="600">'
-                         f'{_lines_inner(txt, tx, _lfs(fs * 0.8), center=True)}</text>')
+            big = sweep > _PIE_INSIDE_SWEEP
+            if big:
+                lr = (inner + r) / 2 if inner else r * 0.62
+            else:
+                # Pushed out by the label's own half-height as well as the
+                # stagger: a two-line label centred on the anchor hangs its
+                # second line back over the rim otherwise.
+                half = fs * 0.46 * txt.count("\n")
+                lr = r + fs * (0.8 + 0.9 * (outside_n % 2)) + half
+                outside_n += 1
+            tx, ty = cx + lr * math.cos(mid), cy + lr * math.sin(mid)
+            # Inside a slice the label is reversed out — unless the slice is
+            # pale, where white on it cannot be read. Outside, it is ordinary
+            # label ink on the page.
+            if big:
+                anchor, col = "middle", ("#2F3E46" if _is_light(col_hex) else "#fff")
+            else:
+                ct = math.cos(mid)
+                anchor = "start" if ct > 0.25 else "end" if ct < -0.25 else "middle"
+                col = ink["label"]
+                tx = min(max(tx, x + fs * 0.2), x + w - fs * 0.2)
+            lsz = _lfs(fs * 0.8)
+            parts.append(f'<text x="{tx:.4f}" y="{ty + fs * 0.3:.4f}" '
+                         f'text-anchor="{anchor}" '
+                         f'font-size="{lsz:.4f}" fill="{col}" font-weight="600">'
+                         f'{_lines_inner(txt, tx, lsz, center=True)}</text>')
         ang = a2
     return "".join(parts)
 
@@ -1907,6 +1973,18 @@ class Layout:
         self._mobile_css_sent = False
         self._chart_tip_sent = False
         self.positions = raw.get("positions") or {}
+        # Inline charts, keyed by element id. A chart SHAPE is pinned by inch
+        # in the page's SVG layer; an inline chart is drawn where the renderer
+        # emits it, in the flow, the way graphic() draws an SVG — and this is
+        # the half of it the editor may change. Exactly the relationship
+        # `positions` already has to a graphic: the renderer says what the
+        # thing is, layout.json holds what the user did to it.
+        #
+        # It exists because a flow document could not have an editable chart
+        # at all. The Budget Primer has none of the former and six figures
+        # that wanted to be the latter, so all six were written as frozen SVG
+        # by hand — see docsync/CHART_PARITY.md.
+        self.charts = raw.get("charts") or {}
         self.shapes = raw.get("shapes") or []
         self.text = raw.get("text") or {}
         self.boxes = raw.get("boxes") or []
@@ -1980,6 +2058,15 @@ class Layout:
         for el, s in self.sections.items():
             if not isinstance(s, dict) or _num(s.get("h"), f"section '{el}'.h") <= 0:
                 raise LayoutError(f"section '{el}': needs a positive 'h'")
+        # An inline chart's override is a partial chart: the renderer supplies
+        # the type and the data, this supplies whatever the user changed. So
+        # it is checked as a whole chart only once the two are merged
+        # (chart_spec does that); here only the shape of the container.
+        if not isinstance(self.charts, dict):
+            raise LayoutError("charts: expected an object keyed by element id")
+        for el, c in self.charts.items():
+            if not isinstance(c, dict):
+                raise LayoutError(f"chart '{el}': expected an object")
         for el, p in self.positions.items():
             for k in ("x", "y"):
                 if k not in p:
@@ -2416,6 +2503,24 @@ class Layout:
             "document.addEventListener('DOMContentLoaded',go);else go()"
             "})();")
         return f"<style>{css}</style><script>{script}</script>"
+
+    def chart_spec(self, el_id: str, base: dict) -> dict:
+        """What an inline chart should actually draw: the renderer's own spec
+        with the editor's changes laid over it.
+
+        Shallow on purpose. A user who recolours a series, retitles a chart or
+        turns on data labels changes only those keys, and the numbers stay
+        whatever the build computed — which is what a chart driven by
+        report_data.json needs, or it would freeze at whatever the figures
+        were the day somebody nudged its title. A user who edits the DATA
+        does override it, and should: at that point they have said the
+        computed number is not the one they want. `docsync.check` is where a
+        frozen-number chart gets noticed, not here.
+        """
+        over = self.charts.get(el_id)
+        if not over:
+            return dict(base)
+        return {**base, **over}
 
     def attr(self, el_id: str, extra: str = "") -> str:
         """Attributes for an element with no style of its own.
@@ -3222,10 +3327,18 @@ class Layout:
         is dragging a chart around the page is noise, and the editor already
         shows the numbers in its own panel.
         """
-        if self._chart_tip_sent or os.environ.get("DOCSYNC_EDIT"):
-            return ""
         if not any(s.get("kind") == "chart" and (s.get("chart") or {}).get("tips")
                    for s in self.shapes):
+            return ""
+        return self.chart_tip_runtime()
+
+    def chart_tip_runtime(self) -> str:
+        """The same runtime, asked for by a caller that already knows it needs
+        one. An INLINE chart is not in self.shapes — it is drawn wherever the
+        renderer put it — so blocks.chart() has to say so itself, or a page
+        whose only chart is inline would carry tooltips with nothing to show
+        them."""
+        if self._chart_tip_sent or os.environ.get("DOCSYNC_EDIT"):
             return ""
         self._chart_tip_sent = True
         return (
@@ -3234,10 +3347,10 @@ class Layout:
             'background:#2F3E46;color:#fff;font:500 12px/1.35 system-ui,sans-serif;'
             'padding:5px 8px;border-radius:5px;max-width:15em;opacity:0;'
             'transition:opacity .09s}.ds-tip[data-on]{opacity:1}'
-            '.iv{cursor:default}@media print{.ds-tip{display:none}}</style>'
+            '[data-tip]{cursor:default}@media print{.ds-tip{display:none}}</style>'
             '<script>(function(){var t=document.querySelector(".ds-tip");'
             'if(!t)return;document.addEventListener("mousemove",function(e){'
-            'var el=e.target.closest?e.target.closest(".iv[data-tip]"):null;'
+            'var el=e.target.closest?e.target.closest("[data-tip]"):null;'
             'if(!el){t.removeAttribute("data-on");t.hidden=true;return;}'
             't.hidden=false;t.textContent=el.getAttribute("data-tip");'
             't.setAttribute("data-on","");'
