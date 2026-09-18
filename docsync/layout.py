@@ -123,6 +123,11 @@ CHART_TYPES = ("bar", "stacked-bar", "row", "stacked-row", "column",
 CHART_BY_ITEM = ("pie", "donut", "funnel", "packed", "treemap", "histogram")
 CHART_COLORS = ("#6B9E78", "#52796F", "#95B7A2", "#354F52",
                 "#CAD2C5", "#2F3E46", "#A8C4B0", "#7A8E92")
+# What a number label may be scaled by, and what a pie slice may say about
+# itself. Both are data the editor's pickers read, so the two halves cannot
+# offer different sets.
+CHART_NUM_SCALES = ("none", "auto", "K", "M", "B")
+CHART_SLICE_LABELS = ("percent", "value", "both")
 
 
 def _nice_max(v: float) -> float:
@@ -138,6 +143,150 @@ def _nice_max(v: float) -> float:
     return 10 * base
 
 
+def _nice_min(v: float) -> float:
+    """The negative counterpart of _nice_max: a round number at or BELOW v."""
+    return -_nice_max(-v) if v < 0 else 0.0
+
+
+def _axis_bounds(c: dict, vals) -> tuple:
+    """The value axis a chart is drawn against: (lo, hi, ticks).
+
+    Two things this fixes at once. A chart whose data goes below zero used to
+    be drawn against `0 … _nice_max(max)` with every bar clamped by
+    `max(0.0, v / vmax)` — so a -45 drew as a bar of height zero while its own
+    data label read "-45". The axis now reaches down to a round number below
+    the lowest value whenever one is negative, and the bar grows from the zero
+    line instead of from the floor.
+
+    And the scale is no longer always automatic: `axisMin` / `axisMax` pin
+    either end, `axisTicks` says how many divisions to draw. A chart that sets
+    none of the three gets exactly the bounds it got before — which is what
+    keeps every published report byte-identical.
+    """
+    vals = [v for v in vals if v is not None]
+    hi_data = max(vals, default=0.0)
+    lo_data = min(vals, default=0.0)
+    lo = c.get("axisMin")
+    hi = c.get("axisMax")
+    if hi is None:
+        hi = _nice_max(hi_data)
+    if lo is None:
+        lo = _nice_min(lo_data)
+    # An authored pair that is inside-out or empty would divide by zero below.
+    if hi <= lo:
+        hi = lo + max(1.0, abs(lo) * 0.1)
+    want = c.get("axisTicks")
+    ticks = 5 if not isinstance(want, int) or isinstance(want, bool) \
+        else max(2, min(11, want))
+    # Asking for a tick COUNT is also asking for ticks worth reading, so the
+    # automatic end of the scale is snapped out to a round step. Not done for
+    # the default 5: the existing scale (0 … 1.5x10^k in quarters) is what
+    # every published report is drawn against, and moving it would redraw
+    # them all.
+    if isinstance(want, int) and not isinstance(want, bool):
+        step = _nice_step((hi - lo) / max(1, ticks - 1))
+        if c.get("axisMin") is None:
+            lo = math.floor(lo / step) * step
+        if c.get("axisMax") is None:
+            hi = lo + step * (ticks - 1)
+            while hi < hi_data:
+                step = _nice_step(step * 1.0001 + step * 0.25)
+                hi = lo + step * (ticks - 1)
+    return float(lo), float(hi), ticks
+
+
+def _nice_step(raw: float) -> float:
+    """A round tick interval at or above raw — 1, 2, 2.5 or 5 times a power of
+    ten, the intervals a reader can add up in their head."""
+    if raw <= 0:
+        return 1.0
+    exp = math.floor(math.log10(raw))
+    base = 10.0 ** exp
+    for m in (1, 2, 2.5, 5, 10):
+        if raw <= m * base:
+            return m * base
+    return 10 * base
+
+
+def _tick_labels(vmin: float, vmax: float, nticks: int, fmt: dict) -> list:
+    """Every tick on one axis, formatted together rather than one at a time.
+
+    Formatted together because a fixed `decimals` can collapse neighbouring
+    ticks into the same string — 0, 0.25, 0.5, 0.75, 1 scaled to billions at
+    zero decimals is "0 0 1 1 1", an axis that says nothing. When that
+    happens the precision is raised until the ticks are distinct again, which
+    is what the author meant by asking for that scale.
+    """
+    span = vmax - vmin
+    vals = [vmin + span * (i / (nticks - 1)) for i in range(nticks)]
+    out = [_fmt_val(v, fmt) for v in vals]
+    if not fmt or not isinstance(fmt.get("decimals"), int):
+        return out
+    for extra in range(1, 4):
+        if len(set(out)) == len(out):
+            break
+        bumped = dict(fmt, decimals=fmt["decimals"] + extra)
+        out = [_fmt_val(v, bumped) for v in vals]
+    return out
+
+
+# Scale suffixes, largest first — "auto" picks the first one the number clears.
+_NUM_SCALES = (("B", 1e9), ("M", 1e6), ("K", 1e3))
+
+
+def _num_format(c: dict, which: str = "format") -> dict:
+    """The number format for one role. `format` covers the value axis and the
+    data labels; `labelFormat` overrides it for the data labels alone, which is
+    what lets an axis read "$0B … $5B" while the point labels read "$2.44B"."""
+    fmt = c.get("format")
+    fmt = dict(fmt) if isinstance(fmt, dict) else {}
+    if which != "format":
+        extra = c.get(which)
+        if isinstance(extra, dict):
+            fmt.update(extra)
+    return fmt
+
+
+def _wrap_lines(c: dict) -> int:
+    """How many lines a category label may take. 1 (the default) is the old
+    single-line behaviour, and an explicit "\\n" in a label still breaks it
+    either way — this only governs AUTOMATIC wrapping of a long name."""
+    v = c.get("wrapLabels")
+    if v is True:
+        return 2
+    if isinstance(v, int) and not isinstance(v, bool):
+        return max(1, min(4, v))
+    return 1
+
+
+def _fmt_val(v: float, fmt: dict = None) -> str:
+    """A number as the chart should show it. With no format this is exactly
+    _fmt_num — thousands separated, no trailing .0 — so an unformatted chart
+    is unchanged."""
+    if not fmt:
+        return _fmt_num(v)
+    scale = fmt.get("scale") or "none"
+    suffix = fmt.get("suffix") or ""
+    unit = ""
+    if scale == "auto":
+        for name, div in _NUM_SCALES:
+            if abs(v) >= div:
+                v, unit = v / div, name
+                break
+    elif scale in ("K", "M", "B"):
+        div = dict(_NUM_SCALES)[scale]
+        v, unit = v / div, scale
+    dec = fmt.get("decimals")
+    if isinstance(dec, int):
+        body = f"{v:,.{max(0, min(6, dec))}f}"
+    else:
+        body = _fmt_num(v)
+    neg = body.startswith("-")
+    if neg:
+        body = body[1:]
+    return f"{'-' if neg else ''}{fmt.get('prefix') or ''}{body}{unit}{suffix}"
+
+
 def _fmt_num(v: float) -> str:
     """Axis and value labels: no trailing .0, thousands separated."""
     if v == int(v):
@@ -148,6 +297,122 @@ def _fmt_num(v: float) -> str:
 def _xml(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+# Estimated width of one character, in ems. The width of a glyph run cannot
+# be measured here — this renders under Pyodide and in headless Chrome,
+# neither with a text-metrics API at build time. 0.58 is set by the strings
+# these labels actually carry: digits, "$" and "%" are among the widest
+# glyphs in a grotesque, and a category label under a budget chart is mostly
+# those. Erring wide breaks a line early, which is recoverable; erring narrow
+# runs two labels into each other, which is not.
+_EM_W = 0.58
+
+
+def _wrap_label(s: str, budget: float, size: float, max_lines: int) -> list:
+    """Break one label to fit `budget` inches at `size`, up to max_lines.
+
+    Splits on spaces first. A single "word" still too wide for the line is
+    split after a dash — "$21,900-$44,200" under a bar is one word to
+    str.split and one and a half inches to a reader, and money ranges are
+    most of what these labels say. The last line keeps whatever is left
+    rather than being truncated: a clipped category name is worse than one
+    slightly over budget.
+    """
+    if budget <= 0:
+        return [str(s)]
+    per = max(1, int(budget / (size * _EM_W)))
+    words = []
+    for w in str(s).split():
+        while len(w) > per:
+            # Prefer a dash inside the over-long run; only then a hard cut.
+            cut = max(w.rfind(d, 1, per + 1) for d in ("-", "–", "—", "/"))
+            if cut <= 0:
+                break
+            words.append(w[:cut + 1])
+            w = w[cut + 1:]
+        words.append(w)
+    if not words:
+        return [str(s)]
+    lines, cur = [], ""
+    for wd in words:
+        trial = f"{cur} {wd}".strip()
+        if len(trial) <= per or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = wd
+            if len(lines) == max_lines - 1:
+                break
+    rest = words[sum(len(l.split()) for l in lines):]
+    lines.append(" ".join(rest) if rest else cur)
+    return [l for l in lines if l] or [str(s)]
+
+
+def _label_lines(labels) -> int:
+    """The most lines any category label asks for by carrying its own breaks.
+    1 when none of them does, which is every chart written before this."""
+    return max((str(l).count("\n") + 1 for l in labels), default=1)
+
+
+def _fit_size(s, budget: float, size: float) -> float:
+    """Shrink a multi-line label until its widest line fits the space it has,
+    but never below the legibility floor — a label too small to read is not a
+    fix for one that overlaps. Same 0.52em estimate as _wrap_label."""
+    widest = max((len(line) for line in str(s).split("\n")), default=0)
+    if widest <= 0 or budget <= 0:
+        return size
+    need = widest * size * _EM_W
+    return _lfs(size * budget / need) if need > budget else size
+
+
+def _lines_inner(s, x: float, size: float, *, center: bool = False,
+                 wrap: float = 0.0, max_lines: int = 2) -> str:
+    """The inside of a chart's <text>, when the text may be several lines.
+
+    A single line returns just the escaped string, so every chart that has
+    never carried a break renders byte-for-byte as it always did — the reason
+    this is an inner-content helper rather than a whole-element one, which
+    would have had to re-order every caller's attributes.
+
+    Several lines become one <tspan> each, re-anchored at the same x because
+    SVG does not wrap, stepping down by the leading. `center` lifts the block
+    by half its height so the run is centred on the baseline it was given —
+    what a slice label or a label inside a bar wants; a label UNDER a bar
+    wants the default, where the first line keeps that baseline.
+    """
+    text = str(s)
+    parts = text.split("\n")
+    if wrap:
+        # Each authored line is wrapped in its own right. A label that already
+        # carries a break can still hold a line too wide for its slot — the
+        # income range under "Second 20%" is exactly that — and leaving those
+        # alone was what let two neighbouring labels overlap.
+        out = []
+        for piece in parts:
+            out.extend(_wrap_label(piece, wrap, size, max_lines))
+        parts = out
+    if len(parts) == 1:
+        return _xml(parts[0])
+    lead = size * 1.15
+    first = -lead * (len(parts) - 1) / 2 if center else 0.0
+    out = []
+    for i, line in enumerate(parts):
+        dy = first if i == 0 else lead
+        out.append(f'<tspan x="{x:.4f}" dy="{dy:.4f}">{_xml(line)}</tspan>')
+    return "".join(out)
+
+
+def _tip(c: dict, text: str) -> str:
+    """A hover tooltip on one drawn part, when the chart asked for them.
+
+    Opt-in (`tips`), because the attribute is also what docsync.text reads a
+    chart's numbers out of — emitting it unasked would change what content
+    search indexes for every chart already published.
+    """
+    if not c.get("tips"):
+        return ""
+    return f' class="iv" data-tip="{_xml(text)}"'
 
 # --- icons ---------------------------------------------------------------
 # An icon is picked from an open-source set (Iconoir, Lucide, Heroicons,
@@ -854,131 +1119,238 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     stacked = kind.startswith("stacked")
     if stacked:
         # The axis has to reach the tallest TOTAL, not the tallest single bar.
-        vmax = _nice_max(max(
-            (sum(s["data"][i] if i < len(s["data"]) else 0 for s in series)
-             for i in range(n)), default=0))
+        # Negative and positive parts of a stack grow in opposite directions
+        # from zero, so each end needs its own running total.
+        totals = []
+        for i in range(n):
+            vals = [s["data"][i] if i < len(s["data"]) else 0 for s in series]
+            totals.append(sum(v for v in vals if v > 0))
+            totals.append(sum(v for v in vals if v < 0))
+        vmin, vmax, nticks = _axis_bounds(c, totals)
     else:
-        vmax = _nice_max(max((v for s in series for v in s["data"]), default=0))
+        vmin, vmax, nticks = _axis_bounds(
+            c, [v for s in series for v in s["data"]])
     grid = c.get("grid") is not False
     show_vals = bool(c.get("values"))
+    afmt = _num_format(c)
+    lfmt = _num_format(c, "labelFormat")
+    wrap_lines = _wrap_lines(c)
     parts = []
     horizontal = kind in ("row", "column", "stacked-row")
     # Room for the tick labels along the value axis and the category names.
     pad_l = (fs * 2.6) if not horizontal else (fs * 3.4)
-    pad_b = fs * 1.6
+    # How deep the category band has to be. A label carrying its own break
+    # needs the room for it just as much as a wrapped one does — sizing this
+    # off wrapLabels alone put the second line of an authored two-line label
+    # straight through whatever sat under the chart.
+    band = max(_label_lines(labels), wrap_lines)
+    pad_b = fs * (1.6 + 0.95 * (band - 1))
+    # A bar below zero hangs its value label under itself, which is exactly
+    # where the category names are. Give that row its own line.
+    if show_vals and not horizontal and not stacked and min(
+            (v for s in series for v in s["data"]), default=0) < 0:
+        pad_b += fs * 0.9
     px, py = x + pad_l, y
     pw, ph = max(0.1, w - pad_l - fs * 0.4), max(0.1, h - pad_b)
+    span = vmax - vmin
+    # Where zero sits in the plot. With no negatives this IS the axis line, so
+    # every all-positive chart draws exactly where it used to.
+    zero_t = (0.0 - vmin) / span if span else 0.0
+    zero_t = min(1.0, max(0.0, zero_t))
+    zy = py + ph - ph * zero_t                 # vertical charts: the zero line
+    zx = px + pw * zero_t                      # horizontal charts
 
     # gridlines + ticks
     if grid:
-        for i in range(5):
-            t = i / 4
-            val = vmax * t
+        ticklab = _tick_labels(vmin, vmax, nticks, afmt)
+        for i in range(nticks):
+            t = i / (nticks - 1)
             if horizontal:
                 gx = px + pw * t
                 parts.append(f'<line x1="{gx:.4f}" y1="{py:.4f}" x2="{gx:.4f}" '
                              f'y2="{py + ph:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
                 parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
-                             f'font-size="{_lfs(fs * 0.8):.4f}" fill="{ink["axis"]}">{_fmt_num(val)}</text>')
+                             f'font-size="{_lfs(fs * 0.8):.4f}" fill="{ink["axis"]}">{ticklab[i]}</text>')
             else:
                 gy = py + ph - ph * t
                 parts.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
                              f'y2="{gy:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
                              f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
-                             f'fill="{ink["axis"]}">{_fmt_num(val)}</text>')
+                             f'fill="{ink["axis"]}">{ticklab[i]}</text>')
 
     slot = (ph if horizontal else pw) / n
     inner = slot * 0.78
     bw = inner if stacked else inner / max(1, len(series))
     for gi in range(n):
         base = (py if horizontal else px) + gi * slot + (slot - inner) / 2
-        run = 0.0                       # how far along the stack we have got
+        name = labels[gi] if gi < len(labels) else ""
+        up = 0.0                # how far the positive half of a stack has got
+        down = 0.0              # and the negative half, in the other direction
         for si, s in enumerate(series):
             v = s["data"][gi] if gi < len(s["data"]) else 0
-            frac = 0.0 if vmax == 0 else max(0.0, v / vmax)
+            # The bar spans zero -> v, measured against the axis it is drawn
+            # on. A negative value therefore grows the other way instead of
+            # being clamped to nothing, which is what it used to do.
+            frac = 0.0 if not span else abs(v) / span
+            tip = ""
+            if c.get("tips"):
+                who = name or f"#{gi + 1}"
+                if s.get("name") and len(series) > 1:
+                    who = f"{who} — {s['name']}"
+                tip = _tip(c, f"{who}: {_fmt_val(v, lfmt)}")
             if horizontal:
                 blen = pw * frac
                 by = base if stacked else base + si * bw
-                bx0 = px + (pw * run if stacked else 0)
+                if stacked:
+                    run = up if v >= 0 else down
+                    bx0 = zx + (pw * run if v >= 0 else -pw * run - blen)
+                else:
+                    bx0 = zx if v >= 0 else zx - blen
                 parts.append(f'<rect class="ds-cbar ds-cbar-x" x="{bx0:.4f}" '
                              f'y="{by:.4f}" width="{blen:.4f}" '
                              f'height="{bw * 0.86:.4f}" fill="{s["color"]}" '
                              f'rx="{min(0.02, bw * 0.2):.4f}"'
-                             f'{bar_anim_attrs(anim, gi)}/>')
+                             f'{bar_anim_attrs(anim, gi)}{tip}/>')
                 if stacked:
-                    run += frac
-                if show_vals and not stacked:
-                    parts.append(f'<text x="{px + blen + fs * 0.22:.4f}" '
-                                 f'y="{by + bw * 0.62:.4f}" font-size="{_lfs(fs * 0.78):.4f}" '
-                                 f'fill="{ink["label"]}">{_fmt_num(v)}</text>')
+                    if v >= 0:
+                        up += frac
+                    else:
+                        down += frac
+                if show_vals:
+                    if stacked:
+                        # Inside the segment, which is the only place a
+                        # stacked label can go without colliding with the next
+                        # one — and skipped when the segment is too thin to
+                        # hold the type, rather than drawn over its neighbour.
+                        if v and blen > fs * 1.8:
+                            parts.append(f'<text x="{bx0 + blen / 2:.4f}" '
+                                         f'y="{by + bw * 0.62:.4f}" text-anchor="middle" '
+                                         f'font-size="{_lfs(fs * 0.7):.4f}" '
+                                         f'fill="#fff">{_fmt_val(v, lfmt)}</text>')
+                    else:
+                        lx = (bx0 + blen + fs * 0.22) if v >= 0 else (bx0 - fs * 0.22)
+                        anchor = ' text-anchor="end"' if v < 0 else ''
+                        parts.append(f'<text x="{lx:.4f}" '
+                                     f'y="{by + bw * 0.62:.4f}" font-size="{_lfs(fs * 0.78):.4f}"'
+                                     f'{anchor} '
+                                     f'fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
             else:
                 bh = ph * frac
                 bx = base if stacked else base + si * bw
-                by0 = py + ph - bh - (ph * run if stacked else 0)
+                if stacked:
+                    run = up if v >= 0 else down
+                    by0 = (zy - bh - ph * run) if v >= 0 else (zy + ph * run)
+                else:
+                    by0 = (zy - bh) if v >= 0 else zy
                 parts.append(f'<rect class="ds-cbar" x="{bx:.4f}" y="{by0:.4f}" '
                              f'width="{bw * 0.86:.4f}" height="{bh:.4f}" '
                              f'fill="{s["color"]}" rx="{min(0.02, bw * 0.2):.4f}"'
-                             f'{bar_anim_attrs(anim, gi)}/>')
+                             f'{bar_anim_attrs(anim, gi)}{tip}/>')
                 if stacked:
-                    run += frac
-                if show_vals and not stacked:
-                    parts.append(f'<text x="{bx + bw * 0.43:.4f}" '
-                                 f'y="{py + ph - bh - fs * 0.22:.4f}" text-anchor="middle" '
-                                 f'font-size="{_lfs(fs * 0.78):.4f}" fill="{ink["label"]}">{_fmt_num(v)}</text>')
-        name = labels[gi] if gi < len(labels) else ""
+                    if v >= 0:
+                        up += frac
+                    else:
+                        down += frac
+                if show_vals:
+                    if stacked:
+                        if v and bh > fs * 1.1:
+                            parts.append(f'<text x="{bx + bw * 0.43:.4f}" '
+                                         f'y="{by0 + bh / 2 + fs * 0.25:.4f}" text-anchor="middle" '
+                                         f'font-size="{_lfs(fs * 0.7):.4f}" '
+                                         f'fill="#fff">{_fmt_val(v, lfmt)}</text>')
+                    else:
+                        # A negative bar labels itself underneath — but a bar
+                        # that reaches most of the way to the floor leaves no
+                        # room there, and the label used to land on the
+                        # category names. Held inside the plot instead: the
+                        # one place it is always legible and never someone
+                        # else's row.
+                        ly = (by0 - fs * 0.22) if v >= 0 else min(
+                            by0 + bh + fs * 0.78, py + ph - fs * 0.12)
+                        parts.append(f'<text x="{bx + bw * 0.43:.4f}" '
+                                     f'y="{ly:.4f}" text-anchor="middle" '
+                                     f'font-size="{_lfs(fs * 0.78):.4f}" fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
         if name:
+            # A label only asks for a different size once it is more than one
+            # line — a single-line one keeps the size it always had, which is
+            # what leaves every existing chart byte-for-byte unchanged.
+            csize = _lfs(fs * 0.82)
+            budget = (pad_l * 0.9) if horizontal else (slot * 0.95)
+            multi = "\n" in str(name) or wrap_lines > 1
+            if multi:
+                csize = _fit_size(name, budget, csize)
+            # A label that already breaks itself may still hold an over-wide
+            # line, so it gets the same budget an auto-wrapped one does — with
+            # room for the extra line that splitting a money range costs.
+            lwrap = budget if multi else 0
+            lmax = max(wrap_lines, str(name).count("\n") + 2) if multi else wrap_lines
             if horizontal:
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" '
                              f'y="{base + inner / 2 + fs * 0.3:.4f}" text-anchor="end" '
-                             f'font-size="{_lfs(fs * 0.82):.4f}" fill="{ink["label"]}"'
-                             f'{_ch_hook(c, f"label:{gi}")}>{_xml(name)}</text>')
+                             f'font-size="{csize:.4f}" fill="{ink["label"]}"'
+                             f'{_ch_hook(c, f"label:{gi}")}>'
+                             f'{_lines_inner(name, px - fs * 0.3, csize, center=True, wrap=lwrap, max_lines=lmax)}</text>')
             else:
                 parts.append(f'<text x="{base + inner / 2:.4f}" y="{py + ph + fs:.4f}" '
-                             f'text-anchor="middle" font-size="{_lfs(fs * 0.82):.4f}" '
+                             f'text-anchor="middle" font-size="{csize:.4f}" '
                              f'fill="{ink["label"]}"{_ch_hook(c, f"label:{gi}")}'
-                             f'>{_xml(name)}</text>')
-    # the axis itself, last so it sits over the gridlines
+                             f'>{_lines_inner(name, base + inner / 2, csize, wrap=lwrap, max_lines=lmax)}</text>')
+    # the axis itself, last so it sits over the gridlines. With negatives in
+    # play it is the ZERO line, not the floor — a rule under the bars would be
+    # drawn somewhere no bar starts from.
     if horizontal:
-        parts.append(f'<line x1="{px:.4f}" y1="{py:.4f}" x2="{px:.4f}" y2="{py + ph:.4f}" '
+        parts.append(f'<line x1="{zx:.4f}" y1="{py:.4f}" x2="{zx:.4f}" y2="{py + ph:.4f}" '
                      f'stroke="{ink["axis"]}" stroke-width="0.008"/>')
     else:
-        parts.append(f'<line x1="{px:.4f}" y1="{py + ph:.4f}" x2="{px + pw:.4f}" '
-                     f'y2="{py + ph:.4f}" stroke="{ink["axis"]}" stroke-width="0.008"/>')
+        parts.append(f'<line x1="{px:.4f}" y1="{zy:.4f}" x2="{px + pw:.4f}" '
+                     f'y2="{zy:.4f}" stroke="{ink["axis"]}" stroke-width="0.008"/>')
     return "".join(parts)
 
 
 def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
-                xmin=None, xmax=None) -> str:
+                xmin=None, xmax=None, nticks=5, fmt=None, wrap_lines=1,
+                hook_chart=None, xfmt=None) -> str:
     """Gridlines, ticks and the two axis rules — shared by every chart drawn in
-    a value plane (line, scatter, histogram), so they cannot drift apart."""
+    a value plane (line, scatter, histogram), so they cannot drift apart.
+
+    The horizontal rule is drawn at ZERO rather than at the foot of the plot,
+    which is the same thing whenever the data is all positive and the right
+    thing when it is not."""
     parts = []
+    span = (vmax - vmin) or 1.0
+    zero_t = min(1.0, max(0.0, (0.0 - vmin) / span))
+    zy = py + ph - ph * zero_t
     if grid:
-        for i in range(5):
-            t = i / 4
+        ticklab = _tick_labels(vmin, vmax, nticks, fmt)
+        for i in range(nticks):
+            t = i / (nticks - 1)
             gy = py + ph - ph * t
             parts.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
                          f'y2="{gy:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
             parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
                          f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
-                         f'fill="{ink["axis"]}">{_fmt_num(vmin + (vmax - vmin) * t)}</text>')
+                         f'fill="{ink["axis"]}">{ticklab[i]}</text>')
     if xlabels is not None:
         for i, name in enumerate(xlabels):
             if not name:
                 continue
             gx = px + (pw * (i + 0.5) / len(xlabels) if len(xlabels) else 0)
+            slot = pw / max(1, len(xlabels))
             parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
                          f'font-size="{_lfs(fs * 0.82):.4f}" fill="{ink["label"]}"'
-                         f'{_ch_hook({}, f"label:{i}")}>{_xml(name)}</text>')
+                         f'{_ch_hook(hook_chart if hook_chart is not None else {}, f"label:{i}")}>'
+                         f'{_lines_inner(name, gx, _lfs(fs * 0.82), wrap=slot * 0.95 if wrap_lines > 1 else 0, max_lines=wrap_lines)}</text>')
     elif xmin is not None:
+        xlab = _tick_labels(xmin, xmax, 5, fmt if xfmt is None else xfmt)
         for i in range(5):
             t = i / 4
             gx = px + pw * t
             parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="middle" '
                          f'font-size="{_lfs(fs * 0.8):.4f}" '
-                         f'fill="{ink["axis"]}">{_fmt_num(xmin + (xmax - xmin) * t)}</text>')
-    parts.append(f'<line x1="{px:.4f}" y1="{py + ph:.4f}" x2="{px + pw:.4f}" '
-                 f'y2="{py + ph:.4f}" stroke="{ink["axis"]}" stroke-width="0.008"/>')
+                         f'fill="{ink["axis"]}">{xlab[i]}</text>')
+    parts.append(f'<line x1="{px:.4f}" y1="{zy:.4f}" x2="{px + pw:.4f}" '
+                 f'y2="{zy:.4f}" stroke="{ink["axis"]}" stroke-width="0.008"/>')
     parts.append(f'<line x1="{px:.4f}" y1="{py:.4f}" x2="{px:.4f}" y2="{py + ph:.4f}" '
                  f'stroke="{ink["axis"]}" stroke-width="0.008"/>')
     return "".join(parts)
@@ -997,6 +1369,10 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     grid = c.get("grid") is not False
     parts = []
 
+    afmt = _num_format(c)
+    lfmt = _num_format(c, "labelFormat")
+    wrap_lines = _wrap_lines(c)
+
     if kind == "scatter":
         if len(series) >= 2:
             xs, ys = series[0]["data"], series[1]["data"]
@@ -1011,40 +1387,51 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         xmin, xmax = min(xs[:n]), max(xs[:n])
         if xmax == xmin:
             xmax = xmin + 1
-        ymax = _nice_max(max(ys[:n]))
-        parts.append(_plot_frame(px, py, pw, ph, 0, ymax, ink, fs, grid,
-                                 xmin=xmin, xmax=xmax))
+        ymin, ymax, nticks = _axis_bounds(c, ys[:n])
+        yspan = (ymax - ymin) or 1.0
+        parts.append(_plot_frame(px, py, pw, ph, ymin, ymax, ink, fs, grid,
+                                 xmin=xmin, xmax=xmax, nticks=nticks, fmt=afmt))
         for i in range(n):
             cx = px + pw * (xs[i] - xmin) / (xmax - xmin)
-            cy = py + ph - ph * (ys[i] / ymax if ymax else 0)
+            cy = py + ph - ph * ((ys[i] - ymin) / yspan)
+            tip = _tip(c, f"{_fmt_val(xs[i], afmt)}, {_fmt_val(ys[i], lfmt)}") if c.get("tips") else ""
             parts.append(f'<circle cx="{cx:.4f}" cy="{cy:.4f}" r="{fs * 0.34:.4f}" '
-                         f'fill="{col}" fill-opacity="0.85"/>')
+                         f'fill="{col}" fill-opacity="0.85"{tip}/>')
         return "".join(parts)
 
     n = max(len(labels), max((len(s["data"]) for s in series), default=0))
     if not n:
         return ""
-    vmax = _nice_max(max((v for s in series for v in s["data"]), default=0))
-    parts.append(_plot_frame(px, py, pw, ph, 0, vmax, ink, fs, grid,
-                             xlabels=[labels[i] if i < len(labels) else "" for i in range(n)]))
+    vmin, vmax, nticks = _axis_bounds(c, [v for s in series for v in s["data"]])
+    span = (vmax - vmin) or 1.0
+    parts.append(_plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid,
+                             xlabels=[labels[i] if i < len(labels) else "" for i in range(n)],
+                             nticks=nticks, fmt=afmt, wrap_lines=wrap_lines,
+                             hook_chart=c))
     show_vals = bool(c.get("values"))
     for s in series:
         pts = []
         for i in range(n):
             v = s["data"][i] if i < len(s["data"]) else 0
             cx = px + pw * (i + 0.5) / n
-            cy = py + ph - ph * (v / vmax if vmax else 0)
-            pts.append((cx, cy, v))
-        parts.append(f'<polyline points="{" ".join(f"{a:.4f},{b:.4f}" for a, b, _ in pts)}" '
+            cy = py + ph - ph * ((v - vmin) / span)
+            pts.append((cx, cy, v, i))
+        parts.append(f'<polyline points="{" ".join(f"{a:.4f},{b:.4f}" for a, b, _, _ in pts)}" '
                      f'fill="none" stroke="{s["color"]}" stroke-width="0.022" '
                      f'stroke-linejoin="round" stroke-linecap="round"/>')
-        for cx, cy, v in pts:
+        for cx, cy, v, i in pts:
+            tip = ""
+            if c.get("tips"):
+                who = labels[i] if i < len(labels) and labels[i] else f"#{i + 1}"
+                if s.get("name") and len(series) > 1:
+                    who = f"{who} — {s['name']}"
+                tip = _tip(c, f"{who}: {_fmt_val(v, lfmt)}")
             parts.append(f'<circle cx="{cx:.4f}" cy="{cy:.4f}" r="{fs * 0.26:.4f}" '
-                         f'fill="{s["color"]}"/>')
+                         f'fill="{s["color"]}"{tip}/>')
             if show_vals:
                 parts.append(f'<text x="{cx:.4f}" y="{cy - fs * 0.45:.4f}" '
                              f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
-                             f'fill="{ink["label"]}">{_fmt_num(v)}</text>')
+                             f'fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
     return "".join(parts)
 
 
@@ -1065,18 +1452,30 @@ def _histogram_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> s
         k = min(nb - 1, int((v - lo) / step))
         counts[k] += 1
     cmax = _nice_max(max(counts))
+    # A histogram's value axis counts observations, so it is never negative
+    # and never carries the chart's money format — that belongs to the BIN
+    # axis, which is where the data's own numbers are shown.
+    nticks = c.get("axisTicks")
+    nticks = 5 if not isinstance(nticks, int) or isinstance(nticks, bool) \
+        else max(2, min(11, nticks))
+    afmt = _num_format(c)
     pad_l, pad_b = fs * 2.6, fs * 1.6
     px, py = x + pad_l, y
     pw, ph = max(0.1, w - pad_l - fs * 0.4), max(0.1, h - pad_b)
     parts = [_plot_frame(px, py, pw, ph, 0, cmax, ink, fs,
-                         c.get("grid") is not False, xmin=lo, xmax=hi)]
+                         c.get("grid") is not False, xmin=lo, xmax=hi,
+                         nticks=nticks, xfmt=afmt)]
     bw = pw / nb
     for i, ct in enumerate(counts):
         bh = ph * (ct / cmax if cmax else 0)
+        tip = ""
+        if c.get("tips"):
+            tip = _tip(c, f"{_fmt_val(lo + i * step, afmt)}–"
+                          f"{_fmt_val(lo + (i + 1) * step, afmt)}: {ct}")
         parts.append(f'<rect class="ds-cbar" x="{px + i * bw + bw * 0.06:.4f}" '
                      f'y="{py + ph - bh:.4f}" '
                      f'width="{bw * 0.88:.4f}" height="{bh:.4f}" '
-                     f'fill="{_slice_color(c, i)}"{bar_anim_attrs(anim, i)}/>')
+                     f'fill="{_slice_color(c, i)}"{bar_anim_attrs(anim, i)}{tip}/>')
         if c.get("values") and ct:
             parts.append(f'<text x="{px + i * bw + bw / 2:.4f}" y="{py + ph - bh - fs * 0.22:.4f}" '
                          f'text-anchor="middle" font-size="{_lfs(fs * 0.75):.4f}" '
@@ -1244,6 +1643,8 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     r = max(0.05, min(w, h) / 2 - fs * 0.4)
     inner = r * 0.58 if kind == "donut" else 0.0
     show_vals = bool(c.get("values"))
+    lfmt = _num_format(c, "labelFormat")
+    slice_label = c.get("sliceLabel") or "percent"
     parts = []
     ang = -math.pi / 2                                    # 12 o'clock, clockwise
     for i, v in enumerate(data):
@@ -1263,15 +1664,27 @@ def _pie_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         else:
             d = (f'M{cx:.4f},{cy:.4f} L{x1:.4f},{y1:.4f} '
                  f'A{r:.4f},{r:.4f} 0 {big} 1 {x2:.4f},{y2:.4f} Z')
-        parts.append(f'<path d="{d}" fill="{col}" stroke="#fff" stroke-width="0.01"/>')
+        name = labels[i] if i < len(labels) else f"#{i + 1}"
+        pct = v / total * 100
+        tip = _tip(c, f"{name}: {_fmt_val(v, lfmt)} ({pct:.1f}%)") if c.get("tips") else ""
+        parts.append(f'<path d="{d}" fill="{col}" stroke="#fff" stroke-width="0.01"{tip}/>')
         if show_vals:
             mid = ang + sweep / 2
             lr = (inner + r) / 2 if inner else r * 0.62
             tx, ty = cx + lr * math.cos(mid), cy + lr * math.sin(mid)
-            pct = v / total * 100
+            # What a slice says about itself. Percent alone is the default and
+            # what every pie drew before; "value" and "both" exist because a
+            # money pie that cannot show the money has to be redrawn by hand —
+            # which is exactly what the primer's own figures did.
+            if slice_label == "value":
+                txt = _fmt_val(v, lfmt)
+            elif slice_label == "both":
+                txt = f"{_fmt_val(v, lfmt)}\n({pct:.1f}%)"
+            else:
+                txt = f"{pct:.0f}%"
             parts.append(f'<text x="{tx:.4f}" y="{ty + fs * 0.3:.4f}" text-anchor="middle" '
                          f'font-size="{_lfs(fs * 0.8):.4f}" fill="#fff" font-weight="600">'
-                         f'{pct:.0f}%</text>')
+                         f'{_lines_inner(txt, tx, _lfs(fs * 0.8), center=True)}</text>')
         ang = a2
     return "".join(parts)
 
@@ -1301,12 +1714,47 @@ def _check_chart(c, where: str) -> None:
     for j, col in enumerate(c.get("colors") or []):
         if col:
             _hex(col, f"{where}.colors[{j}]")
-    for flag in ("legend", "values", "grid"):
+    for flag in ("legend", "values", "grid", "tips"):
         if c.get(flag) is not None and not isinstance(c[flag], bool):
             raise LayoutError(f"{where}.{flag}: expected true or false")
     for k in ("titleColor", "labelColor", "axisColor", "gridColor"):
         if c.get(k):
             _hex(c[k], f"{where}.{k}")
+    for k in ("axisMin", "axisMax"):
+        if c.get(k) is not None:
+            _num(c[k], f"{where}.{k}")
+    if c.get("axisMin") is not None and c.get("axisMax") is not None \
+            and c["axisMax"] <= c["axisMin"]:
+        raise LayoutError(f"{where}.axisMax: must be above axisMin")
+    t = c.get("axisTicks")
+    if t is not None:
+        if not isinstance(t, int) or isinstance(t, bool) or not 2 <= t <= 11:
+            raise LayoutError(f"{where}.axisTicks: expected a whole number 2-11")
+    wl = c.get("wrapLabels")
+    if wl is not None and not isinstance(wl, bool):
+        if not isinstance(wl, int) or not 1 <= wl <= 4:
+            raise LayoutError(f"{where}.wrapLabels: expected true/false or 1-4")
+    if c.get("sliceLabel") is not None and c["sliceLabel"] not in CHART_SLICE_LABELS:
+        raise LayoutError(f"{where}.sliceLabel: expected one of "
+                          f"{', '.join(CHART_SLICE_LABELS)}")
+    for k in ("format", "labelFormat"):
+        f = c.get(k)
+        if f is None:
+            continue
+        if not isinstance(f, dict):
+            raise LayoutError(f"{where}.{k}: expected an object")
+        for bad in set(f) - {"prefix", "suffix", "scale", "decimals"}:
+            raise LayoutError(f"{where}.{k}.{bad}: not a number-format field")
+        for s in ("prefix", "suffix"):
+            if f.get(s) is not None and not isinstance(f[s], str):
+                raise LayoutError(f"{where}.{k}.{s}: expected text")
+        if f.get("scale") is not None and f["scale"] not in CHART_NUM_SCALES:
+            raise LayoutError(f"{where}.{k}.scale: expected one of "
+                              f"{', '.join(CHART_NUM_SCALES)}")
+        d = f.get("decimals")
+        if d is not None and (not isinstance(d, int) or isinstance(d, bool)
+                              or not 0 <= d <= 6):
+            raise LayoutError(f"{where}.{k}.decimals: expected a whole number 0-6")
 
 
 def _check_shadow(sh, where: str) -> None:
@@ -1457,6 +1905,7 @@ class Layout:
             self.page_h = self.page[1] if self.page[1] is not None else PAGELESS_H
         self._page_style_sent = False
         self._mobile_css_sent = False
+        self._chart_tip_sent = False
         self.positions = raw.get("positions") or {}
         self.shapes = raw.get("shapes") or []
         self.text = raw.get("text") or {}
@@ -2757,12 +3206,53 @@ class Layout:
         self._mobile_css_sent = True
         return self.mobile_css()
 
+    def _chart_tip_once(self) -> str:
+        """The hover-tooltip runtime, once per document, when some chart asked
+        for tips.
+
+        The report that grew this pattern kept its own copy in web/primer.js —
+        which meant a chart drawn by THIS module had no tooltips in any other
+        report, and the six figures that wanted them were hand-written SVG
+        instead. It rides out with the first layer() for the same reason
+        _page_style_once() does: a consumer vendors this package but owns its
+        renderer, so anything a renderer had to opt into would never reach the
+        reports that already exist.
+
+        Not emitted in edit mode. A tooltip chasing the pointer while someone
+        is dragging a chart around the page is noise, and the editor already
+        shows the numbers in its own panel.
+        """
+        if self._chart_tip_sent or os.environ.get("DOCSYNC_EDIT"):
+            return ""
+        if not any(s.get("kind") == "chart" and (s.get("chart") or {}).get("tips")
+                   for s in self.shapes):
+            return ""
+        self._chart_tip_sent = True
+        return (
+            '<div class="ds-tip" hidden></div>'
+            '<style>.ds-tip{position:fixed;z-index:99;pointer-events:none;'
+            'background:#2F3E46;color:#fff;font:500 12px/1.35 system-ui,sans-serif;'
+            'padding:5px 8px;border-radius:5px;max-width:15em;opacity:0;'
+            'transition:opacity .09s}.ds-tip[data-on]{opacity:1}'
+            '.iv{cursor:default}@media print{.ds-tip{display:none}}</style>'
+            '<script>(function(){var t=document.querySelector(".ds-tip");'
+            'if(!t)return;document.addEventListener("mousemove",function(e){'
+            'var el=e.target.closest?e.target.closest(".iv[data-tip]"):null;'
+            'if(!el){t.removeAttribute("data-on");t.hidden=true;return;}'
+            't.hidden=false;t.textContent=el.getAttribute("data-tip");'
+            't.setAttribute("data-on","");'
+            'var x=Math.min(e.clientX+14,innerWidth-t.offsetWidth-8);'
+            't.style.left=Math.max(4,x)+"px";'
+            't.style.top=Math.min(e.clientY+16,innerHeight-t.offsetHeight-8)+"px";'
+            '});})();</script>')
+
     def layer(self, page: int) -> str:
         """Shapes for one page, grouped into one SVG per layer. Empty when there
         are none, so a report without shapes renders exactly as before — except
         for the page-size override, which has to reach the document even on a
         page that holds no shapes."""
-        head = self._mobile_css_once() + self._page_style_once()
+        head = (self._mobile_css_once() + self._page_style_once()
+                + self._chart_tip_once())
         mine = [s for s in self.shapes if s.get("page") == page]
         if not mine:
             return head

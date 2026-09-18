@@ -1213,6 +1213,120 @@ for bad, why in (
         if "only works on a chart" not in str(e):
             FAILS.append(f"anim 'bars' on {why}: unhelpful message {e}")
 
+# ---- charts: a signed axis, a stated scale, formatted numbers, two-line
+# ---- labels, and tooltips ---------------------------------------------------
+# The bug this set exists for: a chart whose data went below zero drew that
+# bar at height ZERO while its own data label read the negative number. The
+# chart contradicted itself, silently, and every budget figure that shows a
+# cut or a year-over-year change is one of these.
+import re as _re
+from docsync.layout import chart_svg as _csvg
+
+
+def _bars(svg):
+    return [(float(m.group(1)), float(m.group(2)))
+            for m in _re.finditer(r'<rect class="ds-cbar"[^>]*?y="([\d.-]+)"'
+                                  r'[^>]*?height="([\d.-]+)"', svg)]
+
+
+def _texts(svg):
+    return _re.findall(r'>([^<>]+)</text>', svg)
+
+
+_neg = {"type": "bar", "labels": ["A", "B", "C"],
+        "series": [{"name": "chg", "data": [120, -45, 60]}], "values": True}
+_negsvg = _csvg(dict(_neg), 0, 0, 4, 2.5)
+_nb = _bars(_negsvg)
+check_eq("chart negatives: the negative bar is DRAWN, not flattened to nothing",
+         _nb[1][1] > 0, True)
+# A: 120 up from zero, B: -45 down from zero, C: 60 up. So A and C end where B
+# starts — that shared edge IS the zero line.
+check_eq("chart negatives: positive bars end on the same line the negative starts",
+         round(_nb[0][0] + _nb[0][1], 3) == round(_nb[1][0], 3)
+         and round(_nb[2][0] + _nb[2][1], 3) == round(_nb[1][0], 3), True)
+check_eq("chart negatives: the bar below zero is proportional to its value",
+         abs(_nb[1][1] / _nb[0][1] - 45 / 120) < 0.005, True)
+check("chart negatives: the axis reaches below zero", _negsvg, ">-50<")
+check_eq("chart negatives: a label that says -45 now sits on a bar that shows it",
+         "-45" in _texts(_negsvg), True)
+# All-positive data must be untouched by any of it.
+_pos = _csvg({"type": "bar", "labels": ["A"], "series": [{"name": "s", "data": [10]}]},
+             0, 0, 4, 2.5)
+check_eq("chart: an all-positive chart still starts its axis at zero",
+         _texts(_pos)[0], "0")
+
+_axis = _csvg(dict(_neg, axisMin=-100, axisMax=200, axisTicks=7), 0, 0, 4, 2.5)
+check_eq("chart axis: pinned ends and a tick count are obeyed",
+         [t for t in _texts(_axis) if _re.match(r"^-?[\d,]+$", t)][:7],
+         ["-100", "-50", "0", "50", "100", "150", "200"])
+check_page_raises("chart axis: an inside-out pair is refused",
+                  {"positions": {}, "shapes": [
+                      {"id": "c", "page": 1, "kind": "chart", "x": 1, "y": 1,
+                       "w": 2, "h": 2,
+                       "chart": {"type": "bar", "labels": ["A"],
+                                 "series": [{"name": "s", "data": [1]}],
+                                 "axisMin": 5, "axisMax": 2}}]},
+                  "must be above axisMin")
+
+_fmt = _csvg({"type": "bar", "labels": ["A"],
+              "series": [{"name": "s", "data": [5_000_000_000]}],
+              "values": True, "format": {"prefix": "$", "scale": "B", "decimals": 0},
+              "labelFormat": {"decimals": 2}}, 0, 0, 4, 2.5)
+check("chart numbers: the axis carries the prefix and the scale", _fmt, ">$0B<")
+check("chart numbers: and reaches the top of the scale the same way", _fmt, ">$5B<")
+check("chart numbers: a data label may hold more precision than the axis",
+      _fmt, ">$5.00B<")
+# Ticks that round to the same string say nothing. 0 - 2.5B in five steps at
+# zero decimals is "$0B $1B $1B $2B $3B" — two ticks reading the same thing
+# and a scale that looks mis-drawn — so the precision is raised until they
+# are distinct, which is what asking for billions meant.
+_dedup = [t for t in _texts(_csvg(
+    {"type": "bar", "labels": ["A"],
+     "series": [{"name": "s", "data": [2_440_000_000]}],
+     "format": {"prefix": "$", "scale": "B", "decimals": 0}}, 0, 0, 4, 2.5))
+    if t.startswith("$")]
+check_eq("chart numbers: ticks never collapse into the same label",
+         _dedup, ["$0.0B", "$0.6B", "$1.2B", "$1.9B", "$2.5B"])
+
+_stk = _csvg({"type": "stacked-bar", "labels": ["A"],
+              "series": [{"name": "p", "data": [30]}, {"name": "q", "data": [20]}],
+              "values": True}, 0, 0, 4, 2.5)
+check_eq("chart stacked: each segment now carries its own value label",
+         sorted(t for t in _texts(_stk) if t in ("30", "20")), ["20", "30"])
+
+_two = _csvg({"type": "bar", "labels": ["Second 20%\n$21,900-$44,200", "Top 1%"],
+              "series": [{"name": "s", "data": [13.7, 10.1]}]}, 0, 0, 4, 2.5)
+check_eq("chart labels: a break in a label becomes two drawn lines",
+         _re.findall(r"<tspan[^>]*>([^<]+)</tspan>", _two),
+         ["Second 20%", "$21,900-$44,200"])
+check_eq("chart labels: a single-line label draws no tspan at all",
+         "<tspan" in _pos, False)
+_wrap = _csvg({"type": "bar", "labels": ["Department of Human Services", "Health"],
+               "series": [{"name": "s", "data": [1, 2]}], "wrapLabels": True},
+              0, 0, 4, 2.5)
+check_eq("chart labels: a long name wraps rather than colliding with its neighbour",
+         len(_re.findall(r"<tspan", _wrap)) >= 2, True)
+
+check_eq("chart tooltips: off unless asked for", "data-tip" in _pos, False)
+check("chart tooltips: on, a bar says what it is and what it is worth",
+      _csvg(dict(_neg, tips=True), 0, 0, 4, 2.5), 'data-tip="B: -45"')
+check_page_raises("chart: a made-up number-format field is refused",
+                  {"positions": {}, "shapes": [
+                      {"id": "c", "page": 1, "kind": "chart", "x": 1, "y": 1,
+                       "w": 2, "h": 2,
+                       "chart": {"type": "bar", "labels": ["A"],
+                                 "series": [{"name": "s", "data": [1]}],
+                                 "format": {"currency": "USD"}}}]},
+                  "not a number-format field")
+
+_pie = _csvg({"type": "pie", "labels": ["GET", "Income"],
+              "series": [{"name": "s", "data": [4_100_000_000, 2_900_000_000]}],
+              "values": True, "sliceLabel": "both",
+              "format": {"prefix": "$", "scale": "B", "decimals": 1}}, 0, 0, 4, 2.5)
+check("chart pie: a slice can show its value, not only its share", _pie, "$4.1B")
+check_eq("chart pie: value and percent land on two lines",
+         "(58.6%)" in _re.findall(r"<tspan[^>]*>([^<]+)</tspan>", _pie), True)
+
 # ---- the expand button's chevron -------------------------------------------
 # Drawn art, not a glyph: it turns to point up when the section opens, it is
 # present on the EDITOR canvas too (where the button used to have none), and

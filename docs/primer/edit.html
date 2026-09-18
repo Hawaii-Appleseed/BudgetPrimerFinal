@@ -1050,6 +1050,22 @@
   .ch-title { width:100%; box-sizing:border-box; font:12.5px system-ui;
         padding:7px 9px; border:1px solid #DCE4DE; border-radius:7px;
         margin-bottom:6px; color:var(--ink); }
+  /* Axis bounds and number format: a label and a small field, several to a
+     row, so the whole axis reads as one control group rather than a stack of
+     full-width inputs. "auto" is an empty field, never a magic number. */
+  .ch-fieldrow { display:flex; gap:6px; margin-bottom:7px; }
+  .ch-field { flex:1; min-width:0; }
+  .ch-field > span { display:block; font:600 10px system-ui; color:#7A8E92;
+        text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px; }
+  .ch-field input, .ch-field select { width:100%; box-sizing:border-box;
+        font:12px system-ui; padding:5px 6px; border:1px solid #DCE4DE;
+        border-radius:6px; color:var(--ink); background:#fff; }
+  .ch-field input:focus, .ch-field select:focus {
+        outline:2px solid rgba(107,158,120,.45); outline-offset:-1px;
+        border-color:var(--sage); }
+  .ch-field input.ch-bad { outline:2px solid #b00020; outline-offset:-1px; }
+  .ch-eg { font:11px system-ui; color:#7A8E92; margin:2px 0 8px; }
+  .ch-eg b { font-weight:600; color:#52796F; }
   .ch-colrow { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
   .ch-collab { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
         white-space:nowrap; font:12px system-ui; color:#52796F; }
@@ -7004,7 +7020,41 @@ function chartKindIcon(kind) {
 // open. Kept outside the render so a redraw (every data edit re-renders the
 // whole panel) does not throw you back to the top.
 let chartTab = 'data';
-const chartOpen = { text: true, xaxis: false, yaxis: false, settings: false };
+const chartOpen = { text: true, xaxis: false, yaxis: false, numbers: false,
+                    settings: false };
+
+// A line break inside a chart label, shown where a text input cannot show a
+// real one. Chosen because a pilcrow is not a character anyone types into a
+// budget figure by accident.
+const CH_BREAK = '¶';
+const chLabelIn = s => String(s == null ? '' : s).replace(/\n/g, ' ' + CH_BREAK + ' ');
+const chLabelOut = s => String(s).replace(/\s*¶\s*/g, '\n').trim();
+
+/** Mirrors _fmt_val in layout.py: what one tick will actually read as, shown
+ *  under the format fields so the effect of a choice is visible before the
+ *  chart redraws. A sample, not a promise about any particular tick — 1234.5
+ *  is picked to exercise the separator, the scale and the decimals at once. */
+function chartFormatSample(fmt) {
+  const f = fmt || {};
+  let v = 1234567;
+  let unit = '';
+  const SC = [['B', 1e9], ['M', 1e6], ['K', 1e3]];
+  if (f.scale === 'auto') {
+    for (const [nm, div] of SC) { if (Math.abs(v) >= div) { v /= div; unit = nm; break; } }
+  } else if (f.scale && f.scale !== 'none') {
+    const div = { K: 1e3, M: 1e6, B: 1e9 }[f.scale];
+    if (div) { v /= div; unit = f.scale; }
+  }
+  let body;
+  if (Number.isInteger(f.decimals)) {
+    body = v.toLocaleString('en-US', { minimumFractionDigits: f.decimals,
+                                       maximumFractionDigits: f.decimals });
+  } else {
+    body = Number.isInteger(v) ? v.toLocaleString('en-US')
+      : v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+  return (f.prefix || '') + body + unit + (f.suffix || '');
+}
 
 /** "1,234", "$1,234.50", "(500)", "12%" -> a number; '' -> 0 (the renderer
  *  draws a missing value as 0 already); anything else -> null. */
@@ -7121,9 +7171,17 @@ function renderChartData(pop, s, c, isPie, mk) {
       : (c.series[0].color || CHART_FALLBACK[0]);
     cell(dot);
     const li = document.createElement('input');
-    li.value = lab; li.placeholder = 'Label';
+    // A label may be two lines — "Second 20%" over its income range. A text
+    // input strips the newline on its way in, so the break is shown as a
+    // visible pilcrow the typist can move or delete like any other character,
+    // and folded back on the way out. Nothing else in the grid needs to know.
+    li.value = chLabelIn(lab); li.placeholder = 'Label';
+    li.title = 'Type ' + CH_BREAK + ' to split the label across two lines';
     li.dataset.ck = `l${ri}`;
-    li.addEventListener('change', () => { if (li.value !== (lab || '')) chartWrite(ch => { ch.labels[ri] = li.value; }); });
+    li.addEventListener('change', () => {
+      const v = chLabelOut(li.value);
+      if (v !== (lab || '')) chartWrite(ch => { ch.labels[ri] = v; });
+    });
     cell(li);
     c.series.slice(0, cols).forEach((se, si) => {
       const vi = document.createElement('input');
@@ -7193,7 +7251,8 @@ function renderChartData(pop, s, c, isPie, mk) {
 
   const note = document.createElement('p');
   note.className = 'side-note';
-  note.textContent = 'Double-click the title or any label on the page to rename it.';
+  note.textContent = 'Double-click the title or any label on the page to rename it. '
+    + 'A ' + CH_BREAK + ' in a label splits it across two lines.';
   pop.appendChild(note);
 }
 
@@ -7236,6 +7295,53 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
     i.addEventListener('change', () => chartWrite(ch => set(ch, i.value)));
     host.append(l, i);
   };
+  /** A row of small labelled fields — axis bounds, number format. Each field
+   *  reads and writes ONE chart key; an empty field means "not set", which is
+   *  how the renderer's automatic behaviour is spelled. */
+  const fieldRow = (host, fields) => {
+    const row = document.createElement('div');
+    row.className = 'ch-fieldrow';
+    fields.forEach(f => {
+      const wrap = document.createElement('label');
+      wrap.className = 'ch-field';
+      const cap = document.createElement('span');
+      cap.textContent = f.label;
+      let inp;
+      if (f.options) {
+        inp = document.createElement('select');
+        f.options.forEach(([v, t]) => {
+          const o = document.createElement('option');
+          o.value = v; o.textContent = t;
+          inp.appendChild(o);
+        });
+        inp.value = f.get() ?? f.options[0][0];
+        inp.addEventListener('change', () => chartWrite(ch => f.set(ch, inp.value)));
+      } else {
+        inp = document.createElement('input');
+        inp.type = 'text'; inp.inputMode = 'decimal';
+        inp.placeholder = f.placeholder || 'auto';
+        const cur = f.get();
+        inp.value = cur === undefined || cur === null ? '' : cur;
+        inp.addEventListener('change', () => {
+          const raw = inp.value.trim();
+          if (raw === '') { chartWrite(ch => f.set(ch, null)); return; }
+          const n = f.text ? raw : chartNumber(raw);
+          if (!f.text && n === null) {
+            inp.value = cur === undefined || cur === null ? '' : cur;
+            inp.classList.add('ch-bad');
+            setTimeout(() => inp.classList.remove('ch-bad'), 900);
+            $('stat').textContent = 'not a number - the field kept its value';
+            return;
+          }
+          chartWrite(ch => f.set(ch, n));
+        });
+      }
+      wrap.append(cap, inp);
+      row.appendChild(wrap);
+    });
+    host.appendChild(row);
+  };
+
   const inkRow = (host, label, key, dflt) => {
     const row = document.createElement('div');
     row.className = 'ch-colrow';
@@ -7257,11 +7363,15 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
     text: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg>',
     bars: '<svg viewBox="0 0 14 14" width="14" height="14" fill="currentColor"><rect x="2" y="8" width="2.6" height="4.5" rx="0.6"/><rect x="5.7" y="5" width="2.6" height="7.5" rx="0.6"/><rect x="9.4" y="2" width="2.6" height="10.5" rx="0.6"/></svg>',
     cog: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4h10M2 10h10"/><circle cx="5" cy="4" r="1.5"/><circle cx="9.5" cy="10" r="1.5"/></svg>',
+    num: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4.4 2.2 3.1 11.8M9.9 2.2 8.6 11.8M1.9 5.1h10.2M1.4 8.9h10.2"/></svg>',
   };
 
   section('text', I.text, 'Text', body => {
     toggleRow(body, 'Legend', 'legend', false);
     toggleRow(body, 'Data labels', 'values', false);
+    // On the published page only: the editor suppresses the runtime so a
+    // tooltip does not chase the pointer while a chart is being dragged.
+    toggleRow(body, 'Hover tooltips', 'tips', false);
     textField(body, 'Title', () => c.title,
       (ch, v) => { if (v.trim()) ch.title = v.trim(); else delete ch.title; }, 'Add title');
     inkRow(body, 'Title colour', 'titleColor', '#2F3E46');
@@ -7271,10 +7381,69 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
   if (CHART_WITH_AXES.includes(c.type)) {
     section('xaxis', I.bars, 'Axis & grid', body => {
       toggleRow(body, 'Gridlines', 'grid', true);
+      // Left empty the scale is worked out from the data — and now reaches
+      // BELOW zero when the data does, instead of flattening those bars to
+      // nothing. Pinning either end is how a set of charts is made to share
+      // one scale so their bars can be compared.
+      fieldRow(body, [
+        { label: 'Min', get: () => c.axisMin,
+          set: (ch, v) => { if (v === null) delete ch.axisMin; else ch.axisMin = v; } },
+        { label: 'Max', get: () => c.axisMax,
+          set: (ch, v) => { if (v === null) delete ch.axisMax; else ch.axisMax = v; } },
+        { label: 'Ticks', placeholder: '5', get: () => c.axisTicks,
+          set: (ch, v) => {
+            if (v === null) delete ch.axisTicks;
+            else ch.axisTicks = Math.max(2, Math.min(11, Math.round(v)));
+          } },
+      ]);
       inkRow(body, 'Axis colour', 'axisColor', '#7A8E92');
       inkRow(body, 'Gridline colour', 'gridColor', '#E4EBE6');
+      toggleRow(body, 'Wrap long labels', 'wrapLabels', false);
     });
   }
+
+  section('numbers', I.num, 'Numbers', body => {
+    // What the axis ticks and the data labels read as. A budget chart whose
+    // axis says 2,500,000,000 is the reason this exists.
+    const setFmt = (ch, key, v) => {
+      const f = Object.assign({}, ch.format);
+      if (v === null || v === '' || v === 'none') delete f[key];
+      else f[key] = v;
+      if (Object.keys(f).length) ch.format = f; else delete ch.format;
+    };
+    fieldRow(body, [
+      { label: 'Before', text: true, placeholder: '$', get: () => (c.format || {}).prefix,
+        set: (ch, v) => setFmt(ch, 'prefix', v) },
+      { label: 'After', text: true, placeholder: '%', get: () => (c.format || {}).suffix,
+        set: (ch, v) => setFmt(ch, 'suffix', v) },
+    ]);
+    fieldRow(body, [
+      { label: 'Scale', get: () => (c.format || {}).scale || 'none',
+        options: [['none', 'Full number'], ['auto', 'Automatic'],
+                  ['K', 'Thousands (K)'], ['M', 'Millions (M)'], ['B', 'Billions (B)']],
+        set: (ch, v) => setFmt(ch, 'scale', v) },
+      { label: 'Decimals', placeholder: 'auto', get: () => (c.format || {}).decimals,
+        set: (ch, v) => setFmt(ch, 'decimals',
+          v === null ? null : Math.max(0, Math.min(6, Math.round(v)))) },
+    ]);
+    const eg = document.createElement('p');
+    eg.className = 'ch-eg';
+    eg.innerHTML = 'A tick reads <b></b>';
+    eg.querySelector('b').textContent = chartFormatSample(c.format);
+    body.appendChild(eg);
+    if (isPie) {
+      fieldRow(body, [
+        { label: 'Slices show', get: () => c.sliceLabel || 'percent',
+          options: [['percent', 'Percent'], ['value', 'Value'], ['both', 'Value and percent']],
+          set: (ch, v) => {
+            if (v === 'percent') delete ch.sliceLabel; else ch.sliceLabel = v;
+            // The slice label is only drawn when data labels are on, so a
+            // pick that would otherwise do nothing visible turns them on.
+            ch.values = true;
+          } },
+      ]);
+    }
+  });
 
   section('settings', I.cog, isPie ? 'Slice colours' : 'Series colours', body => {
     // One click to recolour the whole chart from a palette colour: the rest of
@@ -7388,7 +7557,7 @@ function editChartText(d, node) {
   const r = node.getBoundingClientRect();
   const inp = d.createElement('input');
   inp.className = 'ds-ch-edit';
-  inp.value = chartText(s.chart, hook);
+  inp.value = chLabelIn(chartText(s.chart, hook));
   const cs = d.defaultView.getComputedStyle(node);
   inp.style.cssText = `position:absolute;left:${r.left + d.defaultView.scrollX - 4}px;`
     + `top:${r.top + d.defaultView.scrollY - 3}px;height:${r.height + 6}px;`
@@ -7402,7 +7571,7 @@ function editChartText(d, node) {
     if (done) return; done = true;
     editing = false;
     hubAutosaveFlushNext();
-    const val = inp.value;
+    const val = chLabelOut(inp.value);
     inp.remove();
     if (keep && val !== chartText(s.chart, hook)) {
       const settled = await collabFieldSettle(val, 'chart label');
