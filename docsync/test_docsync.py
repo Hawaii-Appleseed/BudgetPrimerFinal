@@ -1522,6 +1522,86 @@ check_eq("chart style: a whole look validates and survives the load",
          _styled.chart_styles["House"]["seriesColors"], ["#6B9E78", "#354F52"])
 
 
+# ---- named text styles: the stylesheet -------------------------------------
+# layout.text is one style per SLOT, so a report's type was set slot by slot
+# and taking body copy from 11px to 10.5 meant finding every slot anyone had
+# ever touched. A named style is applied by reference, so there is one place
+# to change. The rule everywhere below: the nearer the author, the stronger.
+from docsync.layout import resolve_style as _rs                # noqa: E402
+
+_S = {"Body": {"font": "Manrope", "size": 14, "weight": 400},
+      "Body small": {"from": "Body", "size": 12},
+      "Caption": {"from": "Body small", "weight": 700}}
+check_eq("text style: a slot wearing one gets all of it",
+         _rs({"use": "Body"}, _S),
+         {"font": "Manrope", "size": 14, "weight": 400})
+check_eq("text style: a style inherits, and overrides only what it names",
+         _rs({"use": "Body small"}, _S),
+         {"font": "Manrope", "size": 12, "weight": 400})
+check_eq("text style: inheritance is a chain, not one step",
+         _rs({"use": "Caption"}, _S),
+         {"font": "Manrope", "size": 12, "weight": 700})
+check_eq("text style: the slot's own keys beat the style — a style is a "
+         "starting point, not a cage",
+         _rs({"use": "Body", "size": 30}, _S)["size"], 30)
+check_eq("text style: no style named is exactly what it always was",
+         _rs({"size": 11}, _S), {"size": 11})
+# Both of these run in the render path and under Pyodide for a live preview,
+# where raising would blank the page. Load-time validation is where they are
+# refused; here they resolve to what is left.
+check_eq("text style: a name that does not exist resolves to the rest",
+         _rs({"use": "Nope", "size": 11}, _S), {"size": 11})
+check_eq("text style: a loop stops instead of recursing",
+         _rs({"use": "L"}, {"L": {"from": "L", "size": 9}}), {"size": 9})
+
+_ts = _layout({"positions": {}, "shapes": [], "textStyles": _S,
+               "text": {"a.p1": {"use": "Body small"},
+                        "a.p2": {"use": "Body", "size": 30}}})
+check_eq("text style: the slot's CSS is the resolved style",
+         _ts.text_style("a.p1"),
+         "font-family:'Manrope';font-size:12px;font-weight:400")
+check_eq("text style: an override reaches the CSS too",
+         "font-size:30px" in _ts.text_style("a.p2"), True)
+# A slot that says only `use` names no font of its own, so a font_link that
+# read the slot would leave the family to be FAKED in the published page while
+# looking right in the editor, which loads every family.
+check("text style: a family named only by a style is still fetched",
+      _ts.font_link(), "Manrope")
+
+check_page_raises("text style: a `use` must name a style that exists",
+                  {"positions": {}, "shapes": [],
+                   "text": {"a": {"use": "Body"}}},
+                  "no text style called 'Body'")
+check_page_raises("text style: and so must a `from`",
+                  {"positions": {}, "shapes": [],
+                   "textStyles": {"A": {"from": "B"}}},
+                  "inherits from 'B', which is not a text style")
+check_page_raises("text style: a chain cannot eat itself",
+                  {"positions": {}, "shapes": [],
+                   "textStyles": {"A": {"from": "B"}, "B": {"from": "A"}}},
+                  "inherits from itself")
+check_page_raises("text style: a style inherits with 'from', not 'use'",
+                  {"positions": {}, "shapes": [],
+                   "textStyles": {"A": {"size": 14}, "B": {"use": "A"}}},
+                  "inherits with 'from', not 'use'")
+# The RESOLVED style is what reaches the page, so that is what has to clear
+# the legibility floor: wearing a style is not a way round it.
+check_page_raises("text style: a style under the legibility floor is refused",
+                  {"positions": {}, "shapes": [],
+                   "textStyles": {"Tiny": {"size": 4}}},
+                  "below the 7.875pt legibility floor")
+check_page_raises("text style: and so is a slot that overrides one down to it",
+                  {"positions": {}, "shapes": [],
+                   "textStyles": {"Body": {"size": 14}},
+                   "text": {"a": {"use": "Body", "size": 4}}},
+                  "below the 7.875pt legibility floor")
+check_page_raises("text style: a text box's style is held to the same rule",
+                  {"positions": {}, "shapes": [],
+                   "boxes": [{"id": "b", "page": 1, "x": 1, "y": 1, "w": 2,
+                              "md": "hi", "style": {"use": "Nope"}}]},
+                  "no text style called 'Nope'")
+
+
 # ---- the expand button's chevron -------------------------------------------
 # Drawn art, not a glyph: it turns to point up when the section opens, it is
 # present on the EDITOR canvas too (where the button used to have none), and

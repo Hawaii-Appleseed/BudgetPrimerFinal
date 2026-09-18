@@ -831,6 +831,41 @@ def text_css(st: dict) -> str:
     return ";".join(out)
 
 
+# Everything a named style may hold beyond the style keys themselves.
+TEXT_STYLE_META = ("from",)
+
+
+def resolve_style(st: dict, styles: dict, _seen=None) -> dict:
+    """One style, with whatever it inherits already folded in.
+
+    The rule, and it is the only one: **the nearer the author, the stronger.**
+    A slot's own keys beat the style it uses; a style's own keys beat the one
+    it comes `from`. So `use` is a starting point and never a cage — the thing
+    that makes people actually adopt a stylesheet instead of working around it.
+
+    A style that cannot be found, or a `from` chain that loops, resolves to
+    what is left rather than raising: this runs in the render path and under
+    Pyodide for a live preview, where throwing would blank the page. Load-time
+    validation is where a bad name is refused (see _check_style_names).
+    """
+    if not st:
+        return {}
+    name = st.get("use")
+    base = {}
+    if name and isinstance(styles, dict) and name in styles:
+        seen = set(_seen or ())
+        if name not in seen:
+            seen.add(name)
+            base = resolve_style(dict(styles[name], use=styles[name].get("from")),
+                                 styles, seen)
+    out = dict(base)
+    for k, v in st.items():
+        if k in ("use",) + TEXT_STYLE_META:
+            continue
+        out[k] = v
+    return out
+
+
 def _check_text(st: dict, where: str) -> None:
     """A bad style must fail here, at load, like a bad layer does — not reach
     the page as a silently ignored declaration."""
@@ -2461,6 +2496,37 @@ def _check_chart_style(st, where: str) -> None:
     _check_chart(probe, where)
 
 
+def _check_uses(st: dict, styles: dict, where: str) -> None:
+    """A `use` has to name a style that exists. Refused at load rather than
+    resolving to nothing: a slot silently wearing no style looks exactly like
+    a slot someone forgot to style, and the two want different fixes."""
+    name = st.get("use")
+    if name is None:
+        return
+    if not isinstance(name, str) or not name:
+        raise LayoutError(f"{where}.use: expected the name of a text style")
+    if name not in styles:
+        known = ", ".join(sorted(styles)) or "none are defined"
+        raise LayoutError(f"{where}.use: no text style called {name!r} — {known}")
+
+
+def _check_style_chain(styles: dict) -> None:
+    """Every `from` names a real style, and no chain eats itself. A loop
+    resolves to something harmless at render time, but it is always a mistake
+    and the person who typed it should hear about it here."""
+    for name, st in styles.items():
+        seen, cur = [name], st.get("from")
+        while cur is not None:
+            if not isinstance(cur, str) or cur not in styles:
+                raise LayoutError(f"textStyle '{name}': inherits from "
+                                  f"{cur!r}, which is not a text style")
+            if cur in seen:
+                raise LayoutError(f"textStyle '{name}': inherits from itself "
+                                  f"through {' -> '.join(seen + [cur])}")
+            seen.append(cur)
+            cur = styles[cur].get("from")
+
+
 def _check_shadow(sh, where: str) -> None:
     if not isinstance(sh, dict):
         raise LayoutError(f"{where}: expected a shadow object")
@@ -2629,6 +2695,14 @@ class Layout:
         self.chart_styles = raw.get("chartStyles") or {}
         self.shapes = raw.get("shapes") or []
         self.text = raw.get("text") or {}
+        # Named, reusable, redefinable text styles — a stylesheet, which is
+        # the organising idea of InDesign and the thing self.text alone could
+        # never be. A slot, box or table says `use: "<name>"` and may still
+        # carry its own keys on top; those win, so a style is a starting point
+        # and not a cage. A style may itself say `from: "<name>"`, which is
+        # how "Body small" is Body at a smaller size and stays Body when Body
+        # changes. Absent, every one of those is exactly what it was.
+        self.text_styles = raw.get("textStyles") or {}
         self.boxes = raw.get("boxes") or []
         self.tables = raw.get("tables") or []
         self.fills = raw.get("fill") or {}
@@ -2787,10 +2861,30 @@ class Layout:
         for el, p in self.positions.items():
             if "z" in p and not isinstance(p["z"], int):
                 raise LayoutError(f"position '{el}': z {p['z']!r} is not a layer number")
+        if not isinstance(self.text_styles, dict):
+            raise LayoutError("textStyles: expected an object keyed by name")
+        for name, st in self.text_styles.items():
+            if not isinstance(st, dict):
+                raise LayoutError(f"textStyle '{name}': expected a style object")
+            if st.get("use") is not None:
+                raise LayoutError(f"textStyle '{name}': a style inherits with "
+                                  f"'from', not 'use'")
+            _check_text(st, f"textStyle '{name}'")
+        _check_style_chain(self.text_styles)
         for key, st in self.text.items():
             if not isinstance(st, dict):
                 raise LayoutError(f"text '{key}': expected a style object")
-            _check_text(st, f"text '{key}'")
+            _check_uses(st, self.text_styles, f"text '{key}'")
+            # The RESOLVED style is what reaches the page, so that is what has
+            # to clear the legibility floor: a slot wearing a style is not
+            # excused a size the style set for it.
+            _check_text(self.styled_as(st), f"text '{key}'")
+        for i, b in enumerate(self.boxes):
+            if isinstance(b.get("style"), dict):
+                _check_uses(b["style"], self.text_styles, f"box #{i + 1}.style")
+        for i, t in enumerate(self.tables):
+            if isinstance(t.get("style"), dict):
+                _check_uses(t["style"], self.text_styles, f"table #{i + 1}.style")
         for el, c in self.fills.items():
             _fill(c, f"fill '{el}'")
         if not isinstance(self.locked, list) or any(
@@ -3280,9 +3374,15 @@ class Layout:
 
     # ---- text ------------------------------------------------------------
 
+    def styled_as(self, st) -> dict:
+        """A style as authored, with any named style it uses folded in. The
+        one place a `use` is honoured, so a slot, a text box and a table cannot
+        disagree about what wearing a style means."""
+        return resolve_style(st or {}, self.text_styles)
+
     def text_style(self, key: str) -> str:
         """The CSS for one slot's text, or "" when it was never styled."""
-        return text_css(self.text.get(key) or {})
+        return text_css(self.styled_as(self.text.get(key)))
 
     def text_attr(self, key: str) -> str:
         """ style="…" for a slot, or "" — never style="", which would change
@@ -3317,7 +3417,16 @@ class Layout:
         # (b["style"]), not in self.text, and skipping those meant a font a
         # box asked for was silently faked in the published page — right in
         # the editor (which loads every family), wrong everywhere else.
-        styles = list(self.text.values()) + [b.get("style") or {} for b in self.boxes]
+        # Resolved, because a slot that only says `use: "Heading"` names no
+        # font of its own — and the family Heading asks for would have been
+        # faked in the published page while looking right in the editor,
+        # which loads every family. Named styles are scanned whole so one
+        # defined and not yet worn still travels with the document.
+        styles = ([self.styled_as(st) for st in self.text.values()]
+                  + [self.styled_as(b.get("style")) for b in self.boxes]
+                  + [self.styled_as(t.get("style")) for t in self.tables]
+                  + [self.styled_as(dict(st, use=st.get("from")))
+                     for st in self.text_styles.values()])
         for st in styles:
             fam = st.get("font")
             if not fam:
@@ -3624,7 +3733,7 @@ class Layout:
                 css += f';opacity:{b["alpha"]:g}'
             if b.get("shadow"):
                 css += f';box-shadow:{shadow_css(b["shadow"])}'
-            style = text_css(b.get("style") or {})
+            style = text_css(self.styled_as(b.get("style")))
             # Style FIRST, geometry second — the geometry must win their one
             # collision: align's inline-slot compensation appends width:100%
             # (right for a span with no box of its own), and written after the
@@ -3758,7 +3867,7 @@ class Layout:
                 css += f';transform:rotate({t["rot"]}deg)'
             if t.get("alpha") is not None:
                 css += f';opacity:{t["alpha"]:g}'
-            style = text_css(t.get("style") or {})
+            style = text_css(self.styled_as(t.get("style")))
             tag = f' data-el="table.{t["id"]}"' if edit else ""
             header = bool(t.get("header"))
             rows = t.get("rows", [])

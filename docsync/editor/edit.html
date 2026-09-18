@@ -1201,6 +1201,37 @@
   #arrange input:focus, #arrange button:focus-visible
         { outline:2px solid rgba(107,158,120,.55); outline-offset:1px; }
   #ty-font { width:150px; }
+  /* The stylesheet picker, at the head of the bar the way InDesign's control
+     bar puts it. Narrower than the font dropdown: a style name is short, and
+     the font picker is what people reach for far more often. */
+  #ty-style { width:112px; }
+  /* A slot wearing a style AND carrying its own keys. InDesign marks that
+     with a +, and something has to: otherwise "redefine Body" looks broken on
+     the one slot that was overriding it. */
+  #ty-style.ty-style-over { font-style:italic; }
+  #ty-style.ty-style-over::after { content:'+'; }
+  #ty-style-more { font-weight:700; letter-spacing:1px; }
+  #ty-stylepop { min-width:266px; }
+  /* Find & Change. The hits are the panel's whole point, so they get the
+     height: a list that shows four and says "12 hits" is a count, not a
+     result you can act on. */
+  #findpop { min-width:238px; }
+  .find-opt { display:flex; align-items:center; gap:5px; flex:1;
+        font:11.5px system-ui; color:#52796F; cursor:pointer; }
+  .find-opt input { margin:0; accent-color:var(--sage); }
+  #find-list { max-height:300px; overflow-y:auto; margin:4px 0 8px; }
+  .find-group { margin-bottom:7px; }
+  .find-where { font:600 10px system-ui; color:#7A8E92; text-transform:uppercase;
+        letter-spacing:.4px; margin:0 0 2px; overflow:hidden;
+        text-overflow:ellipsis; white-space:nowrap; }
+  .find-hit { font:11.5px/1.45 system-ui; color:#52796F; margin:0 0 3px;
+        padding:3px 5px; border-radius:5px; background:#F5F8F6;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .find-hit mark { background:#FCE8A8; color:var(--ink); border-radius:2px;
+        padding:0 1px; }
+  .find-go { cursor:pointer; }
+  .find-go:hover { background:#EDF4EE; }
+  #ty-stylepop .tp-row { margin-bottom:6px; }
   #ty-weight { width:78px; }
   #type input[type=number], #arrange input[type=number] { width:54px; }
   #type button, #arrange button { display:inline-flex; align-items:center;
@@ -1844,6 +1875,13 @@
     <p class="hpanel-note">Restoring brings a version back as a new one — nothing is lost.</p>
   </aside>
   <div class="pop menu" id="filepop" hidden>
+    <p class="pop-h">Document</p>
+    <!-- Where a document app keeps it. There was no way to find a word in a
+         report at all, let alone change every one — a dozen pages of slots
+         read through by eye. -->
+    <button class="shp" id="file-find"><svg class="shp-i" viewBox="0 0 16 16"
+      ><circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3 14 14"
+      /></svg><span class="shp-t">Find &amp; Change…</span></button>
     <p class="pop-h">Reports</p>
     <button class="shp" id="file-open"><svg class="shp-i" viewBox="0 0 16 16"
       ><path d="M2.2 12.4V4a1 1 0 0 1 1-1h2.9l1.4 1.7H13a1 1 0 0 1 1 1v.9"/><path
@@ -2198,6 +2236,12 @@
 <div id="type" hidden>
   <span class="ty-key" id="ty-key"></span>
   <span class="ty-sep"></span>
+  <!-- The stylesheet, where InDesign's control bar puts it: the style this
+       text wears, and a way to save, redefine or spread one. "—" means it
+       wears none, which is what every slot did before there were any. -->
+  <select id="ty-style" title="Text style"></select>
+  <button id="ty-style-more" aria-label="Text styles — save, redefine, apply">…</button>
+  <span class="ty-sep"></span>
   <select id="ty-font" title="Font"></select>
   <select id="ty-weight" title="Weight"></select>
   <span class="ty-step" title="Size (px)">
@@ -2256,6 +2300,11 @@
     <div class="swgrid" id="ty-swgrid"></div>
     <div id="ty-color-extras"></div>
     <button class="sw-default" id="ty-colordefault">Report's own colour</button>
+  </div>
+  <div class="pop" id="findpop" hidden></div>
+  <div class="pop" id="ty-stylepop" hidden>
+    <p class="pop-h">Text styles</p>
+    <div id="ty-stylebody"></div>
   </div>
   <div class="pop" id="ty-spacepop" hidden>
     <p class="pop-h">Spacing</p>
@@ -5849,7 +5898,10 @@ function undockPanel() {
   pop.hidden = true;
   pop.classList.remove('docked');
   $('bar').appendChild(pop);           // home, where togglePop can place it again
-  $(sidePanelTool).classList.remove('on');
+  // Not every panel has a rail button: Find is reached from the File menu and
+  // ⌘F, because it inserts nothing and the rail is the insert rail.
+  const btn = $(sidePanelTool);
+  if (btn) btn.classList.remove('on');
   sidePanelTool = null;
 }
 
@@ -5873,7 +5925,8 @@ function dockPanel(tool, title, opts = {}) {
   pop.hidden = false;
   body.appendChild(pop);
   sidePanelTool = tool;
-  $(tool).classList.add('on');
+  const btn = $(tool);
+  if (btn) btn.classList.add('on');
   $('side-title').textContent = title;
   $('side').hidden = false;
   unfoldSide();          // reaching for a tool means you want to see it
@@ -8417,6 +8470,267 @@ const setStyle = (k, patch) => {
   if (Object.keys(st).length) layout.text[k] = st; else delete layout.text[k];
 };
 
+// ------------------------------------------------------- find & change
+// There was no way to find a word in a report at all — a dozen pages of slots
+// read through by eye, and "Fiscal Year 2026" becoming "FY2026" a manual
+// pass. The three places words live are content.md slots, a text box's own
+// `md`, and a table's cells; one list of them here, so a find cannot quietly
+// miss a third of the document.
+//
+// Everything below works on the AUTHORED text — the markdown, not the
+// rendered HTML — because that is what a replace has to write back. A word
+// split across a bold marker will not be found, which is the honest answer:
+// the thing on the page is not the thing in the file.
+let findState = { needle: '', repl: '', cased: false, whole: false, hits: [] };
+
+/** Everything in the document that holds words, as addressable targets. */
+function findTargets() {
+  const out = [];
+  const d = $('out').contentDocument;
+  if (d) {
+    const seen = new Set();
+    d.querySelectorAll('[data-slot]').forEach(el => {
+      const k = el.dataset.slot;
+      if (!k || seen.has(k)) return;
+      seen.add(k);
+      out.push({ kind: 'slot', key: k, label: k,
+        read: () => readSlot(k), write: v => writeSlot(k, v) });
+    });
+  }
+  (layout.boxes || []).forEach(b => out.push({
+    kind: 'box', key: b.id, label: b.id,
+    read: () => b.md || '', write: v => { b.md = v; },
+  }));
+  (layout.tables || []).forEach(t => (t.rows || []).forEach((row, r) =>
+    row.forEach((_cell, c) => out.push({
+      kind: 'cell', key: `${t.id}[${r + 1},${c + 1}]`, label: `${t.id} r${r + 1}c${c + 1}`,
+      read: () => String(t.rows[r][c] ?? ''),
+      write: v => { t.rows[r][c] = v; },
+    }))));
+  return out;
+}
+
+const findRe = (needle, { cased, whole }) => {
+  const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(whole ? `\\b${esc}\\b` : esc, cased ? 'g' : 'gi');
+};
+
+/** Every hit, with enough of its line around it to be recognised. */
+function findRun() {
+  const { needle } = findState;
+  findState.hits = [];
+  if (!needle) return;
+  const re = findRe(needle, findState);
+  findTargets().forEach(t => {
+    const text = t.read();
+    let m, n = 0;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      n += 1;
+      const from = Math.max(0, m.index - 28);
+      const to = Math.min(text.length, m.index + m[0].length + 28);
+      findState.hits.push({
+        target: t, at: m.index, len: m[0].length,
+        before: (from ? '…' : '') + text.slice(from, m.index).replace(/\n/g, ' '),
+        hit: m[0],
+        after: text.slice(m.index + m[0].length, to).replace(/\n/g, ' ')
+          + (to < text.length ? '…' : ''),
+      });
+      if (m[0] === '') re.lastIndex += 1;           // a zero-width match would spin
+      if (n > 400) break;                           // a runaway needle, not a search
+    }
+  });
+}
+
+function openFindPanel() {
+  dockPanel('find', 'Find & Change', { toggle: false });
+  renderFindPanel();
+  const f = $('find-needle');
+  if (f) { f.focus(); f.select(); }
+}
+
+function renderFindPanel() {
+  const pop = $('findpop');
+  if (!pop || pop.hidden) return;
+  pop.textContent = '';
+  const field = (id, label, value, ph) => {
+    const l = document.createElement('p');
+    l.className = 'ch-fieldlab'; l.textContent = label;
+    const i = document.createElement('input');
+    i.className = 'ch-title'; i.id = id; i.value = value; i.placeholder = ph || '';
+    pop.append(l, i);
+    return i;
+  };
+  const needle = field('find-needle', 'Find', findState.needle, 'Fiscal Year 2026');
+  const repl = field('find-repl', 'Change to', findState.repl, 'FY2026');
+  let t = null;
+  needle.addEventListener('input', () => {
+    findState.needle = needle.value;
+    // Typing is a search; re-rendering on every keystroke would take the caret
+    // with it, so the list alone is repainted after a beat.
+    clearTimeout(t);
+    t = setTimeout(() => { findRun(); paintFindList(); }, 160);
+  });
+  repl.addEventListener('input', () => { findState.repl = repl.value; });
+
+  const opts = document.createElement('div');
+  opts.className = 'tp-row';
+  pop.appendChild(opts);
+  [['cased', 'Match case'], ['whole', 'Whole words']].forEach(([k, label]) => {
+    const w = document.createElement('label');
+    w.className = 'find-opt';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = findState[k];
+    cb.addEventListener('change', () => {
+      findState[k] = cb.checked; findRun(); paintFindList();
+    });
+    const sp = document.createElement('span');
+    sp.textContent = label;
+    w.append(cb, sp);
+    opts.appendChild(w);
+  });
+
+  const list = document.createElement('div');
+  list.id = 'find-list';
+  pop.appendChild(list);
+
+  const row = document.createElement('div');
+  row.className = 'tp-row';
+  pop.appendChild(row);
+  const go = document.createElement('button');
+  go.className = 'tp-btn'; go.id = 'find-all';
+  go.textContent = 'Change all';
+  go.title = 'Every hit, as one undo step';
+  go.addEventListener('click', findReplaceAll);
+  row.appendChild(go);
+  paintFindList();
+}
+
+/** Just the results, so typing in the field keeps its caret. */
+function paintFindList() {
+  const list = $('find-list');
+  if (!list) return;
+  list.textContent = '';
+  const n = findState.hits.length;
+  const go = $('find-all');
+  if (go) go.disabled = !n || !findState.needle;
+  const head = document.createElement('p');
+  head.className = 'ch-eg';
+  head.textContent = !findState.needle ? 'Type something to find.'
+    : n ? `${n} ${n === 1 ? 'hit' : 'hits'}` : 'Nothing found.';
+  list.appendChild(head);
+  // Grouped by where they are, because "12 hits" is only useful if you can
+  // see WHICH slot each one is in before changing all of them.
+  const seen = new Map();
+  findState.hits.forEach(h => {
+    const k = h.target.label;
+    if (!seen.has(k)) seen.set(k, []);
+    seen.get(k).push(h);
+  });
+  [...seen.entries()].slice(0, 40).forEach(([label, hits]) => {
+    const g = document.createElement('div');
+    g.className = 'find-group';
+    const lab = document.createElement('p');
+    lab.className = 'find-where';
+    lab.textContent = `${label} · ${hits.length}`;
+    g.appendChild(lab);
+    hits.slice(0, 4).forEach(h => {
+      const p = document.createElement('p');
+      p.className = 'find-hit';
+      const b = document.createElement('mark');
+      b.textContent = h.hit;
+      p.append(document.createTextNode(h.before), b,
+        document.createTextNode(h.after));
+      if (h.target.kind === 'slot') {
+        p.classList.add('find-go');
+        p.title = 'Show me';
+        p.addEventListener('click', () => {
+          const d = $('out').contentDocument;
+          const el = d && d.querySelector(`[data-slot="${CSS.escape(h.target.key)}"]`);
+          if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+      }
+      g.appendChild(p);
+    });
+    list.appendChild(g);
+  });
+}
+
+async function findReplaceAll() {
+  findRun();
+  if (!findState.hits.length) return;
+  const n = findState.hits.length;
+  // One history entry and one render for the whole change — a find/replace
+  // that took forty undos to back out would not be one anybody trusted.
+  pushHistory();
+  const done = new Set();
+  findState.hits.forEach(h => {
+    if (done.has(h.target.key)) return;             // a target is rewritten once
+    done.add(h.target.key);
+    h.target.write(h.target.read().replace(findRe(findState.needle, findState),
+      findState.repl));
+  });
+  markDirty();
+  await render();
+  findRun();
+  renderFindPanel();
+  $('stat').textContent = `changed ${n} ${n === 1 ? 'hit' : 'hits'} in `
+    + `${done.size} ${done.size === 1 ? 'place' : 'places'}`;
+}
+
+// ------------------------------------------------------- the stylesheet
+// InDesign's organising idea, and the one thing layout.text could never be:
+// a NAMED style, applied to many slots, changed in one place. Until now a
+// report's type was set slot by slot, so taking body copy from 11px to 10.5
+// meant finding and editing every slot that had ever been touched.
+//
+// The keys a style is made of are the style keys themselves — there is no
+// second list to keep in step, because a style IS a style object. `use` names
+// the style a slot wears and `from` is a style's own parent; both are stripped
+// when a style is saved from a slot, so saving "this look" never saves "and it
+// is also wearing something else".
+const TEXT_STYLE_META = ['use', 'from'];
+const textStyles = () => layout.textStyles || {};
+const styleNames = () => Object.keys(textStyles()).sort();
+
+/** What a slot actually renders as: the style it wears, with its own keys on
+ *  top. Mirrors resolve_style() in layout.py — same rule, the nearer the
+ *  author the stronger — because the toolbar has to SHOW what the page does. */
+function resolvedStyle(st, seen) {
+  if (!st) return {};
+  const all = textStyles();
+  const name = st.use;
+  let base = {};
+  if (name && all[name] && !(seen || []).includes(name)) {
+    base = resolvedStyle({ ...all[name], use: all[name].from },
+      (seen || []).concat([name]));
+  }
+  const out = { ...base };
+  Object.keys(st).forEach(k => {
+    if (!TEXT_STYLE_META.includes(k)) out[k] = st[k];
+  });
+  return out;
+}
+
+/** A style object with the bookkeeping keys taken off — what "save this look"
+ *  means. */
+const bareStyle = st => {
+  const out = { ...(st || {}) };
+  TEXT_STYLE_META.forEach(k => delete out[k]);
+  return out;
+};
+
+/** Everything a named style could be applied to, as {key, style} pairs. One
+ *  place that knows a slot, a text box and a table all carry a style, so
+ *  "apply to everything wearing this" cannot quietly miss one. */
+function styleHosts() {
+  const out = [];
+  Object.keys(layout.text || {}).forEach(k => out.push({ key: k, get: () => layout.text[k] }));
+  (layout.boxes || []).forEach(b => out.push({ key: b.id, get: () => b.style }));
+  (layout.tables || []).forEach(t => out.push({ key: t.id, get: () => t.style }));
+  return out;
+}
+
 /** The CSS a style means, asked of the engine rather than reimplemented here.
  *  Two implementations of that question would drift apart silently. */
 function cssFor(st) {
@@ -8487,6 +8801,7 @@ function showType(key) {
   $('ty-comment').hidden = !docStore();
   const st = styleOf(key);
   const real = computedType(key);
+  fillStylePicker(st);
   $('ty-key').textContent = key;
   $('ty-key').title = key;
   // text-align means nothing to SVG text — a curved label is centred on its
@@ -8498,37 +8813,165 @@ function showType(key) {
   // Name the font the text renders in — the override if one is set, otherwise
   // the real rendered family — so the dropdown never shows a bare "font" for
   // text that plainly has one. Weight follows the same rule.
-  const shownFont = st.font || real.family || '';
+  // The RESOLVED style, not the slot's own keys: a slot that says only
+  // `use: "Body"` has no font of its own, and showing a blank dropdown over
+  // text that plainly has a font is how a stylesheet stops being believed.
+  const eff = resolvedStyle(st);
+  const shownFont = eff.font || real.family || '';
   $('ty-font').value = shownFont;
-  fillWeights(shownFont, st.weight ?? (shownFont ? real.weight : null));
+  fillWeights(shownFont, eff.weight ?? (shownFont ? real.weight : null));
   // The stepper shows the REAL size as a placeholder when none is set: what
   // you would be stepping from, not a blank.
-  $('ty-size').value = st.size ?? '';
+  $('ty-size').value = eff.size ?? '';
   $('ty-size').placeholder = real.size % 1 ? real.size.toFixed(1) : real.size;
   // Same rule as the size stepper: with no override set, the box shows the
   // spacing the page ACTUALLY renders as a placeholder, so the slider is never
   // parked next to a blank field with nothing to say what it is set to.
-  $('ty-track').value = st.tracking ?? '';
+  $('ty-track').value = eff.tracking ?? '';
   $('ty-track').placeholder = real.tracking;
-  $('ty-track-r').value = st.tracking ?? real.tracking;
-  $('ty-lead').value = st.leading ?? '';
+  $('ty-track-r').value = eff.tracking ?? real.tracking;
+  $('ty-lead').value = eff.leading ?? '';
   $('ty-lead').placeholder = real.leading;
-  $('ty-lead-r').value = st.leading ?? real.leading;
-  $('ty-case').value = st.case || 'none';
-  $('ty-color').value = /^#[0-9a-f]{6}$/i.test(st.color || '') ? st.color : '#2f3e46';
-  const cur = (st.color || '').toUpperCase();
+  $('ty-lead-r').value = eff.leading ?? real.leading;
+  $('ty-case').value = eff.case || 'none';
+  $('ty-color').value = /^#[0-9a-f]{6}$/i.test(eff.color || '') ? eff.color : '#2f3e46';
+  const cur = (eff.color || '').toUpperCase();
   document.querySelectorAll('#ty-swgrid .sw[data-c]').forEach(s =>
     s.classList.toggle('on', s.dataset.c === cur));
   $('ty-Abar').style.background =
-    st.color || 'linear-gradient(90deg,#e66,#6b9e78,#66e)';
-  $('ty-fx').value = (st.effect && st.effect.kind) || '';
+    eff.color || 'linear-gradient(90deg,#e66,#6b9e78,#66e)';
+  $('ty-fx').value = (eff.effect && eff.effect.kind) || '';
   showFxParams(key);
-  $('ty-i').classList.toggle('on', !!st.italic);
-  $('ty-u').classList.toggle('on', !!st.underline);
+  $('ty-i').classList.toggle('on', !!eff.italic);
+  $('ty-u').classList.toggle('on', !!eff.underline);
   document.querySelectorAll('.ty-al').forEach(b =>
-    b.classList.toggle('on', b.dataset.a === st.align));
+    b.classList.toggle('on', b.dataset.a === eff.align));
   $('type').hidden = false;
   $('arrange').hidden = true;            // the fixed row holds one toolbar at a time
+}
+
+/** The style picker at the head of the type toolbar: what this text wears. */
+function fillStylePicker(st) {
+  const sel = $('ty-style');
+  const names = styleNames();
+  sel.textContent = '';
+  const none = document.createElement('option');
+  none.value = ''; none.textContent = names.length ? 'No style' : 'No styles yet';
+  sel.appendChild(none);
+  names.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  });
+  sel.value = (st && st.use) || '';
+  // A slot wearing a style AND carrying its own keys is a real and useful
+  // state — InDesign marks it with a + and so does this, because otherwise
+  // "redefine Body" looks broken on the one slot that overrides it.
+  const over = st && st.use && Object.keys(bareStyle(st)).length;
+  sel.classList.toggle('ty-style-over', !!over);
+  sel.title = over ? `${st.use}, with changes of its own` : 'Text style';
+}
+
+/** Save, redefine, apply — the three verbs that make a stylesheet a
+ *  stylesheet rather than a list of names. */
+function renderStylePop() {
+  const host = $('ty-stylebody');
+  host.textContent = '';
+  const st = styleOf(selected) || {};
+  const worn = st.use;
+  const btn = (label, title, fn, dis) => {
+    const b = document.createElement('button');
+    b.className = 'tp-btn'; b.textContent = label; b.title = title;
+    b.disabled = !!dis;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const row = document.createElement('div');
+  row.className = 'tp-row';
+  host.appendChild(row);
+
+  row.appendChild(btn('+ Save as a style',
+    'Name what this text looks like, and reuse it', async () => {
+      const look = bareStyle(st);
+      if (!Object.keys(look).length) {
+        $('stat').textContent = 'nothing to save — this text has no style of its own';
+        return;
+      }
+      const got = await dsForm('Save as a text style', [
+        { name: 'name', label: 'Name', placeholder: 'e.g. Body', required: true },
+      ]);
+      if (!got || !got.name.trim()) return;
+      const name = got.name.trim();
+      pushHistory();
+      layout.textStyles = { ...textStyles(), [name]: look };
+      // The slot it came from wears it, with nothing left over: otherwise the
+      // very slot that defined the style is the one style changes can't move.
+      setStyle(selected, Object.fromEntries(Object.keys(look).map(k => [k, null])));
+      setStyle(selected, { use: name });
+      markDirty(); await render(); showType(selected); renderStylePop();
+      $('stat').textContent = `saved the style "${name}"`;
+    }));
+
+  row.appendChild(btn(`Redefine ${worn || ''}`.trim(),
+    'Make this style look like this text — everything wearing it follows',
+    async () => {
+      const look = { ...textStyles()[worn], ...bareStyle(st) };
+      pushHistory();
+      layout.textStyles = { ...textStyles(), [worn]: look };
+      // The slot's own keys have been folded into the style, so it stops
+      // carrying them: the point of redefining is that this slot and every
+      // other one now say the same thing.
+      setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
+      markDirty(); await render(); showType(selected); renderStylePop();
+      $('stat').textContent = `"${worn}" now looks like this, everywhere`;
+    }, !worn || !Object.keys(bareStyle(st)).length));
+
+  const row2 = document.createElement('div');
+  row2.className = 'tp-row';
+  host.appendChild(row2);
+  row2.appendChild(btn('Apply to matching',
+    'Give this style to every other text that already looks like it',
+    async () => {
+      const want = JSON.stringify(cssFor(resolvedStyle(st)));
+      const hit = styleHosts().filter(h => {
+        const other = h.get();
+        return h.key !== selected && other && !other.use
+          && JSON.stringify(cssFor(resolvedStyle(other))) === want;
+      });
+      if (!hit.length) {
+        $('stat').textContent = 'nothing else looks like this';
+        return;
+      }
+      pushHistory();
+      hit.forEach(h => {
+        const other = h.get();
+        Object.keys(bareStyle(other)).forEach(k => delete other[k]);
+        other.use = worn;
+      });
+      markDirty(); await render(); showType(selected); renderStylePop();
+      $('stat').textContent = `${hit.length} more now wear "${worn}"`;
+    }, !worn));
+  row2.appendChild(btn('Unlink', 'Keep the look, stop following the style',
+    async () => {
+      const look = resolvedStyle(st);
+      pushHistory();
+      setStyle(selected, { use: null, ...look });
+      markDirty(); await render(); showType(selected); renderStylePop();
+    }, !worn));
+
+  const n = document.createElement('p');
+  n.className = 'side-note';
+  if (worn) {
+    const users = styleHosts().filter(h => (h.get() || {}).use === worn).length;
+    n.textContent = `"${worn}" is worn by ${users} ${users === 1 ? 'thing' : 'things'}`
+      + ' in this document. Change the type above, then Redefine, and all of'
+      + ' them follow.';
+  } else {
+    n.textContent = 'A style is a name for a look. Set the type how you want it,'
+      + ' save it as a style, and every other piece of text can wear the same'
+      + ' one — and change when it does.';
+  }
+  host.appendChild(n);
 }
 
 /** input -> paint (fast, local). change -> commit and re-render, because the
@@ -8589,6 +9032,20 @@ function wireType() {
     togglePop($('ty-colorpop'), $('ty-colorbtn'));
   });
   $('ty-spacebtn').addEventListener('click', () => togglePop($('ty-spacepop'), $('ty-spacebtn')));
+  $('ty-style').addEventListener('change', async () => {
+    const name = $('ty-style').value || null;
+    // Wearing a style drops the slot's own keys. Anything else and the first
+    // slot you ever styled by hand would ignore the style you just gave it,
+    // which reads as the feature not working.
+    const st = styleOf(selected) || {};
+    setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
+    setStyle(selected, { use: name });
+    markDirty(); await render(); showType(selected);
+  });
+  $('ty-style-more').addEventListener('click', () => {
+    renderStylePop();
+    togglePop($('ty-stylepop'), $('ty-style-more'));
+  });
   $('ty-colordefault').addEventListener('click', async () => {
     $('ty-colorpop').hidden = true;
     setStyle(selected, { color: null });
@@ -8632,7 +9089,11 @@ function wireType() {
     markDirty(); await render(); showType(selected);
   });
   $('ty-reset').addEventListener('click', async () => {
-    if (layout.text) delete layout.text[selected];
+    // Back to what the report designed — which means the style it wears goes
+    // too. "Reset" that left a slot silently following Body would be a lie.
+    const b = selected && selected.startsWith('text.') ? boxOf(selected) : null;
+    if (b) delete b.style;
+    else if (layout.text) delete layout.text[selected];
     markDirty(); await render(); showType(selected);
   });
 }
@@ -9680,6 +10141,7 @@ function marquee(d, pg, e0) {
 /** Keyboard, inside the page: the top-level listener never hears iframe keys
  *  (undo was dead whenever focus sat in the report — a real bug until now). */
 function keysFor(d) {
+  wireFindKey(d);
   d.addEventListener('keydown', e => {
     // Before the `editing` guard too — see the top-level listener.
     if (zoomKey(e)) return;
@@ -17093,6 +17555,21 @@ document.addEventListener('fullscreenchange', () => {
 });
 // Capture phase, ahead of every other key handler in this document: while
 // presenting, navigation keys are the whole keyboard interface.
+// ⌘F, in both windows: the editor's chrome and the report iframe are separate
+// documents and a key pressed over the page never reaches the other one.
+// Capturing, because the browser's own find bar would otherwise take it — and
+// the browser's find searches the RENDERED page, which is not what a replace
+// can write back to.
+function wireFindKey(target) {
+  target.addEventListener('keydown', e => {
+    if (!((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openFindPanel();
+  }, true);
+}
+wireFindKey(document);
+
 document.addEventListener('keydown', e => {
   if (!presenting) return;
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); exitPresent(); return; }
@@ -20579,6 +21056,7 @@ $('file-restore').onclick = async () => {
     : `restored ${pick.id}`;
 };
 $('file-open').onclick = () => { renderOpenList(); togglePop($('openpop'), $('file')); };
+$('file-find').onclick = () => { $('filepop').hidden = true; openFindPanel(); };
 $('file-resize').onclick = () => { renderSizes(); togglePop($('resizepop'), $('file')); };
 // A second editor window on this same server. The server does the opening —
 // window.open() inside a Chrome `--app` window gives a plain browser window,
