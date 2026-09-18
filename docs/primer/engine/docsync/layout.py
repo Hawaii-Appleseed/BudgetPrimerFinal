@@ -393,6 +393,49 @@ def _fit_size(s, budget: float, size: float) -> float:
     return _lfs(size * budget / need) if need > budget else size
 
 
+def _label_parts(s, size: float, wrap: float = 0.0, max_lines: int = 2) -> list:
+    """The lines a chart label will actually be drawn on: its own breaks
+    first, then each of those wrapped to the space available.
+
+    Split out so the code that RESERVES room for the category band and the
+    code that draws it cannot disagree. They did: the band was sized from the
+    breaks the author typed, wrapping then added a third line to every label,
+    and that line was drawn through the paragraph under the chart.
+    """
+    parts = str(s).split("\n")
+    if not wrap:
+        return parts
+    out = []
+    for piece in parts:
+        out.extend(_wrap_label(piece, wrap, size, max_lines))
+    return out
+
+
+def _cat_label(name, budget: float, base: float, wrap_lines: int) -> tuple:
+    """A category label's final size and lines. One function so the measuring
+    pass and the drawing pass ask exactly the same question."""
+    multi = "\n" in str(name) or wrap_lines > 1
+    if not multi:
+        return base, [str(name)]
+    size = _fit_size(name, budget, base)
+    lmax = max(wrap_lines, str(name).count("\n") + 2)
+    return size, _label_parts(name, size, wrap=budget, max_lines=lmax)
+
+
+def _lines_from(parts: list, x: float, size: float, center: bool = False) -> str:
+    """Already-split lines as the inside of a <text>. One line is the bare
+    string, so a chart that never wrapped renders byte-for-byte as before."""
+    if len(parts) == 1:
+        return _xml(parts[0])
+    lead = size * 1.15
+    first = -lead * (len(parts) - 1) / 2 if center else 0.0
+    out = []
+    for i, line in enumerate(parts):
+        dy = first if i == 0 else lead
+        out.append(f'<tspan x="{x:.4f}" dy="{dy:.4f}">{_xml(line)}</tspan>')
+    return "".join(out)
+
+
 def _lines_inner(s, x: float, size: float, *, center: bool = False,
                  wrap: float = 0.0, max_lines: int = 2) -> str:
     """The inside of a chart's <text>, when the text may be several lines.
@@ -1177,11 +1220,18 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     horizontal = kind in ("row", "column", "stacked-row")
     # Room for the tick labels along the value axis and the category names.
     pad_l = (fs * 2.6) if not horizontal else (fs * 3.4)
-    # How deep the category band has to be. A label carrying its own break
-    # needs the room for it just as much as a wrapped one does — sizing this
-    # off wrapLabels alone put the second line of an authored two-line label
-    # straight through whatever sat under the chart.
+    # How deep the category band has to be — measured, not guessed. The
+    # horizontal plot's width does not depend on pad_b, so the labels can be
+    # laid out first and the band sized from the lines they ACTUALLY take:
+    # counting only the breaks the author typed missed the ones wrapping adds,
+    # and the extra line was drawn straight through the prose below.
     band = max(_label_lines(labels), wrap_lines)
+    if not horizontal:
+        probe_slot = max(0.1, w - pad_l - fs * 0.4) / n
+        base_sz = _lfs(fs * 0.82)
+        band = max(band, max(
+            (len(_cat_label(nm, probe_slot * 0.95, base_sz, wrap_lines)[1])
+             for nm in labels if nm), default=1))
     pad_b = fs * (1.6 + 0.95 * (band - 1))
     # A bar below zero hangs its value label under itself, which is exactly
     # where the category names are. Give that row its own line.
@@ -1313,27 +1363,20 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
             # A label only asks for a different size once it is more than one
             # line — a single-line one keeps the size it always had, which is
             # what leaves every existing chart byte-for-byte unchanged.
-            csize = _lfs(fs * 0.82)
             budget = (pad_l * 0.9) if horizontal else (slot * 0.95)
-            multi = "\n" in str(name) or wrap_lines > 1
-            if multi:
-                csize = _fit_size(name, budget, csize)
-            # A label that already breaks itself may still hold an over-wide
-            # line, so it gets the same budget an auto-wrapped one does — with
-            # room for the extra line that splitting a money range costs.
-            lwrap = budget if multi else 0
-            lmax = max(wrap_lines, str(name).count("\n") + 2) if multi else wrap_lines
+            # Same question the band measurement asked, same answer.
+            csize, cparts = _cat_label(name, budget, _lfs(fs * 0.82), wrap_lines)
             if horizontal:
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" '
                              f'y="{base + inner / 2 + fs * 0.3:.4f}" text-anchor="end" '
                              f'font-size="{csize:.4f}" fill="{ink["label"]}"'
                              f'{_ch_hook(c, f"label:{gi}")}>'
-                             f'{_lines_inner(name, px - fs * 0.3, csize, center=True, wrap=lwrap, max_lines=lmax)}</text>')
+                             f'{_lines_from(cparts, px - fs * 0.3, csize, center=True)}</text>')
             else:
                 parts.append(f'<text x="{base + inner / 2:.4f}" y="{py + ph + fs:.4f}" '
                              f'text-anchor="middle" font-size="{csize:.4f}" '
                              f'fill="{ink["label"]}"{_ch_hook(c, f"label:{gi}")}'
-                             f'>{_lines_inner(name, base + inner / 2, csize, wrap=lwrap, max_lines=lmax)}</text>')
+                             f'>{_lines_from(cparts, base + inner / 2, csize)}</text>')
     # the axis itself, last so it sits over the gridlines. With negatives in
     # play it is the ZERO line, not the floor — a rule under the bars would be
     # drawn somewhere no bar starts from.
