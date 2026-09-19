@@ -44,6 +44,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from docsync.stage import _origin_slug
+
 ROOT = Path(__file__).resolve().parent.parent
 VENDOR_YML = ROOT / "vendor.yml"
 # Per-machine additions, gitignored — see consumers().
@@ -57,6 +59,23 @@ EXTRA = ["report2027/tools/serve.py",
          # consumer — without this ride-along, Connect GitHub works in this
          # repo and silently falls back to paste-a-token everywhere else.
          "github-app.json"]
+
+
+def restage_cmd(bid: str, slug: str | None) -> list[str]:
+    """The command that re-stages one binding of a CONSUMER, run with the
+    consumer as cwd. Its repo is passed explicitly, and that is load-bearing:
+    docsync.stage's own fallback is the origin of the checkout the running
+    module was imported from (ROOT), which is right when a repo stages itself
+    and wrong the moment one repo stages another. Left to the fallback, a
+    vendor whose import resolved to primer-editor's docsync — a worktree, a
+    PYTHONPATH, the consumer's package mid-rewrite under --force — stamped the
+    Budget Primer's manifest with Hawaii-Appleseed/primer-editor, and the hub
+    then named a DIFFERENT collab room for it (2026-09-18). No origin means no
+    flag: the manifest's own record, then the editor's ask, stand as before."""
+    cmd = [sys.executable, "-m", "docsync.stage", "--id", bid]
+    if slug:
+        cmd += ["--repo", slug]
+    return cmd
 
 
 def _sh(args: list[str], cwd: Path) -> str:
@@ -225,9 +244,9 @@ def vendor_one(repo: Path, files: list[str], *, dry: bool, force: bool,
 
     if changed:
         ids = stage_ids(repo)
+        slug = _origin_slug(repo)
         for bid in ids:
-            r = subprocess.run([sys.executable, "-m", "docsync.stage", "--id", bid],
-                               cwd=repo)
+            r = subprocess.run(restage_cmd(bid, slug), cwd=repo)
             if r.returncode != 0:
                 print(f"  STAGE FAILED for '{bid}' — fix and re-run "
                       f"python3 -m docsync.stage --id {bid} in {repo}",

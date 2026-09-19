@@ -63,7 +63,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from docsync.registry import ROOT, RegistryError, load_registry  # noqa: E402
 from docsync.stage import COLLAB_CLIENT, EDITOR, SERVICE_WORKER, _origin_slug, stage  # noqa: E402
-from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers  # noqa: E402
+from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers, restage_cmd  # noqa: E402
 
 # The hub's front door onto the rooms, the route that says who is signed in,
 # and the document store — all paths on the hub's own origin
@@ -156,15 +156,51 @@ def _local_names() -> dict[str, str]:
         return {}
 
 
-def sources(*, dry: bool) -> list[dict]:
+def _hub_registry(hub: Path | None) -> dict:
+    """What the hub already records, project by project — absent, or junk, is {}."""
+    if hub is None:
+        return {}
+    try:
+        reg = json.loads((hub / "primer" / "projects.json").read_text())
+        return reg if isinstance(reg, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def project_name(bid: str, raw: dict, local: dict, previous: dict) -> str | None:
+    """A project's display name, from sources that KNOW it: the binding's own
+    `name:`, then this machine's projects.json (serve.py writes it), then what
+    the hub already shows. None when nobody knows — never a guess. This used
+    to fall through to humanise(bid), and projects.json is generated and
+    untracked, so any checkout that had not run serve.py (a fresh clone, CI, a
+    worktree) republished "Budget Primer FY2026–27" as "Budget Primer"."""
+    prev = previous.get(bid) if isinstance(previous, dict) else None
+    return (raw.get("name") or local.get(bid)
+            or (prev.get("name") if isinstance(prev, dict) else None) or None)
+
+
+# Projects sources() had to leave out because nothing could name them. vendor()
+# must not treat them as gone from the registry and delete their hub copy.
+NAMELESS: list[str] = []
+
+
+def sources(*, dry: bool, hub: Path | None = None) -> list[dict]:
     """Every project the hub gets, staged fresh: {id, name, dir, repo}."""
     names = _local_names()
+    previous = _hub_registry(hub)
     out: dict[str, dict] = {}
 
     def add(bid: str, raw: dict, staged: Path, repo: str | None, where: str,
             page: Path | None):
         if raw.get("hub") is False:
             print(f"  {bid}: hub: false — skipped")
+            return
+        name = project_name(bid, raw, names, previous)
+        if not name:
+            print(f"  {bid}: no display name anywhere (no `name:` on its binding in "
+                  f"{where}/docsync.yml, none on this machine, none on the hub) — "
+                  "skipped, and left as it is on the hub", file=sys.stderr)
+            NAMELESS.append(bid)
             return
         if not (staged / "engine" / "manifest.json").is_file():
             print(f"  {bid}: nothing staged at {staged} — skipped", file=sys.stderr)
@@ -176,7 +212,7 @@ def sources(*, dry: bool) -> list[dict]:
         if bid in out:
             print(f"  {bid}: also in {out[bid]['where']} — {where} wins")
         out[bid] = {"id": bid, "dir": staged, "repo": repo, "where": where, "page": page,
-                    "name": raw.get("name") or names.get(bid) or humanise(bid)}
+                    "name": name}
 
     # This repo: the registry proper, staged in-process.
     print(f"{ROOT}")
@@ -204,7 +240,8 @@ def sources(*, dry: bool) -> list[dict]:
                 print(f"  {bid}: hub: false — skipped")
                 continue
             if not dry:
-                r = subprocess.run([sys.executable, "-m", "docsync.stage", "--id", bid],
+                # The consumer's OWN origin, explicitly — see restage_cmd.
+                r = subprocess.run(restage_cmd(bid, slug),
                                    cwd=repo, capture_output=True, text=True)
                 if r.returncode != 0:
                     print(f"  {bid}: stage failed in {repo.name} — skipped\n{r.stderr}",
@@ -358,7 +395,8 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
     # anything else the hub keeps beside them.
     if primer.is_dir():
         for d in sorted(primer.iterdir()):
-            if d.is_dir() and d.name not in registry and (d / "engine" / "manifest.json").is_file():
+            if (d.is_dir() and d.name not in registry and d.name not in NAMELESS
+                    and (d / "engine" / "manifest.json").is_file()):
                 changed.append(f"- {d}/")
                 if not dry:
                     shutil.rmtree(d)
@@ -385,7 +423,7 @@ def main() -> int:
         return 2
 
     try:
-        projects = sources(dry=a.dry_run)
+        projects = sources(dry=a.dry_run, hub=hub)
     except RegistryError as err:
         print(f"registry error: {err}", file=sys.stderr)
         return 2
@@ -407,6 +445,11 @@ def main() -> int:
             print(f"  … and {len(changed) - 40} more")
         if not a.dry_run:
             print("  review and commit in the hub — a push there deploys.")
+    if NAMELESS:
+        print("\nNOT VENDORED — nothing could name these projects; give each a `name:` "
+              "on its binding in docsync.yml:", file=sys.stderr)
+        for bid in NAMELESS:
+            print(f"  {bid}", file=sys.stderr)
     if missing:
         print("\nBROKEN ON THE HUB — a page reaches for something its copy does not have:",
               file=sys.stderr)
@@ -415,7 +458,7 @@ def main() -> int:
         print("  The report will paint without it. Put the file where the build "
               "puts the page (or beside the editor), or fix the reference.", file=sys.stderr)
         return 1
-    return 0
+    return 1 if NAMELESS else 0
 
 
 if __name__ == "__main__":

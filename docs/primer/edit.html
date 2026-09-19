@@ -14701,8 +14701,17 @@ function collabWire(d) {
     d.addEventListener('pointercancel', () => { collabPointerAt = 0; }, true);
     collabFollowWire(d);
   }
-  if (collab) collabPaintPeers(d);
-  else agentPaint();
+  if (collab) {
+    collabPaintPeers(d);
+    // The chip's titles are RESOLVED against this document — collabPeerPlace
+    // looks up what each peer has in hand — so they go stale exactly as the
+    // peer boxes would if they were not repainted here. A peer who picks up a
+    // shape and sends presence beats our render of that shape by a couple of
+    // hundred milliseconds, so the lookup found nothing, the title fell back
+    // to "reading page 2", and it stayed wrong until that peer moved again:
+    // presence arriving is the only other thing that repaints it.
+    collabChip();
+  } else agentPaint();
 }
 
 // --- presence (Phase 3) ------------------------------------------------

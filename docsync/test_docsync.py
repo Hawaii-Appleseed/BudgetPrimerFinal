@@ -3035,6 +3035,35 @@ check_eq("...skipping the title slots, which position cannot know about",
 check_eq("an empty doc proposes nothing", di.proposals("   \n", _SLOTS)["rows"], [])
 
 
+# ---- vendoring: a consumer's repo and name are never guessed -----------
+# 2026-09-18: a vendor run from a worktree stamped the Budget Primer's hub
+# manifest with primer-editor's repo (stage.py's ROOT fallback, reached
+# because the consumer restage passed no --repo) and its name as "Budget
+# Primer" (hub.py's humanise() fallback, reached because the generated
+# projects.json was absent). A room is owner~repo~project, so either moves
+# staff into a different room. Both sources of the guess are pinned here.
+from docsync.vendor import restage_cmd                    # noqa: E402
+from docsync.hub import project_name                      # noqa: E402
+
+check_eq("a consumer restage names the consumer's own repo",
+         restage_cmd("budget-primer", "Hawaii-Appleseed/BudgetPrimerFinal")[-4:],
+         ["--id", "budget-primer", "--repo", "Hawaii-Appleseed/BudgetPrimerFinal"])
+check_eq("no origin: no --repo, so the manifest's own record (or the editor's ask) stands",
+         "--repo" in restage_cmd("budget-primer", None), False)
+_prev = {"budget-primer": {"name": "Budget Primer FY2026–27", "repo": "x"}}
+check_eq("a binding's own name wins",
+         project_name("budget-primer", {"name": "The Primer"}, {"budget-primer": "Local"}, _prev),
+         "The Primer")
+check_eq("then this machine's projects.json",
+         project_name("budget-primer", {}, {"budget-primer": "Local"}, _prev), "Local")
+check_eq("then what the hub already shows",
+         project_name("budget-primer", {}, {}, _prev), "Budget Primer FY2026–27")
+check_eq("and never a guess from the id",
+         project_name("budget-primer", {}, {}, {}), None)
+check_eq("junk on the hub is not a name either",
+         project_name("budget-primer", {}, {}, {"budget-primer": "oops"}), None)
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")
