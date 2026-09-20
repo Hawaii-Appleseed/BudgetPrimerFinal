@@ -480,7 +480,8 @@ check("a moved prose block travels in one positioned wrapper",
       '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;width:4in;z-index:1">'
       '<p>Text.</p></div>')
 check("its vacated flow space stays held", moved_para.html("a.b"),
-      '<div class="ds-spacer" style="width:4in;height:0.5in;flex:0 0 auto"')
+      '<div class="ds-spacer" data-spacer-for="para.a.b" data-anc-host="spacer:para.a.b" '
+      'style="width:4in;height:0.5in;flex:0 0 auto"')
 os.environ["DOCSYNC_EDIT"] = "1"
 try:
     check("in edit mode the wrapper is the editor's drag handle",

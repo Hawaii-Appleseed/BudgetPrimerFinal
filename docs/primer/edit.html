@@ -9209,6 +9209,32 @@ function anchorHostBox(d, page, key) {
   const bottom = Math.max(...boxes.map(b => b.y + b.h));
   return { x: Math.min(...boxes.map(b => b.x)), y, w: Math.max(...boxes.map(b => b.w)), h: bottom - y };
 }
+/** Every strut holds the height of the element it stands in for — as it is
+ *  NOW. `reserve` was written at the first move and never again, so a pinned
+ *  heading given a second line, or a box resized, left the flow holding the
+ *  old height: a gap too big or too small, forever. After a render, measure
+ *  each moved element against its strut and correct the strut in place — no
+ *  re-render, the spacer's own height is the only thing that changes — and
+ *  record it, so the published page reserves the same. Returns whether any
+ *  changed; a nudge under three hundredths is rounding, not a change. */
+function syncReserves(d) {
+  if (!layout || !layout.positions) return false;
+  let changed = false;
+  for (const [id, p] of Object.entries(layout.positions)) {
+    if (!p || p.reserve === undefined || isHidden(id)) continue;
+    const sp = d.querySelector(`.ds-spacer[data-spacer-for="${CSS.escape(id)}"]`);
+    const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+    const page = el && el.closest('section.page');
+    if (!sp || !el || !page) continue;
+    const h = +inchBox(el, page).h.toFixed(2);
+    if (!(h > 0) || Math.abs(h - p.reserve) < 0.03) continue;
+    p.reserve = h;
+    sp.style.height = h + 'in';
+    changed = true;
+  }
+  if (changed) markDirty();
+  return changed;
+}
 /** A moved anchored object keeps its paragraph and changes its distance: `y`
  *  is where it now sits, so dy is what is left after the paragraph's edge. */
 function anchorRebase(d, page, st, y) {
@@ -9228,7 +9254,9 @@ function anchorButtonsPaint() {
     b.classList.toggle('on', !!(st && st.anchor));
     b.classList.toggle('arming', !!mine && anchorArm === mine);
     if (typeof wrapRowsPaint === 'function' && $('ar-wraprow')) wrapRowsPaint();
-    b.title = st && st.anchor ? `Anchored to "${st.anchor.to}" — click to release it where it stands`
+    b.title = st && st.anchor ? (st.anchor.to.startsWith('spacer:')
+        ? 'Follows the place it was moved from, so it keeps its distance from that text — click to pin it where it stands'
+        : `Anchored to "${st.anchor.to}" — click to release it where it stands`)
       : anchorArm === mine ? 'Click the paragraph this should follow (Esc cancels)'
       : 'Anchor — make this follow a paragraph, so it moves when the text does';
   });
@@ -13451,6 +13479,10 @@ function placer(d, el, page) {
     if (!heldFlow || spacer) return;
     spacer = d.createElement('div');
     spacer.className = 'ds-spacer ds-ghost';
+    // The same two names the renderer's spacer() gives it, so the anchor
+    // written at the drop finds its host before the re-render does.
+    spacer.dataset.spacerFor = id;
+    spacer.dataset.ancHost = 'spacer:' + id;
     spacer.style.cssText = `width:${box.w.toFixed(2)}in;height:${box.h.toFixed(2)}in;`
       + 'flex:0 0 auto';
     spacer.setAttribute('aria-hidden', 'true');
@@ -13523,7 +13555,12 @@ function placer(d, el, page) {
     if (!shapeId) {
       const prev = layout.positions[id] || {};
       const w = pinW();
-      const reserve = prev.reserve ?? (heldFlow ? +box.h.toFixed(2) : undefined);
+      // The strut holds the height the element HAS, measured now, not the
+      // height it had the day it was first moved: it used to be written once
+      // and never again, so retexting or resizing a pinned heading left a gap
+      // in the flow the size of the old one. (syncReserves does the same after
+      // every render, for the edits that do not pass through here.)
+      const reserve = (heldFlow || prev.reserve !== undefined) ? +box.h.toFixed(2) : undefined;
       // Stored in the element's OWN coordinate space (page space minus delta),
       // so the renderer's naive left/top reproduces the exact visual spot even
       // inside a positioned ancestor. For page-anchored elements delta is 0
@@ -13533,6 +13570,13 @@ function placer(d, el, page) {
                               ...(w ? { w } : {}),
                               ...(reserve ? { reserve } : {}),
                               ...(zNew !== null && prev.z === undefined ? { z: zNew } : {}) };
+      // A flow element leaving the flow follows the place it left. Its inch
+      // was fixed and the flow was not: a sentence added above moved the
+      // spacer and everything after it, and the pinned piece sat where it
+      // was, over whatever had flowed under it. Anchored to its own strut it
+      // moves with the text it came out of — the distance is what the drop
+      // set, and anchorRebase writes it. A person's own anchor is kept.
+      if (heldFlow && !prev.anchor) layout.positions[id].anchor = { to: 'spacer:' + id };
       anchorRebase(d, page, layout.positions[id], y);
     }
     clearGuides(d);
@@ -17396,6 +17440,7 @@ function wire(roots) {
   }
   applyZoom();
   placeAnchors(d);             // anchored objects find their paragraphs FIRST,
+  if (syncReserves(d)) placeAnchors(d);   // a strut re-sized moves what hangs below it
   reportFit(d);                // so every measurement below sees them there
   paintSel(d);                 // the selection is ids, so it survives a render
   presentRewire(d);            // and so does a running presentation

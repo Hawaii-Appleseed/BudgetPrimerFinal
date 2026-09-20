@@ -3599,7 +3599,15 @@ class Layout:
         if not p or not p.get("reserve"):
             return ""
         wid = f'width:{p["w"]}in;' if p.get("w") else ""
-        return (f'<div class="ds-spacer" style="{wid}height:{p["reserve"]}in;'
+        # Named twice: `data-spacer-for` so the editor can find the strut and
+        # re-measure it against the element it stands in for, and as an anchor
+        # HOST, `spacer:<id>`, so a moved flow element can follow the place it
+        # left. The spacer rides the flow; a pinned inch does not — so when the
+        # prose above grew, the strut moved and the heading stayed, over
+        # whatever had flowed under it. Anchored to its own vacated slot the
+        # piece keeps its distance from the text it came out of.
+        return (f'<div class="ds-spacer" data-spacer-for="{el_id}" '
+                f'data-anc-host="spacer:{el_id}" style="{wid}height:{p["reserve"]}in;'
                 f'flex:0 0 auto" aria-hidden="true"></div>')
 
     def sec(self, el_id: str) -> str:
