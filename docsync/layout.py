@@ -2777,6 +2777,20 @@ def anchor_attrs(obj: dict) -> str:
 # render (imported nodes do not run their scripts), so the two cannot drift.
 ANCHOR_JS = (
     "(function(){var W=%(w)s;function go(){"
+    # Struts first: an element that reserves flow space and whose page holds
+    # no spacer for it gets one, exactly where it stands in the DOM — which is
+    # the slot it left, since going absolute moves nothing in the tree. The
+    # same markup spacer() emits, so the editor and the anchors below cannot
+    # tell the two apart.
+    "var rs=document.querySelectorAll('[data-reserve-for]');"
+    "for(var j=0;j<rs.length;j++){var e=rs[j],rid=e.getAttribute('data-reserve-for');"
+    "var rp=e.closest('.page');if(!rp||!e.parentNode)continue;"
+    "if(rp.querySelector('.ds-spacer[data-spacer-for=\"'+rid+'\"]'))continue;"
+    "var sp=document.createElement('div');sp.className='ds-spacer';"
+    "sp.setAttribute('data-spacer-for',rid);sp.setAttribute('data-anc-host','spacer:'+rid);"
+    "sp.setAttribute('aria-hidden','true');var rw=e.getAttribute('data-reserve-w');"
+    "sp.style.cssText=(rw?'width:'+rw+'in;':'')+'height:'+e.getAttribute('data-reserve')+'in;flex:0 0 auto';"
+    "e.parentNode.insertBefore(sp,e);}"
     "var els=document.querySelectorAll('[data-anc]');"
     "for(var i=0;i<els.length;i++){var el=els[i],pg=el.closest('.page');"
     "if(!pg)continue;var key=el.getAttribute('data-anc');"
@@ -3015,6 +3029,11 @@ class Layout:
                               + [p for p in self.positions.values() if isinstance(p, dict)])
             if isinstance(a, dict) and isinstance(a.get("to"), str) and a.get("to")}
         self._anchor_sent = False
+        # Ids whose vacated flow slot is held. The runtime materialises the
+        # strut for any of these whose renderer never called spacer() — see
+        # attr() and ANCHOR_JS — so it ships whenever one exists.
+        self.reserved = {k for k, p in self.positions.items()
+                         if isinstance(p, dict) and p.get("reserve")}
         self.fills = raw.get("fill") or {}
         # Editor affordances only: ids the editor refuses to drag, and groups
         # that select-and-move as one. The renderer reads neither, so they
@@ -3417,7 +3436,7 @@ class Layout:
     def _anchor_once(self) -> str:
         """The anchor runtime, once per document and only when something is
         anchored — a layout with no anchors emits the bytes it always did."""
-        if self._anchor_sent or not self.anchor_hosts:
+        if self._anchor_sent or not (self.anchor_hosts or self.reserved):
             return ""
         self._anchor_sent = True
         return f"<script>{ANCHOR_JS % {'w': f'{float(self.page_w):g}'}}</script>"
@@ -3570,6 +3589,18 @@ class Layout:
             bits.append(anim_attrs(p["anim"]).strip())
         if p and p.get("anchor"):
             bits.append(anchor_attrs(p).strip())
+        # The strut is the renderer's to emit (spacer(), beside the element),
+        # and not every renderer does: C.t(), slot_attr() and most L.attr()
+        # call sites never learned to. In those reports the editor held the
+        # place live during the drag and the next render closed the gap — the
+        # whole page lurched up. So the element also SAYS what it reserves,
+        # and the runtime (ANCHOR_JS) puts a strut before any such element
+        # whose page has none for it. One that spacer() already emitted is
+        # found and left alone, so a renderer that does call it changes
+        # nothing. Hidden gives the slot back, so it reserves nothing.
+        if p and p.get("reserve") and not hid:
+            rw = f' data-reserve-w="{p["w"]}"' if p.get("w") else ""
+            bits.append(f'data-reserve-for="{el_id}" data-reserve="{p["reserve"]}"{rw}')
         return (" " + " ".join(bits)) if bits else ""
 
     def spacer(self, el_id: str) -> str:

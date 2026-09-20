@@ -5863,13 +5863,21 @@ function fitCheck(d) {
     if (low > PAGE_H_IN + FIT_TOL_IN)
       bad.push({ page: i + 1, over: +(low - PAGE_H_IN).toFixed(2), who, kind: 'flow' });
     // Moved boxes and floating text do not grow the page — they are simply cut.
-    pg.querySelectorAll('[data-el], [data-box]').forEach(el => {
+    // Past the RIGHT edge as much as the bottom: the drag clamps x, but a
+    // graphic scaled from a corner, a rotated wide box, or a text box that
+    // crept as it was resized is clipped there just as silently, and this
+    // used to look only down. Shapes too — they live in the page's SVG and
+    // nothing else measures them.
+    pg.querySelectorAll('[data-el], [data-box], [data-shape]').forEach(el => {
       const r = el.getBoundingClientRect();
       if (!r.height) return;
+      const who = el.dataset.el || el.dataset.box || el.dataset.shape;
       const b = (r.bottom - pr.top) / px;
       if (b > PAGE_H_IN + FIT_TOL_IN)
-        bad.push({ page: i + 1, over: +(b - PAGE_H_IN).toFixed(2),
-                   who: el.dataset.el || el.dataset.box, kind: 'placed' });
+        bad.push({ page: i + 1, over: +(b - PAGE_H_IN).toFixed(2), who, kind: 'placed' });
+      const rt = (r.right - pr.left) / px;
+      if (rt > PAGE_W_IN + FIT_TOL_IN)
+        bad.push({ page: i + 1, over: +(rt - PAGE_W_IN).toFixed(2), who, kind: 'placed', side: 'right' });
     });
   });
   d.documentElement.classList.remove('ds-fitcheck');
@@ -5884,12 +5892,24 @@ function paintCut(d, bad) {
   new Set(bad.map(b => b.page)).forEach(n => {
     const pg = pages[n - 1];
     if (!pg) return;
-    const worst = Math.max(...bad.filter(b => b.page === n).map(b => b.over));
-    const cut = d.createElement('div');
-    cut.className = 'ds-cut';
-    cut.style.cssText = `top:${PAGE_H_IN}in;height:${worst + 0.15}in`;
-    cut.dataset.label = `cut off in the PDF — ${worst.toFixed(2)}in`;
-    pg.appendChild(cut);
+    const mine = bad.filter(b => b.page === n);
+    const below = mine.filter(b => b.side !== 'right'), right = mine.filter(b => b.side === 'right');
+    if (below.length) {
+      const worst = Math.max(...below.map(b => b.over));
+      const cut = d.createElement('div');
+      cut.className = 'ds-cut';
+      cut.style.cssText = `top:${PAGE_H_IN}in;height:${worst + 0.15}in`;
+      cut.dataset.label = `cut off in the PDF — ${worst.toFixed(2)}in`;
+      pg.appendChild(cut);
+    }
+    if (right.length) {
+      const worst = Math.max(...right.map(b => b.over));
+      const cut = d.createElement('div');
+      cut.className = 'ds-cut ds-cut-r';
+      cut.style.cssText = `left:${PAGE_W_IN}in;right:auto;top:0;height:${PAGE_H_IN}in;width:${worst + 0.15}in`;
+      cut.dataset.label = `cut off in the PDF — ${worst.toFixed(2)}in`;
+      pg.appendChild(cut);
+    }
   });
 }
 
@@ -5900,7 +5920,7 @@ function paintCut(d, bad) {
  *  as the render that just ran. Sent back to whoever asked the editor to
  *  change something, because they cannot measure a page and it can. */
 function fitReport() {
-  const cut = (lastFit || []).map(b => ({ page: b.page, who: b.who, over: b.over }));
+  const cut = (lastFit || []).map(b => ({ page: b.page, who: b.who, over: b.over, side: b.side || 'bottom' }));
   return { cut, pages: [...new Set(cut.map(c => c.page))] };
 }
 
@@ -5913,7 +5933,7 @@ function reportFit(d) {
   $('fit').hidden = false;
   $('fit').textContent = `⚠ ${pages.length} page${pages.length > 1 ? 's' : ''} cut in print: `
                        + pages.join(', ');
-  $('fit').title = bad.map(b => `page ${b.page}: ${b.who} is ${b.over}in past the cut`).join('\n');
+  $('fit').title = bad.map(b => `page ${b.page}: ${b.who} is ${b.over}in past the ${b.side === 'right' ? 'right edge' : 'cut'}`).join('\n');
   markCutChips(pages);
 }
 
@@ -9186,7 +9206,7 @@ function anchorSrc() {
 }
 /** Put every anchored object where its paragraph is, in the live document. */
 function placeAnchors(d) {
-  if (!d || !d.querySelector('[data-anc]')) return;
+  if (!d || !d.querySelector('[data-anc], [data-reserve-for]')) return;
   const w = d.defaultView;
   if (!w.__dsAnchor) { try { w.eval(anchorSrc()); } catch (e) { return; } }
   try { w.__dsAnchor(); } catch (e) { /* a half-built document; the next render places */ }
@@ -17741,6 +17761,7 @@ function wire(roots) {
               border-top:2px dashed #C0392B;
               background:repeating-linear-gradient(45deg,
                 rgba(192,57,43,.13) 0 7px, rgba(192,57,43,.05) 7px 14px); }
+    .ds-cut-r { border-top:0; border-left:2px dashed #C0392B; }
     .ds-cut::after { content:attr(data-label); position:absolute; right:4px; top:3px;
                      font:10px/1.4 system-ui; color:#fff; background:#C0392B;
                      padding:1px 6px; border-radius:0 0 4px 4px; }

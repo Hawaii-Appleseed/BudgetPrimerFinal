@@ -477,8 +477,19 @@ moved_para = _content(_layout({"positions": {"para.a.b": {"x": 1, "y": 2, "w": 4
                                                           "reserve": 0.5}}}))
 check("a moved prose block travels in one positioned wrapper",
       moved_para.html("a.b"),
-      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;width:4in;z-index:1">'
+      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;width:4in;z-index:1" '
+      'data-reserve-for="para.a.b" data-reserve="0.5" data-reserve-w="4">'
       '<p>Text.</p></div>')
+# A renderer that never calls spacer() still gets a strut: the element names
+# what it reserves and the runtime puts one before it. Hidden gives it back.
+check_eq("an unmoved element reserves nothing",
+         "data-reserve" in _layout({}).attr("x"), False)
+check_eq("a hidden moved element reserves nothing",
+         "data-reserve" in _layout({"positions": {"x": {"x": 1, "y": 2, "reserve": 0.5}},
+                                    "hidden": ["x"]}).attr("x"), False)
+check("a reserving layout ships the runtime that makes the strut",
+      _layout({"positions": {"x": {"x": 1, "y": 2, "reserve": 0.5}}})._anchor_once(),
+      "data-reserve-for")
 check("its vacated flow space stays held", moved_para.html("a.b"),
       '<div class="ds-spacer" data-spacer-for="para.a.b" data-anc-host="spacer:para.a.b" '
       'style="width:4in;height:0.5in;flex:0 0 auto"')
