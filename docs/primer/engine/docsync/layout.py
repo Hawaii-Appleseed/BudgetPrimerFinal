@@ -2797,8 +2797,17 @@ ANCHOR_JS = (
     # A slot of several paragraphs is several hosts: its TOP is the first
     # one's, its BOTTOM the last one's, so "under this text" means under all
     # of it — and a paragraph added to the slot moves what hangs below it.
+    # THIS page only. The sums below are page-local — the host's edge minus
+    # this page's top — so a host found on another sheet yields a `top` of
+    # however many inches apart the two pages are, and the object leaves the
+    # page entirely. A document-wide fallback used to do exactly that when a
+    # slot was renamed (a section moved to another page) or the object was
+    # dragged off its host's page. No host here means no measurement: the
+    # object keeps the y it was left at, which is what a page without
+    # JavaScript shows and what the editor's own anchorSet already enforces
+    # (it refuses to anchor to a paragraph that is not on this page).
     "var sel='[data-anc-host=\"'+key+'\"]';var hs=pg.querySelectorAll(sel);"
-    "if(!hs.length)hs=document.querySelectorAll(sel);if(!hs.length)continue;"
+    "if(!hs.length)continue;"
     "var bottom=el.getAttribute('data-anc-edge')==='bottom';"
     "var host=bottom?hs[hs.length-1]:hs[0];"
     "if(host===el||el.contains(host)||host.contains(el))continue;"
@@ -3376,6 +3385,13 @@ class Layout:
         # still wins: attr() joins css then extra, and the later declaration in
         # an inline style is the one that applies.
         s = f'margin:0;position:absolute;left:{p["x"]}in;top:{p["y"]}in'
+        if p.get("w") or p.get("h"):
+            # Same reason as the margin above, and the same compounding: the
+            # inch a drag stored is the MEASURED rect, padding and border
+            # included. A designed piece that carries either (a callout, a
+            # tile) read that number as content width and painted wider than
+            # it was dropped, and the next drag wrote the wider number back.
+            s += ";box-sizing:border-box"
         if p.get("w"):
             s += f';width:{p["w"]}in'
         # Height is opt-in. A text box with a fixed height either clips its
@@ -4185,7 +4201,15 @@ class Layout:
             b = self.dressed(b)
             act = b.get("act")
             an = anim_attrs(b.get("anim")) + anchor_attrs(b)
-            css = (f'position:absolute;left:{b["x"]}in;top:{b["y"]}in;'
+            # border-box, always: w and h are what the editor MEASURED — the
+            # outer rect its handles were drawn around. Read as content width
+            # instead, a filled box rendered its padding wider than the number
+            # said, the next resize measured that and wrote it back, and the
+            # box grew by its own padding (.24in) on every drag. It also keeps
+            # this div the same width as the <button> the reader gets for an
+            # acting box, which has carried border-box from the start.
+            css = (f'box-sizing:border-box;position:absolute;'
+                   f'left:{b["x"]}in;top:{b["y"]}in;'
                    f'width:{b["w"]}in;z-index:{int(b.get("z", 2))}')
             if b.get("h"):
                 css += f';min-height:{b["h"]}in'
@@ -4359,7 +4383,8 @@ class Layout:
         out = []
         for t in mine:
             t = self.dressed(t)
-            css = (f'position:absolute;left:{t["x"]}in;top:{t["y"]}in;'
+            css = (f'box-sizing:border-box;position:absolute;'
+                   f'left:{t["x"]}in;top:{t["y"]}in;'
                    f'width:{t["w"]}in;z-index:{int(t.get("z", 2))}')
             if t.get("rot"):
                 css += f';transform:rotate({t["rot"]}deg)'

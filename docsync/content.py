@@ -621,10 +621,26 @@ class Content:
             if not k.startswith(prefix):
                 continue
             html = block_html(self.raw(k))
+            # An added section is a slot like any other: it can be styled, and
+            # something can be anchored to it. Both were written by the editor
+            # and thrown away here — the type panel set a size the page never
+            # showed, and a figure told to follow the section found no host to
+            # measure, because only _style emits data-anc-host. It also
+            # registers the key as styleable, without which the build reports
+            # a style on an added section as aimed at a slot that cannot carry
+            # one. On the WRAPPER, so a heading, its paragraphs and its list
+            # are all covered by the one declaration.
+            attrs = self._style(k)
             if edit:
-                html = (f'<div class="extra-section" data-slot="{k}" data-extra="1">'
+                html = (f'<div class="extra-section" data-slot="{k}" '
+                        f'data-extra="1"{attrs}>'
                         + (html or '<p><em>New section — click to write.</em></p>')
                         + '</div>')
+            elif attrs:
+                # Published, the wrapper exists only when it carries something
+                # — the same rule html() follows, so a report whose sections
+                # are unstyled and unfollowed emits exactly the bytes it did.
+                html = f"<div{attrs}>{html}</div>"
             out.append(html)
         return "".join(out)
 

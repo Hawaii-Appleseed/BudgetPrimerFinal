@@ -10763,19 +10763,30 @@ async function pasteClip(d) {
   const off = 0.2 * (++clip.pastes);         // repeated pastes cascade
   const copies = [];
   const idMap = new Map();                   // original box id -> its copy's
+  // Pasting is how an object crosses pages, and an anchor cannot cross one:
+  // `to` names a paragraph that lives on the page it was copied from, and the
+  // runtime measures hosts on the object's own sheet only. Landing back on
+  // that same page the anchor is still true, and is kept.
+  const placeByPage = x => {
+    if (String(x.page) !== String(page)) {
+      delete x.anchor; delete x.wrap; delete x.wrapPad;
+    }
+    x.page = page;
+    return x;
+  };
   clip.items.forEach(it => {
     if (it.kind === 'shape') {
       const nid = freeShapeId(it.data.kind);
-      layout.shapes.push({ ...it.data, id: nid, page,
+      layout.shapes.push(placeByPage({ ...it.data, id: nid,
         x: Math.min(it.data.x + off, PAGE_W_IN - Math.min(it.data.w, PAGE_W_IN)),
-        y: Math.min(it.data.y + off, PAGE_H_IN - Math.min(it.data.h, PAGE_H_IN)) });
+        y: Math.min(it.data.y + off, PAGE_H_IN - Math.min(it.data.h, PAGE_H_IN)) }));
       idMap.set(it.data.id, nid);   // a toggle's target may be a shape too
       copies.push(nid);
     } else {
       const nid = freeBoxId();
-      boxes().push({ ...it.data, id: nid, page,
+      boxes().push(placeByPage({ ...it.data, id: nid,
         x: Math.min(it.data.x + off, PAGE_W_IN - Math.min(it.data.w, PAGE_W_IN)),
-        y: Math.min(it.data.y + off, PAGE_H_IN - 0.4) });
+        y: Math.min(it.data.y + off, PAGE_H_IN - 0.4) }));
       idMap.set(it.data.id, nid);
       copies.push('text.' + nid);
     }
@@ -11540,12 +11551,42 @@ function pageContents(pid) {
 /** Drop a pageContents() payload onto page `pid`, with fresh ids so the copy
  *  and the original are independent objects rather than two views of one. */
 function pastePageContents(pid, c) {
-  let n = 0;
-  (c.boxes || []).forEach(b => { const x = clone(b); x.id = freeTId(); x.page = pid; boxes().push(x); n++; });
-  (c.tables || []).forEach(t => { const x = clone(t); x.id = freeTId(); x.page = pid; tables().push(x); n++; });
-  (c.shapes || []).forEach(sh => { const x = clone(sh); x.id = freeTId(); x.page = pid; layout.shapes.push(x); n++; });
+  const made = [];
+  const idMap = new Map();                 // original id -> its copy's
+  const take = (src, push) => (src || []).forEach(o => {
+    const x = clone(o);
+    x.id = freeTId();
+    idMap.set(String(o.id), x.id);
+    // An anchor names a paragraph, and a paragraph is on ONE page. Carried to
+    // another, `to` still names the slot it was copied from — and the runtime
+    // looks for a host on the object's own sheet (layout.py's ANCHOR_JS), so
+    // the copy would claim to follow text that is not there and a wrap would
+    // have nothing to flow around. A copy that lands on another page is placed
+    // BY that page, the same call masterFromPage makes for an item it lifts.
+    if (String(o.page) !== String(pid)) {
+      delete x.anchor; delete x.wrap; delete x.wrapPad;
+    }
+    x.page = pid;
+    push(x);
+    made.push(x);
+  });
+  take(c.boxes, x => boxes().push(x));
+  take(c.tables, x => tables().push(x));
+  take(c.shapes, x => layout.shapes.push(x));
+  // A copied toggle whose content came along in the same paste controls the
+  // COPY — the rule pasteClip already follows, for the same reason. Cloned
+  // verbatim, a duplicated page's button worked the disclosure on the page it
+  // was duplicated from; and deleting that page left the copy pointing at
+  // nothing, which refuses the whole build. Remapped only once every copy
+  // exists, so a button can name content made after it.
+  made.forEach(x => {
+    if (x.act !== 'toggle') return;
+    const was = toggleTargets(x);
+    const now = was.map(t => idMap.get(String(t)) || t);
+    if (now.some((t, i) => t !== was[i])) x.target = now.length === 1 ? now[0] : now;
+  });
   if (c.fill) { layout.fill = layout.fill || {}; layout.fill[pageFillId(pid)] = clone(c.fill); }
-  return n;
+  return made.length;
 }
 
 // ------------------------------------------------------------ masters
@@ -18403,6 +18444,44 @@ function moveExtra(key, dir) {
   source = source.replace(blockRe(a), '\x00A\x00').replace(blockRe(b), '\x00B\x00')
                  .replace('\x00A\x00', () => rb).replace('\x00B\x00', () => ra);
 }
+// Everything the layout says ABOUT a slot, said about its new name instead.
+// A slot key is a name, and the stores use it as one: the type panel's style
+// (layout.text), the hidden and locked lists, a group's members, the prose
+// block's own pinned position (para.<key>) and the strut holding its place
+// (spacer:para.<key>), and the `to` of every object anchored to it. Rename
+// the key in content.md alone — which is all moving a section between pages
+// is — and each of those goes on describing a slot that no longer exists:
+// the section loses its type (and a style left on a key nothing renders
+// REFUSES the whole build), a paragraph deleted inside it reappears, and a
+// figure that followed it follows nothing.
+function renameSlot(oldKey, newKey) {
+  if (oldKey === newKey) return;
+  // The slot, and the element the renderer builds from it (content.py's
+  // `para.<key>`), which is what the position/hidden/locked/group stores name.
+  const ids = new Map([[oldKey, newKey], [`para.${oldKey}`, `para.${newKey}`]]);
+  const to = id => ids.get(id) || id;
+  ['text', 'positions', 'sections', 'fill'].forEach(store => {
+    const m = layout[store];
+    if (!m) return;
+    ids.forEach((nk, ok) => {
+      if (!(ok in m)) return;
+      m[nk] = m[ok];
+      delete m[ok];
+    });
+  });
+  ['hidden', 'locked'].forEach(k => {
+    if (Array.isArray(layout[k])) layout[k] = layout[k].map(to);
+  });
+  if (Array.isArray(layout.groups)) layout.groups = layout.groups.map(g => g.map(to));
+  // An anchor names either the slot itself or the strut the block left behind.
+  const hosts = new Map([[oldKey, newKey],
+                         [`spacer:para.${oldKey}`, `spacer:para.${newKey}`]]);
+  [...Object.values(layout.positions || {}), ...(layout.boxes || []),
+   ...(layout.shapes || []), ...(layout.tables || [])]
+    .forEach(o => {
+      if (o && o.anchor && hosts.has(o.anchor.to)) o.anchor.to = hosts.get(o.anchor.to);
+    });
+}
 // Relocate a section to another page: the slot's <page> component decides the
 // page, so rewrite extra.<old>.<slug> -> extra.<new>.<slug> and drop the block
 // among the target page's extras. Slug kept, suffixed only on a clash.
@@ -18413,6 +18492,7 @@ function moveSectionToPage(key, newPage) {
   let newKey = `extra.${newPage}.${slug}`;
   const base = newKey;
   for (let n = 2; source.includes(`[[${newKey}]]`); n++) newKey = `${base}-${n}`;
+  renameSlot(key, newKey);
   removeExtra(key);
   const block = `\n\n[[${newKey}]]\n${body}`;
   const sibs = extraKeys(newPage);

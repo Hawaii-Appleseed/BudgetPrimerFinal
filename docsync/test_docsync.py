@@ -276,10 +276,10 @@ check_eq("an unmoved element keeps the renderer's own placement",
 
 moved = _layout({"positions": {"c.o": {"x": 1.2, "y": 3.4, "w": 5.0}}, "shapes": []})
 check("a moved element is absolutely placed", moved.attr("c.o"),
-      'style="margin:0;position:absolute;left:1.2in;top:3.4in;width:5.0in;z-index:1"')
+      'style="margin:0;position:absolute;left:1.2in;top:3.4in;box-sizing:border-box;width:5.0in;z-index:1"')
 check_eq("an override beats the renderer's placement",
          moved.style("c.o", "left:9in;top:9in"),
-         "margin:0;position:absolute;left:1.2in;top:3.4in;width:5.0in;z-index:1")
+         "margin:0;position:absolute;left:1.2in;top:3.4in;box-sizing:border-box;width:5.0in;z-index:1")
 
 # Hidden elements: Delete on a designed element records it here rather than
 # editing output that is regenerated every build. Published: display:none,
@@ -370,6 +370,14 @@ check("a moved flex element reserves its width and height",
 # different questions; one file used to answer both with 'h'.
 sized = _layout({"positions": {"photo": {"x": 1, "y": 2, "w": 3, "h": 2}}})
 check("a resized element is drawn at that size", sized.attr("photo"), "height:2in")
+# The inch came from a measured rect — padding and border included. Read as
+# content width, a padded piece paints wider than it was dropped and the next
+# drag writes the wider number back, exactly like the margin bug above it.
+check("a sized element measures border-box", sized.attr("photo"),
+      "box-sizing:border-box")
+check_eq("no size, no box model to declare",
+         "box-sizing" in _layout({"positions": {"p": {"x": 1, "y": 2}}}).attr("p"),
+         False)
 check_eq("a size does not imply reserved flow space", sized.spacer("photo"), "")
 check("a box resized past the bottom is caught",
       " ".join(_layout({"positions": {"p": {"x": 1, "y": 10, "h": 3}}}).check_bounds()),
@@ -477,7 +485,7 @@ moved_para = _content(_layout({"positions": {"para.a.b": {"x": 1, "y": 2, "w": 4
                                                           "reserve": 0.5}}}))
 check("a moved prose block travels in one positioned wrapper",
       moved_para.html("a.b"),
-      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;width:4in;z-index:1" '
+      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;box-sizing:border-box;width:4in;z-index:1" '
       'data-reserve-for="para.a.b" data-reserve="0.5" data-reserve-w="4">'
       '<p>Text.</p></div>')
 # A renderer that never calls spacer() still gets a strut: the element names
@@ -510,6 +518,27 @@ check_eq("a style aimed at a slot that never rendered one is reported",
 check_eq("a style aimed at an unstyleable slot is reported",
          _layout({"text": {"cip.body": {"size": 12}}}).unknown_text_keys({"a.b"}),
          ["cip.body"])
+
+# ---- added sections -------------------------------------------------------
+# extras() rendered its slots through block_html alone, so an added section was
+# the one slot that dropped both of these. The type panel offered a size and
+# the BUILD then refused the whole document ("styles text that cannot carry a
+# style"), and a figure told to follow a section found no data-anc-host to
+# measure against, so it never moved with the words.
+_xbody = ("[[extra.p1.foo]]\n## Hello\n\nWords.\n\n[[extra.p1.bare]]\nPlain.\n\n"
+          "[[sources]]\n[x]: A. — https://a.gov\n")
+_xlay = _layout({"text": {"extra.p1.foo": {"size": 22}},
+                 "positions": {"fig": {"x": 1, "y": 2,
+                                       "anchor": {"to": "extra.p1.foo"}}}})
+_xc = _content(_xlay, _xbody)
+_x = _xc.extras("p1")
+check("a styled section is rendered with its style", _x, '<div style="font-size:22px"')
+check("a followed section carries the host the anchor runtime measures",
+      _x, 'data-anc-host="extra.p1.foo"')
+check_eq("a section nobody styled or followed is the bare bytes it always was",
+         _x.endswith("<p>Plain.</p>"), True)
+check_eq("styling an added section no longer refuses the build",
+         _xlay.unknown_text_keys(_xc.styleable()), [])
 
 # ------------------------------------------------------- legibility floors
 from docsync.layout import (MIN_TEXT_PX, MIN_TEXT_PT, MIN_SUBLABEL_IN,   # noqa: E402
@@ -1672,6 +1701,10 @@ check("object style: its padding replaces the fill's default breathing room",
       _bx, "padding:.08in .12in;border-radius:8px;padding:0.15in;border-radius:4px")
 check("object style: a left rule is one edge, not four",
       _bx, "border-left:3px solid #6B9E78")
+# A style can bring padding and a border of its own; both have to sit INSIDE
+# the stored width, which is the rect the editor measured around the box.
+check("object style: pad and rule stay inside the box's own width",
+      _bx, "box-sizing:border-box")
 check("object style: the merged text style reaches the CSS — the style's "
       "font and the box's own size", _bx, "font-family:'Manrope';font-size:18px")
 check("columns in one box: CSS sets them", _bx, "column-count:2;column-gap:0.25in")
@@ -1684,6 +1717,7 @@ check("object style: a table's header band comes from its style",
 check("object style: and so does the banding", _tb, "background:#F1F4F2")
 check("object style: the style's `header: true` makes the first row a <th>",
       _tb, "<th")
+check("a table's border sits inside its width too", _tb, "box-sizing:border-box")
 check("object style: a family named only through an object style's text "
       "style is still fetched", _ol.font_link(), "Manrope")
 
@@ -1812,6 +1846,14 @@ check("wrap: a box says which side; the default gutter is the runtime's",
 # The runtime string itself — it rode out with text_boxes() above, once.
 from docsync.layout import ANCHOR_JS as _AJS                     # noqa: E402
 check("wrap: the runtime floats it", _AJS, "el.style.cssFloat=wrap")
+# The host is looked for on the object's OWN page and nowhere else. Every sum
+# after it is page-local, so a host found on another sheet put the object
+# however many inches apart the pages are — off the page entirely. No host
+# here means no measurement, and the object keeps the y it was left at.
+check("anchor: the host is looked for on this page", _AJS,
+      "var hs=pg.querySelectorAll(sel);if(!hs.length)continue;")
+check_eq("anchor: and never document-wide",
+         "document.querySelectorAll(sel)" in _AJS, False)
 check("wrap: as a previous sibling of the paragraph, never a child", _AJS, "par.insertBefore(el,host)")
 check("wrap: a phone gets the flow back", _wr.mobile_css(), "[data-wrap]{float:none !important}")
 check_eq("wrap: no wrap, no phone rule", "[data-wrap]" in _an.mobile_css(), False)
@@ -2096,6 +2138,13 @@ try:
              "onclick" in _ed, False)
     check("editor: same padding as published, so WYSIWYG holds",
           _ed, "padding:.08in .12in")
+    # ...and the same box model, or that shared padding makes the editor's
+    # div .24in wider than the reader's button. The stored w is a MEASURED
+    # rect: read as content width, a filled box paints wider than its number,
+    # the next resize measures that and writes it back, and the box grows by
+    # its own padding on every drag.
+    check("editor: border-box, so the padding is inside the stored width",
+          _ed, "box-sizing:border-box")
 finally:
     del os.environ["DOCSYNC_EDIT"]
 
