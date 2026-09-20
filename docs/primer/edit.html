@@ -13933,6 +13933,12 @@ function markDirty() {
   // saved draft branch. Locally, stepping edits back is undo's job.
   $('revert').hidden = local || !draftBranch;
   $('save').classList.toggle('dirty', dirty);
+  // A drop, a nudge and every other commit that does not render arrive here,
+  // and renderOnce() is not the only door into the room any more: without
+  // this a moved piece lived only in this tab's `layout` until the next
+  // render, and a collaborator's update landing first put it back where it
+  // was. A no-op when nothing changed, and before the session is ready.
+  collabFlushDirty();
   cacheDraft();                       // persist unsaved edits for offline safety
   if (typeof hubAutosaveSchedule === 'function' && docStore()) { hubSaveLabel(); hubAutosaveSchedule(); }
 }
@@ -14564,7 +14570,11 @@ async function boot() {
 // values every handler in this file mutates; the session in collab-client.js
 // (built from collab/client/session.mjs) MIRRORS them:
 //   · out: renderOnce() calls collabFlush() first, so each local edit becomes
-//     one document transaction — a text diff per slot, a key per layout move;
+//     one document transaction — a text diff per slot, a key per layout move.
+//     markDirty() flushes too (collabFlushDirty), for the commits that do not
+//     render — a drop, a nudge — and so does beforeRemote, so a commit still
+//     waiting on a busy render is in the document before a collaborator's
+//     update replaces `source`/`layout` under it;
 //   · in: the session calls collabAdopt() with the whole document when a
 //     collaborator's change lands — never while `busy()` (an inline editor
 //     open, a drag in progress), so nobody's caret is pulled out from under
@@ -14888,6 +14898,13 @@ function collabDiscardLive() {
 function collabNoteCaret() {
   collabCaretBefore = null;
   const key = collabParaOpen();
+  // Everything this editor holds goes in first, not only the open paragraph:
+  // a cell or box committed while a render was still running sat in
+  // `source`/`layout` waiting for the queued render to flush it, and the
+  // remote update about to land would have replaced both wholesale — the
+  // edit gone, its undo step already taken. Flushed here it is a concurrent
+  // edit, and the document merges the two.
+  collabFlushDirty();
   if (!key) return;
   collabLiveFlush();
   const i = collabHostCaretIndex();
@@ -15339,6 +15356,29 @@ function collabRenderSoon() {
 function collabFlush() {
   try { collab.flush(collabLiveFiles()); }
   catch (e) { console.warn('[collab] flush refused:', e); }
+}
+/** collabFlush() for callers that cannot know whether a session exists —
+ *  markDirty() runs from the first paint on, before `collab` is even
+ *  declared (a `let` further down; the ReferenceError is what the catch is
+ *  for), and while suggesting, when edits are proposals and stay out of
+ *  the document exactly as renderOnce() keeps them out. */
+function collabFlushDirty() {
+  try {
+    if (collab && !(suggesting && !suggestApplying)) collab.flush(collabParaNeutralFiles());
+  } catch (e) { if (!(e instanceof ReferenceError)) console.warn('[collab] flush refused:', e); }
+}
+/** What the editor holds, with the open paragraph left EXACTLY as the shadow
+ *  has it. collabLiveFiles() overlays the host's live words, which is right
+ *  for the tick that owns them (collabLiveFlush, guarded by "did they
+ *  change") and wrong for a flush that does not: a collaborator's words may
+ *  have landed in the shadow and not yet in the host, and writing the host
+ *  back would delete them and hand the merge a duplicate. */
+function collabParaNeutralFiles() {
+  const key = collabParaOpen();
+  if (!key) return { content: source, layout };
+  const m = collab.files().content.match(slotRe(key));
+  if (!m) return collabLiveFiles();
+  return { content: source.replace(slotRe(key), () => m[0]), layout };
 }
 
 /** Document -> local, then paint. `why` is adopt (joined), remote (someone
