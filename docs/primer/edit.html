@@ -3331,6 +3331,17 @@ function listToMd(el, depth) {
   return lines.join('\n');
 }
 
+/** `text` in `m…m`, with any whitespace at its edges left OUTSIDE the
+ *  markers. Whitespace only (or empty) carries no mark at all — there is
+ *  nothing to emphasise. */
+function edgeOut(text, m) {
+  const core = text.trim();
+  if (!core) return text;
+  const lead = text.slice(0, text.length - text.trimStart().length);
+  const tail = text.slice(text.trimEnd().length);
+  return `${lead}${m}${core}${m}${tail}`;
+}
+
 function nodeToMdInline(node) {
   let out = '';
   node.childNodes.forEach(n => {
@@ -3340,8 +3351,14 @@ function nodeToMdInline(node) {
     if (n.nodeType !== Node.ELEMENT_NODE) return;
     if (n.classList && n.classList.contains('ds-fnchip')) { out += `[^${n.dataset.fnId}]`; return; }
     const tag = n.tagName;
-    if (tag === 'B' || tag === 'STRONG') { out += `**${nodeToMdInline(n)}**`; return; }
-    if (tag === 'I' || tag === 'EM') { out += `*${nodeToMdInline(n)}*`; return; }
+    // A mark wraps WORDS, and the spaces beside them go outside it. Chromium
+    // hands a double-click the word AND its trailing space, so the obvious
+    // serialization was `*beta *` — which md_inline refuses (its rule wants no
+    // space beside the marker), and the asterisks reached the page as
+    // asterisks. Same text, markup that round-trips. Not underline: `__x __`
+    // does round-trip, and moving the space out would stop underlining it.
+    if (tag === 'B' || tag === 'STRONG') { out += edgeOut(nodeToMdInline(n), '**'); return; }
+    if (tag === 'I' || tag === 'EM') { out += edgeOut(nodeToMdInline(n), '*'); return; }
     if (tag === 'U') { out += `__${nodeToMdInline(n)}__`; return; }
     if (tag === 'A') { out += `[${nodeToMdInline(n)}](${n.getAttribute('href') || ''})`; return; }
     if (tag === 'IMG') { out += `![${n.getAttribute('alt') || ''}](${n.getAttribute('src') || ''})`; return; }
@@ -3623,6 +3640,78 @@ function insertNodeAt(d, host, range, node) {
  * A plain-text target (the cover title, an endnote) takes the text only:
  * there is no markdown there to parse, so pasted **stars** must stay stars.
  */
+/** Foreign markup made to look like something content.py could have emitted,
+ *  before htmlToMd reads it. Written for the one source staff actually paste
+ *  from — a Google Doc — whose clipboard HTML breaks three of htmlToMd's
+ *  assumptions at once:
+ *
+ *    <b style="font-weight:normal" id="docs-internal-guid-...">
+ *      <p dir="ltr"><span style="font-weight:700">Bold</span> and plain</p>
+ *      <p dir="ltr">A second paragraph</p></b>
+ *
+ *  The outer <b> is a marker, not bold — taken at face value it put ** round
+ *  the entire paste. Every real paragraph sits INSIDE it, so htmlToMd's block
+ *  loop (which reads root.children) saw one child and fused the lot into a
+ *  single paragraph. And Docs writes weight and slant on <span style>, never
+ *  as <b>/<i>, so all the bold and italic was dropped on the way through.
+ */
+function normaliseForeign(root) {
+  const unwrap = el => el.replaceWith(...el.childNodes);
+  const BLOCKS = 'p,div,ul,ol,li,h1,h2,h3,h4,h5,h6,table,blockquote,section,article';
+  const mk = tag => root.ownerDocument.createElement(tag);
+
+  // 1. A mark that contradicts itself in its own style attribute is not a
+  //    mark, and neither is one wrapped around whole blocks.
+  root.querySelectorAll('b,strong,i,em,u,font').forEach(el => {
+    const st = el.style || {};
+    const dec = st.textDecorationLine || st.textDecoration || '';
+    const denies = (el.matches('b,strong') && /^(normal|[1-5]00)$/.test(st.fontWeight || ''))
+                || (el.matches('i,em') && st.fontStyle === 'normal')
+                || (el.matches('u') && /none/.test(dec));
+    if (denies || el.querySelector(BLOCKS)) unwrap(el);
+  });
+
+  // 2. A container of blocks is not a paragraph: lift its blocks out, or they
+  //    all run together into one. Bounded — foreign markup nests deeply, and a
+  //    while(true) over a document someone else wrote is a hang waiting to
+  //    happen.
+  for (let pass = 0; pass < 12; pass++) {
+    const wrappers = [...root.querySelectorAll('div,section,article,span')]
+      .filter(el => el.querySelector(BLOCKS));
+    if (!wrappers.length) break;
+    wrappers.forEach(unwrap);
+  }
+
+  // 3. Weight and slant written as CSS become the marks the grammar knows.
+  //    400 and "normal" are what Docs puts on ORDINARY words — reading either
+  //    as bold would embolden an entire pasted document.
+  root.querySelectorAll('span,font').forEach(el => {
+    const st = el.style || {};
+    const w = parseInt(st.fontWeight, 10);
+    const dec = st.textDecorationLine || st.textDecoration || '';
+    const tags = [];
+    if (st.fontWeight === 'bold' || st.fontWeight === 'bolder' || w >= 600) tags.push('b');
+    else if (st.fontStyle === 'italic' || st.fontStyle === 'oblique') tags.push('i');
+    // Bold OR italic, never both: md_inline has no ***bold italic*** and the
+    // toolbar refuses to make one for that same reason (boldItalicBlocked).
+    if (/underline/.test(dec)) tags.push('u');
+    if (!tags.length) { unwrap(el); return; }
+    let node = mk(tags[0]);
+    node.append(...el.childNodes);
+    for (const tag of tags.slice(1)) {
+      const outer = mk(tag);
+      outer.append(node);
+      node = outer;
+    }
+    el.replaceWith(node);
+  });
+
+  // 4. And the same rule for marks that arrived already nested, from a web
+  //    page rather than a Doc: the OUTER one wins.
+  root.querySelectorAll('b i,b em,strong i,strong em,i b,i strong,em b,em strong')
+      .forEach(unwrap);
+}
+
 function pasteClean(d, host, e, { allowLists = false, inline = false, allowMd = true } = {}) {
   const cb = e.clipboardData;
   if (!cb) return;                       // no clipboard access: let the browser try
@@ -3637,6 +3726,7 @@ function pasteClean(d, host, e, { allowLists = false, inline = false, allowMd = 
     const tmp = d.createElement('div');
     tmp.innerHTML = html;
     tmp.querySelectorAll('script, style, meta, link').forEach(n => n.remove());
+    normaliseForeign(tmp);
     md = htmlToMd(tmp, { allowLists, inline });
   } else {
     md = text;
@@ -5632,10 +5722,15 @@ function paintRot(d, el) {
       `rotate(${st.rot} ${+(s.x + s.w / 2).toFixed(4)} ${+(s.y + s.h / 2).toFixed(4)})`);
     else el.removeAttribute('transform');
   } else {
-    // Rotation, scale and flip share one declaration in the renderer's order,
-    // so the live node and the committed page can never disagree.
+    // The renderer's declarations exactly (layout.py _style), so the live node
+    // and the committed page can never disagree: rotation on its OWN property,
+    // because a designed piece can wear a class transform (.lc-right's
+    // translateY(-50%)) and one inline `transform` replaces it — turning such
+    // a callout a hundredth of a degree used to drop its translate and the
+    // piece jumped half its own height. Scale and flip share the one transform
+    // declaration, where a second would silently eat the first.
+    el.style.rotate = st.rot ? `${st.rot}deg` : '';
     el.style.transform = [
-      st.rot ? `rotate(${st.rot}deg)` : '',
       (st.scale && st.scale !== 1) ? `scale(${st.scale})` : '',
       st.flip ? `scale(${st.flip.includes('h') ? -1 : 1},${st.flip.includes('v') ? -1 : 1})` : '',
     ].filter(Boolean).join(' ');
@@ -17645,6 +17740,14 @@ function wire(roots) {
        so there is something to click into. */
     .ds-inline { display:inline; }
     .ds-inline:empty { display:inline-block; min-width:1.5em; min-height:1em; }
+    /* The same floor for an emptied INLINE slot that is not being edited —
+       a heading or caption whose words were all deleted rendered a zero-width
+       span, so there was nothing left to click and no way back into it. The
+       block case is content.py's EMPTY_SLOT placeholder; this is its inline
+       half, and it costs the published page nothing (editor-only stylesheet). */
+    [data-slot][data-inline]:empty { display:inline-block; min-width:1.5em;
+               min-height:1em; outline:1px dashed #B9C9BE; outline-offset:1px;
+               border-radius:2px; }
     /* user-select ALL (not none): a footnote chip must be part of a text
        selection so it travels when you cut/copy a sentence to move it.
        user-select none made the browser skip it, silently dropping the

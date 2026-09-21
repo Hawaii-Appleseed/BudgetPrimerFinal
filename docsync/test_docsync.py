@@ -379,6 +379,11 @@ check_eq("no size, no box model to declare",
          "box-sizing" in _layout({"positions": {"p": {"x": 1, "y": 2}}}).attr("p"),
          False)
 check_eq("a size does not imply reserved flow space", sized.spacer("photo"), "")
+# The phone release frees what the engine pinned, and a rotation is part of
+# that pin: `transform:none` alone no longer reaches it.
+check("the phone release clears a rotation too",
+      _layout({"positions": {"c.o": {"x": 1, "y": 2, "rot": 15}}}).mobile_css(),
+      "rotate:none !important")
 check("a box resized past the bottom is caught",
       " ".join(_layout({"positions": {"p": {"x": 1, "y": 10, "h": 3}}}).check_bounds()),
       "past the bottom edge")
@@ -513,6 +518,21 @@ finally:
 c = _content(nostyle)
 c.html("a.b")
 check_eq("a slot that rendered an element is styleable", "a.b" in c.styleable(), True)
+
+# ---- an emptied slot ------------------------------------------------------
+# Deleting the last words of a paragraph left the block in content.md and
+# NOTHING in the page: no element, so no way to click back into the slot and
+# no way to get the text back but editing content.md by hand.
+_empty_body = "[[a.b]]\n\n[[sources]]\n[x]: A. — https://a.gov\n"
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _ec = _content(None, _empty_body).html("a.b")
+    check("an emptied slot still has something to click", _ec, 'data-slot="a.b"')
+    check("and says what it is", _ec, "empty — click and type")
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+check_eq("published, an emptied slot prints nothing",
+         _content(None, _empty_body).html("a.b"), "")
 check_eq("a style aimed at a slot that never rendered one is reported",
          nostyle.unknown_text_keys({"a.b"}), [])
 check_eq("a style aimed at an unstyleable slot is reported",
@@ -717,7 +737,12 @@ check("a box colour that is not a colour is caught",
 
 # ------------------------------------------------- rotation, opacity, shadow
 rotp = _layout({"positions": {"c.o": {"x": 1, "y": 2, "rot": 15, "alpha": 0.8}}})
-check("a rotated element turns in place", rotp.attr("c.o"), "transform:rotate(15deg)")
+# Its own property, never inside `transform`: an inline transform replaces
+# the class one a designed piece may wear (.lc-right's translateY(-50%)),
+# and the piece then jumps by exactly that translate.
+check("a rotated element turns in place", rotp.attr("c.o"), ";rotate:15deg")
+check_eq("a rotation never lands in transform",
+         "transform:rotate" in rotp.attr("c.o"), False)
 check("a faded element carries its opacity", rotp.attr("c.o"), "opacity:0.8")
 rots = _layout({"shapes": [{"id": "a", "page": 1, "kind": "rect", "x": 1, "y": 1,
                             "w": 2, "h": 1, "rot": 30, "alpha": 0.5,
@@ -728,7 +753,7 @@ check("a shape shadow is a drop-shadow filter", rots.layer(1), "drop-shadow(")
 rotb = _layout({"boxes": [{"id": "t1", "page": 3, "x": 1, "y": 2, "w": 3, "md": "hi",
                            "rot": -10, "shadow": {"blur": 0.1, "alpha": 0.5}}]})
 check("a box shadow is box-shadow", rotb.text_boxes(3), "box-shadow:")
-check("a box rotates too", rotb.text_boxes(3), "rotate(-10deg)")
+check("a box rotates too", rotb.text_boxes(3), ";rotate:-10deg")
 check("an opacity above one is caught",
       _layout_error({"positions": {"c.o": {"x": 1, "y": 2, "alpha": 1.5}}}),
       "not a fraction")
@@ -737,9 +762,12 @@ check("a scaled graphic carries its factor", scaled.attr("logo"), "scale(1.4)")
 check_eq("a scale of exactly 1 emits nothing",
          "scale" in _layout({"positions": {"c.o": {"x": 1, "y": 2, "scale": 1}}}).attr("c.o"),
          False)
-check("rotation and scale share one transform, in order",
+# Scale and flip stay in `transform` — the entrance keyframes animate the
+# `scale` property, and a grown entrance would otherwise erase a graphic's
+# own factor mid-flight.
+check("scale rides transform, rotation rides its own property",
       _layout({"positions": {"g": {"x": 1, "y": 2, "rot": 20, "scale": 1.5}}}).attr("g"),
-      "transform:rotate(20deg) scale(1.5)")
+      "rotate:20deg;transform:scale(1.5)")
 check("a non-positive scale is caught",
       _layout_error({"positions": {"g": {"x": 1, "y": 2, "scale": 0}}}),
       "scale must be positive")
@@ -795,8 +823,8 @@ imged = _layout({"positions": {"p": {"x": 1, "y": 1, "rot": 10, "flip": "h"}},
                  "img": {"p": {"radius": 0.12, "src": "assets/new.jpg",
                                "filter": {"bright": 1.1, "gray": 0.3},
                                "crop": {"imgW": 6.0, "dx": 1.2, "dy": 0.4}}}})
-check("rotate and flip share one transform declaration",
-      imged.attr("p"), "transform:rotate(10deg) scale(-1,1)")
+check("flip shares the one transform declaration with scale",
+      imged.attr("p"), "rotate:10deg;transform:scale(-1,1)")
 check_eq("a replaced image shows its replacement",
          imged.img_src("p", "assets/old.jpg"), "assets/new.jpg")
 check_eq("an unreplaced image keeps the designed file",

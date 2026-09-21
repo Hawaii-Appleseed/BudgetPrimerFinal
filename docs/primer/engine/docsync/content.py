@@ -216,6 +216,9 @@ def bullets(block: str) -> list[str]:
 # text(), t() and bullets() alike, half of which escape markup — an <i> here
 # would render as literal tags in the other half.
 NEW_SLOT = "\u26a0 new slot [[{key}]] — click and type to fill it"
+# What an emptied slot shows in the editor, so it stays a target. Styled like
+# bullets()' empty-list note, which says the same kind of thing.
+EMPTY_SLOT = '<i style="opacity:.55">empty — click and type</i>'
 
 
 def _unhead(block: str) -> str:
@@ -578,6 +581,17 @@ class Content:
         style = self._style(key)
         body = "".join(f"<p{attr}{slot}{style}>{h}</p>"
                        for h in paragraphs(self.raw(key)))
+        # An EMPTIED slot still needs something to click. Deleting the last
+        # words of a paragraph leaves the block in content.md and nothing in
+        # the page, so the slot had no element at all — no way back into it,
+        # and the text could only be restored by editing content.md by hand.
+        # A placeholder paragraph in edit mode only; published, an empty slot
+        # goes on printing nothing, which is what emptying it asked for. Same
+        # bargain as bullets()' empty-list note and raw()'s new-slot marker:
+        # the editor reads its text from content.md, never from the page, so
+        # a placeholder can never become content.
+        if not body and os.environ.get("DOCSYNC_EDIT"):
+            body = f"<p{attr}{slot}{style}>{EMPTY_SLOT}</p>"
         if self._styles and hasattr(self._styles, "attr"):
             el_id = f"para.{key}"
             pos = self._styles.attr(el_id)

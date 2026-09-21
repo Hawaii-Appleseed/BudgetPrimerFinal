@@ -3406,13 +3406,23 @@ class Layout:
             s += f';{"min-height" if p.get("hmin") else "height"}:{p["h"]}in'
         # z is an integer layer: below 0 sits under the text, above 0 over it.
         s += f';z-index:{int(p.get("z", 1))}'
-        # One transform declaration for all of it: a second would silently
-        # replace the first, which is exactly how a flip would eat a rotation.
+        # Rotation on its OWN property, not inside `transform`. A designed
+        # piece can wear a class transform — .lc-right's translateY(-50%) —
+        # and one inline `transform` REPLACES it: rotating such a callout by a
+        # hundredth of a degree dropped its translate and the piece jumped
+        # half its own height, both live and on the page. `rotate` composes
+        # with whatever the stylesheet said instead. Same reasoning as the
+        # entrance keyframes, which animate translate/scale for exactly this
+        # reason (see anim_css) — and the same reason scale and flip STAY in
+        # transform: those keyframes own the `scale` property, and a grown
+        # entrance would otherwise erase a graphic's own scale mid-flight.
+        if p.get("rot"):
+            s += f';rotate:{p["rot"]}deg'
+        # One transform declaration for the rest of it: a second would silently
+        # replace the first, which is exactly how a flip would eat a scale.
         # Default (centre) origin, so scale grows a graphic from its middle and
         # rotate/flip pivot in place — one origin that suits every operation.
         tf = []
-        if p.get("rot"):
-            tf.append(f'rotate({p["rot"]}deg)')
         if p.get("scale") is not None and float(p["scale"]) != 1:
             tf.append(f'scale({p["scale"]})')
         if p.get("flip"):
@@ -4226,7 +4236,7 @@ class Layout:
                 # indents the list away from everything it sits under.
                 css += ';padding:.08in .12in;border-radius:8px'
             if b.get("rot"):
-                css += f';transform:rotate({b["rot"]}deg)'
+                css += f';rotate:{b["rot"]}deg'      # own property — see _style
             if b.get("alpha") is not None:
                 css += f';opacity:{b["alpha"]:g}'
             if b.get("shadow"):
@@ -4387,7 +4397,7 @@ class Layout:
                    f'left:{t["x"]}in;top:{t["y"]}in;'
                    f'width:{t["w"]}in;z-index:{int(t.get("z", 2))}')
             if t.get("rot"):
-                css += f';transform:rotate({t["rot"]}deg)'
+                css += f';rotate:{t["rot"]}deg'      # own property — see _style
             if t.get("alpha") is not None:
                 css += f';opacity:{t["alpha"]:g}'
             if t.get("blend") and t["blend"] != "normal":
@@ -4561,7 +4571,8 @@ class Layout:
             "left:auto !important;right:auto !important;"
             "top:auto !important;bottom:auto !important;"
             "width:auto !important;max-width:100% !important;"
-            "transform:none !important;margin:0 0 12px !important}"
+            "transform:none !important;rotate:none !important;"
+            "margin:0 0 12px !important}"
             ".ds-spacer{display:none !important}"
             # Images are this module's business too — Insert image places them
             # and attr() sizes them in inches — and an inch-wide picture is
