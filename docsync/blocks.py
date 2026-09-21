@@ -264,7 +264,79 @@ def pdf_button(L, label: str = "Download PDF", *, bg: str = "#2F3E46",
         f'↓&nbsp;{label}</button>')
 
 
-def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "") -> str:
+# ---- words inside a drawing ---------------------------------------------------
+# A label a renderer writes INTO an SVG is frozen to the editor: the graphic
+# moves and resizes, the words can only be changed by editing Python. That is
+# the one way an "AI-generated element" ended up uneditable on the page, and
+# a warning after the fact did not stop it — so graphic() refuses at build
+# time, in edit mode, and the editor's draft does not render until every word
+# inside the drawing is one of three things:
+#
+#   a SLOT           svg_text(C, key, default, …) — the words live in
+#                    content.md and edit on the page;
+#   DERIVED DATA     <text … {C.derived("<how it is remade>")}> — a category
+#                    name, a series label that comes from a data file, named
+#                    with the command that regenerates it;
+#   FROZEN ON PURPOSE  graphic(…, frozen="<why>") — the whole drawing's words
+#                    are the drawing (a logo lockup, a wordmark), declared in
+#                    one place with a reason; docsync.check lists every such
+#                    declaration so the choice stays visible.
+#
+# Data marks pass on their own: numbers, currency, percentages, a tick like
+# "FY26", "TY23", "$5M", "1st", a month's three letters. The rule is one
+# function — is_data_mark — shared with docsync.check so the two agree.
+_WORD_RE = re.compile(r"[A-Za-z\u00C0-\u024F\u02BB\u2018]+")
+_TEXT_RE = re.compile(r"<text\b([^>]*)>(.*?)</text>", re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
+_HOOKED = ("data-slot", "data-fixed", "data-ch")
+
+
+def is_data_mark(t: str) -> bool:
+    """True for text that is a data mark, not words: no letters at all, or a
+    single run of at most three (a unit, a year prefix, an ordinal, a month)."""
+    words = _WORD_RE.findall(t)
+    return not words or (len(words) == 1 and len(words[0]) <= 3)
+
+
+_SENT_END_RE = re.compile(r"[.!?…][\"'”’)]*$")
+
+
+def is_sentence(t: str) -> bool:
+    """Sentence-shaped: five or more words ending in sentence punctuation.
+    A caption, wherever its numbers came from — which is why C.derived does
+    not excuse one inside a drawing (a category name, yes; a sentence, no)."""
+    return len(t.split()) >= 5 and bool(_SENT_END_RE.search(t))
+
+
+def svg_literals(svg: str) -> list[str]:
+    """Every <text> in `svg` the editor could never reach — the strings
+    graphic() refuses: words with no hook at all, and a whole SENTENCE even
+    under data-fixed (derived data is a value, not a caption). tspans are read
+    as part of their <text>."""
+    import html as _html
+    out = []
+    for m in _TEXT_RE.finditer(svg or ""):
+        attrs, inner = m.group(1), m.group(2)
+        if "data-slot" in attrs or "data-ch" in attrs:
+            continue
+        t = " ".join(_html.unescape(_TAG_RE.sub(" ", inner)).split())
+        if not t:
+            continue
+        if "data-fixed" in attrs:
+            if is_sentence(t):
+                out.append(t)
+            continue
+        if not is_data_mark(t):
+            out.append(t)
+    return out
+
+
+class SvgLiteralError(ValueError):
+    """A graphic was handed words the editor could never reach."""
+
+
+def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "",
+            frozen: str | None = None) -> str:
     """A free-standing SVG the editor can MOVE, RESIZE (proportionally, from
     any corner) and ROTATE like an image — its placement lives in layout.json
     under el_id, so a drag or a resize sticks across rebuilds.
@@ -274,7 +346,28 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "") -> str:
     Give every graphic a unique, stable el_id; the SVG MUST carry a viewBox
     (it scales to fill the wrapper); `w` is its default width in inches, which
     applies only until the user resizes — after that layout.json's width wins,
-    so a rebuild never overwrites their sizing."""
+    so a rebuild never overwrites their sizing.
+
+    Words inside the drawing are REFUSED in edit mode unless each is a slot
+    (svg_text), derived data (C.derived) or the graphic is declared
+    `frozen="<why>"` — see the note above is_data_mark. Publishing never
+    refuses (the published bytes are the renderer's to keep), but the draft
+    editor and docsync.check's edit-mode pass both build in edit mode, so a
+    literal cannot reach a person without being seen here first."""
+    edit = bool(os.environ.get("DOCSYNC_EDIT"))
+    if edit and not frozen:
+        lits = svg_literals(svg)
+        if lits:
+            shown = "; ".join(repr(x[:60]) for x in lits[:6])
+            more = f" … and {len(lits) - 6} more" if len(lits) > 6 else ""
+            raise SvgLiteralError(
+                f"graphic '{el_id}': {len(lits)} label(s) drawn inside the SVG as "
+                f"plain words, which the editor can never reach: {shown}{more}. "
+                f"Draw each with docsync.blocks.svg_text(C, key, default, …) so it "
+                f"edits on the page; a category or series name that comes from "
+                f"data takes C.derived('<how it is remade>') on its <text>; and a "
+                f"drawing whose words ARE the drawing says graphic(…, "
+                f"frozen='<why>').")
     klass = ("ds-graphic " + cls).strip()
     sized = L.positions.get(el_id, {}).get("w")
     base = "display:inline-block;vertical-align:middle;line-height:0"
@@ -282,8 +375,14 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "") -> str:
     if w and not sized:
         base += f";width:{w}in"
         pre = _graphic_mobile_once(L)
+    # The declaration rides the wrapper in edit mode so docsync.check can
+    # list it; published, the bytes are what they were.
+    fz = ""
+    if edit and frozen:
+        safe = str(frozen).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+        fz = f' data-frozen="{safe}"'
     return (f"{pre}{L.spacer(el_id)}"
-            f'<span class="{klass}"{L.attr(el_id, base)}>{_fit_svg(svg)}</span>')
+            f'<span class="{klass}"{L.attr(el_id, base)}{fz}>{_fit_svg(svg)}</span>')
 
 
 def svg_text(C, key: str, default: str, x, y, size, fill: str,

@@ -436,6 +436,9 @@ _SENT_END = re.compile(r"[.!?:;]\s*$")
 _PANEL_EDITED = ("text.", "table.", "endnote.")
 
 
+from .blocks import is_data_mark, is_sentence  # noqa: E402  — one rule, shared with graphic()
+
+
 def _prose(t: str, loose: bool = False) -> bool:
     """Sentence-shaped: what a person would expect to retype.
 
@@ -472,6 +475,8 @@ class _Coverage(HTMLParser):
         self.saw_page = False
         self._svg_text: list[str] | None = None
         self.frozen_prose: list[str] = []
+        self.frozen_declared: list[str] = []
+        self._svg_fixed = False
 
     def handle_starttag(self, tag, attrs):
         if tag in _VOID:
@@ -493,11 +498,18 @@ class _Coverage(HTMLParser):
         self.stack.append((tag, covered, el, trap, tag == "svg", page))
         if tag in _OPAQUE_TAGS:
             self.opaque += 1
-        if tag == "text" and not slot:
-            # An svg text element; aggregate its tspans for the prose test.
-            # One CARRYING data-slot (C.slot_attr on the <text> tag — the
-            # report2027 placeholder pattern) is editable, hence exempt.
+        if "data-frozen" in a:
+            # A graphic declared frozen on purpose (graphic(frozen="…")):
+            # listed, so the decision stays visible; never a finding.
+            self.frozen_declared.append(a.get("data-frozen") or "")
+        if tag == "text" and not slot and "data-ch" not in a:
+            # An svg text element; aggregate its tspans for the words test.
+            # One CARRYING data-slot (svg_text / C.slot_attr on the <text>
+            # tag) is editable; a native chart's data-ch text edits in the
+            # Chart panel. data-fixed (C.derived) covers a VALUE or a
+            # category name, never a sentence — that stays a caption.
             self._svg_text = []
+            self._svg_fixed = "data-fixed" in a
 
     def handle_endtag(self, tag):
         if tag in _VOID:
@@ -510,7 +522,11 @@ class _Coverage(HTMLParser):
             self.opaque = max(0, self.opaque - 1)
         if tag == "text" and self._svg_text is not None:
             whole = " ".join(t for t in self._svg_text if t).strip()
-            if _prose(whole):
+            # Any WORDS, not only a sentence: a legend entry or a step name is
+            # exactly as unreachable as a caption. The rule is graphic()'s own
+            # (blocks.is_data_mark), so the build and this check agree.
+            if whole and (is_sentence(whole) if self._svg_fixed
+                          else not is_data_mark(whole)):
                 self.frozen_prose.append(whole)
             self._svg_text = None
 
@@ -603,10 +619,17 @@ def check_editability(binding) -> list[Problem]:
     if frozen:
         problems.append(Problem(
             "editability",
-            f"{len(frozen)} sentence(s) drawn inside a graphic, so "
-            f"only the renderer can change them: {_samples(frozen)}. "
-            f"Captions belong in a slot beside the SVG, not in it",
+            f"{len(frozen)} label(s) drawn inside a graphic as plain words, so "
+            f"only the renderer can change them: {_samples(frozen)}. Draw each "
+            f"with blocks.svg_text (a slot), mark data with C.derived, or "
+            f"declare the graphic frozen='<why>'",
             level))
+    if cov.frozen_declared:
+        problems.append(Problem(
+            "editability",
+            f"{len(cov.frozen_declared)} graphic(s) declared frozen on purpose "
+            f"(words are the drawing): {_samples(cov.frozen_declared)}",
+            "warn"))
     if trapped:
         problems.append(Problem(
             "editability",

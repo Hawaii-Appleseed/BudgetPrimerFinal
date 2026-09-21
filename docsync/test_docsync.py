@@ -3379,6 +3379,54 @@ check_eq("published, no hook", svg_text(_dc, "lab.b", "A", 0, 10, 12, "#333"),
          '<text x="0" y="10" font-size="12" fill="#333">A</text>')
 
 
+# ---- words inside a drawing are refused at the build ---------------------
+# graphic() is the one way a movable SVG reaches a page, so it is where a
+# literal label is stopped: in edit mode (the editor's draft, the check's
+# edit-mode pass) a <text> with words and no hook raises; a slot (svg_text),
+# declared data (C.derived) or a declared-frozen graphic pass; publishing
+# never refuses. is_data_mark is the rule, shared with docsync.check.
+from docsync.blocks import graphic, is_data_mark, svg_literals, SvgLiteralError  # noqa: E402
+
+for _t, _want in [("$20.7M", True), ("60%", True), ("FY26", True), ("TY2023", True),
+                  ("1st", True), ("Jan 2026", True), ("$500/mo", True), ("12", True),
+                  ("Sign up", False), ("DOTAX", False), ("births served", False),
+                  ("Under $10K", False), ("MTok", False), ("$10 / $50 per MTok", False)]:
+    check_eq(f"is_data_mark({_t!r})", is_data_mark(_t), _want)
+
+_SVG_BAD = ('<svg viewBox="0 0 10 10"><text x="1" y="2">Sign up</text>'
+            '<text x="1" y="4">$1,500</text><text x="1" y="6">'
+            '<tspan>Baby</tspan> <tspan>arrives</tspan></text></svg>')
+check_eq("svg_literals lists the words and skips the marks",
+         svg_literals(_SVG_BAD), ["Sign up", "Baby arrives"])
+_SVG_OK = ('<svg viewBox="0 0 10 10"><text data-slot="a.b">Sign up</text>'
+           '<text data-fixed="make data">Education</text>'
+           '<text data-ch="label:0">Second</text><text>$5M</text></svg>')
+check_eq("…and every hooked label passes", svg_literals(_SVG_OK), [])
+check_eq("derived data excuses a name, never a sentence",
+         svg_literals('<svg><text data-fixed="x">Only the left pool is reachable today.</text>'
+                      '<text data-fixed="x">Human Services</text></svg>'),
+         ["Only the left pool is reachable today."])
+
+_gL = _layout({})
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    graphic(_gL, "fig.x", _SVG_BAD, w=2)
+    FAILS.append("graphic() accepted plain words inside an SVG in edit mode")
+except SvgLiteralError as e:
+    check("the refusal names the graphic and the words", str(e), "graphic 'fig.x': 2 label(s)")
+    check("…and says the three ways out", str(e), "svg_text")
+    check("…", str(e), "C.derived")
+    check("…", str(e), "frozen=")
+check("a hooked SVG renders", graphic(_gL, "fig.y", _SVG_OK, w=2), 'data-el="fig.y"')
+_fz = graphic(_gL, "fig.z", _SVG_BAD, w=2, frozen="a wordmark: the words are the drawing")
+check("a graphic declared frozen renders and says so",
+      _fz, 'data-frozen="a wordmark: the words are the drawing"')
+os.environ.pop("DOCSYNC_EDIT", None)
+_pub = graphic(_gL, "fig.x", _SVG_BAD, w=2)
+check_eq("publishing never refuses, and carries no declaration",
+         ("Sign up" in _pub, "data-frozen" in _pub, "data-el" in _pub), (True, False, False))
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")
