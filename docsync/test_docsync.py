@@ -3264,6 +3264,121 @@ check_eq("junk on the hub is not a name either",
          project_name("budget-primer", {}, {}, {"budget-primer": "oops"}), None)
 
 
+# ---- page copies: a duplicated designed page redraws from the document ----
+# The editor's Duplicate page stores a designed page's pristine markup on a
+# blank page (layout.pages.blanks[].copy) with every hook moved under
+# copy.<bid>.; pagecopy.fill() redraws it from the CURRENT words and layout
+# on every render, in both modes. See docsync/pagecopy.py.
+from docsync import pagecopy                              # noqa: E402
+
+_COPY_HTML = ('<h1 data-el="copy.p1.h"><span data-slot="copy.p1.h" data-inline="1">OLD</span></h1>'
+              '<div class="stat" data-el="copy.p1.stat" data-fill="copy.p1.stat" style="color:red">'
+              '<p>x</p></div>'
+              '<div data-el="copy.p1.gone">bye</div>'
+              '<div data-el="para.copy.p1.body"><p class="c" data-slot="copy.p1.body">old</p>'
+              '<p class="c" data-slot="copy.p1.body">old2</p></div>'
+              '<ul data-slot="copy.p1.items"><li>z</li></ul>'
+              '<svg viewBox="0 0 10 10"><path d="M0 0"/>'
+              '<text x="1" y="2" text-anchor="middle" data-slot="copy.p1.lab">old</text></svg>'
+              '<div class="extra-section" data-slot="copy.p1.sec" data-extra="1">old</div>'
+              '&amp; &#169; <img src="a.png">')
+_COPY_LAYOUT = {"positions": {"copy.p1.stat": {"x": 1, "y": 2, "w": 3, "reserve": 0.5}},
+                "hidden": ["copy.p1.gone"], "fill": {"copy.p1.stat": "#FFEEDD"},
+                "text": {"copy.p1.h": {"size": 20}},
+                "pages": {"order": [1, "p1"],
+                          "blanks": [{"id": "p1", "copy": {"of": 1, "html": _COPY_HTML}}]}}
+_COPY_MD = ("[[copy.p1.h]]\nHello\n\n[[copy.p1.body]]\nFirst.[^x]\n\nSecond.\n\n"
+            "[[copy.p1.items]]\n- one\n- two\n\n[[copy.p1.lab]]\nSign up & go\n\n"
+            "[[copy.p1.sec]]\n## Added\n\nWords.\n\n[[sources]]\n[x]: A. — https://a.gov\n")
+
+
+def _copy_render(edit):
+    was = os.environ.get("DOCSYNC_EDIT")
+    if edit:
+        os.environ["DOCSYNC_EDIT"] = "1"
+    else:
+        os.environ.pop("DOCSYNC_EDIT", None)
+    try:
+        L = _layout(_COPY_LAYOUT)
+        _content(L, _COPY_MD)                 # binds itself to L
+        return L.copy_html("p1"), L
+    finally:
+        if was is None:
+            os.environ.pop("DOCSYNC_EDIT", None)
+        else:
+            os.environ["DOCSYNC_EDIT"] = was
+
+
+_ce, _cL = _copy_render(True)
+check("a copied heading is the document's CURRENT words, as a slot",
+      _ce, '<span data-slot="copy.p1.h" data-inline="1" style="font-size:20px">Hello</span>')
+check("a copied element is placed by its own layout entry, extra css kept",
+      _ce, 'data-el="copy.p1.stat" data-placed style="margin:0;position:absolute;left:1in;top:2in;'
+           'box-sizing:border-box;width:3in;z-index:1;color:red;background:#FFEEDD"')
+check("…and its strut is emitted before it",
+      _ce, '<div class="ds-spacer" data-spacer-for="copy.p1.stat"')
+check("a hidden copy element ghosts", _ce, 'data-el="copy.p1.gone" data-hidden="1" style="display:none"')
+check_eq("a prose slot renders one <p> per paragraph, never twice",
+         _ce.count('data-slot="copy.p1.body"'), 2)
+check("…with the citation token left for resolve()", _ce, '<p class="c" data-slot="copy.p1.body">First.[^x]</p>')
+check("a list slot re-renders its items", _ce, '<ul data-slot="copy.p1.items"><li>one</li><li>two</li></ul>')
+check("an SVG label keeps its case-sensitive attributes and escapes its words",
+      _ce, '<svg viewBox="0 0 10 10"><path d="M0 0"/><text x="1" y="2" text-anchor="middle" '
+           'data-slot="copy.p1.lab">Sign up &amp; go</text></svg>')
+check("an added section renders as block markdown, without the page controls",
+      _ce, '<div class="extra-section" data-slot="copy.p1.sec" data-extra="1"><h2 class="sub">Added</h2><p>Words.</p></div>')
+check("entities and char refs pass through untouched", _ce, '&amp; &#169; <img src="a.png">')
+check_eq("every copied slot counts as used", set(_cL._content.unused_keys()) & {
+    "copy.p1.h", "copy.p1.body", "copy.p1.items", "copy.p1.lab", "copy.p1.sec"}, set())
+_cp, _ = _copy_render(False)
+check_eq("published, a copy carries no editing hooks",
+         [a for a in ("data-el", "data-slot", "data-inline", "data-extra", "data-fill", "data-hidden")
+          if a in _cp], [])
+check("…but the type panel's style still ships", _cp, '<h1><span style="font-size:20px">Hello</span></h1>')
+check("…and so does the placement", _cp, 'position:absolute;left:1in;top:2in')
+check_eq("a page that is not a copy draws nothing extra", _cL.copy_html(1), "")
+
+# A copy whose slot the document has not got: marked while editing, silent
+# when published — never a refused build over a copy.
+_miss = dict(_COPY_LAYOUT)
+_miss["pages"] = {"order": ["p1"], "blanks": [{"id": "p1", "copy": {
+    "of": 1, "html": '<p data-slot="copy.p1.nope" data-inline="1">x</p>'}}]}
+os.environ["DOCSYNC_EDIT"] = "1"
+_L2 = _layout(_miss); _content(_L2, _COPY_MD)
+check("a missing copy slot is marked while editing", _L2.copy_html("p1"), "new slot [[copy.p1.nope]]")
+os.environ.pop("DOCSYNC_EDIT", None)
+_L3 = _layout(_miss); _content(_L3, _COPY_MD)
+check_eq("…and renders empty when published", _L3.copy_html("p1"), '<p></p>')
+check_eq("a layout that binds no content skips the copy rather than half-drawing it",
+         _layout(_COPY_LAYOUT).copy_html("p1"), "")
+check_eq("copy_keys lists what a stored copy reads",
+         pagecopy.copy_keys(_COPY_HTML),
+         ["copy.p1.h", "copy.p1.body", "copy.p1.body", "copy.p1.items", "copy.p1.lab", "copy.p1.sec"])
+check("a malformed copy is refused at the layout",
+      _layout_error({"pages": {"order": ["p1"], "blanks": [{"id": "p1", "copy": "nope"}]}}),
+      "copy must be an object")
+
+# ---- text_or / svg_text: a label the renderer defaults ----------------------
+from docsync.blocks import svg_text                       # noqa: E402
+_dc = _content(None, "[[lab.a]]\nRephrased\n\n[[sources]]\n[x]: A. — https://a.gov\n")
+check_eq("text_or reads the slot when the document has it", _dc.text_or("lab.a", "Default"), "Rephrased")
+check_eq("…and the renderer's default when it has not", _dc.text_or("lab.b", "Default"), "Default")
+check_eq("a defaulted key is not reported unused, and not new",
+         ("lab.b" in _dc.unused_keys(), "lab.b" in _dc.new_keys()), (False, False))
+os.environ["DOCSYNC_EDIT"] = "1"
+_de = _content(None, "[[lab.a]]\nRephrased\n\n[[sources]]\n[x]: A. — https://a.gov\n")
+check_eq("svg_text draws a slotted <text> from the document's words",
+         svg_text(_de, "lab.a", "Default", 17, 9.5, 12.5, "#333", weight=700, anchor="middle"),
+         '<text x="17" y="9.5" font-size="12.5" fill="#333" font-weight="700" text-anchor="middle" '
+         'data-slot="lab.a">Rephrased</text>')
+check_eq("…and from the default, still as a slot, when the document lacks it",
+         svg_text(_de, "lab.b", "A & B", 0, 10, 12.5, "#333"),
+         '<text x="0" y="10" font-size="12.5" fill="#333" data-slot="lab.b">A &amp; B</text>')
+os.environ.pop("DOCSYNC_EDIT", None)
+check_eq("published, no hook", svg_text(_dc, "lab.b", "A", 0, 10, 12, "#333"),
+         '<text x="0" y="10" font-size="12" fill="#333">A</text>')
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

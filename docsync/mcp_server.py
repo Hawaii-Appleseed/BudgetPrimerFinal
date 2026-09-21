@@ -290,7 +290,7 @@ TOOLS = [
                     "editor. Verbs: inventory, status, audit, styles, getSlot, "
                     "setSlot, setStyle, setBoxText, place, recolor, rotate, lock, "
                     "group, ungroup, remove, duplicate, addTextBox, addShape, "
-                    "addPage, addSource, addEndnotesSection, applyScheme, anchor, "
+                    "addPage, duplicatePage, addSource, addEndnotesSection, applyScheme, anchor, "
                     "wrap, master, masterFrom, detachMaster, defineStyle, dress, "
                     "dropStyle, batch, undo, redo, save. A named style is how a "
                     "look is changed in ONE place: inventory().styles lists both "

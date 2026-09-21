@@ -286,6 +286,34 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "") -> str:
             f'<span class="{klass}"{L.attr(el_id, base)}>{_fit_svg(svg)}</span>')
 
 
+def svg_text(C, key: str, default: str, x, y, size, fill: str,
+             weight=None, anchor: str | None = None, extra: str = "") -> str:
+    """A label INSIDE a chart that the person can rephrase on the page.
+
+    A chart's legend entry, a step name under a circle, the caption on a bar
+    — words, not data marks — used to be literals in the renderer, so the
+    graphic moved and resized while its words could only be changed by
+    editing Python. This draws the <text> with C.slot_attr(key) on it (the
+    editor floats a field over an SVG slot; see editSvgSlot in edit.html) and
+    reads the words through C.text_or(key, default): the renderer's own
+    wording is the default, so a document written before the slot existed
+    renders exactly as it did and publishing does not raise on a label the
+    author never listed. Give every label a stable key (`<chart>.<what>`);
+    the key is what the person's edit is filed under.
+
+    `size` is in the SVG's own user units, as every other label there — the
+    three-units trap in the renderer's own comments applies unchanged. Pass
+    a data-derived label's DEFAULT from the DATA constant so it stays in step
+    with the model until someone retypes it; a retyped label does not move
+    the bar it sits on, which the handoff should say.
+    """
+    v = C.text_or(key, default).replace("&", "&amp;").replace("<", "&lt;")
+    wt = f' font-weight="{weight}"' if weight else ""
+    an = f' text-anchor="{anchor}"' if anchor else ""
+    return (f'<text x="{x}" y="{y}" font-size="{size}" fill="{fill}"{wt}{an}'
+            f'{extra}{C.slot_attr(key)}>{v}</text>')
+
+
 def _graphic_mobile_once(L) -> str:
     """Release a graphic's inch width on a screen too narrow to hold the sheet.
     Once per document, and from HERE rather than from Layout.mobile_css().

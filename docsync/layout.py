@@ -3271,6 +3271,13 @@ class Layout:
                 if b["id"] in bids:
                     raise LayoutError(f"pages.blanks: duplicate id '{b['id']}'")
                 bids.add(b["id"])
+                # A blank page may carry a COPY of a designed page's markup
+                # (the editor's Duplicate page; see pagecopy.py).
+                cp = b.get("copy")
+                if cp is not None and (not isinstance(cp, dict)
+                                       or not isinstance(cp.get("html"), str)):
+                    raise LayoutError(f"pages.blanks '{b['id']}': copy must be "
+                                      f"an object with the page's html")
             order = self.pages.get("order")
             if order is not None:
                 if not isinstance(order, list) or not order:
@@ -3984,6 +3991,28 @@ class Layout:
     def blank_ids(self) -> list:
         return [b["id"] for b in (self.pages.get("blanks") or [])]
 
+    def page_copy(self, page) -> dict | None:
+        """The stored copy a blank page carries, or None (see pagecopy.py)."""
+        for b in (self.pages.get("blanks") or []):
+            if str(b.get("id")) == str(page) and isinstance(b.get("copy"), dict):
+                return b["copy"]
+        return None
+
+    def copy_html(self, page) -> str:
+        """A copied designed page's markup, filled from the current document.
+        Empty for every page that is not one, so no other sheet moves a byte.
+        Without a Content bound there are no words to fill it from — the
+        renderer built its Layout unbound — and the copy is skipped rather
+        than half-drawn."""
+        cp = self.page_copy(page)
+        if not cp or not cp.get("html"):
+            return ""
+        C = getattr(self, "_content", None)
+        if C is None:
+            return ""
+        from .pagecopy import fill
+        return fill(cp["html"], self, C)
+
     def pagemeta(self, pages) -> str:
         """Declare this report's DESIGNED pages to the editor's page strip.
 
@@ -4361,6 +4390,17 @@ class Layout:
     def box(self, box_id: str) -> dict | None:
         return next((b for b in self.boxes if b.get("id") == box_id), None)
 
+    def bind_content(self, content) -> None:
+        """Called by Content's constructor with itself.
+
+        A copied designed page (pagecopy.py) re-renders its slots from
+        content.md on every build, and layer() — the one hook every renderer
+        emits inside every sheet — is where that copy is drawn. Layout has no
+        words of its own, so Content lends it the document, the same way it
+        lends its Footnotes just below.
+        """
+        self._content = content
+
     def bind_footnotes(self, fn) -> None:
         """Called by Content's constructor with its Footnotes.
 
@@ -4675,6 +4715,10 @@ class Layout:
         page that holds no shapes."""
         head = (self._mobile_css_once() + self._page_style_once()
                 + self._chart_tip_once() + self._anchor_once())
+        # A blank page that is a COPY of a designed one draws that page's
+        # markup first — the designed content the renderer never knew to
+        # emit for it — then its own shapes over it, like any other sheet.
+        head += self.copy_html(page)
         mine = ([s for s in self.shapes if s.get("page") == page]
                 + self.master_items(page, "shapes"))
         if not mine:

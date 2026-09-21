@@ -457,6 +457,10 @@ class Content:
         # reach argument as _page_style_once(); see Layout.endnotes_html().
         if styles is not None and hasattr(styles, "bind_footnotes"):
             styles.bind_footnotes(self.fn)
+        # And the document itself, for a copied page (pagecopy.py) that the
+        # layout draws and has to fill with words.
+        if styles is not None and hasattr(styles, "bind_content"):
+            styles.bind_content(self)
 
     def raw(self, key: str) -> str:
         if key not in self._raw:
@@ -493,6 +497,28 @@ class Content:
     def text(self, key: str) -> str:
         """Raw single-line value (titles, labels) with no Markdown conversion."""
         return " ".join(l.strip() for l in _unhead(self.raw(key)).splitlines() if l.strip())
+
+    def has(self, key: str) -> bool:
+        """Whether the document carries this slot at all."""
+        return key in self._raw
+
+    def text_or(self, key: str, default: str) -> str:
+        """text(), or `default` when the document has not got the slot.
+
+        For a label the RENDERER used to hard-code — a chart's legend entry,
+        a step name under a circle — and now offers as a slot so the person
+        can rephrase it on the page. The renderer's own wording is the
+        default, so a document written before the slot existed (a collab
+        room seeded from an older content.md, a report whose author never
+        listed every label) renders exactly as it did instead of a "new
+        slot" marker in the middle of a chart, and publishing does not
+        raise. The editor seeds its first edit from the words on the page
+        and writes the slot into content.md then. Marked used either way,
+        so the slot is never reported as unused when the document does
+        carry it."""
+        if key in self._raw:
+            return self.text(key)
+        return default
 
     def _style(self, key: str) -> str:
         """The style for a slot, and a note that this slot can carry one.

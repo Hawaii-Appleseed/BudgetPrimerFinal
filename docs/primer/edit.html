@@ -11854,28 +11854,194 @@ $('ar-master').addEventListener('change', async () => {
   await masterApply(pid, v || null);
 });
 
-/** A new blank page right after `pid`, carrying a copy of what was on it. */
+// ------------------------------------------------ copying a designed page
+// A designed page's content is the renderer's: Python draws it from
+// content.md, and nothing here can ask for a second copy of the page. So a
+// duplicate SNAPSHOTS the page — its pristine edit-mode markup, rendered
+// with none of this document's own overrides on it — moves every id and
+// slot key under copy.<bid>., writes each slot's words into content.md under
+// the new key, and files the markup on the blank page (layout.pages.blanks[]
+// .copy). docsync/pagecopy.py redraws it on every render from the CURRENT
+// words and layout, so the copy's headings, cards and labels edit, move,
+// hide and recolour like the original's. See that module's docstring.
+const PAGE_COPY_PREFIX = 'copy.';
+const pageCopyOf = pid => (pageBlanks().find(b => String(b.id) === String(pid)) || {}).copy || null;
+
+/** Render this document with another layout, in edit mode, and hand back the
+ *  HTML — nothing on screen changes. The virtual layout file is overwritten,
+ *  which the next render() overwrites again with the real one. */
+async function renderWith(lay) {
+  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  py.globals.set('SRC', source);
+  py.globals.set('LAYOUT', JSON.stringify(lay, null, 2));
+  py.globals.set('CONTENT', M.content);
+  py.globals.set('LAYOUT_PATH', M.layout || '');
+  py.globals.set('RENDER', M.render);
+  py.globals.set('OUT', M.out);
+  py.globals.set('PURGE', false);
+  return py.runPythonAsync(`
+import sys, os, io, runpy, contextlib
+os.environ['DOCSYNC_EDIT'] = '1'
+open('/repo/' + CONTENT, 'w').write(SRC)
+if LAYOUT_PATH: open('/repo/' + LAYOUT_PATH, 'w').write(LAYOUT)
+with contextlib.redirect_stdout(io.StringIO()):
+    runpy.run_path('/repo/' + RENDER, run_name='__main__')
+open('/repo/' + OUT).read()
+`);
+}
+
+/** Strip the editor's own layer out of a rendered page and move every hook
+ *  onto new names. `map(id)` names the copy's id for an original's. Returns
+ *  what the page held, by its ORIGINAL names, so the caller can carry the
+ *  words and the layout entries across. */
+function rewriteSnapshot(pg, map) {
+  // Not the design: shapes (the layer), text boxes and tables (they come
+  // through pastePageContents with fresh ids), struts the layout emitted
+  // for pieces that were moved, once-only style/script blocks the document
+  // already carries, the page meta, and the added-section controls.
+  pg.querySelectorAll('svg.shape-layer, .ds-textbox, [data-el^="table."], .ds-spacer, '
+    + 'style, script, #ds-pagemeta, .ds-xtools, .ds-handles, .ds-menu').forEach(n => n.remove());
+  const got = { ids: [], keys: [], fills: [], secs: [], text: new Map() };
+  const seenK = new Set();
+  pg.querySelectorAll('[data-el]').forEach(n => { got.ids.push(n.dataset.el); n.dataset.el = map(n.dataset.el); });
+  pg.querySelectorAll('[data-slot]').forEach(n => {
+    const k = n.dataset.slot;
+    if (!seenK.has(k)) {
+      seenK.add(k); got.keys.push(k);
+      const t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+      // What the page SHOWS, for a slot the document has not got (a label
+      // the renderer defaults): never the new-slot marker itself.
+      got.text.set(k, /^\u26a0 new slot/.test(t) ? '' : t);
+    }
+    n.dataset.slot = map(k);
+  });
+  pg.querySelectorAll('[data-fill]').forEach(n => { got.fills.push(n.dataset.fill); n.dataset.fill = map(n.dataset.fill); });
+  pg.querySelectorAll('[data-sec]').forEach(n => { got.secs.push(n.dataset.sec); n.dataset.sec = map(n.dataset.sec); });
+  // A section added from the connector keeps its words in the copy; its
+  // ↑↓⇄✕ controls would name a page the copy is not on.
+  pg.querySelectorAll('[data-extra]').forEach(n => { delete n.dataset.extra; });
+  // Derived on every render by pagecopy.fill from the copy's own entries.
+  pg.querySelectorAll('[data-anc-host], [data-anc], [data-reserve-for], [data-placed], [data-spacer-for]')
+    .forEach(n => ['data-anc-host', 'data-anc', 'data-anc-edge', 'data-anc-dy', 'data-wrap', 'data-wrap-pad',
+                   'data-reserve-for', 'data-reserve', 'data-reserve-w', 'data-placed', 'data-spacer-for']
+      .forEach(a => n.removeAttribute(a)));
+  return got;
+}
+
+/** A designed page as a copy: its pristine markup under new names. null when
+ *  it cannot be rendered — the caller then falls back to the blank page. */
+async function designedPageSnapshot(pid, bid) {
+  const live = docSheets().find(s => String(s.id) === String(pid));
+  if (!live || !py) return null;
+  const ids = [...live.pg.querySelectorAll('[data-el]')].map(e => e.dataset.el);
+  const keys = [...live.pg.querySelectorAll('[data-slot]')].map(e => e.dataset.slot);
+  const fills = [...live.pg.querySelectorAll('[data-fill]')].map(e => e.dataset.fill);
+  const secs = [...live.pg.querySelectorAll('[data-sec]')].map(e => e.dataset.sec);
+  // The PRISTINE render: this document's layout with everything that names
+  // one of this page's pieces taken out, so the markup holds the renderer's
+  // design and none of the person's overrides. Those are copied onto the
+  // new ids below, where they keep working.
+  const lay = clone(layout);
+  const drop = new Set([...ids, ...fills, ...secs]);
+  for (const id of drop) {
+    if (lay.positions) delete lay.positions[id];
+    if (lay.fill) delete lay.fill[id];
+    if (lay.sections) delete lay.sections[id];
+  }
+  if (lay.hidden) lay.hidden = lay.hidden.filter(id => !drop.has(id));
+  if (lay.text) keys.forEach(k => delete lay.text[k]);
+  delete lay.pages;                      // designed pages only, in identity order
+  lay.shapes = []; lay.boxes = []; lay.tables = [];
+  delete lay.groups; delete lay.locked; delete lay.masters; delete lay.pageMasters;
+  let html;
+  try { html = await renderWith(lay); }
+  catch (e) { console.warn('page snapshot: the pristine render failed', e); return null; }
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  let pg = doc.querySelector(`section.page[data-page="${CSS.escape(String(pid))}"]`);
+  if (!pg) {
+    const i = designedPages.findIndex(p => String(p.id) === String(pid));
+    pg = doc.querySelectorAll('section.page')[i] || null;
+  }
+  if (!pg) return null;
+  const map = id => PAGE_COPY_PREFIX + bid + '.' + id;
+  const got = rewriteSnapshot(pg, map);
+  return { html: pg.innerHTML, map, ...got };
+}
+
+/** A copy of a copy: the stored markup with copy.<pid>. renamed copy.<bid>. */
+function copiedPageSnapshot(pid, bid) {
+  const cp = pageCopyOf(pid);
+  if (!cp || !cp.html) return null;
+  const doc = new DOMParser().parseFromString(`<section>${cp.html}</section>`, 'text/html');
+  const pg = doc.querySelector('section');
+  const from = PAGE_COPY_PREFIX + pid + '.';
+  const map = id => id.startsWith(from) ? PAGE_COPY_PREFIX + bid + '.' + id.slice(from.length) : id;
+  const got = rewriteSnapshot(pg, map);
+  return { html: pg.innerHTML, map, ...got };
+}
+
+/** Carry a snapshot's words and layout entries onto the copy's names. */
+function adoptSnapshot(snap) {
+  const { map } = snap;
+  snap.keys.forEach(k => {
+    const has = slotRe(k).test(source);
+    const v = has ? readSlot(k) : (snap.text.get(k) || '');
+    writeSlot(map(k), v);
+  });
+  const pos = layout.positions || {};
+  snap.ids.forEach(id => {
+    if (pos[id]) {
+      const x = clone(pos[id]);
+      // An anchor names a paragraph on ONE page (see pastePageContents).
+      delete x.anchor; delete x.wrap; delete x.wrapPad;
+      pos[map(id)] = x;
+      layout.positions = pos;
+    }
+    if ((layout.hidden || []).includes(id)) layout.hidden = [...layout.hidden, map(id)];
+    if ((layout.sections || {})[id]) layout.sections[map(id)] = clone(layout.sections[id]);
+    if ((layout.locked || []).includes(id)) layout.locked = [...layout.locked, map(id)];
+  });
+  snap.fills.forEach(id => {
+    if ((layout.fill || {})[id]) layout.fill[map(id)] = clone(layout.fill[id]);
+  });
+  snap.keys.forEach(k => {
+    if ((layout.text || {})[k]) layout.text[map(k)] = clone(layout.text[k]);
+  });
+}
+
+/** A new page right after `pid`, carrying a copy of what was on it — the
+ *  movable layer, and for a designed page (or a copy of one) the designed
+ *  content too, as a copy the person can edit. */
 async function duplicatePage(pid) {
+  const designed = designedPages.some(p2 => String(p2.id) === String(pid));
   pushHistory();
   const order = pageOrder();
   const blanks = pageBlanks();
   let n = 1;
   while (blanks.some(b => b.id === 'p' + n)) n++;
   const bid = 'p' + n;
+  let snap = null;
+  if (designed) snap = await designedPageSnapshot(pid, bid);
+  else if (pageCopyOf(pid)) snap = copiedPageSnapshot(pid, bid);
   const at = order.findIndex(x => String(x) === String(pid));
   order.splice(at >= 0 ? at + 1 : order.length, 0, bid);
-  writeOrder(order, [...blanks, { id: bid }]);
+  const entry = snap ? { id: bid, copy: { of: pid, html: snap.html } } : { id: bid };
+  writeOrder(order, [...blanks, entry]);
   const c = pageContents(pid);
   const moved = pastePageContents(bid, c);
+  if (snap) adoptSnapshot(snap);
   if (masterNameOf(pid)) pageMasters()[bid] = masterNameOf(pid);
   markDirty();
   await render();
   setSelPage($('out').contentDocument, bid);
-  const designed = designedPages.some(p2 => String(p2.id) === String(pid));
-  $('stat').textContent = designed
-    ? `page duplicated — ${moved} placed item${moved === 1 ? '' : 's'} copied; `
-      + 'the designed content stays on its own page (the renderer owns it)'
-    : `page duplicated — ${moved} item${moved === 1 ? '' : 's'} copied`;
+  $('stat').textContent = snap
+    ? `page duplicated — everything on it is a copy you can edit here; a chart in the copy `
+      + 'keeps its numbers (the renderer draws those), and its endnotes are copied as text'
+    : designed
+      ? `page duplicated — ${moved} placed item${moved === 1 ? '' : 's'} copied; `
+        + 'the designed content could not be snapshotted, so it stays on its own page'
+      : `page duplicated — ${moved} item${moved === 1 ? '' : 's'} copied`;
+  return { ok: true, page: bid, copied: !!snap, items: moved };
 }
 
 async function addBlankPage(at) {
@@ -18740,10 +18906,70 @@ function richWear(host, wear = richOpts.wear) {
   }
 }
 
+/** Edit a slot drawn as SVG <text> — a chart's legend entry, a step name, a
+ *  bar's caption — in an HTML input floated exactly over it. One line, plain
+ *  text (that is what C.text() renders there); Enter or a click away commits,
+ *  Escape cancels. The words land in content.md like any other slot's. */
+function editSvgSlot(d, key, node) {
+  if (editing) return;
+  editing = true;
+  closeSources();
+  collabWarnShared(key, 'label');
+  const has = slotRe(key).test(source);
+  const cur = has ? readSlot(key)
+    : (node.textContent || '').replace(/\s+/g, ' ').trim().replace(/^\u26a0 new slot.*$/, '');
+  const win = d.defaultView;
+  const r = node.getBoundingClientRect();
+  const inp = d.createElement('input');
+  inp.className = 'ds-ch-edit ds-svg-edit';
+  inp.dataset.slot = key;
+  inp.value = cur;
+  const anchor = node.getAttribute('text-anchor');
+  const align = anchor === 'middle' ? 'center' : anchor === 'end' ? 'right' : 'left';
+  const w = Math.max(64, r.width + 28);
+  const left = align === 'center' ? r.left + r.width / 2 - w / 2
+    : align === 'right' ? r.right + 6 - w : r.left - 6;
+  const cs = win.getComputedStyle(node);
+  // The glyphs' RENDERED height, not the SVG's authored size: a chart's
+  // font-size is in its own user units and means nothing on screen.
+  inp.style.cssText = `position:absolute;left:${left + win.scrollX}px;top:${r.top + win.scrollY - 3}px;`
+    + `height:${r.height + 6}px;width:${w}px;font-size:${Math.max(11, r.height * 0.78).toFixed(1)}px;`
+    + `font-weight:${cs.fontWeight};font-family:${cs.fontFamily};text-align:${align};`;
+  d.body.appendChild(inp);
+  inp.focus(); inp.select();
+  showType(key);
+  let done = false;
+  const finish = async keep => {
+    if (done) return; done = true;
+    editing = false;
+    hubAutosaveFlushNext();
+    const val = inp.value.replace(/\s+/g, ' ').trim();
+    inp.remove();
+    if (keep && val !== cur) {
+      pushHistory();
+      writeSlot(key, val);
+      markDirty();
+      await render();
+      $('stat').textContent = `${key} — updated`;
+    }
+  };
+  inp.addEventListener('blur', () => { if (!modalOpen) finish(true); });
+  inp.addEventListener('keydown', e => {
+    e.stopPropagation();            // see editCell: the document handler would act on it too
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+}
+
 function edit(d, key) {
   suggestUnpaint(d);   // no proposed <ins> may ride into the words
   const blocks = [...d.querySelectorAll(`[data-slot="${key}"]`)];
   if (!blocks.length || editing) return;
+  // A chart's label: C.slot_attr on an SVG <text>. A contenteditable span
+  // cannot live inside an SVG (nothing renders it, nothing focuses it), so
+  // these edit in an HTML field floated over the glyph run — the same trick
+  // a native chart's title uses (editChartText).
+  if (blocks[0].namespaceURI === 'http://www.w3.org/2000/svg') { editSvgSlot(d, key, blocks[0]); return; }
   editing = true;
   closeSources();   // its citation counts would go stale behind an edit
 
@@ -18774,7 +19000,11 @@ function edit(d, key) {
     if (st && !wear.has(n.tagName)) wear.set(n.tagName, st);
   }
   if (host.tagName === blocks[0].tagName && wear.has(host.tagName)) host.setAttribute('style', wear.get(host.tagName));
-  const raw0 = readSlot(key);
+  // A slot the document has not got yet (content.py's text_or: a label the
+  // renderer defaults) opens on the words the page shows, never on nothing;
+  // its first commit writes the block. The new-slot marker is not words.
+  const raw0 = slotRe(key).test(source) ? readSlot(key)
+    : (blocks[0].textContent || '').replace(/\s+/g, ' ').trim().replace(/^\u26a0 new slot.*$/, '');
   const headMark = allowLists ? '' : (raw0.match(/^#{1,6}[ \t]+/) || [''])[0];
   const raw = richUnhead(raw0, { headMark, allowLists });
   const rehead = md => richRehead(md, { headMark });
@@ -24083,7 +24313,7 @@ const PILOT_BATCH_VERBS = {
 // and renders nothing — it is here because this set is also the allowlist of
 // what a room message may reach, and asking what styles exist has to be
 // possible before dressing anything in one.
-const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles']);
+const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'duplicatePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles']);
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
@@ -24143,13 +24373,16 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
                   w: +b.w.toFixed(2), h: +b.h.toFixed(2) };
         } catch (err) { /* an unmeasurable element still lists */ }
         const store = objOf(id);
+        // A copied page's ids wear copy.<page>. in front; the kind is the
+        // original's.
+        const base = id.replace(/^copy\.[^.]+\./, '');
         elements.push({
           id,
           kind: sh ? (sh.kind || 'shape')
-            : id.startsWith('text.') ? 'textbox'
-            : id.startsWith('table.') ? 'table'
-            : id.startsWith('endnote.') ? 'endnote'
-            : id.startsWith('para.') ? 'prose' : 'designed',
+            : base.startsWith('text.') ? 'textbox'
+            : base.startsWith('table.') ? 'table'
+            : base.startsWith('endnote.') ? 'endnote'
+            : base.startsWith('para.') ? 'prose' : 'designed',
           box,
           locked: isLocked(id),
           // What it wears, so a pilot can tell "already dressed" from "looks
@@ -24389,6 +24622,16 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     await addBlankPage(at);
     const added = pageBlanks().map(b => b.id).find(id => !before.has(id)) || null;
     return { ...docsync.api.status(), id: added, pageOrder: pageOrder() };
+  },
+
+  /** Duplicate a page, right after itself. A designed page's copy carries
+   *  its content as editable slots (see duplicatePage); returns the new id. */
+  async duplicatePage(page) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    if (!pageOrder().some(p => String(p) === String(page)))
+      return { ok: false, error: `no page '${page}' — check inventory().pages` };
+    const r = await duplicatePage(/^\d+$/.test(String(page)) ? +page : page);
+    return { ...docsync.api.status(), ...r, pageOrder: pageOrder() };
   },
 
   /** Declare a source; cite it by putting its [^id] token into slot text. */
