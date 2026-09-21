@@ -17,7 +17,13 @@ from pathlib import Path
 
 _KEY_RE = re.compile(r"^\[\[([A-Za-z0-9._-]+)\]\]\s*$", re.M)
 _HEADING_RE = re.compile(r"^#{1,6}\s+", re.M)   # doc headings are styling, not content
-_SOURCE_RE = re.compile(r"^\[([^\]]+)\]:\s*(.*?)\s+—\s+(\S+)\s*$", re.M)
+_SOURCE_RE = re.compile(r"^\[([^\]]+)\]:\s*(\S.*?)\s*$", re.M)
+# The " — https://…" tail, which is OPTIONAL: a book, an interview or a
+# document somebody handed over has no link, and requiring one meant the only
+# way to cite it was to invent a URL. A citation's own text may contain an em
+# dash, so only a tail that is actually a URL counts as one — which is also
+# why the scheme is required rather than "any word at the end of the line".
+_SOURCE_URL_RE = re.compile(r"^(.*?)\s+—\s+(https?://\S+)$", re.S)
 
 
 class ContentError(RuntimeError):
@@ -53,14 +59,32 @@ def parse_sources(block: str) -> dict:
         m = _SOURCE_RE.match(line)
         if not m:
             raise ContentError(
-                f"source line is not '[id]: text — https://url':\n  {line}")
-        sid, txt, url = m.group(1), m.group(2).strip(), m.group(3).strip()
+                f"source line is not '[id]: text' (optionally '… — "
+                f"https://url'):\n  {line}")
+        sid, rest = m.group(1), m.group(2).strip()
+        u = _SOURCE_URL_RE.match(rest)
+        txt, url = (u.group(1).strip(), u.group(2)) if u else (rest, "")
         if sid in src:
             raise ContentError(f"duplicate source id '[{sid}]'")
         src[sid] = (txt, url)
-    if not src:
+    if not src and not os.environ.get("DOCSYNC_EDIT"):
+        # Empty is a state to pass THROUGH while editing, not a wall: deleting
+        # your last source (or writing the sources of a new report one at a
+        # time) made the whole draft stop building, and a document that will
+        # not render is a document you cannot get back into to fix it. The
+        # same bargain raw() strikes for a missing slot — publishing still
+        # refuses here, and a citation with no source still renders as the red
+        # '?' marker resolve() draws in the editor.
         raise ContentError("[[sources]] section is empty")
     return src
+
+
+# A link destination, with its parentheses BALANCED — one nesting level, which
+# is what real URLs use ("…/wiki/Act_(2026)"). Stopping at the first ')', as
+# this did, cut that URL at "Act_(2026" and left the stray bracket sitting in
+# the prose. CommonMark balances too, so what people paste from a browser
+# behaves the way they expect it to.
+_DEST = r"(?:[^()\s]+|\([^()\s]*\))+"
 
 
 def md_inline(s: str) -> str:
@@ -84,8 +108,8 @@ def md_inline(s: str) -> str:
     # Images first: ![alt](src) also matches the link pattern, so a link pass
     # would leave a stray '!' in front of an anchor. Unlike links, src may be
     # repo-relative (assets/…), which is how uploaded images are referenced.
-    s = re.sub(r"!\[([^\]]*)\]\(([^)\s]+)\)", stash_img, s)
-    s = re.sub(r"\[([^\]^][^\]]*)\]\((https?://[^)\s]+)\)", stash, s)
+    s = re.sub(r"!\[([^\]]*)\]\((" + _DEST + r")\)", stash_img, s)
+    s = re.sub(r"\[([^\]^][^\]]*)\]\((https?://" + _DEST + r")\)", stash, s)
     s = s.replace("&", "&amp;").replace("<", "&lt;")
     s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s, flags=re.S)
     # Underline. Markdown has no underline of its own and raw <u> cannot get
@@ -393,9 +417,14 @@ class Footnotes:
         items = []
         for i, (sid, txt, url) in enumerate(rows, 1):
             hook = layout.attr(f"endnote.{sid}") if layout is not None else ""
+            # A source need not have a link — a book, an interview, a document
+            # somebody handed over. Without this an empty url drew an empty
+            # <a href="">: a link to the page itself, styled as a citation.
+            link = (f' <a href="{url}" style="word-break:break-all">{url}</a>'
+                    if url else "")
             items.append(
-                f'<li id="en{i}"{hook} style="margin-bottom:.6em">{txt} '
-                f'<a href="{url}" style="word-break:break-all">{url}</a></li>')
+                f'<li id="en{i}"{hook} style="margin-bottom:.6em">{txt}'
+                f'{link}</li>')
         return ('<ol class="ds-endnotes" style="padding-left:1.4em;margin:0">'
                 + "".join(items) + "</ol>")
 

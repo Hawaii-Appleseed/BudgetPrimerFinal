@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from docsync.content import ContentError                  # noqa: E402
 from docsync.fetch import (FetchError, access_token,      # noqa: E402
                            service_account_email)
-from docsync.content import paragraph                     # noqa: E402
+from docsync.content import paragraph, paragraphs         # noqa: E402
 from docsync.fragment import extract, inject, to_html     # noqa: E402
 from docsync.normalise import leading_comment, normalise  # noqa: E402
 from docsync.state import State, content_hash            # noqa: E402
@@ -535,6 +535,59 @@ check_eq("published, an emptied slot prints nothing",
          _content(None, _empty_body).html("a.b"), "")
 check_eq("a style aimed at a slot that never rendered one is reported",
          nostyle.unknown_text_keys({"a.b"}), [])
+# ---- sources ---------------------------------------------------------------
+from docsync.content import Footnotes, md_inline, parse_sources  # noqa: E402
+
+
+def _content_error_src(line):
+    try:
+        parse_sources(line)
+    except ContentError as e:
+        return str(e)
+    return "no error"
+
+
+# A link is optional: a book, an interview or a document somebody handed over
+# has none, and the only way to cite one used to be to invent a URL.
+check_eq("a source can have no link",
+         parse_sources("[x]: A book, no link."), {"x": ("A book, no link.", "")})
+check_eq("a link is still read when it is there",
+         parse_sources("[x]: A. — https://a.gov"), {"x": ("A.", "https://a.gov")})
+# The scheme is what tells a link from a citation's own em dash.
+check_eq("an em dash inside the citation is not a link",
+         parse_sources("[x]: Smith — Jones, an interview."),
+         {"x": ("Smith — Jones, an interview.", "")})
+check_eq("the LAST dash wins when there is a real link",
+         parse_sources("[x]: A — B — https://c.gov"), {"x": ("A — B", "https://c.gov")})
+check("a line with no id is still refused — one stray URL fragment used to "
+      "fail the build hours later",
+      _content_error_src("25-2027/"), "source line is not")
+# An endnote with no link draws no <a>: an empty href is a link back to the page.
+_fn_nolink = Footnotes({"x": ("A book.", "")})
+_fn_nolink.resolve("<p>Words.[^x]</p>")
+check_eq("an endnote with no link draws no anchor",
+         "<a href" in _fn_nolink.endnotes_html(), False)
+check("and still prints its citation", _fn_nolink.endnotes_html(), "A book.")
+# A URL with brackets in it — the shape Wikipedia and many statute sites use.
+# The link destination stopped at the first ')', so the href was cut short and
+# the stray bracket was left sitting in the prose.
+check("a link destination balances its brackets",
+      md_inline("see [the law](https://en.wikipedia.org/wiki/Act_(2026)) now"),
+      '<a href="https://en.wikipedia.org/wiki/Act_(2026)">the law</a> now')
+check_eq("an unbalanced one still ends at the bracket, as CommonMark does",
+         md_inline("[a](https://x.com/a)b)"),
+         '<a href="https://x.com/a">a</a>b)')
+# Emptying the sources block is a state to pass THROUGH, not a wall: it used
+# to stop the whole draft building, and a draft that will not build is one you
+# cannot get back into to fix.
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    check_eq("an empty sources block is allowed while editing",
+             parse_sources(""), {})
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+check("but publishing still refuses it", _content_error_src(""), "is empty")
+
 check_eq("a style aimed at an unstyleable slot is reported",
          _layout({"text": {"cip.body": {"size": 12}}}).unknown_text_keys({"a.b"}),
          ["cip.body"])
@@ -1746,6 +1799,15 @@ check("object style: and so does the banding", _tb, "background:#F1F4F2")
 check("object style: the style's `header: true` makes the first row a <th>",
       _tb, "<th")
 check("a table's border sits inside its width too", _tb, "box-sizing:border-box")
+# A cell is ONE string, so a newline in it is a break somebody typed (the cell
+# editor's Shift-Enter stores one). Prose is the opposite: content.md soft-wraps
+# at about eighty columns, so paragraphs() closes every newline up to a space
+# and a break there could never be told from a wrapped line.
+_brt = _layout({"tables": [{"id": "t", "page": 1, "x": 1, "y": 1, "w": 4,
+                            "rows": [["top\nbottom", "b"]]}]}).tables_html(1)
+check("a newline in a cell is the line break it was typed as", _brt, "top<br>bottom")
+check_eq("but a wrapped prose line still closes up to a space",
+         paragraphs("one line\nand its wrap"), ["one line and its wrap"])
 check("object style: a family named only through an object style's text "
       "style is still fetched", _ol.font_link(), "Manrope")
 

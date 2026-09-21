@@ -4461,7 +4461,13 @@ class Layout:
                     if ov.get("italic"):
                         bits.append("font-style:italic")
                     sty = f' style="{";".join(bits)}"' if bits else ""
-                    cells += f'<{name}{hook}{sty}>{md_inline(str(c))}</{name}>'
+                    # A cell is ONE string, so a newline in it can only be a
+                    # break somebody typed (the cell editor's Shift-Enter).
+                    # Prose is the opposite — content.md soft-wraps at about
+                    # eighty columns, which is why md_inline itself leaves a
+                    # newline alone and paragraphs() closes it up to a space.
+                    body_c = md_inline(str(c)).replace("\n", "<br>")
+                    cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
                 body += f"<tr>{cells}</tr>"
             klass = "ds-table"
             extra = ""

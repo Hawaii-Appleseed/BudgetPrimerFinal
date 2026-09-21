@@ -3021,7 +3021,12 @@ const readSlot  = k => (source.match(slotRe(k)) || [,,''])[2].trim();
 // cause — the "25-2027/" incident was one stray URL fragment on its own line.
 // So the sources slot is validated AT THE WRITE: a value that would not build
 // is refused loudly right here, naming the bad line, and nothing changes.
-const SOURCE_LINE_RE = /^\[[^\]]+\]:\s*.*?\s+—\s+\S+\s*$/;
+const SOURCE_LINE_RE = /^\[[^\]]+\]:\s*\S[\s\S]*$/;
+// " — https://…" at the end of a source line, which is OPTIONAL — a book or an
+// interview has no link. The scheme is required so a citation's own em dash
+// ("Smith — Jones, an interview") is never mistaken for one. Mirrors
+// content.py's _SOURCE_URL_RE.
+const SOURCE_URL_RE = /^([\s\S]*?)\s+—\s+(https?:\/\/\S+)$/;
 const badSourceLines = v => v.split('\n').map(l => l.trim()).filter(Boolean)
   .filter(l => !SOURCE_LINE_RE.test(l));
 const writeSlot = (k, v) => {
@@ -3063,6 +3068,11 @@ const writeSlot = (k, v) => {
 // markup that silently corrupts on save — see boldItalicBlocked().
 const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
+// A link destination with BALANCED parentheses, one nesting level — the same
+// rule as content.py's _DEST, so the editor and the renderer read a pasted
+// "…/wiki/Act_(2026)" the same way instead of cutting it at the first bracket.
+const DEST = '(?:[^()\\s]+|\\([^()\\s]*\\))+';
+
 function mdInlineToHtml(text, fnLabels) {
   // Footnote refs first — an editor-only concept (Python leaves [^id]
   // literal, for later document-wide resolution) — stashed before anything
@@ -3075,12 +3085,12 @@ function mdInlineToHtml(text, fnLabels) {
   // Images, then links — same order and same footnote-ref exclusion as
   // content.py's md_inline, so a link can never swallow a stashed footnote.
   const imgs = [];
-  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, src) => {
+  s = s.replace(new RegExp(`!\\[([^\\]]*)\\]\\((${DEST})\\)`, 'g'), (m, alt, src) => {
     imgs.push([alt, src]);
     return `\x00IMG${imgs.length - 1}\x00`;
   });
   const urls = [];
-  s = s.replace(/\[([^\]^][^\]]*)\]\((https?:\/\/[^)\s]+)\)/g, (m, txt, url) => {
+  s = s.replace(new RegExp(`\\[([^\\]^][^\\]]*)\\]\\((https?://${DEST})\\)`, 'g'), (m, txt, url) => {
     urls.push(url);
     return `\x00LINK${urls.length - 1}\x00${txt}\x01`;
   });
@@ -3106,7 +3116,12 @@ function mdInlineToHtml(text, fnLabels) {
     // A <sup>, matching the marker it stands in for — see makeFnChip.
     return `<sup class="ds-chip ds-fnchip" contenteditable="false" data-fn-id="${escAttr(id)}">${escAttr(label)}</sup>`;
   });
-  return s;
+  // A newline reaches this only from a TABLE CELL, whose value is one string
+  // — prose arrives with its soft wraps already closed up to spaces by the
+  // caller, exactly as content.py's paragraphs() does it. So a newline here
+  // is a break somebody typed, and reopening the cell has to show it or the
+  // break looks lost until the next render puts it back.
+  return s.replace(/\n/g, '<br>');
 }
 
 /** A slot's raw markdown -> the contenteditable's initial innerHTML.
@@ -3342,7 +3357,7 @@ function edgeOut(text, m) {
   return `${lead}${m}${core}${m}${tail}`;
 }
 
-function nodeToMdInline(node) {
+function nodeToMdInline(node, br = ' ') {
   let out = '';
   node.childNodes.forEach(n => {
     // Zero-width spaces are caret scaffolding (insertBreak drops one after a
@@ -3357,21 +3372,27 @@ function nodeToMdInline(node) {
     // space beside the marker), and the asterisks reached the page as
     // asterisks. Same text, markup that round-trips. Not underline: `__x __`
     // does round-trip, and moving the space out would stop underlining it.
-    if (tag === 'B' || tag === 'STRONG') { out += edgeOut(nodeToMdInline(n), '**'); return; }
-    if (tag === 'I' || tag === 'EM') { out += edgeOut(nodeToMdInline(n), '*'); return; }
-    if (tag === 'U') { out += `__${nodeToMdInline(n)}__`; return; }
-    if (tag === 'A') { out += `[${nodeToMdInline(n)}](${n.getAttribute('href') || ''})`; return; }
+    if (tag === 'B' || tag === 'STRONG') { out += edgeOut(nodeToMdInline(n, br), '**'); return; }
+    if (tag === 'I' || tag === 'EM') { out += edgeOut(nodeToMdInline(n, br), '*'); return; }
+    if (tag === 'U') { out += `__${nodeToMdInline(n, br)}__`; return; }
+    if (tag === 'A') { out += `[${nodeToMdInline(n, br)}](${n.getAttribute('href') || ''})`; return; }
     if (tag === 'IMG') { out += `![${n.getAttribute('alt') || ''}](${n.getAttribute('src') || ''})`; return; }
-    if (tag === 'BR') { out += '\n'; return; }
-    out += nodeToMdInline(n);   // unknown wrapper: recurse, don't drop content
+    if (tag === 'BR') { out += br; return; }
+    out += nodeToMdInline(n, br);   // unknown wrapper: recurse, don't drop content
   });
   return out;
 }
 
 /** The contenteditable's current DOM -> markdown text, the inverse of
  *  mdToHtml — same {allowLists, inline} contract. */
-function htmlToMd(root, { allowLists = false, inline = false } = {}) {
-  if (inline) return nodeToMdInline(root).trim();
+function htmlToMd(root, { allowLists = false, inline = false, br = ' ' } = {}) {
+  // `br`: what a <br> becomes. A space by default, because the report's prose
+  // has no line break — content.md soft-wraps, so paragraphs() cannot tell a
+  // typed break from a wrapped line and closes every newline up to a space.
+  // A TABLE CELL is one string with no wrapping, so it passes '\n' and means
+  // it. Written into content.md, a break nothing renders is a change to the
+  // file that never reaches the page.
+  if (inline) return nodeToMdInline(root, br).trim();
   const blocks = [...root.children];
   const parts = [];
   for (const el of blocks) {
@@ -3383,11 +3404,11 @@ function htmlToMd(root, { allowLists = false, inline = false } = {}) {
       // then silently un-indented itself.
       parts.push(listToMd(el, 0));
     } else if (allowLists && tag === 'H2') {
-      parts.push(`## ${nodeToMdInline(el).trim()}`);
+      parts.push(`## ${nodeToMdInline(el, br).trim()}`);
     } else if (allowLists && tag === 'H3') {
-      parts.push(`### ${nodeToMdInline(el).trim()}`);
+      parts.push(`### ${nodeToMdInline(el, br).trim()}`);
     } else {
-      const text = nodeToMdInline(el).trim();
+      const text = nodeToMdInline(el, br).trim();
       if (text) parts.push(text);
     }
   }
@@ -3877,17 +3898,21 @@ async function newSourceAt(d, host, range) {
     { name: 'publisher', label: 'Publisher / organisation (optional)', type: 'text' },
     { name: 'detail', label: 'Detail (optional, e.g. p. 5, Part II)', type: 'text' },
     { name: 'date', label: 'Date (optional, e.g. December 16, 2024)', type: 'text' },
-    { name: 'url', label: 'Source URL', type: 'text', value: 'https://', required: true },
+    { name: 'url', label: 'Source URL (optional — a book or an interview has none)',
+      type: 'text' },
   ], { okLabel: 'Add & cite', validate: vals => {
     const id = vals.id.trim();
     if (!id) return 'A short id is required.';
     if (sourceIds().includes(id)) return `[${id}] already exists — pick it from the list.`;
     if (!vals.title.trim()) return 'A title is required.';
-    if (!vals.url.trim()) return 'A source URL is required.';
-    // The sources line format ends "— url" with no spaces in the url; a space
-    // here would be refused at the write (see writeSlot's gate) AFTER the
-    // citation chip was already placed — catch it while the form is open.
-    if (/\s/.test(vals.url.trim())) return 'The URL cannot contain spaces.';
+    // A URL is optional, but one that is given has to be usable: the line
+    // format ends "— <url>" with no spaces, and it is recognised by its
+    // scheme. Either mistake would otherwise be caught at the write (see
+    // writeSlot's gate) or silently read as part of the citation — both
+    // AFTER the chip was already placed. Catch them while the form is open.
+    const u = vals.url.trim();
+    if (u && /\s/.test(u)) return 'The URL cannot contain spaces.';
+    if (u && !/^https?:\/\//.test(u)) return 'A URL needs to start with http:// or https://.';
     return '';
   } });
   if (!r) return null;
@@ -6733,7 +6758,7 @@ function editCell(d, td, seed) {
     if (host.dataset.done) return; host.dataset.done = '1';
     editing = false;
     hubAutosaveFlushNext();
-    const newVal = keep ? htmlToMd(host, { inline: true }) : null;
+    const newVal = keep ? htmlToMd(host, { inline: true, br: '\n' }) : null;
     // De-editorify immediately — see edit()'s finish: the old document stays
     // visible while the re-render loads, and a live editor there is a trap.
     host.contentEditable = 'false';
@@ -8648,7 +8673,10 @@ function editEndnote(d, li, sid) {
     txt.disabled = url.disabled = true;
     if (keep) {
       const t = txt.value.trim(), u = url.value.trim();
-      if (t && u && (t !== s.text || u !== s.url)) {
+      // The URL may be cleared: a citation can be a book or an interview, and
+      // requiring one here meant a source that had a link could never lose it.
+      // The citation text itself still has to say something.
+      if (t && (t !== s.text || u !== s.url)) {
         pushHistory();
         updateSource(sid, t, u);
         markDirty();
@@ -18162,9 +18190,13 @@ const sourceIds = () => [...readSlot('sources').matchAll(/^\[([^\]]+)\]:/gm)].ma
 const sourceText = id => (readSlot('sources').match(
   new RegExp(`^\\[${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]:\\s*(.*)$`, 'm')) || [,''])[1];
 
+/** One source line. The link is optional — omitted, the line is just the
+ *  citation, which is what a book or an interview looks like. */
+const sourceLine = (id, text, url) =>
+  `[${id}]: ${text}` + (url ? ` — ${url}` : '');
+
 function addSource(id, text, url) {
-  const line = `[${id}]: ${text} — ${url}`;
-  writeSlot('sources', readSlot('sources') + '\n' + line);
+  writeSlot('sources', readSlot('sources') + '\n' + sourceLine(id, text, url));
 }
 
 // --- sources manager: edit, rename, reorder and remove citations -----------
@@ -18174,8 +18206,10 @@ function addSource(id, text, url) {
 const srcLineRe = id => new RegExp(`^\\[${rxEsc(id)}\\]:.*$`, 'm');
 const parseSources = () => readSlot('sources').split('\n').map(l => l.trim())
   .filter(Boolean).map(l => {
-    const m = l.match(/^\[([^\]]+)\]:\s*(.*?)\s+—\s+(\S+)\s*$/);
-    return m ? { id: m[1], text: m[2].trim(), url: m[3].trim() } : null;
+    const m = l.match(/^\[([^\]]+)\]:\s*(\S[\s\S]*?)\s*$/);
+    if (!m) return null;
+    const u = m[2].match(SOURCE_URL_RE);
+    return { id: m[1], text: (u ? u[1] : m[2]).trim(), url: u ? u[2] : '' };
   }).filter(Boolean);
 const citeCount = id =>
   (source.match(new RegExp(`\\[\\^${rxEsc(id)}\\]`, 'g')) || []).length;
@@ -18184,7 +18218,7 @@ function updateSource(id, text, url) {
   // Replacer FUNCTION, not string: citation text is user-typed, and in a
   // string replacement `$&`/`$'`/$` are live — a citation containing one
   // would splice chunks of the sources block into itself.
-  writeSlot('sources', readSlot('sources').replace(srcLineRe(id), () => `[${id}]: ${text} — ${url}`));
+  writeSlot('sources', readSlot('sources').replace(srcLineRe(id), () => sourceLine(id, text, url)));
 }
 
 /** The endnotes section, if this report has one the EDITOR placed. A report
@@ -18358,14 +18392,16 @@ async function addSourceFromPanel() {
     { name: 'id', label: 'Short id', type: 'text', required: true,
       placeholder: 'e.g. act175-exec' },
     { name: 'text', label: 'Citation', type: 'text', required: true },
-    { name: 'url', label: 'Link', type: 'text', required: true, placeholder: 'https://…' },
+    { name: 'url', label: 'Link (optional)', type: 'text', placeholder: 'https://…' },
   ], { okLabel: 'Add', validate: vals => {
     const id = vals.id.trim();
     if (!id) return 'An id is required.';
     if (!/^[A-Za-z0-9._-]+$/.test(id)) return 'Use letters, numbers, and . _ - only.';
     if (parseSources().some(x => x.id === id)) return `[${id}] already exists.`;
     if (!vals.text.trim()) return 'A citation is required.';
-    if (!vals.url.trim()) return 'A link is required.';
+    const u = vals.url.trim();
+    if (u && /\s/.test(u)) return 'The link cannot contain spaces.';
+    if (u && !/^https?:\/\//.test(u)) return 'A link needs to start with http:// or https://.';
     return '';
   } });
   if (!r) return;
@@ -18481,7 +18517,9 @@ function renderSources() {
     urlWrap.append(url, open);
     const commit = () => {
       const t = txt.value.trim(), u = url.value.trim();
-      if (!t || !u) return;                       // never write a half-line
+      // The citation must say something; the LINK is optional — a book or an
+      // interview has none, and a source that had one must be able to lose it.
+      if (!t) return;                             // never write a half-line
       pushHistory(); updateSource(s.id, t, u); markDirty(); render();
     };
     txt.addEventListener('change', commit);       // fires on blur only when changed
@@ -18795,6 +18833,19 @@ function edit(d, key) {
   host.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
     if (e.key === 'Enter' && inline) { e.preventDefault(); finish(true); }
+    // Shift-Enter has nowhere to go in prose. content.md soft-wraps at about
+    // eighty columns, so a newline inside a slot is a WRAPPED line and
+    // paragraphs() closes it up to a space — the break used to reach the file
+    // and never the page, which left the two disagreeing with no sign of it.
+    // Enter already makes a real paragraph here, and that is the break the
+    // grammar has. (A one-line slot never gets this far: Enter commits it,
+    // shift or no shift. A table cell is one string with no wrapping, so it
+    // keeps its own Shift-Enter and renders the break.)
+    if (e.key === 'Enter' && e.shiftKey && !inline) {
+      e.preventDefault();
+      $('stat').textContent = 'the report has paragraphs, not line breaks — '
+        + 'press Enter for a new paragraph';
+    }
     if (allowMd && e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); link(d, host); }
     // Tab indents the bullet the caret is in. stopPropagation as well as
     // preventDefault: the document-level handler treats Tab as chrome

@@ -244,8 +244,12 @@ def render(here: Path | str, *, page: tuple[float, float] = (8.5, 11.0)) -> Path
     body = C.fn.resolve(body)
 
     notes = C.fn.endnotes()
+    # A source need not have a link (a book, an interview) — an empty url
+    # would otherwise draw <a href="">, a link back to this page.
     endnotes = "".join(
-        f'<li id="en{i + 1}">{txt} <a href="{url}">{url}</a></li>'
+        f'<li id="en{i + 1}">{txt}'
+        + (f' <a href="{url}">{url}</a>' if url else "")
+        + "</li>"
         for i, (txt, url) in enumerate(notes))
     if endnotes:
         body += (f'<section class="page">'
