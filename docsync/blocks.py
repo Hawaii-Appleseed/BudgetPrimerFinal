@@ -278,10 +278,42 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "") -> str:
     klass = ("ds-graphic " + cls).strip()
     sized = L.positions.get(el_id, {}).get("w")
     base = "display:inline-block;vertical-align:middle;line-height:0"
+    pre = ""
     if w and not sized:
         base += f";width:{w}in"
-    return (f"{L.spacer(el_id)}"
+        pre = _graphic_mobile_once(L)
+    return (f"{pre}{L.spacer(el_id)}"
             f'<span class="{klass}"{L.attr(el_id, base)}>{_fit_svg(svg)}</span>')
+
+
+def _graphic_mobile_once(L) -> str:
+    """Release a graphic's inch width on a screen too narrow to hold the sheet.
+    Once per document, and from HERE rather than from Layout.mobile_css().
+
+    `.ds-graphic` is this module's own class, and an un-dragged graphic is an
+    inline-block with a plain width — not `[data-placed]`, not an absolute
+    inline style — so neither of mobile_css()'s two selectors can reach it.
+    Nor is mobile_css() even emitted for a report that pinned nothing, which
+    is every freshly authored one. A 7.26in figure therefore stayed about
+    697px wide inside a 375px page whose overflow is hidden: the right-hand
+    third was cut off silently, with nothing to scroll to it.
+
+    width:auto lets the wrapper narrow to the page; chart_scroll()'s own
+    --ds-chart-min then keeps the drawing at a readable size inside it and
+    scrolls, instead of shrinking the labels under the legibility floor.
+    A graphic somebody has already resized carries a position instead, and
+    mobile_css releases that one — so this is emitted only for the inch width
+    written just above, and a report without one keeps its bytes.
+    """
+    if getattr(L, "_graphic_mobile_sent", False):
+        return ""
+    L._graphic_mobile_sent = True
+    # @media screen, and the SHEET's own width as the breakpoint — the same
+    # condition mobile_css() uses, so the two agree about when a page has
+    # stopped being able to show the design at the size it was composed at.
+    return (f"<style>@media screen and (max-width:{float(L.page_w):g}in)"
+            "{.ds-graphic{width:auto !important;max-width:100% !important}}"
+            "</style>")
 
 
 def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,

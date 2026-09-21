@@ -3014,8 +3014,28 @@ async function loadRegistry() {
 // block — would open truncated and save the rest into oblivion. Here '$' means
 // end of input, and the marker is anchored by hand.
 const rxEsc = k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const slotRe = k => new RegExp(`((?:^|\\n)\\[\\[${rxEsc(k)}\\]\\]\\n)([\\s\\S]*?)(?=\\n\\[\\[|$)`);
-const readSlot  = k => (source.match(slotRe(k)) || [,,''])[2].trim();
+// A slot marker, read exactly as content.py's _KEY_RE reads it: `[[key]]` on
+// its own line, where "on its own line" tolerates trailing spaces and a CRLF
+// ending. It did not, and the two disagreeing was a document-breaker — one
+// stray space after `]]` (a Doc import, a hand edit) and slotRe matched
+// nothing, so writeSlot took its "this slot does not exist yet" branch and
+// APPENDED a second `[[key]]` block. parse_content then refused the whole
+// file for a duplicate key, and the draft stopped building on the first edit.
+const MARKER_RE = /^\[\[[A-Za-z0-9._-]+\]\][ \t]*$/;
+const slotRe = k => new RegExp(
+  `((?:^|\\r?\\n)\\[\\[${rxEsc(k)}\\]\\][ \\t]*\\r?\\n)([\\s\\S]*?)(?=\\r?\\n\\[\\[|$)`);
+// content.py strips every HTML comment from the file BEFORE it looks for
+// slots (_strip_comments), so a note written inside a block never reaches the
+// page. It reached the EDITOR: readSlot handed the comment over as text, so
+// opening [[title]] in the testimony report showed a paragraph of somebody's
+// editorial note sitting under the title, and committing wrote that note back
+// as part of the words. Hidden here the same way the renderer hides it, and
+// put back untouched by writeSlot so the note survives the edit.
+const COMMENT_RE = /<!--[\s\S]*?-->/g;
+const slotBody  = k => (source.match(slotRe(k)) || [,,''])[2];
+const slotNotes = k => slotBody(k).match(COMMENT_RE) || [];
+const readSlot  = k =>
+  slotBody(k).replace(COMMENT_RE, '').replace(/\n{3,}/g, '\n\n').trim();
 // The renderer's own rule for a sources line (content.py parse_sources): a
 // malformed line there fails the whole BUILD, hours later and far from its
 // cause — the "25-2027/" incident was one stray URL fragment on its own line.
@@ -3030,6 +3050,18 @@ const SOURCE_URL_RE = /^([\s\S]*?)\s+—\s+(https?:\/\/\S+)$/;
 const badSourceLines = v => v.split('\n').map(l => l.trim()).filter(Boolean)
   .filter(l => !SOURCE_LINE_RE.test(l));
 const writeSlot = (k, v) => {
+  // A line that is nothing but `[[something]]` IS a slot marker to
+  // parse_content, wherever it sits — so pasting one into a paragraph split
+  // the slot in two, and pasting a key the document already has refused the
+  // whole file for a duplicate. Refused at the write, the way a malformed
+  // sources line is: named, nothing saved, the words still on screen to fix.
+  const marker = v.split('\n').find(l => MARKER_RE.test(l.trim()));
+  if (marker) {
+    console.warn('refused a slot marker inside slot text:', marker);
+    $('stat').textContent = `"${marker.trim()}" is a slot marker, and a line of `
+      + 'its own here would split this slot — nothing was saved';
+    return;
+  }
   if (k === 'sources') {
     const bad = badSourceLines(v);
     if (bad.length) {
@@ -3050,7 +3082,12 @@ const writeSlot = (k, v) => {
     source = source.replace(/\s*$/, '') + `\n\n[[${k}]]\n${v.trim()}\n`;
     return;
   }
-  source = source.replace(slotRe(k), (m, head) => head + v.trim() + '\n');
+  // The block's own notes ride along, after the words. They are invisible to
+  // the renderer either way, so where they sit is a question of reading
+  // content.md — and losing them because somebody retyped a heading is not an
+  // answer to it.
+  const body = [v.trim(), ...slotNotes(k)].filter(Boolean).join('\n\n');
+  source = source.replace(slotRe(k), (m, head) => head + body + '\n');
 };
 
 // --- markdown <-> rich text --------------------------------------------

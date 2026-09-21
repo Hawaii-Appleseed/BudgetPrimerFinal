@@ -535,6 +535,55 @@ check_eq("published, an emptied slot prints nothing",
          _content(None, _empty_body).html("a.b"), "")
 check_eq("a style aimed at a slot that never rendered one is reported",
          nostyle.unknown_text_keys({"a.b"}), [])
+# ---- graphics on a phone -----------------------------------------------------
+# graphic() pins a figure at its inch width with a plain inline style: no
+# position, no data-placed, so neither of mobile_css()'s selectors reaches it —
+# and mobile_css() is not emitted at all for a report that pinned nothing. A
+# 7.26in figure stayed ~697px wide inside a 375px page whose overflow is
+# hidden, and the right-hand third was cut off with nothing to scroll to it.
+from docsync import blocks as _blocks                           # noqa: E402
+
+_SVG = '<svg viewBox="0 0 10 5"><rect width="10" height="5"/></svg>'
+_gl = _layout({})
+_g = _blocks.graphic(_gl, "fig.1", _SVG, w=7.26)
+check("a graphic is drawn at its inch width", _g, "width:7.26in")
+check("and a phone is told to let it go", _g,
+      ".ds-graphic{width:auto !important;max-width:100% !important}")
+check("released at the sheet's own width, as mobile_css measures it", _g,
+      "@media screen and (max-width:8.5in)")
+check_eq("once per document, however many figures",
+         _blocks.graphic(_gl, "fig.2", _SVG, w=3.0).count("<style>"), 0)
+# One that has been resized carries a position instead, and mobile_css
+# releases that — so it emits nothing new and its bytes do not move.
+_sized = _layout({"positions": {"fig.1": {"x": 1, "y": 1, "w": 4}}})
+check_eq("a resized graphic needs no rule of its own",
+         "<style>" in _blocks.graphic(_sized, "fig.1", _SVG, w=7.26), False)
+check_eq("nor does one with no width at all",
+         "<style>" in _blocks.graphic(_layout({}), "fig.1", _SVG, w=0), False)
+
+# ---- slot markers ------------------------------------------------------------
+# What counts as a marker, which the EDITOR's slotRe has to read the same way.
+# It did not: `]]` followed by a space matched here and not there, so the editor
+# appended a second block and the duplicate key refused the whole document.
+from docsync.content import parse_content                       # noqa: E402
+
+
+def _keys(text):
+    f = Path(tempfile.mktemp(suffix=".md"))
+    f.write_text(text)
+    try:
+        return list(parse_content(f))
+    finally:
+        f.unlink(missing_ok=True)
+
+
+check_eq("a marker may end in a space", _keys("[[a.b]] \nx\n"), ["a.b"])
+check_eq("a marker may end in a tab", _keys("[[a.b]]\t\nx\n"), ["a.b"])
+check_eq("a marker may end CRLF", _keys("[[a.b]]\r\nx\r\n"), ["a.b"])
+check_eq("a marker indented is NOT one", _keys("[[a.b]]\n  [[c.d]]\n"), ["a.b"])
+check_eq("brackets inside a line are ordinary words",
+         _keys("[[a.b]]\nsee [[c.d]] there\n"), ["a.b"])
+
 # ---- sources ---------------------------------------------------------------
 from docsync.content import Footnotes, md_inline, parse_sources  # noqa: E402
 
