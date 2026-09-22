@@ -34,7 +34,7 @@ import json
 import os
 from pathlib import Path
 
-from .blocks import graphic
+from .blocks import describe, graphic
 from .content import Content
 from .layout import Layout
 
@@ -101,8 +101,10 @@ def _chart(C: Content, bills: list[dict], tally: str) -> str:
     peak = max([max(b["support"], b["oppose"]) for b in bills]) or 1
     row_h, mid, half = 26, 250, 210
     height = len(bills) * row_h + 34
-    out = [f'<svg viewBox="0 0 520 {height}" xmlns="http://www.w3.org/2000/svg" '
-           f'role="img" aria-label="Support and opposition by bill, with outcome">',
+    desc = describe(C, "chart.desc",
+                    "Support and opposition by bill, with outcome")
+    out = [f'<svg viewBox="0 0 520 {height}" xmlns="http://www.w3.org/2000/svg"'
+           f'{desc}>',
            f'<text x="{mid - 6}" y="12" font-size="9" fill="{SLATE}" '
            f'text-anchor="end"{C.slot_attr("chart.axis.oppose")}>'
            f'{C.text("chart.axis.oppose")}</text>',

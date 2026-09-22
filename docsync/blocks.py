@@ -308,6 +308,28 @@ def is_sentence(t: str) -> bool:
     return len(t.split()) >= 5 and bool(_SENT_END_RE.search(t))
 
 
+_QTY_RE = re.compile(r"""(?x)
+    \$\s?\d                              # $1,500   $86.1M   $3.0M
+  | \d[\d,.]*\s?%                        # 46%      84.0%
+  | \b\d[\d,.]*\s?(?:M|B|K)\b            # 705M     1.4B
+  | \b\d[\d,.]*\s(?:million|billion|thousand|percent)\b
+  | \b\d{1,3}(?:,\d{3})+\b               # 12,345
+""")
+
+
+def is_quantity(t: str) -> bool:
+    """True when a label STATES a figure — currency, a percentage, a magnitude,
+    a thousands-separated count.
+
+    Not "contains a digit": a product name ("Claude Opus 5"), a fiscal year
+    ("FY26") and an ordinal are digits that stand for nothing the drawing also
+    encodes. A quantity is the case that matters, because the drawing encodes
+    it TWICE — once as the words and once as the geometry — and only the words
+    are editable. See svg_text's `restates`.
+    """
+    return bool(_QTY_RE.search(t or ""))
+
+
 def svg_literals(svg: str) -> list[str]:
     """Every <text> in `svg` the editor could never reach — the strings
     graphic() refuses: words with no hook at all, and a whole SENTENCE even
@@ -386,7 +408,8 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "",
 
 
 def svg_text(C, key: str, default: str, x, y, size, fill: str,
-             weight=None, anchor: str | None = None, extra: str = "") -> str:
+             weight=None, anchor: str | None = None, extra: str = "",
+             restates: str | None = None) -> str:
     """A label INSIDE a chart that the person can rephrase on the page.
 
     A chart's legend entry, a step name under a circle, the caption on a bar
@@ -401,16 +424,98 @@ def svg_text(C, key: str, default: str, x, y, size, fill: str,
     the key is what the person's edit is filed under.
 
     `size` is in the SVG's own user units, as every other label there — the
-    three-units trap in the renderer's own comments applies unchanged. Pass
-    a data-derived label's DEFAULT from the DATA constant so it stays in step
-    with the model until someone retypes it; a retyped label does not move
-    the bar it sits on, which the handoff should say.
+    three-units trap in the renderer's own comments applies unchanged.
+
+    `restates` is required of a label that STATES A FIGURE the drawing also
+    draws — a bar's value, a share, a total. Making a label editable made a
+    new failure possible: retyping "$3.0M" to "$4.1M" leaves the bar at its
+    old height, so the figure disagrees with itself and nothing says so. The
+    bar cannot follow the words (the geometry is the renderer's), so the
+    honest thing is to declare where the number comes from, exactly as
+    C.derived does — the string is HOW IT IS REMADE, and the editor shows it
+    to whoever edits the label. docsync.check refuses an undeclared quantity
+    (blocks.is_quantity) drawn inside a graphic.
+
+    Pass a data-derived label's DEFAULT from the DATA constant so it stays in
+    step with the model until someone retypes it.
     """
     v = C.text_or(key, default).replace("&", "&amp;").replace("<", "&lt;")
     wt = f' font-weight="{weight}"' if weight else ""
     an = f' text-anchor="{anchor}"' if anchor else ""
+    rs = ""
+    if restates and os.environ.get("DOCSYNC_EDIT"):
+        rs = f' data-restates="{_xml_attr(restates)}"'
     return (f'<text x="{x}" y="{y}" font-size="{size}" fill="{fill}"{wt}{an}'
-            f'{extra}{C.slot_attr(key)}>{v}</text>')
+            f'{extra}{C.slot_attr(key)}{rs}>{v}</text>')
+
+
+# ---- the words a screen reader hears INSTEAD of the drawing -------------------
+# role="img" makes a figure opaque: the reader is told the aria-label and
+# NOTHING inside it is announced. So for a blind reader the description IS the
+# figure — and it was the one string on the page nobody could edit, written as
+# an f-string literal in the renderer beside the drawing. Making the drawing's
+# own labels slots made that worse, not better: retype them on the page and
+# the spoken version still says what the renderer said, silently.
+#
+# A description is an ATTRIBUTE, so it carries no contenteditable span and
+# cannot be clicked on the page. What it CAN be is a slot like any other —
+# read through C.text_or so a room seeded before it existed renders unchanged,
+# and hooked with data-desc so docsync.check can tell a description that is
+# wired from one that is frozen.
+
+
+def describe(C, key: str, default: str, role: str = "img") -> str:
+    """The accessible description of a figure, as a SLOT.
+
+    Returns the attributes to drop into the tag that carries the drawing — an
+    <svg>, or the <div>/<span> of a bar drawn in CSS:
+
+        f'<svg viewBox="0 0 820 250"{describe(C, "chart.claims.desc", "…")}>'
+
+    in place of a literal `role="img" aria-label="…"`. Give every description
+    a stable key (`<figure>.desc`); the renderer's own wording is the default,
+    so nothing on the page changes until somebody edits it.
+
+    `role=""` omits the role, for a tag that has one already or must not be
+    made opaque.
+    """
+    v = C.text_or(key, default)
+    r = f' role="{role}"' if role else ""
+    hook = f' data-desc="{_xml_attr(key)}"' if os.environ.get("DOCSYNC_EDIT") else ""
+    return f'{r} aria-label="{_xml_attr(v)}"{hook}'
+
+
+_DESC_ATTR_RE = re.compile(r'\b(aria-label|alt)="([^"]*)"')
+
+
+def slot_descriptions(C, html: str, prefix: str) -> str:
+    """Turn every literal aria-label/alt in a block of STATIC html into a slot.
+
+    For an ingested page whose body is hand-maintained markup rather than
+    renderer f-strings (docsync.propose's `body.slotted.html`): there is no
+    call site to pass describe() to, and hand-keying dozens of descriptions
+    would only move the same literals to a different file. Each is keyed
+    `<prefix>.<n>` in document order and read through C.text_or with the
+    markup's own wording as the default — so the published bytes are
+    unchanged until somebody edits one, and no room needs reseeding for them.
+
+    Document order IS the key, so inserting a described element renumbers
+    every description after it. That is the trade the ⟦A:key⟧ markers beside
+    them already make, on a page that is a frozen ingestion.
+    """
+    n = 0
+
+    def one(m):
+        nonlocal n
+        n += 1
+        attr, val = m.group(1), m.group(2)
+        key = f"{prefix}.{n}"
+        v = C.text_or(key, val)
+        hook = (f' data-desc="{_xml_attr(key)}"'
+                if os.environ.get("DOCSYNC_EDIT") else "")
+        return f'{attr}="{_xml_attr(v)}"{hook}'
+
+    return _DESC_ATTR_RE.sub(one, html)
 
 
 def _graphic_mobile_once(L) -> str:

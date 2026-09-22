@@ -3427,6 +3427,117 @@ check_eq("publishing never refuses, and carries no declaration",
          ("Sign up" in _pub, "data-frozen" in _pub, "data-el" in _pub), (True, False, False))
 
 
+# --- a description is content, and a figure inside a drawing is data ---------
+# Two failure shapes that survived every check above, both about words the
+# hook-counting could not see: an aria-label/alt (words in an ATTRIBUTE, and
+# under role="img" the ONLY words a screen reader is given for that figure),
+# and a slotted label that states a number the drawing also draws — editable
+# words over geometry that will not follow them.
+from docsync.blocks import (describe, is_quantity,       # noqa: E402
+                            slot_descriptions)
+
+
+class _C:
+    """The slice of Content these two helpers use: a document with no slots,
+    so text_or always falls through to the renderer's own wording."""
+    def text_or(self, key, default):
+        return default
+
+
+for _t, _want in [("$1,500", True), ("84.0%", True), ("$86.1M", True),
+                  ("12,345", True), ("46 percent", True), ("$10 / $50 per MTok", True),
+                  ("Claude Opus 5", False), ("FY26", False), ("Pregnancy", False),
+                  ("2031", False), ("1st", False), ("", False)]:
+    check_eq(f"is_quantity({_t!r})", is_quantity(_t), _want)
+
+os.environ["DOCSYNC_EDIT"] = "1"
+_d = describe(_C(), "chart.claims.desc", 'Claims by "type" & year')
+check_eq("describe() is a role, an escaped label and a hook",
+         _d, ' role="img" aria-label="Claims by &quot;type&quot; &amp; year"'
+             ' data-desc="chart.claims.desc"')
+check_eq("role='' leaves a tag that has one alone",
+         'role=' in describe(_C(), "k", "x", role=""), False)
+check_eq("slot_descriptions keys in document order and keeps the words",
+         slot_descriptions(_C(), '<span aria-label="7 agree, 1 pass"></span>'
+                                 '<img alt="Cover texture">', "desc"),
+         '<span aria-label="7 agree, 1 pass" data-desc="desc.1"></span>'
+         '<img alt="Cover texture" data-desc="desc.2">')
+os.environ.pop("DOCSYNC_EDIT", None)
+check_eq("published, a description is the words and nothing else",
+         describe(_C(), "k", "Claims by type"), ' role="img" aria-label="Claims by type"')
+check_eq("…and a static body keeps its own bytes",
+         slot_descriptions(_C(), '<img alt="Cover texture">', "desc"),
+         '<img alt="Cover texture">')
+
+# What _Coverage makes of them.
+_PAGE = '<section class="page">%s</section>'
+check_eq("an aria-label with words is a frozen description",
+         _cov(_PAGE % '<svg role="img" aria-label="Claims by taxpayer type, '
+                      'stacked"></svg>').desc_paged,
+         ["Claims by taxpayer type, stacked"])
+check_eq("an <img alt> counts too, though a void tag never comes back down",
+         _cov(_PAGE % '<img alt="Governor at the bill signing">').desc_paged,
+         ["Governor at the bill signing"])
+check_eq("data-desc clears it, and is listed as declared",
+         (_cov(_PAGE % '<svg aria-label="Claims by type" data-desc="c.desc">'
+                       "</svg>").desc_paged,
+          _cov(_PAGE % '<svg aria-label="Claims by type" data-desc="c.desc">'
+                       "</svg>").desc_declared),
+         ([], ["Claims by type"]))
+check_eq("so does C.derived, and so does not being announced at all",
+         (_cov(_PAGE % '<i aria-label="34 of 101" data-fixed="make tally"></i>').desc_paged,
+          _cov(_PAGE % '<i aria-label="Decorative rule" aria-hidden="true"></i>').desc_paged),
+         ([], []))
+check_eq("a data mark is not a description",
+         _cov(_PAGE % '<i aria-label="46%"></i><i alt="FY26"></i>').desc_paged, [])
+check_eq("chrome outside the sheet is kept apart from the sheet's own",
+         (_cov('<button title="Download this draft as a PDF"></button>').desc_paged,
+          _cov('<button title="Download this draft as a PDF"></button>').desc_all),
+         ([], ["Download this draft as a PDF"]))
+check_eq("an SVG <title> is the same words by another route",
+         _cov(_PAGE % "<svg><title>Claims by taxpayer type</title></svg>").desc_paged,
+         ["Claims by taxpayer type"])
+check_eq("…and a wired one passes",
+         _cov(_PAGE % '<svg><title data-desc="c.desc">Claims by taxpayer type'
+                      "</title></svg>").desc_paged, [])
+
+check_eq("a slotted figure inside a drawing is a restatement",
+         _cov('<svg><text data-slot="c.fed">$20.7M</text></svg>').restated,
+         ["c.fed: $20.7M"])
+check_eq("restates= declares it, and so does C.derived",
+         (_cov('<svg><text data-slot="c.fed" data-restates="make split">$20.7M'
+               "</text></svg>").restated,
+          _cov('<svg><text data-slot="c.fed" data-fixed="make split">$20.7M'
+               "</text></svg>").restated), ([], []))
+check_eq("a label with no figure in it is nobody's problem",
+         _cov('<svg><text data-slot="c.leg">Federal TANF</text></svg>').restated, [])
+check_eq("a caption is prose wherever its numbers came from",
+         _cov('<svg><text data-slot="c.why">ITEP\u2019s baseline is 2026 policy, '
+              "so its figure is that rise, not the $705M itself.</text>"
+              "</svg>").restated, [])
+check_eq("an UNSLOTTED figure is still just a data mark, not frozen prose",
+         _cov('<svg><text>$20.7M</text></svg>').frozen_prose, [])
+
+# svg_text carries the declaration only where the editor can use it.
+from docsync.blocks import svg_text                        # noqa: E402
+os.environ["DOCSYNC_EDIT"] = "1"
+
+
+class _CS(_C):
+    def slot_attr(self, key):
+        return f' data-slot="{key}"'
+
+
+check("svg_text(restates=) declares where the number comes from",
+      svg_text(_CS(), "c.fed", "$20.7M", 1, 2, 11, "#000",
+               restates="make split"), 'data-restates="make split"')
+os.environ.pop("DOCSYNC_EDIT", None)
+check_eq("…and published it carries none of it",
+         "data-restates" in svg_text(_CS(), "c.fed", "$20.7M", 1, 2, 11, "#000",
+                                     restates="make split"), False)
+
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

@@ -413,6 +413,18 @@ CHECKS = (check_citations, check_markdown, check_svg_bounds,
 #     ("$20.7M", axis ticks) belong in the drawing; sentences are captions and
 #     belong in a slot beside it.
 #
+# Two more, found once the first two were closed and the drawings' own labels
+# became slots:
+#
+#   * A FROZEN DESCRIPTION — aria-label, alt, an SVG <title>. Words in an
+#     ATTRIBUTE, which no slot can reach, and under role="img" the only words
+#     a screen reader is given for that figure. Every hook above can be
+#     perfect while the figure's entire spoken form is a renderer literal.
+#   * A RESTATED FIGURE — a slotted label inside a drawing that states a
+#     number the drawing also draws. This one is NEW: it exists because
+#     labels became editable. The words move, the geometry does not, and
+#     nothing says the two have parted.
+#
 # Both are warnings, never errors: a model-driven chart deliberately freezes
 # its numbers (retyping "$52.1M" by hand would make the chart lie), and chrome
 # outside the sheet is not content. The point is that the choice shows up in
@@ -435,8 +447,13 @@ _SENT_END = re.compile(r"[.!?:;]\s*$")
 # frozen, and hook-counting coverage looks perfect.
 _PANEL_EDITED = ("text.", "table.", "endnote.")
 
+# Attributes that carry reader-facing words. `title` is the tooltip, not the
+# <title> element (which _Coverage handles separately, inside an <svg>).
+_DESC_ATTRS = ("aria-label", "alt", "title")
 
-from .blocks import is_data_mark, is_sentence  # noqa: E402  — one rule, shared with graphic()
+
+from .blocks import (is_data_mark, is_quantity,   # noqa: E402  — one rule,
+                     is_sentence)                 # shared with graphic()
 
 
 def _prose(t: str, loose: bool = False) -> bool:
@@ -458,6 +475,12 @@ class _Coverage(HTMLParser):
     dead: no data-slot/data-fixed/data-el ancestor, outside any SVG.
     frozen_prose: sentence-shaped text inside an <svg> — judged on data-slot
     alone, because a caption is prose wherever its numbers came from.
+    frozen_desc: an accessible description (aria-label / alt / title, or an
+    SVG <title>/<desc>) carrying words, with no data-desc, no data-fixed and
+    no aria-hidden — the one string on a figure that nobody can edit.
+    restated: a SLOTTED label inside a drawing that states a figure the
+    drawing also draws, undeclared — editable words over geometry that will
+    not follow them.
     Text outside the sheet (no `page`-classed ancestor) is chrome, not content
     — kept separately so a document with no .page container still gets a
     best-effort pass over everything.
@@ -477,11 +500,73 @@ class _Coverage(HTMLParser):
         self.frozen_prose: list[str] = []
         self.frozen_declared: list[str] = []
         self._svg_fixed = False
+        self._svg_slotted = False
+        self._svg_declared = False
+        self._svg_key = ""
+        self.desc_paged: list[str] = []
+        self.desc_all: list[str] = []
+        self.desc_declared: list[str] = []
+        self.restated: list[str] = []
+        # An SVG <title>/<desc>: the OTHER way to name a figure, and the one a
+        # renderer would reach for the moment aria-label is checked.
+        self._desc_el: list[str] | None = None
+        self._desc_ok = False
+
+    def _desc_hit(self, text: str, declared: bool) -> None:
+        """Record one accessible description, and whether it is wired."""
+        if not text or is_data_mark(text):
+            return
+        if declared:
+            self.desc_declared.append(text)
+            return
+        self.desc_all.append(text)
+        if any(pg for *_, pg in self.stack):
+            self.desc_paged.append(text)
+
+    def _descriptions(self, tag, a) -> None:
+        """The words a reader is given INSTEAD of what the tag draws.
+
+        aria-label, alt and title live in an ATTRIBUTE, so every hook this
+        class counts — data-slot on the text, data-el on the wrapper — can be
+        perfect and the description still be a literal only the renderer can
+        change. With role="img" it is worse than uneditable: the element's
+        contents are not announced at all, so the description is the WHOLE
+        figure for anyone who cannot see it, and the page's own labels
+        becoming slots means a person can now retype the figure and leave its
+        spoken version saying the old thing.
+
+        Wired by blocks.describe / blocks.slot_descriptions (data-desc), by
+        C.derived (data-fixed), or by not being announced at all
+        (aria-hidden="true").
+        """
+        if not any(k in a for k in _DESC_ATTRS):
+            return
+        declared = ("data-desc" in a or "data-fixed" in a
+                    or (a.get("aria-hidden") or "").lower() == "true")
+        # The element's own class counts: _descriptions runs before the stack
+        # append, so a description ON the .page wrapper is still in the sheet.
+        page = "page" in (a.get("class") or "").split()
+        if page:
+            self.saw_page = True
+        for k in _DESC_ATTRS:
+            v = " ".join((a.get(k) or "").split())
+            if not v or is_data_mark(v):
+                continue
+            if declared:
+                self.desc_declared.append(v)
+            elif page or any(pg for *_, pg in self.stack):
+                self.desc_all.append(v)
+                self.desc_paged.append(v)
+            else:
+                self.desc_all.append(v)
 
     def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        # BEFORE the _VOID return: <img> never comes back down, and alt is a
+        # description exactly as much as aria-label is.
+        self._descriptions(tag, a)
         if tag in _VOID:
             return
-        a = dict(attrs)
         classes = (a.get("class") or "").split()
         # data-fixed (C.derived) is a DECLARATION: this text is a tally or a
         # computed value, named with the command that remakes it. It answers
@@ -502,14 +587,25 @@ class _Coverage(HTMLParser):
             # A graphic declared frozen on purpose (graphic(frozen="…")):
             # listed, so the decision stays visible; never a finding.
             self.frozen_declared.append(a.get("data-frozen") or "")
-        if tag == "text" and not slot and "data-ch" not in a:
+        if tag == "text" and "data-ch" not in a:
             # An svg text element; aggregate its tspans for the words test.
-            # One CARRYING data-slot (svg_text / C.slot_attr on the <text>
-            # tag) is editable; a native chart's data-ch text edits in the
-            # Chart panel. data-fixed (C.derived) covers a VALUE or a
-            # category name, never a sentence — that stays a caption.
+            # A native chart's data-ch text is skipped: it edits in the Chart
+            # panel. Everything else is collected, slotted or not, because the
+            # two tests at the close are opposites — an UNSLOTTED label is
+            # words nobody can reach, a SLOTTED one stating a figure is words
+            # that move without the geometry under them.
             self._svg_text = []
             self._svg_fixed = "data-fixed" in a
+            self._svg_slotted = slot
+            self._svg_key = a.get("data-slot") or ""
+            self._svg_declared = "data-restates" in a or "data-fixed" in a
+        if tag in ("title", "desc") and any(sv for *_, sv, _ in self.stack[:-1]):
+            # An SVG <title>/<desc> is the accessible name in element form.
+            # data-slot on it is not enough to be reachable — it has no
+            # geometry, so the editor cannot float a field over it — but
+            # data-desc says a slot IS what fills it.
+            self._desc_el = []
+            self._desc_ok = "data-desc" in a or "data-fixed" in a
 
     def handle_endtag(self, tag):
         if tag in _VOID:
@@ -522,15 +618,43 @@ class _Coverage(HTMLParser):
             self.opaque = max(0, self.opaque - 1)
         if tag == "text" and self._svg_text is not None:
             whole = " ".join(t for t in self._svg_text if t).strip()
-            # Any WORDS, not only a sentence: a legend entry or a step name is
-            # exactly as unreachable as a caption. The rule is graphic()'s own
-            # (blocks.is_data_mark), so the build and this check agree.
-            if whole and (is_sentence(whole) if self._svg_fixed
-                          else not is_data_mark(whole)):
+            if whole and self._svg_slotted:
+                # The opposite failure. The label is editable; the bar, the
+                # wedge or the band beside it is the renderer's and does not
+                # follow. So a slot that STATES A FIGURE can be retyped into
+                # disagreeing with the drawing it sits on, silently — unless
+                # it says where the number comes from (svg_text restates=, or
+                # C.derived, which makes it not a slot at all).
+                # A SENTENCE is a caption, not a figure — prose wherever its
+                # numbers came from, which is the frozen-prose rule read the
+                # other way round. Retyping one is editing the words about a
+                # number, and no shape claims to follow it.
+                if (is_quantity(whole) and not is_sentence(whole)
+                        and not self._svg_declared):
+                    # Named by its KEY as well as its words: the key is what
+                    # the fix edits, and two bars can carry the same figure.
+                    self.restated.append(f"{self._svg_key}: {whole}"
+                                         if self._svg_key else whole)
+            elif whole and (is_sentence(whole) if self._svg_fixed
+                            else not is_data_mark(whole)):
+                # Any WORDS, not only a sentence: a legend entry or a step name
+                # is exactly as unreachable as a caption. The rule is
+                # graphic()'s own (blocks.is_data_mark), so the build and this
+                # check agree.
                 self.frozen_prose.append(whole)
             self._svg_text = None
+            self._svg_slotted = self._svg_declared = False
+        if tag in ("title", "desc") and self._desc_el is not None:
+            whole = " ".join(t for t in self._desc_el if t).strip()
+            self._desc_hit(whole, self._desc_ok)
+            self._desc_el = None
 
     def handle_data(self, data):
+        # Before the opaque gate: <title> is an opaque tag (its text is never
+        # page content), but an SVG <title> IS the figure's accessible name.
+        if self._desc_el is not None:
+            self._desc_el.append(" ".join(data.split()))
+            return
         if self.opaque:
             return
         t = " ".join(data.split())
@@ -605,6 +729,9 @@ def check_editability(binding) -> list[Problem]:
             if t not in accepted]
     frozen = [s for s in cov.frozen_prose if s not in accepted]
     trapped = [t for t in cov.trapped if t not in accepted]
+    descs = [t for t in (cov.desc_paged if cov.saw_page else cov.desc_all)
+             if t not in accepted]
+    restated = [t for t in cov.restated if t not in accepted]
     hint = ("Wire them (C.html / C.slot_attr / L.attr), declare derived "
             "values with C.derived('<how to remake it>'), or list each in "
             "this binding's editability_ok" if strict else
@@ -637,6 +764,25 @@ def check_editability(binding) -> list[Problem]:
             f"with no data-slot — draggable, words frozen (the C() trap): "
             f"{_samples(trapped)}. Give the text a slot: C.html / C.slot_span "
             f"/ C.slot_attr",
+            level))
+    if descs:
+        problems.append(Problem(
+            "editability",
+            f"{len(descs)} accessible description(s) are renderer literals — "
+            f"words a reader is given INSTEAD of the drawing, in an attribute "
+            f"no slot can reach: {_samples(descs)}. Write each with "
+            f"blocks.describe(C, key, default) (a whole static body: "
+            f"blocks.slot_descriptions), or mark it aria-hidden=\"true\" when "
+            f"the element only repeats text beside it",
+            level))
+    if restated:
+        problems.append(Problem(
+            "editability",
+            f"{len(restated)} figure(s) inside a drawing are free-text slots: "
+            f"retyping one does not move the shape it labels, so the drawing "
+            f"can be made to disagree with itself: {_samples(restated)}. Say "
+            f"where the number comes from — svg_text(…, restates='<how it is "
+            f"remade>') — or C.derived to take it out of the slot entirely",
             level))
     return problems
 
