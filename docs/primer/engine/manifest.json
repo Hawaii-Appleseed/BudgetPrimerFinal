@@ -1,6 +1,6 @@
 {
   "id": "budget-primer",
-  "repo": "Hawaii-Appleseed/BudgetPrimerFinal",
+  "repo": "dtomkatsu/BudgetPrimerFinal",
   "branch": "main",
   "files": {
     "engine/docsync/content.py": "docsync/content.py",
