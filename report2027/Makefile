@@ -9,8 +9,18 @@ validate:
 # stages it — and everything it reads — next to the published page, driven by
 # the editor: block in docsync.yml. Nothing about the editor is primer-specific,
 # so there is nothing to configure here.
+# No --repo. It used to name dtomkatsu/BudgetPrimerFinal, and because the live
+# server runs `make pub` on EVERY rebuild, every rebuild stamped that slug into
+# the staged manifest — the file that tells the editor where Save and Push go.
+# So the manifest kept reverting to a personal fork no matter how often it was
+# corrected and committed, including immediately after a push. primer-editor
+# fixed this in its own copy ("anyone who cloned got an editor whose Save/Push
+# aimed at someone else's repo"), but a Makefile is not an engine file and does
+# not vendor, so this copy kept the old line. Left unset, docsync.stage keeps
+# whatever the manifest already says and otherwise derives this checkout's own
+# origin — which is the right answer for a fork, too.
 editor: render
-	cd .. && python3 -m docsync.stage --id budget-primer --repo dtomkatsu/BudgetPrimerFinal
+	cd .. && python3 -m docsync.stage --id budget-primer
 
 # Publish the built report + editor into docs/, which GitHub Pages serves. This
 # is the ONE build command — the local live server, the save endpoint, and CI
