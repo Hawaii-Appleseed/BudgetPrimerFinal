@@ -4943,6 +4943,39 @@ function pageMenu(d, pg, e) {
   if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
 }
 
+/** The accessible description attached to this element, if it has one.
+ *
+ *  blocks.describe / blocks.slot_descriptions put the words in an ATTRIBUTE
+ *  (aria-label, alt) or an SVG <title>, with the slot key beside them in
+ *  data-desc. Under role="img" those words are the WHOLE figure for a reader
+ *  who cannot see it — and being an attribute they have no geometry, so there
+ *  is nothing on the page to float a field over the way editSvgSlot does for a
+ *  chart label. They edit from the context menu instead.
+ *
+ *  The hook sits on the DRAWING, which for a graphic() is the <svg> inside the
+ *  movable wrapper the menu was opened on, and for an ingested page is one bar
+ *  among many under a single data-el. So the click target decides, and the
+ *  wrapper's first description is only the fallback.
+ */
+function descOf(el, e) {
+  const hit = e && e.target && e.target.closest ? e.target.closest('[data-desc]') : null;
+  const node = (hit && el.contains(hit)) ? hit
+    : (el.matches('[data-desc]') ? el : el.querySelector('[data-desc]'));
+  if (!node) return null;
+  const key = node.dataset.desc;
+  if (!key) return null;
+  // The words on the page are the renderer's own until the document carries
+  // the slot — the same bargain C.text_or makes, and the same one edit() makes
+  // when it seeds an unwritten chart label from the glyphs on screen.
+  const live = node.getAttribute('aria-label') || node.getAttribute('alt')
+    || (node.tagName.toLowerCase() === 'title' ? (node.textContent || '') : '');
+  return {
+    node, key,
+    words: slotRe(key).test(source) ? readSlot(key)
+                                    : live.replace(/\s+/g, ' ').trim(),
+  };
+}
+
 function layerMenu(d, el, e) {
   closeMenu(d);
   const id = el.dataset.shape || el.dataset.el || el.dataset.fill;
@@ -5378,6 +5411,28 @@ function layerMenu(d, el, e) {
         markDirty(); await render();
       });
     }
+  }
+  const desc = descOf(el, e);
+  if (desc) {
+    const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
+    item('Description (for screen readers)…', async () => {
+      collabWarnShared(desc.key, 'description');
+      const got = await dsForm(
+        'What a screen reader reads instead of this drawing',
+        [{ name: 'words', type: 'textarea', label: desc.key, value: desc.words,
+           placeholder: 'What the figure shows, and what it shows about it.' }],
+        { okLabel: 'Save',
+          validate: v => v.words.trim() ? ''
+            : 'A figure with an empty description is announced as nothing at all.' });
+      if (got == null) return;
+      const words = got.words.replace(/\s+/g, ' ').trim();
+      if (words === desc.words) return;
+      pushHistory();
+      writeSlot(desc.key, words);
+      markDirty();
+      await render();
+      $('stat').textContent = `${desc.key} — updated`;
+    });
   }
   if (!!shapeOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
