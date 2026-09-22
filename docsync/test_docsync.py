@@ -3538,6 +3538,168 @@ check_eq("…and published it carries none of it",
 
 
 
+# ------------------------------------ editability: the four holes, 2026-09-22
+# Each was an open way for a renderer — an AI's, usually — to put words on a
+# page that nobody could edit while every check stayed green.
+from docsync.blocks import graphic as _graphic, svg_literals   # noqa: E402
+from docsync.check import (check_publish_only,                  # noqa: E402
+                           check_slot_fidelity)
+
+# 1. HTML inside a drawing.
+check_eq("graphic() refuses words in a <foreignObject>",
+         svg_literals('<svg viewBox="0 0 9 9"><foreignObject><div>Households '
+                      'under fifty thousand pay more.</div></foreignObject>'
+                      '</svg>'),
+         ["Households under fifty thousand pay more."])
+check_eq("…but a slot inside one is reachable",
+         svg_literals('<svg><foreignObject><p data-slot="k">Words that edit.'
+                      '</p></foreignObject></svg>'), [])
+check_eq("an upper-case <TEXT> is still text",
+         svg_literals("<svg><TEXT x='1'>Label words here</TEXT></svg>"),
+         ["Label words here"])
+check_eq("'data-slot' in another attribute's value is not a hook",
+         svg_literals('<svg><text class="data-slot">Label words here</text>'
+                      '</svg>'), ["Label words here"])
+check_eq("tspans still read as one label, and data marks still pass",
+         svg_literals('<svg><text><tspan>Low</tspan></text><text>$5M</text>'
+                      '<text>Two <tspan>words</tspan></text></svg>'),
+         ["Two words"])
+check_eq("docsync.check sees words in a <foreignObject> too",
+         _cov('<section class="page"><svg><foreignObject><div>Households '
+              'under fifty thousand pay more.</div></foreignObject></svg>'
+              '</section>').frozen_prose,
+         ["Households under fifty thousand pay more."])
+
+# 2. A declaration has to say something.
+check_eq("an empty data-fixed covers nothing",
+         _cov('<section class="page"><p data-fixed="">A sentence nobody can '
+              'edit sits here.</p></section>').dead_paged,
+         ["A sentence nobody can edit sits here."])
+check_eq("a data-fixed of only spaces covers nothing either",
+         _cov('<section class="page"><p data-fixed="  ">Tally</p></section>'
+              ).dead_paged, ["Tally"])
+check_eq("an empty data-restates declares nothing",
+         _cov('<svg><text data-slot="c.v" data-restates="">$5M</text></svg>'
+              ).restated, ["c.v: $5M"])
+check_eq("a SENTENCE under data-fixed is flagged outside an SVG as well",
+         _cov('<section class="page"><p data-fixed="make data">Spending rose '
+              'by a third over the decade.</p></section>').fixed_prose,
+         ["Spending rose by a third over the decade."])
+check_eq("…but a derived tally is what data-fixed is for",
+         _cov('<section class="page"><p data-fixed="make data">135 bills'
+              '</p></section>').fixed_prose, [])
+_c = _cov('<p data-fixed="make data">1</p><p data-fixed="make data">2</p>'
+          '<svg><text data-slot="a" data-restates="split.py">$1M</text></svg>')
+check_eq("every declaration is tallied by what it names",
+         (_c.fixed_decl, _c.restates_decl),
+         ({"make data": 2}, {"split.py": 1}))
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    check_eq("svg_text(restates='  ') emits no declaration",
+             "data-restates" in svg_text(_CS(), "c.v", "$5M", 1, 2, 11, "#000",
+                                         restates="  "), False)
+    try:
+        _graphic(type("L", (), {"positions": {}, "spacer": lambda s, i: "",
+                                "attr": lambda s, i, b="": ""})(), "g",
+                 '<svg viewBox="0 0 9 9"><text>Frozen words here</text></svg>',
+                 frozen="   ")
+        FAILS.append("graphic(frozen='   ') must not excuse its words")
+    except ValueError as e:
+        check("…a blank frozen= is no reason", str(e), "Frozen words here")
+finally:
+    os.environ.pop("DOCSYNC_EDIT", None)
+
+
+def _derived_blank():
+    import tempfile as _tf
+    from docsync.content import Content as _C
+    with _tf.TemporaryDirectory() as td:
+        p = Path(td) / "content.md"
+        p.write_text("[[k]]\nx\n\n[[sources]]\n[s]: t — https://e.com\n")
+        os.environ["DOCSYNC_EDIT"] = "1"
+        try:
+            _C(p).derived("  ")
+        finally:
+            os.environ.pop("DOCSYNC_EDIT", None)
+
+
+check_raises("C.derived('') is refused in edit mode", _derived_blank,
+             "empty source declares nothing")
+
+# 3. A slot hook is held to the words the slot actually served.
+_c = _cov('<section class="page">'
+          '<h2 data-slot="s.title">Real title <span>— FY27 edition</span></h2>'
+          '<p data-slot="made.up">Invented key covering prose.</p>'
+          '<p data-slot="s.body">Body with a <b>note</b><sup>3</sup>.</p>'
+          '<div role="img" data-desc="s.desc" aria-label="Spoken figure"></div>'
+          '<div role="img" data-desc="s.gone" aria-label="Old words"></div>'
+          '</section>')
+_served_t = {"s.title": ["Real title"], "s.body": ["Body with a **note**[^x]."],
+             "s.desc": ["Spoken figure"]}
+check_eq("a key never read, and words beside a slot's own, are both found",
+         check_slot_fidelity(_c.slot_runs, _served_t),
+         (["made.up", "s.gone"], ["s.title: — FY27 edition"]))
+_served_f = {"cip": ["The total in FY{fy} is {total}. Roads take half."]}
+check_eq("a filled format field is data, not a foreign word",
+         check_slot_fidelity([("cip", ["The total in FY2027 is $4.53 billion. "
+                                       "Roads take half.",
+                                       "in FY2027 is $4.53 billion. Ro"])],
+                             _served_f), ([], []))
+check_eq("…but words standing in for a field are foreign",
+         check_slot_fidelity([("cip", ["The total in FY2027 is a secret "
+                                       "number. Roads take half."])],
+                             _served_f)[1],
+         ["cip: The total in FY2027 is a secret number. Roads take half."])
+
+# 4. Words only the published build has.
+check_eq("publish-only strings are found, text and attributes both",
+         check_publish_only('<p><span data-slot="a">Hello</span> world</p>',
+                            '<p>Hello world</p><p>Only when publishing.</p>'
+                            '<img alt="A picture of words">'),
+         ["Only when publishing.", "A picture of words"])
+from docsync.blocks import PDF_PRINT_TITLE                  # noqa: E402
+check_eq("…except the one string the engine itself publishes only",
+         check_publish_only("<p>x</p>",
+                            f'<p>x</p><button title="{PDF_PRINT_TITLE}">'
+                            "</button>"), [])
+
+
+def _binding_modes(edit_html, pub_html, served=None, editability="strict"):
+    """A renderer that writes one thing per mode, and optionally a slot log."""
+    td = Path(tempfile.mkdtemp(prefix="ds-editability-"))
+    r = td / "render.py"
+    r.write_text(
+        "import json, os, pathlib\n"
+        f"edit = bool(os.environ.get('DOCSYNC_EDIT'))\n"
+        f"pathlib.Path(os.environ['DOCSYNC_OUT']).write_text("
+        f"{edit_html!r} if edit else {pub_html!r})\n"
+        + (f"if os.environ.get('DOCSYNC_SLOTLOG'):\n"
+           f"    pathlib.Path(os.environ['DOCSYNC_SLOTLOG']).write_text("
+           f"json.dumps({served!r}))\n" if served is not None else ""))
+    return Binding(id="t", content=td / "c.md", editability=editability,
+                   editability_ok=[],
+                   editor=Editor(render=r, engine=[], out=td / "out.html",
+                                 dir=td))
+
+
+_page = '<section class="page"><p data-slot="k">Fine words.</p></section>'
+_p = check_editability(_binding_modes(
+    _page, _page.replace("</section>",
+                         "<p>Draft banner only when published.</p></section>")))
+check_eq("a strict binding fails on publish-only text, end to end",
+         [(pr.is_error, "PUBLISHED" in str(pr)) for pr in _p], [(True, True)])
+_p = check_editability(_binding_modes(_page, _page, served={"other": ["x"]}))
+check_eq("a strict binding fails on a hook the renderer never read",
+         [(pr.is_error, "never read" in str(pr)) for pr in _p], [(True, True)])
+check_eq("…and passes when the slot log backs every hook",
+         check_editability(_binding_modes(_page, _page,
+                                          served={"k": ["Fine words."]})), [])
+check_eq("a note alone is not a finding level",
+         [pr.level for pr in check_editability(_binding_modes(
+             '<section class="page"><p data-fixed="make">12</p></section>',
+             '<section class="page"><p>12</p></section>'))], ["note"])
+
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

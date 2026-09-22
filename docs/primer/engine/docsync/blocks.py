@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import re
+from html.parser import HTMLParser
 
 from .layout import fill_css, fill_repr
 
@@ -217,6 +218,15 @@ def chart_scroll_css(breakpoint_in: float = 8.5) -> str:
         "}</style>")
 
 
+# The published button's tooltip. The edit build's button does something else
+# (a server-side export of the draft), so it says something else — which makes
+# this the one string the engine itself emits ONLY when publishing, and the
+# one docsync.check's publish-only diff is told to expect. Named, not matched
+# by pattern, so nothing else can shelter behind it.
+PDF_PRINT_TITLE = "Opens your browser's print dialog — choose Save as PDF"
+ENGINE_PUBLISH_ONLY = frozenset({PDF_PRINT_TITLE})
+
+
 def pdf_button(L, label: str = "Download PDF", *, bg: str = "#2F3E46",
                ink: str = "#FFFFFF", top: str = "18px", right: str = "18px",
                pad: str = "", link_ink: str = "", css: bool = True) -> str:
@@ -247,7 +257,7 @@ def pdf_button(L, label: str = "Download PDF", *, bg: str = "#2F3E46",
     act = ('onclick="parent.postMessage({ds:\'export-pdf\'},\'*\')" '
            'title="Download this draft as a PDF"' if edit else
            'onclick="window.print()" '
-           'title="Opens your browser\'s print dialog — choose Save as PDF"')
+           f'title="{PDF_PRINT_TITLE}"')
     # The ds- class prefix is the editor's "this control stays live" hook:
     # deafenStickyChrome() sets pointer-events:none on every fixed/sticky child
     # of <body> so a report's standing chrome cannot eat canvas clicks — which
@@ -286,9 +296,6 @@ def pdf_button(L, label: str = "Download PDF", *, bg: str = "#2F3E46",
 # "FY26", "TY23", "$5M", "1st", a month's three letters. The rule is one
 # function — is_data_mark — shared with docsync.check so the two agree.
 _WORD_RE = re.compile(r"[A-Za-z\u00C0-\u024F\u02BB\u2018]+")
-_TEXT_RE = re.compile(r"<text\b([^>]*)>(.*?)</text>", re.S)
-_TAG_RE = re.compile(r"<[^>]+>")
-_HOOKED = ("data-slot", "data-fixed", "data-ch")
 
 
 def is_data_mark(t: str) -> bool:
@@ -330,27 +337,98 @@ def is_quantity(t: str) -> bool:
     return bool(_QTY_RE.search(t or ""))
 
 
-def svg_literals(svg: str) -> list[str]:
-    """Every <text> in `svg` the editor could never reach — the strings
-    graphic() refuses: words with no hook at all, and a whole SENTENCE even
-    under data-fixed (derived data is a value, not a caption). tspans are read
-    as part of their <text>."""
-    import html as _html
-    out = []
-    for m in _TEXT_RE.finditer(svg or ""):
-        attrs, inner = m.group(1), m.group(2)
-        if "data-slot" in attrs or "data-ch" in attrs:
-            continue
-        t = " ".join(_html.unescape(_TAG_RE.sub(" ", inner)).split())
-        if not t:
-            continue
-        if "data-fixed" in attrs:
+def declared(a: dict, name: str) -> bool:
+    """True when attribute `name` is present AND says something.
+
+    A declaration is only worth what it says. `data-fixed=""` — C.derived("")
+    — named no command that remakes the value, and `data-restates=" "` no
+    source for the figure, yet presence alone used to clear a whole subtree:
+    the escape hatch with no reason attached, and so no review. The same test
+    in graphic(), C.derived, svg_text and docsync.check, so none of them can
+    be satisfied by an empty string."""
+    return bool((a.get(name) or "").strip())
+
+
+class _SvgWords(HTMLParser):
+    """Collect every run of words in an SVG the editor could never reach.
+
+    A parser rather than a <text> regex, because the regex was the gap: it
+    never saw HTML inside a <foreignObject> — sentences in a <div> inside a
+    drawing, refused as SVG text and waved through as markup — nor an
+    upper-case <TEXT>, and it read `class="data-slot"` as a hook."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        # Per open element: tag, slot/chart hook, fixed declaration.
+        self.stack: list[tuple[str, bool, bool]] = []
+        self.text: list[str] | None = None     # the open <text>'s words
+        self.text_hook = self.text_fixed = False
+        self.fo = 0                            # <foreignObject> depth
+        self.fo_runs: list[tuple[str, bool, bool]] = []
+        self.out: list[str] = []
+
+    def _judge(self, t: str, hooked: bool, fixed: bool) -> None:
+        if not t or hooked:
+            return
+        if fixed:
             if is_sentence(t):
-                out.append(t)
-            continue
-        if not is_data_mark(t):
-            out.append(t)
-    return out
+                self.out.append(t)
+        elif not is_data_mark(t):
+            self.out.append(t)
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        hook = "data-slot" in a or "data-ch" in a
+        fixed = declared(a, "data-fixed")
+        if tag == "text" and self.text is None:
+            self.text = []
+            self.text_hook, self.text_fixed = hook, fixed
+        if tag == "foreignobject":
+            self.fo += 1
+        self.stack.append((tag, hook, fixed))
+
+    def handle_startendtag(self, tag, attrs):
+        # <text/> and <foreignObject/> carry nothing; void either way.
+        pass
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                break
+        else:
+            return
+        if tag == "text" and self.text is not None:
+            self._judge(" ".join(" ".join(self.text).split()),
+                        self.text_hook, self.text_fixed)
+            self.text = None
+        if tag == "foreignobject":
+            self.fo = max(0, self.fo - 1)
+
+    def handle_data(self, data):
+        t = " ".join(data.split())
+        if not t:
+            return
+        if self.text is not None:
+            self.text.append(t)
+        elif self.fo:
+            # HTML inside the drawing. Judged run by run, by the ancestors
+            # it sits under — a slot there is as reachable as anywhere.
+            self._judge(t, any(h for _, h, _ in self.stack),
+                        any(f for *_, f in self.stack))
+
+
+def svg_literals(svg: str) -> list[str]:
+    """Every run of words in `svg` the editor could never reach — the strings
+    graphic() refuses: words in a <text> with no hook at all, words in HTML
+    inside a <foreignObject> with no slot above them, and a whole SENTENCE
+    even under data-fixed (derived data is a value, not a caption). tspans
+    are read as part of their <text>; a data-fixed with no reason in it is no
+    declaration (see declared())."""
+    p = _SvgWords()
+    p.feed(svg or "")
+    p.close()
+    return p.out
 
 
 class SvgLiteralError(ValueError):
@@ -377,6 +455,8 @@ def graphic(L, el_id: str, svg: str, w: float = 1.5, cls: str = "",
     editor and docsync.check's edit-mode pass both build in edit mode, so a
     literal cannot reach a person without being seen here first."""
     edit = bool(os.environ.get("DOCSYNC_EDIT"))
+    # A reason of only whitespace is no reason: the same rule as declared().
+    frozen = (frozen or "").strip() or None
     if edit and not frozen:
         lits = svg_literals(svg)
         if lits:
@@ -443,7 +523,7 @@ def svg_text(C, key: str, default: str, x, y, size, fill: str,
     wt = f' font-weight="{weight}"' if weight else ""
     an = f' text-anchor="{anchor}"' if anchor else ""
     rs = ""
-    if restates and os.environ.get("DOCSYNC_EDIT"):
+    if (restates or "").strip() and os.environ.get("DOCSYNC_EDIT"):
         rs = f' data-restates="{_xml_attr(restates)}"'
     return (f'<text x="{x}" y="{y}" font-size="{size}" fill="{fill}"{wt}{an}'
             f'{extra}{C.slot_attr(key)}{rs}>{v}</text>')

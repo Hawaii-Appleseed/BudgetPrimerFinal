@@ -429,6 +429,37 @@ class Footnotes:
                 + "".join(items) + "</ol>")
 
 
+# ---- what each slot actually served -------------------------------------------
+# docsync.check's edit-mode pass counts text under a data-slot as editable. A
+# hook is only as good as what stands behind it, though: slot_attr() takes any
+# key, so `<p data-slot="made.up">…literal…</p>` looked wired, and a slot's
+# element could carry renderer words beside the slot's own ("Title — FY27
+# edition") that no edit reaches. So under DOCSYNC_SLOTLOG=<path> every key a
+# renderer READS is written out with the words it was given, and the check
+# holds the page to it. Nothing is recorded otherwise (the browser editor
+# never sets it), and a key served twice keeps every version it served.
+_SERVED: dict[str, list[str]] = {}
+
+
+def _served(key: str, words: str) -> None:
+    if not os.environ.get("DOCSYNC_SLOTLOG"):
+        return
+    if not _SERVED:
+        import atexit
+        atexit.register(_dump_served)
+    seen = _SERVED.setdefault(key, [])
+    if words not in seen:
+        seen.append(words)
+
+
+def _dump_served() -> None:
+    import json
+    path = os.environ.get("DOCSYNC_SLOTLOG")
+    if path:
+        Path(path).write_text(json.dumps(_SERVED, ensure_ascii=False),
+                              encoding="utf-8")
+
+
 class Content:
     """Key lookup with a loud failure when a key is missing."""
 
@@ -483,11 +514,13 @@ class Content:
             # Footnotes.resolve() and the empty-list note in bullets().
             if os.environ.get("DOCSYNC_EDIT"):
                 self._new.add(key)
+                _served(key, NEW_SLOT.format(key=key))
                 return NEW_SLOT.format(key=key)
             raise ContentError(
                 f"{self.path.name}: missing '[[{key}]]'.\n"
                 f"  The Google Doc must keep every [[key]] marker intact.")
         self._used.add(key)
+        _served(key, self._raw[key])
         return self._raw[key]
 
     def __call__(self, key: str) -> str:
@@ -518,6 +551,7 @@ class Content:
         carry it."""
         if key in self._raw:
             return self.text(key)
+        _served(key, default)
         return default
 
     def _style(self, key: str) -> str:
@@ -576,6 +610,14 @@ class Content:
         """
         if not os.environ.get("DOCSYNC_EDIT"):
             return ""
+        if not str(source or "").strip():
+            # An empty declaration used to clear the whole subtree beneath it
+            # in docsync.check — an escape hatch that named no reason, so there
+            # was nothing to review. Refused in edit mode, like graphic()'s
+            # literals; publishing never emitted the attribute anyway.
+            raise ContentError(
+                "C.derived() needs the command, script or model that remakes "
+                "the value — an empty source declares nothing")
         safe = (str(source).replace("&", "&amp;").replace('"', "&quot;")
                 .replace("<", "&lt;"))
         return f' data-fixed="{safe}"'
