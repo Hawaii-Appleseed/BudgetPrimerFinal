@@ -549,7 +549,8 @@ def _graphic_mobile_once(L) -> str:
 
 
 def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
-          cls: str = "", attrs: str = "", smallest_label: float = 0.0) -> str:
+          cls: str = "", attrs: str = "", smallest_label: float = 0.0,
+          desc: str = "") -> str:
     """A chart drawn INLINE, in the document's flow, that the editor can still
     open in its Chart panel and edit.
 
@@ -570,6 +571,11 @@ def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
     Sized in inches like graphic(); `smallest_label` hands chart_scroll the
     smallest type the chart draws, so a phone scrolls it rather than shrinking
     it under the legibility floor.
+
+    `desc` takes a blocks.describe(C, key, default) — the figure's accessible
+    description as an editable slot. Pass one for any chart a reader is meant
+    to understand; without it the spec's `title` names the figure, and with
+    neither the chart is left unnamed rather than named after its id.
     """
     from .layout import chart_svg, MIN_SUBLABEL_IN
 
@@ -581,8 +587,20 @@ def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
     # width: by default the figure fills its column the way the primer's
     # hand-built ones always have.
     body = chart_svg(c, 0.0, 0.0, w, h)
-    svg = (f'<svg viewBox="0 0 {w:g} {h:g}" class="chart" role="img" '
-           f'aria-label="{_xml_attr(c.get("title") or el_id)}"{attrs}'
+    # What a screen reader is given for the figure. `desc` is a slot
+    # (blocks.describe), so the words edit on the page like any other.
+    # Without one, the chart's own TITLE names it — and with neither, the
+    # figure gets no role="img" at all, so its labels are announced instead.
+    # It used to fall back to the el_id, which meant a reader who could not
+    # see budget-primer's Figure 6 was told "whopays.fig6": an internal
+    # identifier, read aloud, as the entire description of a chart.
+    if desc:
+        name = desc
+    elif c.get("title"):
+        name = f' role="img" aria-label="{_xml_attr(c["title"])}"'
+    else:
+        name = ""
+    svg = (f'<svg viewBox="0 0 {w:g} {h:g}" class="chart"{name}{attrs}'
            f' style="display:block;width:100%;height:auto">{body}</svg>')
     klass = ("ds-graphic ds-chart " + cls).strip()
     base = "display:block;line-height:0"
