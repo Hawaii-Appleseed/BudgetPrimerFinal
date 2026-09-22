@@ -216,15 +216,25 @@ its *text* model, and the whole idea of a named, redefinable style.
 
    The editor resolves `text.folio@3` to the master's ONE box, so a drag, a
    retext or a restyle made on any page lands on every page that uses the
-   master — which is what a master is for, and the strip says so ("on master
-   Section", and the type bar's chip). Made from a page: the strip's picker
-   (page mode) offers **New master from this page…**, which MOVES the page's
-   own boxes and shapes into the master; other pages take it from the same
-   picker; right-click a page for **Detach master to this page** (own,
-   numbered copies) and a master item for **Remove from master**. Delete on
-   a master item refuses and says why. A duplicated page keeps its master; a
-   deleted blank drops its entry. Pilot: `master(page, name)`,
+   master — which is what a master is for, and the strip says so ("on shared
+   layout Section", and the type bar's chip). Made from a page: the strip's
+   picker (page mode) offers **+ Share this page's layout…**, which MOVES the
+   page's own boxes and shapes into the master; other pages take it from the
+   same picker; right-click a page for **Detach shared layout to this page**
+   (own, numbered copies) and a master item for **Remove from shared layout**.
+   Delete on a master item refuses and says why. A duplicated page keeps its
+   master; a deleted blank drops its entry. Pilot: `master(page, name)`,
    `masterFrom(page, name)`, `detachMaster(page)`.
+
+   **The person sees "shared layout", not "master" (2026-09-21).** The word
+   was InDesign's until 2020, when InDesign itself renamed it to "parent
+   page" — and neither reads as anything to somebody who has not used
+   InDesign, which is who lays out these reports. The picker now reads
+   *No shared layout / Shared layout: Section / + Share this page's layout…*
+   and carries a tooltip saying what one does. Only the STRINGS changed:
+   `layout.masters`, `layout.pageMasters`, the `@` ids, the pilot verbs and
+   every identifier keep the old word, so parity with InDesign's model is
+   unaffected. Rename strings here, never keys.
 
    Master shapes move too (2026-09-18): the thirty-odd shape lookups now go
    through one `shapeOf()`, which resolves `rule@3` to the master's one shape,

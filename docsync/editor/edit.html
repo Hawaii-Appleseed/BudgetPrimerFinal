@@ -2513,10 +2513,17 @@
   <!-- Shown only while a PAGE is selected (see pageBar): what the strip is
        talking about, and the one action a sheet has of its own. -->
   <span class="ar-count ds-pageonly" id="ar-pagelabel" hidden></span>
-  <!-- The master this page uses — InDesign's master page, as a picker on the
-       page's own strip. Its items draw on every page that uses it, and a
-       change to one of them lands on all of those pages. -->
-  <select id="ar-master" class="ds-pageonly" hidden title="Master — the boxes and shapes every page using it shares"></select>
+  <!-- The master this page uses, as a picker on the page's own strip. Its
+       items draw on every page that uses it, and a change to one of them
+       lands on all of those pages.
+       The UI calls this a SHARED LAYOUT; the data model, the pilot verbs and
+       the code below still say "master" (layout.masters, masterApply, …).
+       InDesign's own term for the thing was "master page" until 2020, when it
+       became "parent page" — neither reads as anything to somebody who has
+       not used InDesign, and this picker is used by whoever is laying out a
+       report, not by a typographer. So the words on screen say what it DOES
+       and the identifiers stay put. Rename the strings here, not the keys. -->
+  <select id="ar-master" class="ds-pageonly" hidden title="A shared layout holds boxes and shapes that every page using it shows — a folio, a running header, a rule. Edit one, and it changes on all of them."></select>
   <button id="ar-pagedup" class="ds-pageonly" hidden
     aria-label="Duplicate page — adds a copy after this one">Duplicate page</button>
   <button id="ar-fill" aria-label="Fill colour" hidden><span class="A">◆</span><span
@@ -4933,7 +4940,7 @@ function pageMenu(d, pg, e) {
   }, !!(pageClip || pageStyleClip));
   item('Duplicate page', () => duplicatePage(pid));
   if (masterNameOf(pid)) {
-    item(`Detach master “${masterNameOf(pid)}” to this page`, () => masterDetach(pid));
+    item(`Detach shared layout “${masterNameOf(pid)}” to this page`, () => masterDetach(pid));
   }
   sep();
   submenuRow(d, m, 'Page colour ▸', sub => fillRow(d, sub, pageFillId(pid)));
@@ -5003,10 +5010,10 @@ function layerMenu(d, el, e) {
     const mi = masterItemOf(id);
     const head = d.createElement('div');
     head.className = 'ds-menu-head';
-    head.textContent = `on master “${mi.name}”`;
+    head.textContent = `on shared layout “${mi.name}”`;
     m.appendChild(head);
-    item('Remove from master', () => masterRemoveItem(id));
-    item(`Detach master to this page`, () => masterDetach(mi.page));
+    item('Remove from shared layout', () => masterRemoveItem(id));
+    item(`Detach shared layout to this page`, () => masterDetach(mi.page));
     const sep0 = d.createElement('div'); sep0.className = 'ds-menu-sep'; m.appendChild(sep0);
   }
   if (!surface && isLocked(id) && !masterItemOf(id)) {
@@ -9216,9 +9223,10 @@ function showType(key) {
   const st = styleOf(key);
   const real = computedType(key);
   fillStylePicker(st);
-  $('ty-key').textContent = masterItemOf(key) ? `${key} · master “${masterItemOf(key).name}”` : key;
+  $('ty-key').textContent = masterItemOf(key)
+  ? `${key} · shared layout “${masterItemOf(key).name}”` : key;
   $('ty-key').title = masterItemOf(key)
-    ? `${key} — on the master "${masterItemOf(key).name}": a change here lands on every page that uses it`
+    ? `${key} — on the shared layout "${masterItemOf(key).name}": a change here lands on every page that uses it`
     : key;
   // text-align means nothing to SVG text — a curved label is centred on its
   // path by text-anchor, and display:inline-block is not a thing there either.
@@ -10750,7 +10758,7 @@ async function deleteSel(d) {
   const gone = [];
   [...selIds].filter(id => !isLocked(id)).forEach(id => {
     if (masterItemOf(id)) {
-      $('stat').textContent = `that is on the master "${masterItemOf(id).name}" — right-click it for Remove from master, or detach the master to this page`;
+      $('stat').textContent = `that is on the shared layout "${masterItemOf(id).name}" — right-click it for Remove from shared layout, or detach the layout to this page`;
       return;
     }
     if (!!shapeOf(id)) {
@@ -11808,7 +11816,7 @@ function pastePageContents(pid, c) {
 /** Apply a master to a page (name null = none). The page's own items stay;
  *  the master's join them. */
 async function masterApply(pid, name) {
-  if (name && !masters()[name]) return { ok: false, error: `no master "${name}"` };
+  if (name && !masters()[name]) return { ok: false, error: `no shared layout "${name}"` };
   pushHistory();
   const pm = pageMasters();
   if (name) pm[String(pid)] = name; else delete pm[String(pid)];
@@ -11816,8 +11824,8 @@ async function masterApply(pid, name) {
   markDirty(); await render();
   const d = $('out').contentDocument;
   if (selPage != null) pageBar(d);
-  $('stat').textContent = name ? `page ${pageLabel(pid)} uses the master "${name}"`
-                               : `page ${pageLabel(pid)} uses no master`;
+  $('stat').textContent = name ? `page ${pageLabel(pid)} uses the shared layout "${name}"`
+                               : `page ${pageLabel(pid)} uses no shared layout`;
   return { ok: true, page: pid, master: name || null };
 }
 /** MOVE a page's own boxes and shapes into a new master, and make the page
@@ -11825,11 +11833,11 @@ async function masterApply(pid, name) {
  *  or a wrap — a master item is placed by the page, not by a paragraph. */
 async function masterFromPage(pid, name) {
   name = String(name || '').trim();
-  if (!name) return { ok: false, error: 'a master needs a name' };
+  if (!name) return { ok: false, error: 'a shared layout needs a name' };
   if (masters()[name]) return { ok: false, error: `there is already a master "${name}"` };
   const c = pageContents(pid);
   if (!c.boxes.length && !c.shapes.length)
-    return { ok: false, error: `nothing placed on page ${pageLabel(pid)} to make a master from` };
+    return { ok: false, error: `nothing placed on page ${pageLabel(pid)} to share` };
   pushHistory();
   const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; return y; };
   masters()[name] = { boxes: c.boxes.map(strip), shapes: c.shapes.map(strip) };
@@ -11839,14 +11847,14 @@ async function masterFromPage(pid, name) {
   markDirty(); await render();
   if (selPage != null) pageBar($('out').contentDocument);
   const n = c.boxes.length + c.shapes.length;
-  $('stat').textContent = `"${name}" is a master now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`;
+  $('stat').textContent = `"${name}" is a shared layout now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`;
   return { ok: true, master: name, items: n };
 }
 /** Detach: the master's items become this page's own copies, and the page
  *  stops using the master. `{page}` is written out as this page's number. */
 async function masterDetach(pid) {
   const name = masterNameOf(pid);
-  if (!name) return { ok: false, error: `page ${pageLabel(pid)} uses no master` };
+  if (!name) return { ok: false, error: `page ${pageLabel(pid)} uses no shared layout` };
   pushHistory();
   const m = masters()[name];
   const label = pageLabel(pid);
@@ -11863,20 +11871,20 @@ async function masterDetach(pid) {
   if (!Object.keys(pageMasters()).length) delete layout.pageMasters;
   markDirty(); await render();
   if (selPage != null) pageBar($('out').contentDocument);
-  $('stat').textContent = `page ${label} has its own copies now — ${n} item${n === 1 ? '' : 's'} — and no master`;
+  $('stat').textContent = `page ${label} has its own copies now — ${n} item${n === 1 ? '' : 's'} — and no shared layout`;
   return { ok: true, page: pid, items: n };
 }
 /** Take one item off its master — off every page that uses it. */
 async function masterRemoveItem(id) {
   const mi = masterItemOf(id);
-  if (!mi) return { ok: false, error: `'${id}' is not a master item` };
+  if (!mi) return { ok: false, error: `'${id}' is not part of a shared layout` };
   pushHistory();
   const list = masters()[mi.name][mi.kind];
   list.splice(list.indexOf(mi.item), 1);
   selIds.delete(id);
   markDirty(); await render();
   paintSel($('out').contentDocument);
-  $('stat').textContent = `removed from the master "${mi.name}" — on every page that uses it`;
+  $('stat').textContent = `removed from the shared layout "${mi.name}" — on every page that uses it`;
   return { ok: true, master: mi.name };
 }
 /** The strip's picker: the master this page uses, the others, and a way to
@@ -11886,9 +11894,9 @@ function masterPickerFill(pid) {
   const names = Object.keys(masters()).sort();
   sel.textContent = '';
   const add = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; sel.appendChild(o); };
-  add('', names.length ? 'No master' : 'No master yet');
-  names.forEach(n => add(n, `Master: ${n}`));
-  add('__new', '+ New master from this page…');
+  add('', names.length ? 'No shared layout' : 'No shared layout yet');
+  names.forEach(n => add(n, `Shared layout: ${n}`));
+  add('__new', '+ Share this page\u2019s layout…');
   sel.value = masterNameOf(pid) || '';
   sel.hidden = false;
 }
@@ -11898,7 +11906,7 @@ $('ar-master').addEventListener('change', async () => {
   const v = $('ar-master').value;
   if (v === '__new') {
     $('ar-master').value = masterNameOf(pid) || '';
-    const got = await dsForm('New master from this page', [
+    const got = await dsForm('Share this page\u2019s layout', [
       { name: 'name', label: 'Name', placeholder: 'e.g. Section page', required: true },
     ]);
     if (!got || !got.name.trim()) return;
@@ -24652,7 +24660,10 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  it; detachMaster(page) gives the page its own copies and no master. A
    *  master's items render as '<item>@<page>' and edit as the one thing —
    *  setBoxText('text.footer@3', …) changes every page. `{page}` in a master
-   *  box's words is each page's number. */
+   *  box's words is each page's number.
+   *  THE PERSON SEES "shared layout", not "master" — the verbs and the layout
+   *  keys keep the old word, so say "shared layout" when you tell them what
+   *  you did, and expect them to ask for one by that name. */
   async master(page, name) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     if (!pageOrder().some(p => String(p) === String(page)))
