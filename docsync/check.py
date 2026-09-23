@@ -552,6 +552,12 @@ class _Coverage(HTMLParser):
         self._slots: list[tuple[int, str, list[str]]] = []
         self.slot_runs: list[tuple[str, list[str]]] = []
         self.sup = 0
+        # IMMOVABLE TEXT: a slot with no data-el on it or anywhere above it.
+        # Its words can be typed into and the box they sit in can never be
+        # dragged or given a width — every field of an imported page was this
+        # (tfc-2027-priorities: 141 of 141). Keys, first sighting only.
+        self.immovable_paged: list[str] = []
+        self.immovable_all: list[str] = []
 
     def _desc_hit(self, text: str, declared: bool) -> None:
         """Record one accessible description, and whether it is wired."""
@@ -634,6 +640,14 @@ class _Coverage(HTMLParser):
         self.kinds.append("slot" if slot else "fixed" if fixed else "")
         if slot and (a.get("data-slot") or "").strip():
             self._slots.append((len(self.stack), a["data-slot"].strip(), []))
+            # Movable is data-el on the slot or on anything holding it: the
+            # field itself, its paragraph block, its card, its drawing.
+            if not any(e for _, _, e, *_ in self.stack):
+                key = a["data-slot"].strip()
+                if key not in self.immovable_all:
+                    self.immovable_all.append(key)
+                    if any(pg for *_, pg in self.stack):
+                        self.immovable_paged.append(key)
         if tag == "foreignobject":
             self.fo += 1
         if tag == "sup":
@@ -1021,6 +1035,8 @@ def check_editability(binding) -> list[Problem]:
     foreign = [t for t in foreign if t not in accepted]
     pub_only = ([t for t in check_publish_only(html, pub_html)
                  if t not in accepted] if pub_html is not None else [])
+    immovable = [k for k in (cov.immovable_paged if cov.saw_page
+                             else cov.immovable_all) if k not in accepted]
     hint = ("Wire them (C.html / C.slot_attr / L.attr), declare derived "
             "values with C.derived('<how to remake it>'), or list each in "
             "this binding's editability_ok" if strict else
@@ -1031,6 +1047,21 @@ def check_editability(binding) -> list[Problem]:
             "editability",
             f"{len(dead)} visible text string(s) carry no edit hook — not a "
             f"slot, not movable: {_samples(dead)}. {hint}",
+            level))
+    if immovable:
+        # The editor's promise is that any text box can be MOVED and RESIZED,
+        # not only typed into. A slot with no data-el on it or above it keeps
+        # half of that: its words edit, and nothing can pick the box up or
+        # give it a width. Every field of an imported page was this until the
+        # engine filled propose's markers itself (blocks.fill_markers).
+        problems.append(Problem(
+            "editability",
+            f"{len(immovable)} text field(s) can be typed into but never moved "
+            f"or resized — no data-el on the field or on anything holding it: "
+            f"{_samples(immovable)}. Give each a movable box: C.html for a "
+            f"paragraph, L.attr on the element or on the block it sits in "
+            f"(its card, its list, its table), graphic() for words in a "
+            f"drawing, blocks.fill_markers for an imported page's markers",
             level))
     if frozen:
         problems.append(Problem(

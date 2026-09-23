@@ -35,6 +35,7 @@ import os
 import re
 from html.parser import HTMLParser
 
+from .content import merge_attrs, split_style
 from .layout import fill_css, fill_repr
 
 
@@ -596,6 +597,222 @@ def slot_descriptions(C, html: str, prefix: str) -> str:
         return f'{attr}="{_xml_attr(v)}"{hook}'
 
     return _DESC_ATTR_RE.sub(one, html)
+
+
+# --- an ingested page's markers ----------------------------------------------
+# docsync.propose writes an imported page's body with markers where the
+# editor's hooks go — ⟦A:key⟧ in a start tag (this element is slot `key`),
+# ⟦T:key⟧ as its words, ⟦E:id⟧ / ⟦S:id⟧ on a free-standing image (movable, and
+# the strut that holds its place), ⟦B:key⟧ on a coloured band. Every renderer
+# used to fill them with five re.sub lines of its own, and that is where the
+# hole was: a slot got data-slot and nothing else, so every field on an
+# imported page could be typed into and not one of them could be moved or
+# resized (tfc-2027-priorities, our-mission — every word of both). The markers
+# are the engine's grammar, so the engine fills them, and the one rule that
+# makes a field MOVABLE lives here where no renderer can leave it out.
+
+_MARK_RE = re.compile("⟦([ATSEB]):([a-z0-9_.-]+)⟧")
+_TOKEN_RE = re.compile(
+    r"<!--.*?-->"
+    r"|<(/?)([A-Za-z][A-Za-z0-9:_-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>", re.S)
+_VOID_EL = frozenset("area base br col embed hr img input link meta param "
+                     "source track wbr".split())
+_RAW_EL = frozenset(("script", "style", "textarea", "title"))
+# The inline pieces one line of a page is built from. A parent made of nothing
+# but such pieces (and text-free decoration beside them) is ONE field: a
+# stat's number with its label, a legend's swatch with its word, a heading
+# the ingest split into runs around a styled word. Moving the number without
+# its label, or one run out of the middle of its heading, is never what a
+# drag on it means.
+_PIECE_EL = frozenset("span a b strong i em small sup sub mark s u q cite abbr "
+                      "code time data label button".split())
+# Never a unit, whatever it holds: page structure and anything tabular or
+# listed, whose children lay themselves out by their parent's rules.
+_NO_UNIT_EL = frozenset("html body main header footer section article aside "
+                        "nav form table thead tbody tfoot tr td th ul ol dl "
+                        "figure details".split())
+_NBSP_RE = re.compile("&nbsp;|&#160;|&#xa0;|\u00a0", re.I)
+
+
+class _El:
+    __slots__ = ("tag", "a0", "a1", "attrs", "marks", "parent", "kids",
+                 "text", "cls")
+
+    def __init__(self, tag, a0, a1, attrs, parent):
+        self.tag, self.a0, self.a1, self.attrs = tag, a0, a1, attrs
+        self.parent, self.kids, self.text = parent, [], False
+        self.marks = {k: v for k, v in _MARK_RE.findall(attrs or "")}
+        m = re.search(r"""\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')""", attrs or "", re.I)
+        self.cls = ((m.group(1) or m.group(2) or "") if m else "").split()
+
+
+def _tree(body: str) -> list[_El]:
+    """The body's elements in document order, each knowing its parent, its
+    children, its markers and whether it holds words of its own. A marker is
+    words only when it is ⟦T⟧ — the others are hooks, not text."""
+    root = _El("#root", 0, 0, "", None)
+    stack, out, pos = [root], [], 0
+
+    def words(s: str) -> bool:
+        s = re.sub("⟦[SEAB]:[a-z0-9_.-]+⟧", "", s)
+        return bool(_NBSP_RE.sub("", s).strip())
+
+    while True:
+        m = _TOKEN_RE.search(body, pos)
+        if not m:
+            if words(body[pos:]):
+                stack[-1].text = True
+            break
+        if words(body[pos:m.start()]):
+            stack[-1].text = True
+        pos = m.end()
+        if m.group(0).startswith("<!--"):
+            continue
+        close, tag, attrs = m.group(1), m.group(2).lower(), m.group(3) or ""
+        if close:
+            for i in range(len(stack) - 1, 0, -1):
+                if stack[i].tag == tag:
+                    del stack[i:]
+                    break
+            continue
+        el = _El(tag, m.start(), m.end(), attrs, stack[-1])
+        stack[-1].kids.append(el)
+        out.append(el)
+        if tag in _RAW_EL:
+            end = re.compile(rf"</{tag}\s*>", re.I).search(body, pos)
+            pos = end.end() if end else len(body)
+            continue
+        if tag not in _VOID_EL and not attrs.rstrip().endswith("/"):
+            stack.append(el)
+    return out
+
+
+def _has_words(el: _El) -> bool:
+    return el.text or any(_has_words(k) for k in el.kids)
+
+
+def _has_marks(el: _El) -> bool:
+    return bool(el.marks) or any(_has_marks(k) for k in el.kids)
+
+
+def _unit(p: _El | None) -> bool:
+    """A parent that IS one field: made only of marked inline pieces and
+    decoration that carries no words (a swatch, a bar drawn in CSS)."""
+    if (p is None or p.tag == "#root" or p.tag in _NO_UNIT_EL or p.marks
+            or p.text or "page" in p.cls):
+        return False
+    pieces = 0
+    for k in p.kids:
+        if "A" in k.marks and k.tag in _PIECE_EL:
+            pieces += 1
+        elif _has_words(k) or _has_marks(k):
+            return False
+    return pieces > 0
+
+
+def field_plan(body: str) -> list[tuple[str, str, list[str]]]:
+    """Which element carries each field's move/resize hook, as data:
+    [(field id, the tag that carries it, the slot keys it holds)] in document
+    order. What fill_markers stamps, for a test or a check to read."""
+    els = _tree(body)
+    plan = _plan(els)
+
+    def keys(el: _El) -> list[str]:
+        own = [el.marks["A"]] if "A" in el.marks else []
+        return own + [k for c in el.kids for k in keys(c)]
+
+    return [(fid, el.tag, keys(el)) for el, fid in plan.items()]
+
+
+def _plan(els: list[_El]) -> dict:
+    """{element: field id}: every ⟦A⟧ slot is its own field or sits inside
+    one. The outermost slot of a nest owns it (a stat's "of 30" rides its
+    number), and a parent made only of slot pieces owns them all (_unit). A
+    slot inside an image's ⟦E⟧ element, or another slot, is inside a field
+    already. The id is `field.<key>`, keyed by the first slot the field
+    holds — stable for as long as that key is, which is the promise every
+    other layout id makes."""
+    plan: dict = {}
+
+    def inside(el: _El) -> bool:
+        p = el.parent
+        while p is not None:
+            if "A" in p.marks or "E" in p.marks or p in plan:
+                return True
+            p = p.parent
+        return False
+
+    for el in els:
+        if "A" not in el.marks or inside(el):
+            continue
+        owner = el.parent if _unit(el.parent) else el
+        plan.setdefault(owner, f"field.{el.marks['A']}")
+    return plan
+
+
+def fill_markers(C, L, body: str) -> str:
+    """An ingested page's body with every docsync.propose marker filled.
+
+    What the renderer's own five re.sub lines did, plus the half they never
+    did: every field is MOVABLE and RESIZABLE (field_plan decides which
+    element carries the hook). The hook is `L.attr(field id)` — data-el while
+    editing, and once moved the position that ships — merged with the slot's
+    own attributes and the element's own inline style into ONE style
+    attribute. Two style attributes on one tag was a silent loss: the parser
+    keeps the first, so a text style on a bar segment with its own width, or
+    a move on any element that already had a style, never reached the page.
+
+    No strut is written here: a moved field says what room it leaves
+    (L.attr's data-reserve-for) and the anchor runtime puts the strut in
+    before it — markup can't, when the field sits inside a <p> (a <div>
+    there closes the paragraph) or a table row. Published and untouched, the
+    bytes are exactly what the old substitution produced.
+    """
+    els = _tree(body)
+    plan = _plan(els)
+    edits: list[tuple[int, int, str]] = []
+    for el in els:
+        slot_key = el.marks.get("A")
+        field = plan.get(el)
+        if not (slot_key or field or "E" in el.marks or "B" in el.marks):
+            continue
+        raw = body[el.a0:el.a1]
+        # Where the additions go: at the first marker, as the old substitution
+        # put them — or, on an unmarked parent that became a field, just
+        # before the tag closes.
+        first = _MARK_RE.search(raw)
+        head = raw[:first.start()] if first else raw[:-1]
+        tail = raw[first.start():] if first else ">"
+        tail = _MARK_RE.sub("", tail)
+        if not first and head.endswith("/"):
+            head, tail = head[:-1], "/>"
+        adds: list[str] = []
+        if slot_key:
+            adds.append(C.slot_attr(slot_key))
+        if field:
+            adds.append(L.attr(field))
+        if "E" in el.marks:
+            adds.append(L.attr(el.marks["E"]))
+        if "B" in el.marks:
+            adds.append(L.sec(el.marks["B"]))
+        # The element's own style joins the merge only when something else
+        # brings one too; otherwise it stays exactly where the page wrote it.
+        bare, own = split_style(head)
+        if own and any(split_style(a)[1] for a in adds):
+            text = bare + merge_attrs(f' style="{own}"', *adds) + tail
+        else:
+            text = head + merge_attrs(*adds) + tail
+        edits.append((el.a0, el.a1, text))
+    out, last = [], 0
+    for a0, a1, text in edits:
+        out.append(body[last:a0])
+        out.append(text)
+        last = a1
+    out.append(body[last:])
+    body = "".join(out)
+    body = re.sub("⟦T:([a-z0-9_.-]+)⟧", lambda m: C(m.group(1)), body)
+    body = re.sub("⟦S:([a-z0-9_.-]+)⟧", lambda m: L.spacer(m.group(1)), body)
+    return body
 
 
 def _graphic_mobile_once(L) -> str:
