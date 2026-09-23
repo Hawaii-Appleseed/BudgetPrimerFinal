@@ -3835,6 +3835,15 @@ check_eq("a strict binding fails on it, and names the key",
          [(pr.is_error, "never moved or resized" in str(pr), "'k'" in str(pr))
           for pr in _p], [(True, True, True)])
 
+# ---- the editor's own script -------------------------------------------------
+# One classic script of ~20,000 lines, where a function declared twice is not
+# an error: the later declaration silently wins, and a fix made to the earlier
+# copy does nothing. slotsOf was declared twice (identically, luckily).
+_decls = re.findall(r"^(?:async )?function\*? ?([A-Za-z_$][\w$]*)",
+                    (Path(__file__).parent / "editor" / "edit.html").read_text(), re.M)
+check_eq("no function is declared twice in the editor's script",
+         sorted({n for n in _decls if _decls.count(n) > 1}), [])
+
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
