@@ -10,9 +10,13 @@ one as an editable slot:
   data-slot hook (via C.slot_attr — no wrapper span),
 - its text moves into content.md under a generated [[key]],
 - free-standing <img>/<svg> elements gain movable data-el hooks
-  (L.spacer + L.attr) — the only element class that is safe to auto-wire;
-  flow text blocks are NOT auto-wired because dragging one absolutises it
-  and reflows its siblings.
+  (L.spacer + L.attr),
+- and every field is MOVABLE and RESIZABLE too: the renderer fills the
+  markers with docsync.blocks.fill_markers, which gives each field (or the
+  unit it is a piece of — a stat's figure with its label, a heading split
+  around a styled word) a data-el. Flow text used to be left out, because a
+  drag absolutised it and its siblings reflowed into the gap; a moved field
+  now leaves a strut the size of its margin box, so nothing around it moves.
 
 What it deliberately does NOT do (see STAGE2_AUTOMATION.md): meaningful slot
 names (`hero.title` beats `s3.p-2` — rename in content.md + body.slotted.html
@@ -251,6 +255,7 @@ if str(REPO) not in sys.path:
 
 from docsync.content import Content              # noqa: E402
 from docsync.layout import Layout                # noqa: E402
+from docsync.blocks import fill_markers          # noqa: E402
 
 _LAYOUT = Path(os.environ.get("DOCSYNC_LAYOUT") or (HERE / "layout.json"))
 _CONTENT = Path(os.environ.get("DOCSYNC_CONTENT") or (HERE / "content.md"))
@@ -291,13 +296,11 @@ if EDIT:
                    "prefers-color-scheme:ds-edit-light-only", STYLE, flags=re.I)
 
 BODY = (HERE / "body.slotted.html").read_text()
-# marker substitution: A=slot attr, T=slot text, S=movable spacer,
-# E=movable attr, B=resizable background band
-BODY = re.sub("\u27e6A:([a-z0-9_.-]+)\u27e7", lambda m: C.slot_attr(m.group(1)), BODY)
-BODY = re.sub("\u27e6T:([a-z0-9_.-]+)\u27e7", lambda m: C(m.group(1)), BODY)
-BODY = re.sub("\u27e6S:([a-z0-9_.-]+)\u27e7", lambda m: L.spacer(m.group(1)), BODY)
-BODY = re.sub("\u27e6E:([a-z0-9_.-]+)\u27e7", lambda m: L.attr(m.group(1)), BODY)
-BODY = re.sub("\u27e6B:([a-z0-9_.-]+)\u27e7", lambda m: L.sec(m.group(1)), BODY)
+# The markers (A=slot attr, T=slot text, S=movable spacer, E=movable attr,
+# B=resizable background band) are the engine's to fill. fill_markers also
+# makes every field MOVABLE and RESIZABLE, not only editable — the five
+# re.subs this template used to write gave each field a slot and nothing else.
+BODY = fill_markers(C, L, BODY)
 
 # Every sheet, in order: this page, then any blank page added in the editor.
 # Going through L.page_order() plus L.pagemeta() is what lets the editor's page

@@ -3047,8 +3047,10 @@ with tempfile.TemporaryDirectory() as _td:
 
 # End to end: a real subprocess build of a tiny renderer, classified and
 # levelled exactly as docsync.check would for a registered binding.
+# The slot is a movable field (data-el on it): the one finding here must be
+# the dead sentence, not IMMOVABLE TEXT on the well-wired line beside it.
 _DIRTY = ('<section class="page"><p>Sad unwired sentence sits here.</p>'
-          '<p data-slot="k">fine</p></section>')
+          '<p data-slot="k" data-el="field.k">fine</p></section>')
 
 
 def _binding(html, editability="warn", ok=(), broken=False):
@@ -3682,7 +3684,8 @@ def _binding_modes(edit_html, pub_html, served=None, editability="strict"):
                                  dir=td))
 
 
-_page = '<section class="page"><p data-slot="k">Fine words.</p></section>'
+_page = ('<section class="page"><div data-el="para.k">'
+         '<p data-slot="k">Fine words.</p></div></section>')
 _p = check_editability(_binding_modes(
     _page, _page.replace("</section>",
                          "<p>Draft banner only when published.</p></section>")))
@@ -3698,6 +3701,125 @@ check_eq("a note alone is not a finding level",
          [pr.level for pr in check_editability(_binding_modes(
              '<section class="page"><p data-fixed="make">12</p></section>',
              '<section class="page"><p>12</p></section>'))], ["note"])
+
+
+# ------------------------------------------ every text box moves and resizes
+# tfc-2027-priorities: 141 fields, every one of them typed into on a click and
+# not one of them movable — docsync.propose wired each as a slot (data-slot)
+# and never as an object (data-el), and every imported page's renderer filled
+# the markers with five re.subs of its own. The engine fills them now, and the
+# check refuses a slot nothing can move.
+from docsync.blocks import fill_markers, field_plan         # noqa: E402
+from docsync.content import merge_attrs, split_style        # noqa: E402
+from docsync.layout import strut_extra                      # noqa: E402
+
+check_eq("merge_attrs leaves one style where it was",
+         merge_attrs(' data-slot="a"', ' style="color:red"'),
+         ' data-slot="a" style="color:red"')
+check_eq("…and makes ONE style of two, the later part last",
+         merge_attrs(' style="width:30%"', ' data-el="x" style="margin:0;left:1in"'),
+         ' data-el="x" style="width:30%;margin:0;left:1in"')
+check_eq("split_style reads single quotes too",
+         split_style(""" class='a' style='font-family:"X"'"""),
+         (" class='a'", 'font-family:"X"'))
+
+_MARKED = (
+    '<header><p class="eyebrow"⟦A:eb⟧>⟦T:eb⟧</p>'
+    '<div class="stat"><span class="num"⟦A:num⟧>⟦T:num⟧'
+    '<span class="of"⟦A:of⟧>⟦T:of⟧</span></span>'
+    '<span class="lbl"⟦A:lbl⟧>⟦T:lbl⟧</span></div></header>'
+    '<div class="legend"><span><i class="swatch" style="background:red"></i> '
+    '<span⟦A:lg⟧>⟦T:lg⟧</span></span></div>'
+    '<h1 data-split><span⟦A:h.a⟧>⟦T:h.a⟧</span> '
+    '<span class="mark"⟦A:h.b⟧>⟦T:h.b⟧</span></h1>'
+    '<p class="note"><span⟦A:run⟧>⟦T:run⟧</span> <a href="#">a link</a></p>'
+    '<div class="bar"><i class="f1" style="width:30%"⟦A:n1⟧>⟦T:n1⟧</i></div>'
+    '⟦S:pic⟧<img src="a.png" ⟦E:pic⟧>')
+_MD = ("[[eb]]\nEyebrow\n\n[[num]]\n13\n\n[[of]]\n/28\n\n[[lbl]]\nVoted\n\n"
+       "[[lg]]\nAgree\n\n[[h.a]]\nAdvancing\n\n[[h.b]]\njustice\n\n[[run]]\nSee\n\n"
+       "[[n1]]\n39\n\n[[sources]]\n[x]: A. — https://a.gov\n")
+
+
+def _filled(edit, lay=None):
+    if edit:
+        os.environ["DOCSYNC_EDIT"] = "1"
+    else:
+        os.environ.pop("DOCSYNC_EDIT", None)
+    try:
+        L = _layout(lay or {})
+        return fill_markers(_content(L, _MD), L, _MARKED)
+    finally:
+        os.environ.pop("DOCSYNC_EDIT", None)
+
+
+check_eq("each field is a unit a drag means: a stat with its label, a legend "
+         "entry with its swatch, a split heading whole, a lone run on its own",
+         [(f, t) for f, t, _ in field_plan(_MARKED)],
+         [("field.eb", "p"), ("field.num", "div"), ("field.lg", "span"),
+          ("field.h.a", "h1"), ("field.run", "span"), ("field.n1", "div")])
+_pub = _filled(False)
+check_eq("published and untouched, the markers fill exactly as five re.subs did",
+         _pub, _MARKED.replace("⟦S:pic⟧", "")
+         .replace(" ⟦E:pic⟧", " ")
+         .replace("⟦T:eb⟧", "Eyebrow").replace("⟦T:num⟧", "13")
+         .replace("⟦T:of⟧", "/28").replace("⟦T:lbl⟧", "Voted")
+         .replace("⟦T:lg⟧", "Agree").replace("⟦T:h.a⟧", "Advancing")
+         .replace("⟦T:h.b⟧", "justice").replace("⟦T:run⟧", "See")
+         .replace("⟦T:n1⟧", "39")
+         .replace("⟦A:eb⟧", "").replace("⟦A:num⟧", "")
+         .replace("⟦A:of⟧", "").replace("⟦A:lbl⟧", "")
+         .replace("⟦A:lg⟧", "").replace("⟦A:h.a⟧", "")
+         .replace("⟦A:h.b⟧", "").replace("⟦A:run⟧", "")
+         .replace("⟦A:n1⟧", ""))
+_ed = _filled(True)
+check_eq("while editing, no slot is left without a data-el on it or above it",
+         (_cov('<section class="page">' + _ed + "</section>").immovable_paged,
+          "⟦" in _ed), ([], False))
+check("a field that IS its slot carries both hooks on the one tag",
+      _ed, '<p class="eyebrow" data-slot="eb" data-el="field.eb">')
+_moved = _filled(False, {"positions": {"field.n1": {"x": 1, "y": 2, "w": 3,
+                                                    "reserve": 0.5}},
+                        "text": {"n1": {"size": 20}}})
+check("a moved field with a style of its own and a text style is ONE style "
+      "attribute, the page's first and the position last",
+      _moved, 'style="margin:0;position:absolute;left:1in;top:2in')
+check_eq("…never two (the parser keeps only the first)",
+         re.search(r'<div class="bar"[^>]*>', _moved).group(0).count("style="), 1)
+check_eq("a moved field says what room it leaves, for the runtime strut",
+         "data-reserve-for=\"field.n1\"" in _moved, True)
+
+check_eq("a strut holds the margin box and sits in a line when its element did",
+         strut_extra({"reserveMargin": [0, 0, 0.117, 0], "reserveInline": True}),
+         ";margin:0in 0in 0.117in 0in;display:inline-block;vertical-align:top")
+check_eq("…and a strut from before carries nothing new",
+         (strut_extra({"reserve": 1}), strut_extra({"reserveMargin": [0, 0, 0, 0]})),
+         ("", ""))
+_sl = _layout({"positions": {"h": {"x": 1, "y": 1, "w": 4, "reserve": 0.5,
+                                   "reserveMargin": [0.1, 0, 0.2, 0]}}})
+check("spacer() wears the margins", _sl.spacer("h"),
+      "height:0.5in;flex:0 0 auto;margin:0.1in 0in 0.2in 0in")
+os.environ["DOCSYNC_EDIT"] = "1"
+check("…and attr() tells the runtime them", _sl.attr("h"), 'data-reserve-m="0.1 0 0.2 0"')
+_mv = _content(_layout({}), "[[k]]\n- a\n\n[[sources]]\n[x]: A. — https://a.gov\n")
+check_eq("C.movable holds a caller's list in a movable block while editing",
+         _mv.movable("k", "<ul></ul>"), '<div data-el="para.k"><ul></ul></div>')
+os.environ.pop("DOCSYNC_EDIT", None)
+check_eq("…and published, unmoved, is the bare markup",
+         _mv.movable("k", "<ul></ul>"), "<ul></ul>")
+
+check_eq("a slot with nothing movable on it or above it is IMMOVABLE TEXT",
+         _cov('<section class="page"><h2><span data-slot="t">Title</span></h2>'
+              '<div data-el="para.p"><p data-slot="p">Moves.</p></div>'
+              '<svg><text data-slot="lbl">Label</text></svg>'
+              '<div data-el="fig"><svg><text data-slot="ok">OK</text></svg></div>'
+              "</section>").immovable_paged, ["t", "lbl"])
+_p = check_editability(_binding_modes(
+    '<section class="page"><h2 data-slot="k">Fine words.</h2></section>',
+    '<section class="page"><h2>Fine words.</h2></section>',
+    served={"k": ["Fine words."]}))
+check_eq("a strict binding fails on it, and names the key",
+         [(pr.is_error, "never moved or resized" in str(pr), "'k'" in str(pr))
+          for pr in _p], [(True, True, True)])
 
 
 if FAILS:

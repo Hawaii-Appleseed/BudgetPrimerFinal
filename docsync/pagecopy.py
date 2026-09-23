@@ -65,6 +65,7 @@ _EDIT_ONLY = ("data-el", "data-slot", "data-inline", "data-extra", "data-fill",
 # Attributes fill() re-derives from layout.json on every render; a stale copy
 # in the stored markup would fight the fresh one.
 _REDERIVED = ("data-placed", "data-reserve-for", "data-reserve", "data-reserve-w",
+              "data-reserve-m", "data-reserve-inline",
               "data-anc-host", "data-anc", "data-anc-edge", "data-anc-gap",
               "data-spacer-for")
 _VOID = frozenset("area base br col embed hr img input link meta param source "

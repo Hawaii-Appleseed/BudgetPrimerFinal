@@ -244,6 +244,43 @@ NEW_SLOT = "\u26a0 new slot [[{key}]] — click and type to fill it"
 # bullets()' empty-list note, which says the same kind of thing.
 EMPTY_SLOT = '<i style="opacity:.55">empty — click and type</i>'
 
+_STYLE_ATTR_RE = re.compile(
+    r"""\s+style\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", re.I)
+
+
+def split_style(attrs: str) -> tuple[str, str]:
+    """(the attribute text without its style attribute, that style's
+    declarations) — for attribute strings the engine's own helpers emit, and
+    the start tags of a page this engine ingested."""
+    m = _STYLE_ATTR_RE.search(attrs or "")
+    if not m:
+        return attrs or "", ""
+    val = next((g for g in m.groups() if g is not None), "")
+    return attrs[:m.start()] + attrs[m.end():], val
+
+
+def merge_attrs(*parts: str) -> str:
+    """Several helpers' attribute strings for ONE tag, with every style
+    declaration in one style attribute, in the order given — so a later part
+    wins, as it would inside one declaration list.
+
+    Two style attributes on a tag is a silent loss: the parser keeps the
+    first. A text style emitted beside a position, or either beside a style
+    the markup already had, simply never reached the page. With at most one
+    style among the parts the text is unchanged — the bytes a report emitted
+    before any of this was merged are the bytes it emits now."""
+    rest, css = "", []
+    for p in parts:
+        p, c = split_style(p or "")
+        rest += p
+        c = c.strip().strip(";").strip()
+        if c:
+            css.append(c)
+    if len(css) <= 1:
+        return "".join(p or "" for p in parts)
+    val = ";".join(css).replace('"', "&quot;")
+    return rest + f' style="{val}"'
+
 
 def _unhead(block: str) -> str:
     return _HEADING_RE.sub("", block)
@@ -689,13 +726,27 @@ class Content:
         # a placeholder can never become content.
         if not body and os.environ.get("DOCSYNC_EDIT"):
             body = f"<p{attr}{slot}{style}>{EMPTY_SLOT}</p>"
+        return self.movable(key, body)
+
+    def movable(self, key: str, inner: str) -> str:
+        """`inner` — markup for slot `key` that the caller built — held in the
+        movable block html() gives a paragraph (`para.<key>`), so it drags and
+        takes a width like one: a bullet list (<ul{C.ul_attr(key)}>…), a card's
+        body, any block of one slot's words. A list the renderer builds for
+        itself had no such block, so its words could be typed into and the
+        list could never be moved (docsync.check: IMMOVABLE TEXT).
+
+        The wrapper exists only while editing or once moved, exactly as
+        html()'s does: an unmoved published page is the bare markup, byte for
+        byte. The editor treats a block nested inside another movable (a
+        callout's own paragraphs) as part of that object, not a second one."""
         if self._styles and hasattr(self._styles, "attr"):
             el_id = f"para.{key}"
             pos = self._styles.attr(el_id)
             spacer = self._styles.spacer(el_id)
             if pos or spacer:
-                return f"{spacer}<div{pos}>{body}</div>"
-        return body
+                return f"{spacer}<div{pos}>{inner}</div>"
+        return inner
 
     def list(self, key: str) -> list[str]:
         raw = self.raw(key)
@@ -742,6 +793,11 @@ class Content:
             # one. On the WRAPPER, so a heading, its paragraphs and its list
             # are all covered by the one declaration.
             attrs = self._style(k)
+            # And it moves and resizes like every other block of words: an
+            # added section is a field (`field.<key>`, the id fill_markers
+            # gives an imported page's), not a paragraph you can only type in.
+            if self._styles is not None and hasattr(self._styles, "attr"):
+                attrs = merge_attrs(attrs, self._styles.attr(f"field.{k}"))
             if edit:
                 html = (f'<div class="extra-section" data-slot="{k}" '
                         f'data-extra="1"{attrs}>'
@@ -750,7 +806,8 @@ class Content:
             elif attrs:
                 # Published, the wrapper exists only when it carries something
                 # — the same rule html() follows, so a report whose sections
-                # are unstyled and unfollowed emits exactly the bytes it did.
+                # are unstyled, unfollowed and unmoved emits exactly the bytes
+                # it did.
                 html = f"<div{attrs}>{html}</div>"
             out.append(html)
         return "".join(out)

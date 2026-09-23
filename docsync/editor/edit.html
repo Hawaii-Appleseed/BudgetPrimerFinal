@@ -412,10 +412,10 @@
   /* A caution, not an offer — amber rather than #upd/#cupd's inviting sage/
      blue, since clicking it does not fix anything, only dismisses the notice
      (checkStage2()). */
-  #s2 { background:#B8863B; color:#fff; border:0; border-radius:99px;
+  #s2, #immov { background:#B8863B; color:#fff; border:0; border-radius:99px;
         padding:4px 12px; font:600 11.5px system-ui; cursor:pointer;
         white-space:nowrap; transition:filter .12s; }
-  #s2:hover { filter:brightness(1.1); }
+  #s2:hover, #immov:hover { filter:brightness(1.1); }
   /* one button language everywhere: quiet by default, sage when primary.
      Scoped to the bar's OWN buttons (direct children, plus the zoom segment):
      the .pop popovers are children of #bar too, and a bare "#bar button" (id +
@@ -2107,6 +2107,11 @@
   <button id="s2" hidden
     aria-label="This report was imported from a static page — only its text is editable so far">
     ⚠ content boxes not yet editable</button>
+  <!-- Text that can be typed into and not moved or resized: the renderer gave
+       it no data-el on it or around it. Counted after every render
+       (checkImmovable); the same finding docsync.check fails a strict build
+       on. Its words, and the keys, are set there. -->
+  <button id="immov" hidden></button>
   <!-- Text / Shape / Icon / Table live in the left rail (#leftrail) now.
        Token moved into the File menu. -->
   <!-- Zoom (Fit / 100 / 125 / 150) is hidden for now via CSS (#zoom{display:none}). -->
@@ -5637,6 +5642,27 @@ function showHandles(d, page, el) {
     });
     ov.appendChild(rg);
   }
+  // While its words are open, the box itself cannot be grabbed — a press in
+  // the text places the caret and a drag selects words, as in any text field.
+  // So the frame carries a grip of its own for moving it (Canva's, under the
+  // box), and the words stay open through the move: the press is kept from
+  // taking focus, and the drop commits a position, not the text.
+  if (editing && richHost && (el === richHost || el.contains(richHost))) {
+    const g = d.createElement('div');
+    g.className = 'ds-h ds-movegrip';
+    g.title = 'Drag to move — the words stay open';
+    g.setAttribute('aria-label', 'Move');
+    g.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">'
+      + '<path d="M8 1.5v13M1.5 8h13M8 1.5 6 3.6M8 1.5l2 2.1M8 14.5l-2-2.1M8 14.5l2-2.1'
+      + 'M1.5 8l2.1-2M1.5 8l2.1 2M14.5 8l-2.1-2M14.5 8l-2.1 2" fill="none"'
+      + ' stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    g.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      startDrag(d, el, e);
+    });
+    ov.appendChild(g);
+  }
   ov.dataset.for = el.dataset.shape || el.dataset.el;
   page.appendChild(ov);
 }
@@ -8640,7 +8666,7 @@ function tpSwatches(host, current, onPick, opts = {}) {
 /** Editing a box's words. Its text is in layout.json, not content.md, so it
  *  cannot go through readSlot/writeSlot — but it is the same textarea, the same
  *  markdown, and the same blur-commits rule. */
-function editBox(d, el) {
+function editBox(d, el, at) {
   if (editing) return;
   const b = boxOf(el.dataset.el);
   if (!b) return;
@@ -8663,7 +8689,18 @@ function editBox(d, el) {
   // gets a floor to type in and the editor must ride above everything.
   const wrap = d.createElement('div');
   wrap.className = el.className;
+  // And the box's own id, so while its words are open the wrapper IS the box
+  // to everything that finds it by id: the selection ring and handles stay on
+  // it (a click opens these words now, and the box stays the selection), the
+  // move grip rides it, and a resize or a move lands on the box's inches.
+  wrap.dataset.el = el.dataset.el;
   wrap.style.cssText = el.style.cssText;
+  // A press on the box's own padding — a filled box, an expand button — is a
+  // press on the box being typed in, not a click away from it. Taking focus
+  // there closed the words the instant they opened: a click opens them now,
+  // and the second click of a double-click lands on the padding as often as
+  // on the words.
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) e.preventDefault(); });
   wrap.style.position = 'absolute';
   wrap.style.left = `${b.x}in`;
   wrap.style.top = `${b.y}in`;
@@ -8686,9 +8723,9 @@ function editBox(d, el) {
   richOpts = { allowLists: true, allowMd: true };
   showType(`text.${b.id}`);   // the chrome row carries B/I/lists now — raise it
   syncMarksBar();
-  host.focus();
-  const r = d.createRange(); r.selectNodeContents(host);
-  const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  // A click puts the caret where it landed; see caretAt.
+  host.focus(at ? { preventScroll: true } : undefined);
+  caretOrAll(d, host, at);
   const finish = async keep => {
     if (host.dataset.done) return;
     host.dataset.done = '1';
@@ -8727,7 +8764,8 @@ function editBox(d, el) {
   });
   host.addEventListener('paste', e => pasteClean(d, host, e, { allowLists: true }));
   host.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    // Escape keeps the box selected; see edit()'s keydown.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
     if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); link(d, host); }
     // Same bullet indent/outdent the slot editor has — a text box takes lists
     // too, and Tab meaning two different things in the two editors would be
@@ -9238,9 +9276,15 @@ function whatIs(key) {
   if (key.startsWith('table.')) return 'table';
   if (key.startsWith('endnote.')) return 'endnote';
   if (key.startsWith('extra.')) return 'added section';
-  const el = $('out').contentDocument
+  const found = $('out').contentDocument
     .querySelector(`[data-slot="${CSS.escape(key)}"]`);
-  if (!el) return 'text';
+  if (!found) return 'text';
+  // An open editor STANDS IN for a slot of paragraphs or a list with a <div>
+  // of its own (edit()), and a click now opens one — so what it is lives in
+  // what that <div> holds. Read as itself it said "text" for every paragraph
+  // being typed in. One edited in place (.ds-edit-in) is the element itself.
+  const el = found.matches('.ds-edit:not(.ds-edit-in)') && found.firstElementChild
+    ? found.firstElementChild : found;
   // Inside a drawing: svg_text's label, edited in a field floated over the
   // glyphs rather than in place.
   if (el.closest('svg')) return 'chart label';
@@ -10553,6 +10597,13 @@ function arrangeBar(d) {
       .map(x => x.dataset.slot));
     if (soloSlotEl.dataset.slot) keys.add(soloSlotEl.dataset.slot);
     if (keys.size === 1) { showType([...keys][0]); return; }
+    // Words open INSIDE the selection decide the row while they are open —
+    // a click opens them now, with their object selected. An object holding
+    // several fields (a card: its title, its bullets) would otherwise get the
+    // arrange strip, hiding the type row and a list's buttons mid-sentence.
+    if (editing && richHost && richHost.dataset.slot && soloSlotEl.contains(richHost)) {
+      showType(richHost.dataset.slot); syncMarksBar(); return;
+    }
   }
   // The row holds one toolbar at a time — and with nothing selected it holds
   // NO type controls: a font dropdown with no target is noise (and was the
@@ -11445,6 +11496,55 @@ function markNoteSeen(msgs) {
   try { localStorage.setItem(noteKey(), JSON.stringify([...seen])); } catch (e) {}
 }
 
+/** Text that can be typed into and never moved or resized: a [data-slot] on a
+ *  page with no [data-el] on it or anywhere above it. The editor's promise is
+ *  that every text box moves and resizes; this is the list of where that
+ *  promise is broken, which only the renderer can mend — the position a drag
+ *  would write has no element to land on. Every field of an imported page was
+ *  on it until the engine filled propose's markers itself (blocks.fill_markers);
+ *  docsync.check refuses the same thing at build time (IMMOVABLE TEXT), and
+ *  this is the net for a renderer that ships without that check.
+ *  [{key, page}], one per slot key, in document order. */
+function immovableSlots(d) {
+  const out = [], seen = new Set();
+  if (!d) return out;
+  d.querySelectorAll('section.page [data-slot]').forEach(el => {
+    const key = el.dataset.slot;
+    if (!key || seen.has(key) || el.closest('[data-el]') || el.closest('.ds-edit')) return;
+    seen.add(key);
+    out.push({ key, page: pageIdOf(el.closest('section.page')) });
+  });
+  return out;
+}
+
+/** Say so when a report has text that cannot be moved or resized — the amber
+ *  chip beside #s2, in the bar rather than above the page (a notice row there
+ *  pushes the whole canvas down, on every open, for as long as it stands).
+ *  Dismissed per report AND count, so the number changing is news again; the
+ *  keys go to the console for whoever mends the renderer. */
+const IMMOV_KEY = () => 'primer-immov-seen:' + ((M && M.id) || '');
+function checkImmovable(d) {
+  const stuck = immovableSlots(d);
+  const chip = $('immov');
+  if (!chip) return stuck;
+  let seen = '';
+  try { seen = localStorage.getItem(IMMOV_KEY()) || ''; } catch (e) {}
+  chip.hidden = !stuck.length || seen === String(stuck.length);
+  if (!stuck.length) return stuck;
+  const n = stuck.length, one = n === 1;
+  chip.textContent = `⚠ ${n} text box${one ? '' : 'es'} can’t move yet`;
+  chip.title = `${n} text box${one ? '' : 'es'} in this report can be typed into but `
+    + `not moved or resized: the report’s renderer gives ${one ? 'it' : 'them'} no handle `
+    + `(no data-el on ${one ? 'it' : 'them'} or around ${one ? 'it' : 'them'}). `
+    + 'That is a fix to the renderer, not to the page — python3 -m docsync.check '
+    + `names ${one ? 'it' : 'every one'} (IMMOVABLE TEXT):\n\n`
+    + stuck.slice(0, 12).map(s => s.key).join(', ') + (n > 12 ? ` … and ${n - 12} more` : '')
+    + '\n\nClick to dismiss for this report.';
+  console.warn('[docsync] text that cannot be moved or resized (no data-el on it or above it):',
+    stuck.map(s => s.key).join(', '));
+  return stuck;
+}
+
 function renderNotices(d) {
   const host = $('notices');
   const el = d.getElementById('ds-notices');
@@ -12038,7 +12138,8 @@ function rewriteSnapshot(pg, map) {
   // Derived on every render by pagecopy.fill from the copy's own entries.
   pg.querySelectorAll('[data-anc-host], [data-anc], [data-reserve-for], [data-placed], [data-spacer-for]')
     .forEach(n => ['data-anc-host', 'data-anc', 'data-anc-edge', 'data-anc-dy', 'data-wrap', 'data-wrap-pad',
-                   'data-reserve-for', 'data-reserve', 'data-reserve-w', 'data-placed', 'data-spacer-for']
+                   'data-reserve-for', 'data-reserve', 'data-reserve-w', 'data-reserve-m',
+                   'data-reserve-inline', 'data-placed', 'data-spacer-for']
       .forEach(a => n.removeAttribute(a)));
   return got;
 }
@@ -13577,8 +13678,9 @@ function checkStage2() {
   try { dismissed = !!localStorage.getItem(STAGE2_KEY()); } catch (e) {}
   $('s2').hidden = !scaffolded || dismissed;
   if (!scaffolded) return;
-  $('s2').title = 'This report was imported from a static page. Its text is '
-    + 'editable (double-click), and free-standing images can be dragged — but '
+  $('s2').title = 'This report was imported from a static page. Its text '
+    + 'types where you click it and moves or resizes like any text box (drag '
+    + 'it, or its handles), and free-standing images can be dragged — but '
     + 'anything else (cards, bars, any other visual block) has no selection '
     + 'ring and no toolbar yet. That needs a follow-up pass wiring it as a '
     + 'movable element (see docsync/STAGE2_AUTOMATION.md and the '
@@ -13588,6 +13690,11 @@ function checkStage2() {
 $('s2').addEventListener('click', () => {
   try { localStorage.setItem(STAGE2_KEY(), '1'); } catch (e) {}
   $('s2').hidden = true;
+});
+$('immov').addEventListener('click', () => {
+  const n = immovableSlots($('out').contentDocument).length;
+  try { localStorage.setItem(IMMOV_KEY(), String(n)); } catch (e) {}
+  $('immov').hidden = true;
 });
 
 const RAIL_FOLD_KEY = () => 'primer-rail-folded:' + ((M && M.id) || '');
@@ -13836,8 +13943,16 @@ function dragify(d, roots) {
       // surface — the reason dragging one "did nothing" nine times in ten.
       // Following a citation link matters less here than being able to move
       // the citation, and the link still works in the published report.
+      //
+      // A control whose WORDS are a field — an imported page's tab button, a
+      // call-to-action link — is not a working part inside the object: it is
+      // the object, or its text. It selects, drags, and types on a click like
+      // any other field; left exempt it could never be moved at all, and its
+      // words opened only on a double-click.
       const ctl = e.target.closest('a, button, input, select, textarea, summary');
-      if (ctl && !(ctl.tagName === 'A' && (el.dataset.el || '').startsWith('endnote.'))) return;
+      const worded = !!ctl && (ctl === el || ctl.matches('[data-slot]')
+        || !!ctl.querySelector('[data-slot]'));
+      if (ctl && !worded && !(ctl.tagName === 'A' && (el.dataset.el || '').startsWith('endnote.'))) return;
       e.preventDefault();
       e.stopPropagation();
       const id = idOf(el);
@@ -13853,11 +13968,9 @@ function dragify(d, roots) {
       // this and the hit-test can never disagree.
       const selected = selectClick(d, id, e);
       if (e.shiftKey || !selected) return;   // shift builds a set, nothing moves
-      // A drag moves the whole selection; if any of it is locked, none moves.
-      if ([...selIds].some(isLocked)) {
-        $('stat').textContent = `${[...selIds].filter(isLocked)[0]} is locked — unlock it to move it`;
-        return;
-      }
+      // A drag moves the whole selection, and a click on the words types into
+      // them — startDrag tells the two apart, and says why a locked (or
+      // wrapped) selection will not move only if the press travels.
       startDrag(d, el, e, drillIn);
     });
     // A text box has no [data-slot] inside it — its words live in layout.json —
@@ -13885,7 +13998,7 @@ function dragify(d, roots) {
             + 'double-click again to edit the words, Escape to leave';
           return;
         }
-        editBox(d, el);
+        editBox(d, el, ptOf(e));
       });
     else if ((el.dataset.el || '').startsWith('endnote.'))
       // Like a text box: its two fields (citation text + URL) don't fit the
@@ -13900,6 +14013,15 @@ function dragify(d, roots) {
   });
 }
 
+/** What a strut wears beyond its width and height: the margins of the flow
+ *  element it holds the place of, and inline-block for one that sat in a
+ *  line. The twin of layout.py's strut_extra() and of ANCHOR_JS's reading of
+ *  data-reserve-m — the live strut, the renderer's and the published page's
+ *  runtime one have to be the same box, or the page moves on the next build. */
+const strutExtra = (m, inline) =>
+  (m && m.length === 4 && m.some(v => +v) ? ';margin:' + m.map(v => `${+v}in`).join(' ') : '')
+  + (inline ? ';display:inline-block;vertical-align:top' : '');
+
 /** Shared by pointer and keyboard: place the element, snapping as it goes. */
 function placer(d, el, page) {
   const shapeId = el.dataset.shape;
@@ -13910,8 +14032,25 @@ function placer(d, el, page) {
   // the measurement as truth and picking a box up without moving it walks it a
   // few hundredths of an inch — every time.
   const measured = inchBox(el, page);
-  const heldFlow = !shapeId &&
-    d.defaultView.getComputedStyle(el).position === 'static';
+  // IN THE FLOW is static or relative. A relative element holds its place in
+  // the flow exactly as a static one does — its offsets only move where it
+  // paints — and an imported page sets position:relative on half its text,
+  // for a ::before or a stacking order (our-mission: every card, step and
+  // heading). Read as already placed, those went absolute with no strut left
+  // behind, and the page closed up under the drag.
+  const cs0 = d.defaultView.getComputedStyle(el);
+  const heldFlow = !shapeId && (cs0.position === 'static' || cs0.position === 'relative');
+  // What the element took in the flow is its MARGIN box, and a strut the
+  // size of its border box came up short by exactly the margins: move an
+  // <h1> with a 12px bottom margin and the line under it rose 12px. So the
+  // strut wears the same margins, collapsing with its neighbours as the
+  // element did. And a field that sits IN a line (display inline, a stat's
+  // figure) is held by an inline-block, or a block strut breaks the line in
+  // two. Read now, while it is still in the flow.
+  const flowMargin = heldFlow
+    ? ['Top', 'Right', 'Bottom', 'Left'].map(s => +((parseFloat(cs0['margin' + s]) || 0) / 96).toFixed(3))
+    : null;
+  const flowInline = heldFlow && /^inline/.test(cs0.display);
   // An already-absolute designed element may resolve against a POSITIONED
   // ANCESTOR, not the page (a lifecycle callout inside .lifecycle-wrap), and
   // may carry a class transform (.lc-right's translateY(-50%)) — so what its
@@ -14003,7 +14142,7 @@ function placer(d, el, page) {
     spacer.dataset.spacerFor = id;
     spacer.dataset.ancHost = 'spacer:' + id;
     spacer.style.cssText = `width:${box.w.toFixed(2)}in;height:${box.h.toFixed(2)}in;`
-      + 'flex:0 0 auto';
+      + 'flex:0 0 auto' + strutExtra(flowMargin, flowInline);
     spacer.setAttribute('aria-hidden', 'true');
     el.parentNode.insertBefore(spacer, el);
   };
@@ -14084,10 +14223,18 @@ function placer(d, el, page) {
       // so the renderer's naive left/top reproduces the exact visual spot even
       // inside a positioned ancestor. For page-anchored elements delta is 0
       // and this is the page inches it always was.
+      // The strut's margins and display are read off the element the first
+      // time it leaves the flow and kept after: once placed it is absolute,
+      // with margin:0 (layout.py _style), and has none left to read.
+      const held = heldFlow && reserve ? {
+        ...(flowMargin && flowMargin.some(v => v) ? { reserveMargin: flowMargin } : {}),
+        ...(flowInline ? { reserveInline: true } : {}),
+      } : {};
       layout.positions[id] = { ...prev,
                               x: +(x - delta.x).toFixed(2), y: +(y - delta.y).toFixed(2),
                               ...(w ? { w } : {}),
                               ...(reserve ? { reserve } : {}),
+                              ...held,
                               ...(zNew !== null && prev.z === undefined ? { z: zNew } : {}) };
       // A flow element leaving the flow follows the place it left. Its inch
       // was fixed and the flow was not: a sentence added above moved the
@@ -14131,34 +14278,92 @@ function altClone(d, members, page) {
   });
 }
 
-function startDrag(d, el, e0, drillIn = false) {
-  const page = el.closest('section.page') || d.querySelector('section.page');
+/** Why the object under a press cannot be MOVED, or null when it can. Asked
+ *  before the press travels and said only once it does: a press that never
+ *  travels is a click, and a click on an object's words types into them
+ *  however its placement is held (typeOnClick) — a locked paragraph's words
+ *  are still its words. */
+function dragRefusal(d, el, page) {
   const pr = page.getBoundingClientRect();
   const rect = el.getBoundingClientRect();
   // A hidden or unlaid-out pane reports every rect as zero, and the drag would
   // then write nonsense inches into layout.json. Refuse rather than corrupt.
   if (!pr.width || (!rect.width && !el.dataset.shape)) {
-    $('stat').textContent = 'cannot move that yet — the page has no layout';
-    return;
+    return 'cannot move that yet — the page has no layout';
   }
   // Squeezed below print width the page has REFLOWED (max-width:100%): every
   // measurement describes a layout the PDF will never have. applyZoom pins
   // the width, so this only trips if someone forces 100% in a narrow pane.
   if (page.offsetWidth < PAGE_W_IN * DPI * 0.98) {
-    $('stat').textContent = 'the page is squeezed below print width — use Fit zoom to move things';
-    return;
+    return 'the page is squeezed below print width — use Fit zoom to move things';
   }
   // A wrapped object's place IS its paragraph's: the text flows around it
   // where the paragraph is. Turn wrap off to move it by hand.
   if ((storeOf(idOf(el)) || {}).wrap) {
-    $('stat').textContent = 'text wraps around this — turn Text wrap off (Position, or the Box panel) to move it';
-    return;
+    return 'text wraps around this — turn Text wrap off (Position, or the Box panel) to move it';
   }
-  // Somebody else has hold of this. Both moves are whole-value writes to
-  // layout.json, so they do not merge: the last drop wins, silently, and the
-  // other person's move is simply gone. Not blocked - two people nudging the
-  // same figure is ordinary - but said, at the moment it can still be undone.
-  collabWarnHeld(idOf(el));
+  // A drag moves the whole selection; if any of it is locked, none moves.
+  const locked = [...selIds].filter(isLocked)[0];
+  if (locked) return `${locked} is locked — unlock it to move it`;
+  return null;
+}
+
+/** A click that never became a drag, on a movable object: when it landed on
+ *  the object's words, they open for typing with the caret where it landed.
+ *
+ *  Moving and typing share the one gesture the way a text field in any slide
+ *  tool does — press and drag moves the box, press and let go types, the
+ *  handles resize — so neither needs a mode or a second click. It used to be
+ *  select on a click and type on a DOUBLE-click (Canva's split), which read
+ *  as "why do I have to double-click to edit?".
+ *
+ *  Only for an object that is, after this click, the selection on its own. A
+ *  click on one piece of a group selects the whole group, which moves as one;
+ *  the next click drills in to the piece, and the one after that types.
+ *  Modifier clicks build a selection or duplicate and never type. Words
+ *  inside a drawing keep their double-click (editSvgSlot): a graphic is
+ *  grabbed far more often than its labels are retyped. To select a text
+ *  object WITHOUT typing — to align it, lock it, delete it — Escape out of
+ *  the words (the object stays selected) or shift-click it. Returns whether
+ *  an editor opened. */
+function typeOnClick(d, el, e0) {
+  if (editing || e0.shiftKey || e0.altKey || e0.metaKey || e0.ctrlKey) return false;
+  const id = idOf(el);
+  if (!id || !(selIds.size === 1 && selIds.has(id))) return false;
+  // The second click of the double-click that just drilled into a group
+  // belongs to that gesture: it means "get inside", and landing in the words
+  // is the very thing the drill-in reaches past (see lastDrill).
+  if (lastDrill.id === id && Date.now() - lastDrill.t < 700) return false;
+  const at = ptOf(e0);
+  const t = e0.target;
+  const slot = t && t.closest ? t.closest('[data-slot]') : null;
+  let opened = false;
+  if (slot && el.contains(slot) && !slot.closest('svg')) {
+    const key = slot.dataset.slot;
+    showType(key);
+    edit(d, key, slot, at);
+    opened = editing;
+  } else if (id.startsWith('text.') && boxOf(id)) {
+    // Inside a group the double-click drills in first (see dragify); a text
+    // box that is already the selection on its own simply types.
+    editBox(d, el, at);
+    opened = editing;
+  }
+  // Paint the selection again, now that the words are open. A field edited
+  // in place was REPLACED by its editor, so the handles the press painted
+  // belong to an element no longer in the page; repainted, they ride the
+  // editor itself (it carries the field's data-el), the move grip appears
+  // (showHandles), and the floating strip goes — showMini draws none while
+  // editing, and it sat over the line above the one being typed in. The box
+  // stays the selection throughout, and Escape keeps it so.
+  if (opened) paintSel(d);
+  return opened;
+}
+
+function startDrag(d, el, e0, drillIn = false) {
+  const page = el.closest('section.page') || d.querySelector('section.page');
+  const refusal = dragRefusal(d, el, page);
+  let refused = false;
   // Dragging a selected element moves every selected element on this page;
   // anything locked stays put. A fresh element drags alone.
   let members = selIds.size > 1 && selIds.has(idOf(el))
@@ -14171,11 +14376,12 @@ function startDrag(d, el, e0, drillIn = false) {
   const px = DPI * zoomOf(page);
   const grab = { x: e0.clientX, y: e0.clientY };
   // Everything below waits for the FIRST real movement. A mousedown that never
-  // travels — an ordinary click — must select and nothing else: no history
-  // entry, no lift, no commit. And a real mouse jitters a pixel or two on the
-  // way up, well past an inch-scale threshold, so the dead zone is measured in
-  // SCREEN pixels (a Canva-style ~4px) rather than inches. Below it, the click
-  // stays a click; the logo neither scales nor jumps.
+  // travels — an ordinary click — selects (and on words, types: typeOnClick)
+  // and moves nothing: no history entry, no lift, no commit. And a real mouse
+  // jitters a pixel or two on the way up, well past an inch-scale threshold,
+  // so the dead zone is measured in SCREEN pixels (a Canva-style ~4px) rather
+  // than inches. Below it, the click stays a click; the logo neither scales
+  // nor jumps.
   const DEAD_PX = 4;
   let started = false, cloned = false;
   let Ps, starts, group, glines, at;
@@ -14183,6 +14389,13 @@ function startDrag(d, el, e0, drillIn = false) {
 
   const begin = () => {
     started = true;
+    // Somebody else has hold of this. Both moves are whole-value writes to
+    // layout.json, so they do not merge: the last drop wins, silently, and
+    // the other person's move is simply gone. Not blocked - two people
+    // nudging the same figure is ordinary - but said, at the moment it can
+    // still be undone. Said when the move starts, not on the press: a click
+    // that types into the words moves nothing.
+    collabWarnHeld(idOf(el));
     pushHistory();
     if (e0.altKey) {
       const copies = altClone(d, members, page);
@@ -14209,8 +14422,12 @@ function startDrag(d, el, e0, drillIn = false) {
   const move = e => {
     lastPt = { x: e.clientX, y: e.clientY };
     if (!started) {
+      if (refused) return;
       if (Math.abs(e.clientX - grab.x) < DEAD_PX
           && Math.abs(e.clientY - grab.y) < DEAD_PX) return;
+      // It travelled, so it was a drag — and this one cannot move. Say why,
+      // once, and let the release do nothing (it is not a click either).
+      if (refusal) { refused = true; $('stat').textContent = refusal; return; }
       begin();
     }
     const dx = (e.clientX - grab.x) / px, dy = (e.clientY - grab.y) / px;
@@ -14233,9 +14450,12 @@ function startDrag(d, el, e0, drillIn = false) {
   };
   const up = async () => {
     dragUnlisten(d, move, up);
-    // Never crossed the dead zone — it was a click, and the selection made on
-    // mousedown is all it meant. Nothing to lift, settle, commit or undo.
+    // Never crossed the dead zone — it was a click: the selection made on
+    // mousedown, and — on the object's own words — the caret (typeOnClick).
+    // Nothing to lift, settle, commit or undo. A press that travelled into a
+    // refusal was neither a move nor a click.
     if (!started) {
+      if (refused) return;
       // Except when the group was already selected and this click did not
       // move it: then it means "get inside" — select just the piece under
       // the pointer, which is what puts resize handles on it. An expandable
@@ -14252,8 +14472,11 @@ function startDrag(d, el, e0, drillIn = false) {
         lastDrill = { id: idOf(el), t: Date.now() };
         $('stat').textContent = 'inside the group — drag the handles to resize '
           + 'this piece, Escape to leave';
+        clearGuides(d); paintSel(d); return;
       }
-      clearGuides(d); paintSel(d); return;
+      clearGuides(d); paintSel(d);
+      typeOnClick(d, el, e0);
+      return;
     }
     members.forEach(m => {
       m.classList.remove('ds-lifted');
@@ -17648,7 +17871,7 @@ open('/repo/' + OUT).read()
     }
     schedulePreviewStore(html);
     renderSays(dirty ? 'unsaved changes'
-                     : 'click selects and drags · double-click edits text');
+                     : 'click text to type · drag to move · Esc selects the box');
     return;
   }
   // DOUBLE-BUFFERED: the new document loads in a hidden twin while the old one
@@ -17732,7 +17955,7 @@ open('/repo/' + OUT).read()
     old.parentNode.appendChild(nu);
   });
   renderSays(dirty ? 'unsaved changes'
-                   : 'click selects and drags · double-click edits text');
+                   : 'click text to type · drag to move · Esc selects the box');
 }
 // The HTML currently standing in #out. An incremental render diffs the new
 // output against THIS rather than against the live DOM, because the live DOM
@@ -17964,6 +18187,7 @@ function wire(roots) {
   paintSel(d);                 // the selection is ids, so it survives a render
   presentRewire(d);            // and so does a running presentation
   renderNotices(d);
+  checkImmovable(d);           // text that types but cannot move: say so
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {
@@ -18025,11 +18249,7 @@ function wire(roots) {
       if (hit) {
         const selected = selectClick(d, idOf(hit), e);
         if (e.shiftKey || !selected) return;
-        if ([...selIds].some(isLocked)) {
-          $('stat').textContent = `${[...selIds].filter(isLocked)[0]} is locked — unlock it to move it`;
-          return;
-        }
-        startDrag(d, hit, e);
+        startDrag(d, hit, e);   // a lock is refused there, on the first travel
         return;
       }
       marquee(d, pg, e);
@@ -18043,7 +18263,7 @@ function wire(roots) {
       const hit = hitPlaced(d, pg, e);
       if (!hit) return;
       e.preventDefault();
-      if ((hit.dataset.el || '').startsWith('text.')) editBox(d, hit);
+      if ((hit.dataset.el || '').startsWith('text.')) editBox(d, hit, ptOf(e));
       else if (hit.tagName === 'IMG' || hit.classList.contains('ds-cropw')) cropMode(d, hit);
     });
   });
@@ -18145,19 +18365,24 @@ function wire(roots) {
     .ds-endnote-edit input { display:block; width:100%; box-sizing:border-box; font:inherit;
                color:inherit; margin:0 0 4px; padding:2px 4px; border:2px solid #6B9E78;
                border-radius:3px; background:#fff; }
-    /* The cursor is the whole affordance. A movable object grabs; its own
-       words grab too, because a single click moves the object and a double
-       click opens the words. Only a STANDALONE slot — the body prose, not
-       inside any object — shows the text caret for its single-click edit. */
+    /* The cursor is the whole affordance. A movable object grabs; its WORDS
+       show the text caret, because a click on them types there and only a
+       press that travels moves the object (typeOnClick). Words inside a
+       drawing are the exception: a click there selects the graphic and a
+       double-click opens the label, so they grab with the rest of it. */
     [data-el], [data-shape] { cursor:grab; }
     [data-el]:hover { outline:1px dashed #95B7A2; outline-offset:3px; }
-    [data-el] [data-slot] { cursor:grab; }
     [data-slot] { cursor:text; }
+    [data-el] svg [data-slot] { cursor:grab; }
     /* ONE ring per object. A movable element's ring (hover dashed, selected
        solid) belongs to the [data-el] wrapper; the slot INSIDE it drawing its
        own hover ring painted a second, inner box on the same visual object.
        The wrapper's ring and the text cursor carry the affordance alone. */
     [data-el] [data-slot]:hover { background:none; outline-color:transparent; }
+    /* A field that is its own object — every field of an imported page — is
+       the one element carrying both hooks: the object's dashed ring is its
+       ring, and the loose-text tint is not. */
+    [data-el][data-slot]:hover { background:none; }
     /* While the words are open for editing, the editor's own solid ring is
        the only one — the wrapper's hover dash under it read as a double box. */
     [data-el]:has(.ds-edit):hover { outline:none; }
@@ -18317,6 +18542,14 @@ function wire(roots) {
     .ds-h-nw { left:-9px; top:-9px; width:9px; height:9px; cursor:nwse-resize; }
     .ds-h-ne { right:-9px; top:-9px; width:9px; height:9px; cursor:nesw-resize; }
     .ds-h-sw { left:-9px; bottom:-9px; width:9px; height:9px; cursor:nesw-resize; }
+    /* The move grip, only while the box's words are open (showHandles): a
+       round four-arrow button hanging under the box, clear of the south
+       handle, the one place a press moves the box instead of the caret. */
+    .ds-movegrip { left:50%; bottom:-31px; width:22px; height:22px; margin-left:-11px;
+                   border-radius:50%; display:grid; place-items:center;
+                   color:#2F3E46; cursor:move; box-shadow:0 1px 4px rgba(20,30,35,.25); }
+    .ds-movegrip:hover { color:#fff; }
+    .ds-movegrip svg { display:block; pointer-events:none; }
     /* the rotate grip hangs above the box on a short stem — only for elements
        with no corner to rotate from (a width-only prose slot, a table) */
     .ds-rot { top:-20px; left:50%; width:11px; height:11px; margin-left:-6px;
@@ -18473,17 +18706,21 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
   within(d, roots, '[data-slot]').forEach(el => {
     const key = el.dataset.slot;
     // A slot inside a movable object — a callout's title, a card's bullets,
-    // and now the body prose too (each paragraph block is a movable unit) —
-    // edits on DOUBLE-click; single-click belongs to selecting and moving the
-    // object it sits in. Only a slot outside any object (a heading's span, a
-    // caption) keeps the single-click edit.
+    // the body prose (each paragraph block is a movable unit), every field of
+    // an imported page — opens for typing on a CLICK too, but the click is
+    // the object's to judge: the mousedown selects it and may become a drag,
+    // and only a press that never travels types (startDrag → typeOnClick).
+    // The double-click stays for what a click cannot reach: a piece inside a
+    // group, which a first click selects whole. A slot outside any object
+    // opens on the click itself. Either way the caret goes where the pointer
+    // was (caretAt), not a select-all.
     if (el.closest('[data-el]')) {
       el.addEventListener('dblclick', e => {
         e.preventDefault(); e.stopPropagation();
-        showType(key); edit(d, key, el);
+        showType(key); edit(d, key, el, ptOf(e));
       });
     } else {
-      el.addEventListener('click', () => { showType(key); edit(d, key, el); });
+      el.addEventListener('click', e => { showType(key); edit(d, key, el, ptOf(e)); });
     }
   });
 
@@ -19109,7 +19346,67 @@ function editSvgSlot(d, key, node) {
   });
 }
 
-function edit(d, key, clicked) {
+/** Put the caret where the person clicked, inside an editor just opened.
+ *
+ *  Opening used to select every word in the field, on the theory that typing
+ *  should replace them as a design tool's does. That made a click read as
+ *  "highlight the whole box": the first click selected everything and only a
+ *  SECOND click put the caret down, so every edit started with a double
+ *  click (reported on tfc-2027-priorities). A click in text means "here", in
+ *  every text field there is — so the caret goes to the point clicked.
+ *
+ *  `at` is {x, y} in the report window's client coordinates, read off the
+ *  click. The field is edited in place (or in a stand-in laid out the same),
+ *  so the point lands in the word that was under the pointer. A point that
+ *  resolves outside the field — a stand-in that reflowed, a click on its
+ *  padding — puts the caret at the end, never back to select-all. A caret
+ *  inside something the field cannot type into (a footnote chip) goes just
+ *  after it. Returns false only when there was no point to go to. */
+function caretAt(d, host, at) {
+  if (!at) return false;
+  let node = null, off = 0;
+  try {
+    if (d.caretPositionFromPoint) {
+      const p = d.caretPositionFromPoint(at.x, at.y);
+      if (p) { node = p.offsetNode; off = p.offset; }
+    } else if (d.caretRangeFromPoint) {
+      const r = d.caretRangeFromPoint(at.x, at.y);
+      if (r) { node = r.startContainer; off = r.startOffset; }
+    }
+  } catch (e) { node = null; }
+  const r = d.createRange();
+  if (node && host.contains(node)) {
+    const elOf = node.nodeType === 1 ? node : node.parentElement;
+    const island = elOf && elOf.closest('[contenteditable="false"]');
+    if (island && island !== host && host.contains(island)) r.setStartAfter(island);
+    else r.setStart(node, off);
+  } else {
+    r.selectNodeContents(host);
+  }
+  r.collapse(!!(node && host.contains(node)));
+  const s = d.getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+  return true;
+}
+
+/** An editor opened with no click to go by — a section just added, a pilot
+ *  verb — selects its words, so typing replaces them (a new section's "click
+ *  to write" placeholder above all). One opened BY a click puts the caret
+ *  where it landed (caretAt). */
+function caretOrAll(d, host, at) {
+  if (caretAt(d, host, at)) return;
+  const r = d.createRange();
+  r.selectNodeContents(host);
+  const s = d.getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+}
+
+/** The point of a pointer event, as caretAt wants it. */
+const ptOf = e => (e && Number.isFinite(e.clientX) ? { x: e.clientX, y: e.clientY } : null);
+
+function edit(d, key, clicked, at) {
   suggestUnpaint(d);   // no proposed <ins> may ride into the words
   const blocks = [...d.querySelectorAll(`[data-slot="${key}"]`)];
   if (!blocks.length || editing) return;
@@ -19261,12 +19558,11 @@ function edit(d, key, clicked) {
   showType(key);
   syncMarksBar();
 
-  host.focus();
-  const selRange = d.createRange();
-  selRange.selectNodeContents(host);
-  const domSel = d.getSelection();
-  domSel.removeAllRanges();
-  domSel.addRange(selRange);
+  // Opened by a click, the field is already on screen under the pointer, and
+  // a focus that scrolled would move the words out from under the point the
+  // caret is about to be put at.
+  host.focus(at ? { preventScroll: true } : undefined);
+  caretOrAll(d, host, at);
 
   const finish = async (keep) => {
     if (host.dataset.done) return;
@@ -19322,7 +19618,11 @@ function edit(d, key, clicked) {
   });
   host.addEventListener('paste', e => pasteClean(d, host, e, { allowLists, inline: richInline, allowMd }));
   host.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    // Escape leaves the words and KEEPS the object selected — the way out of
+    // typing into moving, aligning or deleting the box a click typed into
+    // (typeOnClick). Stopped here, or the document's own Escape (clear the
+    // selection) saw it too: finish() has already set editing false.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
     if (e.key === 'Enter' && richInline) { e.preventDefault(); finish(true); }
     // Shift-Enter has nowhere to go in prose. content.md soft-wraps at about
     // eighty columns, so a newline inside a slot is a WRAPPED line and
@@ -25137,7 +25437,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  (a placed text box, table or dragged designed element parked on flow
    *  prose or a flow graphic — the clash a reader sees first), orphaned-
    *  group-member (a group naming an id that no longer exists), uncited-
-   *  source (declared, never referenced — publish refuses these). */
+   *  source (declared, never referenced — publish refuses these), immovable-
+   *  text (words that type and a box that can never be moved or resized:
+   *  no data-el on or around the slot — a renderer fix, per page). */
   audit() {
     const d = $('out').contentDocument;
     const issues = [];
@@ -25316,6 +25618,18 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         issues.push({ kind: 'uncited-source', ids: [s.id],
           note: 'declared in sources but never cited — publish refuses this' });
     });
+    // Words that edit and a box that never moves (immovableSlots): one issue
+    // per page, naming its slot keys. Only the renderer can fix it, so it is
+    // reported rather than worked around — and a handoff with it open is not
+    // done, exactly as one with docsync.check's IMMOVABLE TEXT is not.
+    const stuckBy = new Map();
+    immovableSlots(d).forEach(s => {
+      if (!stuckBy.has(s.page)) stuckBy.set(s.page, []);
+      stuckBy.get(s.page).push(s.key);
+    });
+    stuckBy.forEach((keys, page) => issues.push({ kind: 'immovable-text', page, ids: keys,
+      note: `${keys.length} text field${keys.length === 1 ? '' : 's'} can be typed into but `
+        + 'not moved or resized — the renderer gives no data-el on or around them' }));
     return { ok: true, issues, counts: issues.reduce(
       (m, i) => ({ ...m, [i.kind]: (m[i.kind] || 0) + 1 }), {}) };
   },
