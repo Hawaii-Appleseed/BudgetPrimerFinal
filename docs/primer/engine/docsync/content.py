@@ -453,14 +453,18 @@ class Footnotes:
                     '</ol>')
         items = []
         for i, (sid, txt, url) in enumerate(rows, 1):
-            hook = layout.attr(f"endnote.{sid}") if layout is not None else ""
+            # One style attribute: a moved entry's position in a second one
+            # would be dropped. Its own margin first, so the position's
+            # margin:0 wins, as it does while the entry is dragged.
+            hook = merge_attrs(' style="margin-bottom:.6em"',
+                               layout.attr(f"endnote.{sid}") if layout is not None else "")
             # A source need not have a link — a book, an interview, a document
             # somebody handed over. Without this an empty url drew an empty
             # <a href="">: a link to the page itself, styled as a citation.
             link = (f' <a href="{url}" style="word-break:break-all">{url}</a>'
                     if url else "")
             items.append(
-                f'<li id="en{i}"{hook} style="margin-bottom:.6em">{txt}'
+                f'<li id="en{i}"{hook}>{txt}'
                 f'{link}</li>')
         return ('<ol class="ds-endnotes" style="padding-left:1.4em;margin:0">'
                 + "".join(items) + "</ol>")
