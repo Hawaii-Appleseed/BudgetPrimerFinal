@@ -2757,36 +2757,6 @@ def anchor_attrs(obj: dict) -> str:
     return out
 
 
-def _reserve_margin(p: dict) -> list[float] | None:
-    """The four margins (inches, top right bottom left) of the flow element a
-    strut holds the place of, as the editor read them when it first moved —
-    or None when it had none."""
-    m = p.get("reserveMargin")
-    if not isinstance(m, list) or len(m) != 4:
-        return None
-    try:
-        vals = [float(v) for v in m]
-    except (TypeError, ValueError):
-        return None
-    return vals if any(vals) else None
-
-
-def strut_extra(p: dict) -> str:
-    """What a strut wears beyond its width and height (a leading ';' when
-    anything): the moved element's own MARGINS, since the room it took in the
-    flow was its margin box — a strut the size of its border box came up
-    short by exactly them, and the line under a moved heading rose by its
-    bottom margin — and inline-block for an element that sat IN a line, where
-    a block strut would break the line in two. Written once the editor
-    records them (reserveMargin / reserveInline), so every strut from before
-    emits the bytes it always did. edit.html's strutExtra is the twin."""
-    mg = _reserve_margin(p)
-    out = (";margin:" + " ".join(f"{v:g}in" for v in mg)) if mg else ""
-    if p.get("reserveInline"):
-        out += ";display:inline-block;vertical-align:top"
-    return out
-
-
 # The anchor runtime. Every pinned object has a y in inches; an ANCHORED one
 # has, instead of a place, a paragraph it belongs to and a distance from it,
 # and this puts it there once the browser has set the type. Measured, not
@@ -2819,11 +2789,7 @@ ANCHOR_JS = (
     "var sp=document.createElement('div');sp.className='ds-spacer';"
     "sp.setAttribute('data-spacer-for',rid);sp.setAttribute('data-anc-host','spacer:'+rid);"
     "sp.setAttribute('aria-hidden','true');var rw=e.getAttribute('data-reserve-w');"
-    # The strut's margins and display, as spacer() writes them (strut_extra).
-    "var rm=e.getAttribute('data-reserve-m');"
-    "sp.style.cssText=(rw?'width:'+rw+'in;':'')+'height:'+e.getAttribute('data-reserve')+'in;flex:0 0 auto'"
-    "+(rm?';margin:'+rm.split(' ').join('in ')+'in':'')"
-    "+(e.hasAttribute('data-reserve-inline')?';display:inline-block;vertical-align:top':'');"
+    "sp.style.cssText=(rw?'width:'+rw+'in;':'')+'height:'+e.getAttribute('data-reserve')+'in;flex:0 0 auto';"
     "e.parentNode.insertBefore(sp,e);}"
     "var els=document.querySelectorAll('[data-anc]');"
     "for(var i=0;i<els.length;i++){var el=els[i],pg=el.closest('.page');"
@@ -3667,12 +3633,7 @@ class Layout:
         # nothing. Hidden gives the slot back, so it reserves nothing.
         if p and p.get("reserve") and not hid:
             rw = f' data-reserve-w="{p["w"]}"' if p.get("w") else ""
-            # And the margins and display that strut wears (strut_extra), so
-            # the runtime's copy is the same box as spacer()'s.
-            mg = _reserve_margin(p)
-            rm = (' data-reserve-m="' + " ".join(f"{v:g}" for v in mg) + '"') if mg else ""
-            ri = " data-reserve-inline" if p.get("reserveInline") else ""
-            bits.append(f'data-reserve-for="{el_id}" data-reserve="{p["reserve"]}"{rw}{rm}{ri}')
+            bits.append(f'data-reserve-for="{el_id}" data-reserve="{p["reserve"]}"{rw}')
         return (" " + " ".join(bits)) if bits else ""
 
     def spacer(self, el_id: str) -> str:
@@ -3702,7 +3663,6 @@ class Layout:
         if not p or not p.get("reserve"):
             return ""
         wid = f'width:{p["w"]}in;' if p.get("w") else ""
-        extra = strut_extra(p)
         # Named twice: `data-spacer-for` so the editor can find the strut and
         # re-measure it against the element it stands in for, and as an anchor
         # HOST, `spacer:<id>`, so a moved flow element can follow the place it
@@ -3712,24 +3672,7 @@ class Layout:
         # piece keeps its distance from the text it came out of.
         return (f'<div class="ds-spacer" data-spacer-for="{el_id}" '
                 f'data-anc-host="spacer:{el_id}" style="{wid}height:{p["reserve"]}in;'
-                f'flex:0 0 auto{extra}" aria-hidden="true"></div>')
-
-    def wrap(self, el_id: str, inner: str) -> str:
-        """`inner` — markup the renderer built — held in a movable block of its
-        own, `el_id`, for a thing with no single element to carry attr(): a
-        table drawn once per fiscal year with one hidden, the paragraph beside
-        it drawn the same way, a figure inside a frame it shares with its
-        callouts. The words in it move and resize as one box.
-
-        The wrapper exists only while editing (the editor's handle) or once
-        moved (the position that ships). Published and unmoved it is the bare
-        markup, byte for byte — C.html's paragraph block, which is this with a
-        `para.<key>` id, has always worked the same way."""
-        pos = self.attr(el_id)
-        spacer = self.spacer(el_id)
-        if pos or spacer:
-            return f"{spacer}<div{pos}>{inner}</div>"
-        return inner
+                f'flex:0 0 auto" aria-hidden="true"></div>')
 
     def sec(self, el_id: str) -> str:
         """Attributes for a resizable colored background section.

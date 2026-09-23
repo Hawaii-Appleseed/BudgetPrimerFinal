@@ -40,19 +40,11 @@ The generated renderer now injects, in edit mode only, a generic
 the hero was invisible). Pages with *JS-driven* behaviour — image cyclers,
 carousels — still need a hand-written edit-mode override.
 
-### 4. Movable images, SVGs — and every text field (DONE)
-Free-standing `<img>` and inline `<svg>` elements are auto-wired with
-`data-el` hooks (`L.attr`). **Flow text is too, since 2026-09-22.** It was
-left out because a drag absolutised a paragraph and its siblings reflowed
-into the gap; a moved element now leaves a strut the size of its MARGIN box
-(`L.spacer` / the anchor runtime, `strut_extra`), so nothing around it moves.
-Leaving it out had a cost nobody saw: every field of an imported page could
-be typed into and not one could be moved or resized (tfc-2027-priorities,
-141 of 141). `blocks.fill_markers` fills propose's markers and gives each
-field — or the unit it is a piece of: a stat's figure with its label, a
-legend word with its swatch, a heading split around a styled word — its own
-`field.<key>`. `docsync.check` fails a strict binding on any slot left
-without one (IMMOVABLE TEXT).
+### 4. Movable images/SVGs (semi-automatic, ship behind a flag)
+Free-standing `<img>` and inline `<svg>` elements are safe to auto-wrap with
+`data-el` hooks (`L.attr`) — that's mechanical. **Flow text blocks are not**:
+giving arbitrary paragraphs `data-el` means a drag absolutises them and their
+siblings reflow underneath, wrecking the page. Auto-wire images only.
 
 ## NOT worth automating — needs judgment
 

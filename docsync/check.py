@@ -393,54 +393,8 @@ def check_text_size(html: str) -> list[Problem]:
     return problems
 
 
-# --- 5. every attribute said once --------------------------------------------
-# A start tag that names an attribute twice keeps the FIRST and drops the rest,
-# with no error anywhere. Two helpers writing into one tag is how it happens,
-# and each is right alone: a renderer's own style="color:…" beside L.attr's
-# position, and a heading someone dragged snaps back on the next render; a
-# slot's text style beside card()'s list style, and the bullets lose their
-# indent. Neither happens until a person moves or styles something, so the
-# committed page is clean and the edit-mode check below also renders a STRESS
-# build (stress_layout) to find the tag before a person does.
-
-class _Twice(HTMLParser):
-    """Each start tag that names an attribute more than once."""
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.found: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        names = [k for k, _ in attrs]
-        twice = [k for k in dict.fromkeys(names) if names.count(k) > 1]
-        if not twice:
-            return
-        # Named the way a person would find it: the hook, else the class.
-        val = dict(reversed(attrs))                  # first value wins, as in a browser
-        hook = next((f'{k}="{val[k]}"' for k in ("data-el", "data-slot", "id", "class")
-                     if val.get(k)), "")
-        self.found.append(f"<{tag}{' ' + hook if hook else ''}> (line {self.getpos()[0]}): "
-                          + ", ".join(twice))
-
-    handle_startendtag = handle_starttag
-
-
-def attributes_twice(html: str) -> list[str]:
-    p = _Twice()
-    p.feed(html)
-    return p.found
-
-
-def check_attributes(html: str) -> list[Problem]:
-    """No start tag names one attribute twice."""
-    return [Problem("attributes",
-                    f"{t} given twice — the browser keeps the first and drops the "
-                    f"rest. Merge them into one: L.attr(id, extra), or merge_attrs()")
-            for t in attributes_twice(html)]
-
-
 CHECKS = (check_citations, check_markdown, check_svg_bounds,
-          check_text_size, check_attributes)
+          check_text_size)
 
 
 # --- editability coverage ----------------------------------------------------
@@ -598,12 +552,6 @@ class _Coverage(HTMLParser):
         self._slots: list[tuple[int, str, list[str]]] = []
         self.slot_runs: list[tuple[str, list[str]]] = []
         self.sup = 0
-        # IMMOVABLE TEXT: a slot with no data-el on it or anywhere above it.
-        # Its words can be typed into and the box they sit in can never be
-        # dragged or given a width — every field of an imported page was this
-        # (tfc-2027-priorities: 141 of 141). Keys, first sighting only.
-        self.immovable_paged: list[str] = []
-        self.immovable_all: list[str] = []
 
     def _desc_hit(self, text: str, declared: bool) -> None:
         """Record one accessible description, and whether it is wired."""
@@ -686,14 +634,6 @@ class _Coverage(HTMLParser):
         self.kinds.append("slot" if slot else "fixed" if fixed else "")
         if slot and (a.get("data-slot") or "").strip():
             self._slots.append((len(self.stack), a["data-slot"].strip(), []))
-            # Movable is data-el on the slot or on anything holding it: the
-            # field itself, its paragraph block, its card, its drawing.
-            if not any(e for _, _, e, *_ in self.stack):
-                key = a["data-slot"].strip()
-                if key not in self.immovable_all:
-                    self.immovable_all.append(key)
-                    if any(pg for *_, pg in self.stack):
-                        self.immovable_paged.append(key)
         if tag == "foreignobject":
             self.fo += 1
         if tag == "sup":
@@ -997,37 +937,16 @@ def check_publish_only(edit_html: str, pub_html: str) -> list[str]:
     return out
 
 
-def _build(render: Path, out: Path, edit: bool, slotlog: Path | None = None,
-           layout_json: Path | None = None):
+def _build(render: Path, out: Path, edit: bool, slotlog: Path | None = None):
     env = {k: v for k, v in os.environ.items()
-           if k not in ("DOCSYNC_EDIT", "DOCSYNC_SLOTLOG", "DOCSYNC_LAYOUT")}
+           if k not in ("DOCSYNC_EDIT", "DOCSYNC_SLOTLOG")}
     env["DOCSYNC_OUT"] = str(out)
     if edit:
         env["DOCSYNC_EDIT"] = "1"
     if slotlog is not None:
         env["DOCSYNC_SLOTLOG"] = str(slotlog)
-    if layout_json is not None:
-        env["DOCSYNC_LAYOUT"] = str(layout_json)
     return subprocess.run([sys.executable, str(render)], env=env, cwd=ROOT,
                           capture_output=True, text=True, timeout=180)
-
-
-def stress_layout(layout_json: Path | None, edit_html: str) -> dict:
-    """The report's layout with everything a person can do to its page done at
-    once: every movable (data-el) placed and holding its place, and every slot
-    (data-slot) wearing a text style. Markup that only an edit makes a
-    renderer emit is then emitted, where a check can read it."""
-    import json
-    raw = {}
-    if layout_json is not None and layout_json.is_file():
-        raw = json.loads(layout_json.read_text() or "{}")
-    pos = raw.setdefault("positions", {})
-    for el in dict.fromkeys(re.findall(r'\bdata-el="([^"]+)"', edit_html)):
-        pos.setdefault(el, {"x": 0.5, "y": 0.5, "w": 2, "reserve": 0.4})
-    text = raw.setdefault("text", {})
-    for key in dict.fromkeys(re.findall(r'\bdata-slot="([^"]+)"', edit_html)):
-        text.setdefault(key, {"color": "#2F3E46"})
-    return raw
 
 
 def _tally(counts: dict[str, int], n: int = 4) -> str:
@@ -1084,15 +1003,6 @@ def check_editability(binding) -> list[Problem]:
         pub_html = (pout.read_text(encoding="utf-8")
                     if not pr.returncode and pout.exists() else None)
         ptail = (pr.stderr.strip() or pr.stdout.strip()).splitlines()
-        # Once more with every movable moved and every slot styled (see
-        # "every attribute said once"): the tags only an edit makes.
-        slay = Path(td) / "stress-layout.json"
-        slay.write_text(json.dumps(stress_layout(ed.layout, html)))
-        sout = Path(td) / "stress.html"
-        sr = _build(ed.render, sout, edit=True, layout_json=slay)
-        stress_html = (sout.read_text(encoding="utf-8")
-                       if not sr.returncode and sout.exists() else None)
-        stail = (sr.stderr.strip() or sr.stdout.strip()).splitlines()
 
     cov = _Coverage()
     cov.feed(html)
@@ -1111,8 +1021,6 @@ def check_editability(binding) -> list[Problem]:
     foreign = [t for t in foreign if t not in accepted]
     pub_only = ([t for t in check_publish_only(html, pub_html)
                  if t not in accepted] if pub_html is not None else [])
-    immovable = [k for k in (cov.immovable_paged if cov.saw_page
-                             else cov.immovable_all) if k not in accepted]
     hint = ("Wire them (C.html / C.slot_attr / L.attr), declare derived "
             "values with C.derived('<how to remake it>'), or list each in "
             "this binding's editability_ok" if strict else
@@ -1123,21 +1031,6 @@ def check_editability(binding) -> list[Problem]:
             "editability",
             f"{len(dead)} visible text string(s) carry no edit hook — not a "
             f"slot, not movable: {_samples(dead)}. {hint}",
-            level))
-    if immovable:
-        # The editor's promise is that any text box can be MOVED and RESIZED,
-        # not only typed into. A slot with no data-el on it or above it keeps
-        # half of that: its words edit, and nothing can pick the box up or
-        # give it a width. Every field of an imported page was this until the
-        # engine filled propose's markers itself (blocks.fill_markers).
-        problems.append(Problem(
-            "editability",
-            f"{len(immovable)} text field(s) can be typed into but never moved "
-            f"or resized — no data-el on the field or on anything holding it: "
-            f"{_samples(immovable)}. Give each a movable box: C.html for a "
-            f"paragraph, L.attr on the element or on the block it sits in "
-            f"(its card, its list, its table), graphic() for words in a "
-            f"drawing, blocks.fill_markers for an imported page's markers",
             level))
     if frozen:
         problems.append(Problem(
@@ -1231,24 +1124,6 @@ def check_editability(binding) -> list[Problem]:
             f"restated (svg_text restates=), from {len(cov.restates_decl)} "
             f"source(s): {_tally(cov.restates_decl)}",
             "note"))
-    # Not an editability finding, and an error whatever the binding's
-    # editability says: a move or a style the page drops is a broken page.
-    # The committed pages are held to the same by check_attributes.
-    if stress_html is None:
-        problems.append(Problem(
-            "attributes",
-            f"the build with everything moved and every slot styled failed "
-            f"({stail[-1] if stail else 'no output'}) — an edited page's "
-            f"attributes were not checked",
-            "warn"))
-    else:
-        for t in attributes_twice(stress_html):
-            problems.append(Problem(
-                "attributes",
-                f"{t} given twice once the page is edited (everything moved, "
-                f"every slot styled) — the browser keeps the first, so that move "
-                f"or style never reaches the page. Merge them into one: "
-                f"L.attr(id, extra), or merge_attrs()"))
     return problems
 
 
@@ -1356,9 +1231,7 @@ def main(argv: list[str] | None = None) -> int:
             eprobs = check_editability(b)
             if any(pr.is_error for pr in eprobs):
                 failed += 1
-                strict = any(pr.is_error and pr.check == "editability" for pr in eprobs)
-                print(f"FAIL {b.id}: edit-mode draft"
-                      + (" (editability: strict)" if strict else ""))
+                print(f"FAIL {b.id}: edit-mode draft (editability: strict)")
             elif any(pr.level == "warn" for pr in eprobs):
                 warned += 1
                 print(f"warn {b.id}: edit-mode draft")

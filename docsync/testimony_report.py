@@ -135,15 +135,12 @@ def _chart(C: Content, bills: list[dict], tally: str) -> str:
     return "".join(out)
 
 
-def _rows(C: Content, L: Layout, pre: str, themes: list[dict], accent: str,
+def _rows(C: Content, pre: str, themes: list[dict], accent: str,
           tally: str) -> list[str]:
     rows = []
     for i, t in enumerate(themes, 1):
-        # A row is one object — rank, tally and heading move and take a width
-        # together — or its heading could be retyped and never moved
-        # (docsync.check: IMMOVABLE TEXT).
         rows.append(
-            f'{L.spacer(f"{pre}.{i}")}<div class="row"{L.attr(f"{pre}.{i}")}>'
+            f'<div class="row">'
             f'<span class="rank" style="background:{accent}"{C.derived(tally)}>{i}</span>'
             f'<span class="n" style="color:{accent}"{C.derived(tally)}>{t["raw"]}</span>'
             f'<span class="d"{C.derived(tally)}>{t["distinct"]} distinct</span>'
@@ -220,14 +217,13 @@ def render(here: Path | str, *, page: tuple[float, float] = (8.5, 11.0)) -> Path
     # Argument pages — opposition, then support.
     for pre, side, accent, head in (("arg", oppose, OPP, "arg.head"),
                                     ("sup", support, SUP, "sup.head")):
-        chunks = _chunk(_rows(C, L, pre, side["themes"], accent, tally), ARGS_PER_PAGE)
+        chunks = _chunk(_rows(C, pre, side["themes"], accent, tally), ARGS_PER_PAGE)
         for n, chunk in enumerate(chunks):
             if not chunk:
                 continue
             title = (f'{L.spacer(f"{head}.h2")}<h2{L.attr(f"{head}.h2")}>'
                      f'{C.t(f"{head}.h2")}</h2>' if n == 0 else
-                     f'<div class="contd"{L.attr(f"{head}.contd")}>'
-                     f'{C.t(f"{head}.contd")}</div>')
+                     f'<div class="contd">{C.t(f"{head}.contd")}</div>')
             pages.append(title + "".join(chunk))
 
     # Closing page — who filed, on each side.
@@ -235,9 +231,9 @@ def render(here: Path | str, *, page: tuple[float, float] = (8.5, 11.0)) -> Path
     pages.append(
         f'{L.spacer("orgs.h2")}<h2{L.attr("orgs.h2")}>{C.t("orgs.h2")}</h2>'
         f'<div class="cols">'
-        f'<div><h3{L.attr("orgs.oppose.h3", f"color:{OPP}")}>'
+        f'<div><h3 style="color:{OPP}"{L.attr("orgs.oppose.h3")}>'
         f'{C.t("orgs.oppose.h3")}</h3>{_orgs(C, orgs["oppose"], OPP, tally)}</div>'
-        f'<div><h3{L.attr("orgs.support.h3", f"color:{SUP}")}>'
+        f'<div><h3 style="color:{SUP}"{L.attr("orgs.support.h3")}>'
         f'{C.t("orgs.support.h3")}</h3>{_orgs(C, orgs["support"], SUP, tally)}</div>'
         f'</div>')
 
