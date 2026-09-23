@@ -235,9 +235,9 @@ def render(here: Path | str, *, page: tuple[float, float] = (8.5, 11.0)) -> Path
     pages.append(
         f'{L.spacer("orgs.h2")}<h2{L.attr("orgs.h2")}>{C.t("orgs.h2")}</h2>'
         f'<div class="cols">'
-        f'<div><h3 style="color:{OPP}"{L.attr("orgs.oppose.h3")}>'
+        f'<div><h3{L.attr("orgs.oppose.h3", f"color:{OPP}")}>'
         f'{C.t("orgs.oppose.h3")}</h3>{_orgs(C, orgs["oppose"], OPP, tally)}</div>'
-        f'<div><h3 style="color:{SUP}"{L.attr("orgs.support.h3")}>'
+        f'<div><h3{L.attr("orgs.support.h3", f"color:{SUP}")}>'
         f'{C.t("orgs.support.h3")}</h3>{_orgs(C, orgs["support"], SUP, tally)}</div>'
         f'</div>')
 

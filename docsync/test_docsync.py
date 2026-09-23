@@ -3844,6 +3844,38 @@ _decls = re.findall(r"^(?:async )?function\*? ?([A-Za-z_$][\w$]*)",
 check_eq("no function is declared twice in the editor's script",
          sorted({n for n in _decls if _decls.count(n) > 1}), [])
 
+# ---- every attribute said once -------------------------------------------------
+# A start tag naming an attribute twice keeps the first and drops the rest,
+# silently. Each case below was one tag two helpers wrote into, each right on
+# its own, and none showed until a person moved or styled the thing.
+from docsync.check import attributes_twice, check_attributes, stress_layout  # noqa: E402
+
+check_eq("a doubled attribute is found, and named by its hook",
+         attributes_twice('<h3 data-el="a.h" style="color:red" style="left:1in">x</h3>'),
+         ['<h3 data-el="a.h"> (line 1): style'])
+check_eq("one of each is fine", attributes_twice('<p class="a" style="b">x</p>'), [])
+check_eq("and a doubled one fails the page",
+         [pr.is_error for pr in check_attributes('<i style="a" style="b"></i>')], [True])
+
+
+class _StyledCardC(_CardC):
+    def ul_attr(self, k): return ' data-slot="kp.bullets" style="color:#123456"'
+
+
+_styled_card = card(_StyledCardC(), letter, "kp.title", "kp.bullets", "#52796F")
+check_eq("card: styled bullets keep the list's indent, in the one style attribute",
+         (attributes_twice(_styled_card),
+          "color:#123456;margin:0;padding-left:17px" in _styled_card), ([], True))
+_fn_moved = Footnotes({"x": ("A book.", "")})
+_fn_moved.resolve("<p>Words.[^x]</p>")
+_moved_note = _fn_moved.endnotes_html(_layout({"positions": {"endnote.x": {"x": 1, "y": 1}}}))
+check_eq("a moved endnote keeps its place, in one style attribute, margin:0 last",
+         (attributes_twice(_moved_note),
+          "margin-bottom:.6em;margin:0;position:absolute" in _moved_note), ([], True))
+_stress = stress_layout(None, '<div data-el="a"><p data-slot="b">x</p></div><i data-el="a"></i>')
+check_eq("the stress layout moves every movable and styles every slot",
+         (sorted(_stress["positions"]), sorted(_stress["text"])), (["a"], ["b"]))
+
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))

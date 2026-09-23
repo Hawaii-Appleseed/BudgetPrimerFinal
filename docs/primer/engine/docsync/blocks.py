@@ -995,7 +995,10 @@ def card(C, L, title_key: str, bullets_key: str, bg, light=None,
 
     lis = "".join(f'<li style="font-weight:600;margin:4px 0">{b}</li>'
                   for b in C.list(bullets_key))
-    ul = f'<ul{C.ul_attr(bullets_key)} style="margin:0;padding-left:17px">{lis}</ul>'
+    # One style attribute: a text style on the bullets comes through ul_attr,
+    # and beside a second style="" the browser would keep only that one.
+    ul_style = ' style="margin:0;padding-left:17px"'
+    ul = f'<ul{merge_attrs(C.ul_attr(bullets_key), ul_style)}>{lis}</ul>'
     title = C.t(title_key)
 
     if detachable:
