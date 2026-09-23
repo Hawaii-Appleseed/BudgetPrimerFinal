@@ -14196,10 +14196,20 @@ function placer(d, el, page) {
     } else {
       holdPlace();
       el.style.position = 'absolute';
+      // What the renderer's placement will say (layout.py _style), said now:
+      // margin:0, since a margin on a placed element is ADDED to its left and
+      // top — the Budget Primer's lifecycle ring, 0.28in of top margin, was
+      // drawn that far below the pointer for the whole drag and jumped back
+      // up on the render after the drop — and border-box, so a pinned width
+      // is the measured one, padding and border included, not that plus them.
+      el.style.margin = '0';
       el.style.left = (x - delta.x).toFixed(2) + 'in';   // page -> local coords
       el.style.top = (y - delta.y).toFixed(2) + 'in';
       const w = pinW();
-      if (w) el.style.width = w + 'in';     // what the renderer will do, now
+      if (w) {                              // what the renderer will do, now
+        el.style.boxSizing = 'border-box';
+        el.style.width = w + 'in';
+      }
       if (zNew !== null) el.style.zIndex = String(zNew);   // and the layer it will keep
     }
     showGuides(d, page, vx, hy);
