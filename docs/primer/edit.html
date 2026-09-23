@@ -18069,8 +18069,24 @@ function wire(roots) {
        language [data-slot]:hover already uses for "this is interactive". An
        outline draws outside the box, so opening/closing an edit never
        reflows whatever's next to it. */
-    .ds-edit { font:inherit; line-height:inherit; color:inherit; outline:2px solid #6B9E78;
-               outline-offset:3px; border-radius:4px; background:transparent; cursor:text; }
+    .ds-edit { outline:2px solid #6B9E78;
+               outline-offset:3px; border-radius:4px; cursor:text; }
+    /* A STAND-IN (a <div> or <span> put in the slot's place) takes its type
+       from what it sits in. One edited IN PLACE (edit(): the element itself,
+       .ds-edit-in) keeps its own rules instead — a class outranks the page's
+       h1 { font-size }, so these inherits on it shrank the heading to its
+       parent's size the moment it was clicked. Its background stays too: a
+       stat or a pill is often a filled box. */
+    .ds-edit:not(.ds-edit-in) { font:inherit; line-height:inherit; color:inherit;
+               background:transparent; }
+    /* Chrome's own sheet gives every [contenteditable] overflow-wrap:
+       break-word, so a word wider than its box — rxkids' 112px "RxKeiki",
+       which overflows its heading by a few pixels — broke mid-word onto a
+       second line the moment it was opened (137px tall became 260px). The
+       wrapping it would have without the editor: inherited, as it is on any
+       element, and at zero specificity so a rule the page sets still wins. */
+    :where(.ds-edit) { overflow-wrap:inherit; word-wrap:inherit; line-break:inherit;
+               -webkit-line-break:inherit; }
     /* No margin overrides on the paragraphs inside: the page's own <p>
        rules apply, so the block is EXACTLY the height it was before the
        double-click and nothing below it moves. (A hardcoded .8em here was
@@ -18464,10 +18480,10 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
     if (el.closest('[data-el]')) {
       el.addEventListener('dblclick', e => {
         e.preventDefault(); e.stopPropagation();
-        showType(key); edit(d, key);
+        showType(key); edit(d, key, el);
       });
     } else {
-      el.addEventListener('click', () => { showType(key); edit(d, key); });
+      el.addEventListener('click', () => { showType(key); edit(d, key, el); });
     }
   });
 
@@ -19093,7 +19109,7 @@ function editSvgSlot(d, key, node) {
   });
 }
 
-function edit(d, key) {
+function edit(d, key, clicked) {
   suggestUnpaint(d);   // no proposed <ins> may ride into the words
   const blocks = [...d.querySelectorAll(`[data-slot="${key}"]`)];
   if (!blocks.length || editing) return;
@@ -19116,29 +19132,91 @@ function edit(d, key) {
   const allowMd = !RICH_PLAINTEXT_SLOTS.has(key);
   const extraClass = (blocks[0].className || '').split(/\s+/).filter(Boolean);
 
-  const host = d.createElement(inline ? 'span' : 'div');
+  // IN PLACE: a slot that is ONE element holding one paragraph's words — a
+  // heading, a stat, a label, a lede; every C.slot_attr slot, and so every
+  // field on an ingested page — is edited as THAT element, not a stand-in.
+  // The stand-in (a <div> wearing the classes, with a <p> inside) lost every
+  // rule keyed on the tag or on the tag in context: an <h1> opened at 16px
+  // regular instead of 46px bold, a stat's <span> gained a paragraph's
+  // margins (30px tall → 89px), and an inline "of 30" jumped onto a line of
+  // its own. The words are inline markdown there anyway (C() is
+  // content.py's paragraph(): one paragraph, lines joined), so the inline
+  // editor is the right one, and Enter commits as it does in a heading.
+  // What stays a stand-in: a slot rendered as several blocks, a C.html
+  // paragraph (a slot you may add paragraphs to — its para.<key> handle
+  // says so), a list, an added section, and a slot holding BLOCKS — child
+  // paragraphs or headings, or a blank line in its markdown — which inline
+  // editing would flatten.
+  //
+  // REPEATS count as one element: the same one-paragraph slot drawn in
+  // several places (the Budget Primer draws each fiscal year's table and
+  // CIP paragraph, and hides the year not shown) — every copy the same tag,
+  // no paragraph wrapper, no blank line. The copy that was clicked is the
+  // one edited; the others stay where they are until the render.
+  const oneParagraph = !/\n[ \t]*\n/.test(slotRe(key).test(source) ? readSlot(key) : '');
+  const repeats = blocks.length > 1 && oneParagraph
+    && blocks.every(b => b.tagName === blocks[0].tagName && !b.closest('[data-el^="para."]'));
+  const target = (clicked && blocks.includes(clicked)) ? clicked
+    : blocks.find(b => b.getClientRects().length) || blocks[0];
+  const inPlace = !inline && !allowLists && (blocks.length === 1 || repeats)
+    && !target.closest(`[data-el="para.${CSS.escape(key)}"]`)
+    && !target.hasAttribute('data-extra')
+    && !/^(SELECT|OPTION|INPUT|TEXTAREA|TABLE|THEAD|TBODY|TFOOT|TR|UL|OL|DL)$/.test(target.tagName)
+    && !target.querySelector('p, ul, ol, dl, h1, h2, h3, h4, h5, h6, blockquote, table, div, section, figure, pre')
+    && oneParagraph;
+  // A button keeps being the button, and only its WORDS are edited — in a
+  // span inside it, the way a table cell is (editCell). Typing into the
+  // button itself fights its own keys: Space and Enter press it.
+  const inside = inPlace && target.tagName === 'BUTTON';
+  const richInline = inline || inPlace;
+
+  const host = inside ? d.createElement('span')
+    : inPlace ? d.createElement(target.tagName) : d.createElement(inline ? 'span' : 'div');
+  if (inPlace && !inside) {
+    // Everything the element was, so every selector that matched it still
+    // does: its class, id, inline style, role — all but the hook itself.
+    for (const a of [...target.attributes]) {
+      if (a.name !== 'contenteditable') host.setAttribute(a.name, a.value);
+    }
+  }
   host.contentEditable = 'true';
-  host.className = inline ? 'ds-edit ds-inline' : 'ds-edit';
-  host.dataset.richMode = inline ? 'inline' : 'block';
+  if (inside) host.className = 'ds-edit ds-inline';
+  else if (inPlace) host.classList.add('ds-edit', 'ds-edit-in');
+  else host.className = inline ? 'ds-edit ds-inline' : 'ds-edit';
+  host.dataset.richMode = richInline ? 'inline' : 'block';
   host.dataset.slot = key;      // presence reads this: "ada is typing in [[key]]"
-  if (extraClass.length) host.classList.add(...extraClass);
+  // Where a stand-in's classes go. One standing in for <p>s or a list wears
+  // them on the generated <p>s / list — the element they were written for —
+  // and NOT on the wrapper as well: a padded .foot counted its padding twice
+  // (57px became 76px while open), and a flex .benefit-row on the wrapper
+  // left the list inside it stacked (55px became 136px).
+  const classInside = !inPlace && allowMd && !richInline && /^(P|UL|OL)$/.test(blocks[0].tagName);
+  if (!inPlace && !classInside && extraClass.length) host.classList.add(...extraClass);
   collabWarnShared(key, 'paragraph');
 
   // What the slot's own elements wear inline, by tag (see richWear), and the
   // host itself dressed as the element it replaces when it is the same kind.
   const wear = new Map();
-  for (const n of [blocks[0], ...blocks[0].querySelectorAll('*')]) {
+  const worn = inPlace ? target : blocks[0];
+  for (const n of [worn, ...worn.querySelectorAll('*')]) {
     const st = n.getAttribute('style');
     if (st && !wear.has(n.tagName)) wear.set(n.tagName, st);
   }
-  if (host.tagName === blocks[0].tagName && wear.has(host.tagName)) host.setAttribute('style', wear.get(host.tagName));
+  if (!inPlace && host.tagName === blocks[0].tagName && wear.has(host.tagName)) host.setAttribute('style', wear.get(host.tagName));
   // A slot the document has not got yet (content.py's text_or: a label the
   // renderer defaults) opens on the words the page shows, never on nothing;
   // its first commit writes the block. The new-slot marker is not words.
   const raw0 = slotRe(key).test(source) ? readSlot(key)
     : (blocks[0].textContent || '').replace(/\s+/g, ' ').trim().replace(/^\u26a0 new slot.*$/, '');
   const headMark = allowLists ? '' : (raw0.match(/^#{1,6}[ \t]+/) || [''])[0];
-  const raw = richUnhead(raw0, { headMark, allowLists });
+  // An INLINE slot's words are one line on the page: content.py's text()
+  // and paragraph() both join content.md's soft wraps with spaces. Opened
+  // raw, each wrap became a <br> — a line the page does not have (every
+  // two-line subtitle in the staff toolkit grew a third while open).
+  const soft = md => md.split('\n').map(l => l.trim()).filter(Boolean).join(' ');
+  const joinWraps = richInline && allowMd;
+  const raw = joinWraps ? soft(richUnhead(raw0, { headMark, allowLists }))
+    : richUnhead(raw0, { headMark, allowLists });
   const rehead = md => richRehead(md, { headMark });
   let fnLabels = null;
   if (!allowMd) {
@@ -19147,10 +19225,20 @@ function edit(d, key) {
   } else {
     // blocks still hold their rendered numbers here — read before replaceWith
     // below discards blocks[0] and the rest are dropped outright.
-    fnLabels = fnRenderedLabels(blocks, raw);
-    host.innerHTML = mdToHtml(raw, { allowLists, inline, fnLabels });
-    if (!inline && extraClass.length)
-      host.querySelectorAll(':scope > p').forEach(p => p.classList.add(...extraClass));
+    // A repeat's other copies carry the same numbers again, and a count that
+    // no longer matches the citations reads none of them — label chips by id.
+    fnLabels = fnRenderedLabels(inPlace ? [target] : blocks, raw);
+    host.innerHTML = mdToHtml(raw, { allowLists, inline: richInline, fnLabels });
+    if (!richInline && extraClass.length) {
+      const list = /^(UL|OL)$/.test(blocks[0].tagName);
+      host.querySelectorAll(list ? ':scope > ul, :scope > ol' : ':scope > p')
+        .forEach(n => n.classList.add(...extraClass));
+    }
+    // A list's items were dressed too (a pill, a card): the first item's
+    // classes go on every item the editor draws, by the same rule as wear.
+    const li0 = /^(UL|OL)$/.test(blocks[0].tagName) && blocks[0].querySelector(':scope > li[class]');
+    if (li0) host.querySelectorAll(':scope > ul > li, :scope > ol > li')
+      .forEach(n => n.classList.add(...li0.classList));
     richWear(host, wear);
   }
 
@@ -19160,8 +19248,9 @@ function edit(d, key) {
   // is open; editing in place must not reflow the page around the words.
   // Formatting lives in the chrome bar (B/I/lists appear there while a rich
   // editor is open — syncMarksBar), links on ⌘K, endnotes on right-click.
-  blocks[0].replaceWith(host);
-  blocks.slice(1).forEach(b => b.remove());
+  if (inside) target.replaceChildren(host);
+  else if (inPlace) target.replaceWith(host);
+  else { blocks[0].replaceWith(host); blocks.slice(1).forEach(b => b.remove()); }
   richHost = host;
   richOpts = { allowLists, allowMd, fnLabels, headMark, wear };
   collabParaOpened();
@@ -19186,17 +19275,20 @@ function edit(d, key) {
     hubAutosaveFlushNext();
     richHost = null; syncMarksBar();
     const newVal = keep
-      ? rehead(!allowMd ? (inline ? host.textContent : host.innerText)
-                        : htmlToMd(host, { allowLists, inline }))
+      ? rehead(!allowMd ? (richInline ? host.textContent : host.innerText)
+                        : htmlToMd(host, { allowLists, inline: richInline }))
       : null;
     // The old document stays VISIBLE while the re-render loads its twin —
     // so this editor must stop being one right now. Left editable, it kept
     // swallowing the next interaction (a click, an Escape) into a document
     // already scheduled for the bin.
     host.contentEditable = 'false';
-    host.classList.remove('ds-edit', 'ds-inline');
+    host.classList.remove('ds-edit', 'ds-inline', 'ds-edit-in');
     if (keep) {
-      if (newVal.trim() !== readSlot(key)) {
+      // Unchanged is unchanged whatever the wrapping: opening and leaving a
+      // soft-wrapped slot must not rewrite it as one long line.
+      const was = readSlot(key);
+      if (newVal.trim() !== was && !(joinWraps && newVal.trim() === soft(was))) {
         // Record the pre-edit state FIRST, or this text change (a typed edit,
         // a deletion) is not undoable — every other edit path pushes history,
         // but the slot editor didn't, so ⌘Z after editing prose found nothing
@@ -19228,10 +19320,10 @@ function edit(d, key) {
     if (modalOpen) return;
     finish(true);
   });
-  host.addEventListener('paste', e => pasteClean(d, host, e, { allowLists, inline, allowMd }));
+  host.addEventListener('paste', e => pasteClean(d, host, e, { allowLists, inline: richInline, allowMd }));
   host.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-    if (e.key === 'Enter' && inline) { e.preventDefault(); finish(true); }
+    if (e.key === 'Enter' && richInline) { e.preventDefault(); finish(true); }
     // Shift-Enter has nowhere to go in prose. content.md soft-wraps at about
     // eighty columns, so a newline inside a slot is a WRAPPED line and
     // paragraphs() closes it up to a space — the break used to reach the file
@@ -19240,7 +19332,7 @@ function edit(d, key) {
     // grammar has. (A one-line slot never gets this far: Enter commits it,
     // shift or no shift. A table cell is one string with no wrapping, so it
     // keeps its own Shift-Enter and renders the break.)
-    if (e.key === 'Enter' && e.shiftKey && !inline) {
+    if (e.key === 'Enter' && e.shiftKey && !richInline) {
       e.preventDefault();
       $('stat').textContent = 'the report has paragraphs, not line breaks — '
         + 'press Enter for a new paragraph';
