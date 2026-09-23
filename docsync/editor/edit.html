@@ -16139,6 +16139,19 @@ function collabPeersArrived(peers) {
   collabFollowTick();
   collabChip();
 }
+/** The roster with each caret resolved against the words as they are NOW.
+ *  peerList's cursor was worked out when the peer's presence last changed,
+ *  and a caret can move without that: at the end of a paragraph it is
+ *  encoded as "the end", which typing there never changes, so the presence
+ *  is not re-sent while the words under it grow. Whether status() then said
+ *  30 or 35 depended on which of the two messages arrived first. The carets
+ *  painted on the page were never affected: collabPresence re-resolves them
+ *  every tick. peerList and collabPeers are built together, in one order. */
+function collabPeerListNow() {
+  const list = collabInfo.peerList;
+  if (!list || !collab) return list;
+  return list.map((p, i) => collabPeers[i] ? { ...p, cursor: collab.resolveCursor(collabPeers[i].cursor) } : p);
+}
 let collabRenderTimer = 0;
 const COLLAB_RENDER_QUIET_MS = 300;
 function collabRenderSoon() {
@@ -24859,7 +24872,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // Live collaboration, when this project has a relay: status is one of
       // off / connecting / signin / error / live / offline; `peers` counts
       // every editor in the room including this one.
-      collab: { ...collabInfo, baseSha: collab ? collab.baseSha() : null, branch: draftBranch },
+      collab: { ...collabInfo, peerList: collabPeerListNow(), baseSha: collab ? collab.baseSha() : null, branch: draftBranch },
       // An automated editor at work right now — through this tab, or a
       // collaborator's (`via`). Null when none.
       agent: agentsAtWork()[0] || null,
