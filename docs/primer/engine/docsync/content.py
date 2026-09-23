@@ -740,12 +740,8 @@ class Content:
         html()'s does: an unmoved published page is the bare markup, byte for
         byte. The editor treats a block nested inside another movable (a
         callout's own paragraphs) as part of that object, not a second one."""
-        if self._styles and hasattr(self._styles, "attr"):
-            el_id = f"para.{key}"
-            pos = self._styles.attr(el_id)
-            spacer = self._styles.spacer(el_id)
-            if pos or spacer:
-                return f"{spacer}<div{pos}>{inner}</div>"
+        if self._styles and hasattr(self._styles, "wrap"):
+            return self._styles.wrap(f"para.{key}", inner)
         return inner
 
     def list(self, key: str) -> list[str]:
