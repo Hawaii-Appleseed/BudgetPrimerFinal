@@ -3806,6 +3806,20 @@ check_eq("C.movable holds a caller's list in a movable block while editing",
 os.environ.pop("DOCSYNC_EDIT", None)
 check_eq("…and published, unmoved, is the bare markup",
          _mv.movable("k", "<ul></ul>"), "<ul></ul>")
+# L.wrap: the same block under any id, for a thing with no one element of its
+# own — a table drawn once per year with one of the two hidden.
+_wl = _layout({"positions": {"table1": {"x": 1, "y": 2, "w": 6, "reserve": 1.5}}})
+_twins = '<table data-fy="2027"></table><table data-fy="2026" hidden></table>'
+check_eq("published and unmoved, L.wrap adds nothing",
+         _layout({}).wrap("table1", _twins), _twins)
+_moved_w = _wl.wrap("table1", _twins)
+check("…moved, both years ride one positioned block behind a strut",
+      _moved_w, 'data-spacer-for="table1"')
+check("…positioned", _moved_w, 'style="margin:0;position:absolute;left:1in;top:2in')
+os.environ["DOCSYNC_EDIT"] = "1"
+check_eq("…and while editing it is the handle",
+         _layout({}).wrap("table1", _twins), f'<div data-el="table1">{_twins}</div>')
+os.environ.pop("DOCSYNC_EDIT", None)
 
 check_eq("a slot with nothing movable on it or above it is IMMOVABLE TEXT",
          _cov('<section class="page"><h2><span data-slot="t">Title</span></h2>'

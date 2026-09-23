@@ -3714,6 +3714,23 @@ class Layout:
                 f'data-anc-host="spacer:{el_id}" style="{wid}height:{p["reserve"]}in;'
                 f'flex:0 0 auto{extra}" aria-hidden="true"></div>')
 
+    def wrap(self, el_id: str, inner: str) -> str:
+        """`inner` — markup the renderer built — held in a movable block of its
+        own, `el_id`, for a thing with no single element to carry attr(): a
+        table drawn once per fiscal year with one hidden, the paragraph beside
+        it drawn the same way, a figure inside a frame it shares with its
+        callouts. The words in it move and resize as one box.
+
+        The wrapper exists only while editing (the editor's handle) or once
+        moved (the position that ships). Published and unmoved it is the bare
+        markup, byte for byte — C.html's paragraph block, which is this with a
+        `para.<key>` id, has always worked the same way."""
+        pos = self.attr(el_id)
+        spacer = self.spacer(el_id)
+        if pos or spacer:
+            return f"{spacer}<div{pos}>{inner}</div>"
+        return inner
+
     def sec(self, el_id: str) -> str:
         """Attributes for a resizable colored background section.
 
