@@ -20393,16 +20393,9 @@ async function hubHistorySelect(v) {
   hubHistoryRender();
   hubHistoryPaint(d);
 }
-/** Every [[key]] block of a content.md, as key -> words. */
-function slotsOf(text) {
-  const m = new Map();
-  const re = /(?:^|\n)\[\[([^\]]+)\]\]\n([\s\S]*?)(?=\n\[\[|$)/g;
-  let x;
-  while ((x = re.exec(text || ''))) m.set(x[1], x[2].trim());
-  return m;
-}
 /** What is on screen against a version: per paragraph, what went and what
- *  came; paragraphs that exist only on one side; whether the layout differs. */
+ *  came; paragraphs that exist only on one side; whether the layout differs.
+ *  (slotsOf is the suggestion mode's, below.) */
 function hubHistoryDiff(content, layoutText) {
   const then = slotsOf(content), now = slotsOf(source);
   const changed = [], added = [], gone = [];
