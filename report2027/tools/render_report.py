@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from docsync.content import Content, ContentError  # noqa: E402
+from docsync.content import Content, ContentError, merge_attrs  # noqa: E402
 from docsync.blocks import chart, chart_scroll, chart_scroll_css  # noqa: E402
 from docsync.layout import (Layout, LayoutError, check_icon_svg,  # noqa: E402
                             fill_css, fill_repr, icon_color)
@@ -268,14 +268,20 @@ def pie(slices, size=400, r=158, cls="", width_in=3.6, label_pt=14.0, start=0.0,
             f'preserveAspectRatio="xMidYMid meet" role="img">'
             + "".join(paths) + "".join(labels) + "</svg>")
 
-def legend(items):
+def legend(items, el_id=None):
     """items: (label_html, colour). Labels arrive ready to print — authored ones
     via C.t(..., esc=True), data-derived ones via esc(). Escaping here instead
-    would mangle the editor's slot markup into visible tags."""
+    would mangle the editor's slot markup into visible tags.
+
+    `el_id` makes the legend a movable object: a legend whose labels are
+    SLOTS needs one, or its words could be typed into and the legend never
+    moved (docsync.check: IMMOVABLE TEXT). L.attr adds nothing to an unmoved
+    published page."""
     rows = "".join(
         f'<div class="lg"><span class="sw" style="background:{c}"></span>{n}</div>'
         for n, c in items)
-    return f'<div class="legend">{rows}</div>'
+    hook = L.attr(el_id) if el_id else ""
+    return f'<div class="legend"{hook}>{rows}</div>'
 
 # Display bands for the obligated-costs stacked area, bottom -> top. Certificate
 # of Participation (a lease-financing debt instrument, <0.1%) folds into Debt
@@ -993,6 +999,28 @@ def endnote_link(n, sid, txt, url):
 ONE_TIME_BULLETS = C.list("onetime.cards.onetime.bullets")
 EMERG_BULLETS = C.list("onetime.cards.emergency.bullets")
 
+# What the page f-strings put between a pair of year twins — the newline and
+# the one-space indent — so a pair joined in Python and handed to L.wrap
+# publishes the bytes the two separate lines always did.
+NL_IN = "\n "
+
+
+def movable_tag(html: str, el_id: str) -> str:
+    """The FIRST element of `html` made a movable object, `el_id`: L.attr
+    merged into its start tag, one style attribute with the tag's own.
+
+    For a thing whose own element is built somewhere else — the lifecycle
+    ring's chart_scroll() wrapper — where a wrapper of our own would not do: a
+    child's margin collapses through a wrapper in the flow and sits inside it
+    once the wrapper is moved, so the ring would land 0.28in below the drop.
+    On the element itself, a move sets margin:0 and the strut keeps the
+    margins (docsync.layout strut_extra). Unmoved and published, the tag is
+    exactly what it was."""
+    end = html.index(">")
+    name = re.match(r"<[A-Za-z][\w-]*", html).group(0)
+    return name + merge_attrs(html[len(name):end], L.attr(el_id)) + html[end:]
+
+
 def table1_for(year):
     b = BRANCHES_BY_FY[year]
     e, j, l, o = b["exec"], b["jud"], b["leg"], b["oha"]
@@ -1169,7 +1197,7 @@ pages.append(f"""
  {C.html("process.p1")}
  {L.spacer("process.fig1.caption")}<p class="figcap"{L.attr("process.fig1.caption")}><b>Figure 1.</b> {C.t("process.fig1.caption")}</p>
  <div class="lifecycle-wrap">
-  {fig1_lifecycle()}
+  {movable_tag(fig1_lifecycle(), "process.fig1.ring")}
   {lifecycle_callouts()}
  </div>
 {C.extras("process")} {L.layer(4)}{L.text_boxes(4)}{L.tables_html(4)}{folio(4)}
@@ -1188,8 +1216,7 @@ pages.append(f"""
  </div>
  {C.html("spent.p3")}
  {L.spacer("spent.table1.caption")}<p class="figcap"{L.attr("spent.table1.caption")}><b>Table 1.</b> {C.t("spent.table1.caption")} {fy_picker("table1", FY_LABEL[2027], FY_LABEL[2026])}</p>
- {table1_for(2027)}
- {table1_for(2026)}
+ {L.wrap("table1", table1_for(2027) + NL_IN + table1_for(2026))}
 {C.extras("spent")} {L.layer(5)}{L.text_boxes(5)}{L.tables_html(5)}{folio(5)}
 </section>""")
 
@@ -1205,13 +1232,23 @@ pages.append(f"""
  {legend([(C.t("categories.legend.operating", esc=True), SAGE),
           (C.t("categories.legend.capital", esc=True), SAGE_MID),
           (C.t("categories.legend.onetime", esc=True), DARK),
-          (C.t("categories.legend.emergency", esc=True), DARKEST)])}
+          (C.t("categories.legend.emergency", esc=True), DARKEST)],
+         el_id="categories.legend")}
  {C.html("categories.fig2.note", cls="fig-note")}
- <div class="explore noprint">{C.t("categories.explore")}
+ <div class="explore noprint"{L.attr("categories.explore")}>{C.t("categories.explore")}
   <a href="{TRACKER}#/enacted" target="_blank" rel="noopener">{C.t("categories.explore.link").replace(" →", "&nbsp;→")}</a></div>
  {C.html("categories.p1")}
 {C.extras("categories")} {L.layer(6)}{L.text_boxes(6)}{L.tables_html(6)}{folio(6)}
 </section>""")
+
+# The CIP paragraph is drawn once per fiscal year (the picker shows one of
+# the two), so the pair is ONE movable block — L.wrap — rather than two copies
+# that part company the first time one of them is dragged.
+CIP_BODY = (f'<p data-fig="fig3" data-fy="2027"{C.slot_attr("cip.body")}>'
+            f'{C("cip.body").format(fy=2027, cip_total=words(cip_total_for(BUD)))}</p>'
+            + NL_IN +
+            f'<p data-fig="fig3" data-fy="2026" hidden{C.slot_attr("cip.body")}>'
+            f'{C("cip.body").format(fy=2026, cip_total=words(cip_total_for(BUD26)))}</p>')
 
 # -- page 7: obligated costs + fig 3
 pages.append(f"""
@@ -1221,9 +1258,9 @@ pages.append(f"""
   {C.html("obligated.p1")}
  </div>
  <details class="obligated noprint">
-  <summary>{C.t("obligated.summary")}</summary>
+  <summary{L.attr("obligated.summary")}>{C.t("obligated.summary")}</summary>
   <div class="obligated-panel">
-   <p class="figcap"{C.slot_attr("obligated.panel.caption")}>{C("obligated.panel.caption")}<span class="noprint">
+   <p class="figcap"{merge_attrs(C.slot_attr("obligated.panel.caption"), L.attr("obligated.panel.caption"))}>{C("obligated.panel.caption")}<span class="noprint">
    {C.t("obligated.panel.hint")}</span></p>
    {fig_obligated()}
    {legend([(esc(n), c) for n, _k, c in OBLIG_BANDS])}
@@ -1234,13 +1271,12 @@ pages.append(f"""
  {L.spacer("cip.h3")}<h3 class="sub2"{L.attr("cip.h3")}>{C.t("cip.h3")}</h3>
  {L.spacer("cip.fig3.caption")}<p class="figcap"{L.attr("cip.fig3.caption")}><b>Figure 3.</b> {C.t("cip.fig3.caption")} {fy_picker("fig3")} ($Millions)</p>
  <div class="pie-row">{fy_chart_swap("fig3", "cip.fig3", fig3_slices_for(BUD), fig3_slices_for(BUD26), {"prefix": "$", "scale": "M", "decimals": 0, "unit": ""}, cls="pie-cip", w=4.05, h=4.05)}{legend([(esc(n), c) for n, c in zip(FIG3_ORDER, FIG3_COLORS)])}</div>
- <p data-fig="fig3" data-fy="2027"{C.slot_attr("cip.body")}>{C("cip.body").format(fy=2027, cip_total=words(cip_total_for(BUD)))}</p>
- <p data-fig="fig3" data-fy="2026" hidden{C.slot_attr("cip.body")}>{C("cip.body").format(fy=2026, cip_total=words(cip_total_for(BUD26)))}</p>
+ {L.wrap("cip.body", CIP_BODY)}
 {L.spacer("onetime.h3")}<h3 class="sub2"{L.attr("onetime.h3")}>{C.t("onetime.h3")}</h3>
  <ul class="approp-brief">{"".join(f"<li>{b}</li>" for b in ONE_TIME_BULLETS[:3])}</ul>
  {C.html("onetime.brief", "approp-note")}
  <details class="obligated approp noprint">
-  <summary>{C.t("onetime.summary")}</summary>
+  <summary{L.attr("onetime.summary")}>{C.t("onetime.summary")}</summary>
   <div class="cards2">
    {card(C.t("onetime.cards.onetime.title"), ONE_TIME_BULLETS, DARK, key="onetime.cards.onetime.bullets", icon=WARNING_ICON, icon_id="onetime.cards.onetime.icon")}
    {card(C.t("onetime.cards.emergency.title"), EMERG_BULLETS, DARKEST, key="onetime.cards.emergency.bullets", icon=CROSS_ICON, icon_id="onetime.cards.emergency.icon")}
