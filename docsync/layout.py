@@ -1731,6 +1731,12 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     # Room for the tick labels along the value axis and the category names.
     pad_l = (fs * 2.6) if not horizontal else (fs * 3.4)
     pad_r = (fs * 2.6) if two_ax else (fs * 0.4)
+    if horizontal and grid:
+        # The value axis runs sideways, and its last tick label is centred on
+        # the plot's right edge — half of it past the drawing, where it was cut
+        # off ("$6B" drawn as "$6"). Reserve that half.
+        last = _tick_labels(vmin, vmax, nticks, afmt)[-1]
+        pad_r = max(pad_r, len(str(last)) * _EM_W * _lfs(fs * 0.8) / 2 + fs * 0.1)
     if horizontal and labels:
         # A row chart's names live in this gutter, anchored at its right edge,
         # and nothing wraps them: a name wider than 3.4 label-heights ran off

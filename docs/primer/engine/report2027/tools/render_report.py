@@ -293,57 +293,36 @@ OBLIG_BANDS = [
     ("Debt Service", ["Debt Service", "Certificate of Participation"], SAGE_LIGHT),
 ]
 
-def fig_obligated():
-    """Stacked-area chart of general-fund obligated costs, FY2018-FY2027."""
+def obligated_spec():
+    """General-fund obligated (fixed) costs, FY2018-FY2027, as an ENGINE
+    stacked-area chart — it was hand-written SVG. Bands bottom to top as
+    OBLIG_BANDS lists them; the numbers are manual/obligated_costs.json's."""
     series = OBLIG["series"]
     years = sorted(int(y) for y in series)
-    def val(fy, keys):
-        return sum(series[str(fy)][k] for k in keys)
-    def bill(n):
-        return f"${n / 1e9:.2f}B"
-    W, H, L, R, TM, BM = 720, 400, 60, 14, 22, 30
-    pw, ph = W - L - R, H - TM - BM
-    ymax = 5.5e9
-    def X(i):
-        return L + pw * i / (len(years) - 1)
-    def Y(v):
-        return TM + ph * (1 - v / ymax)
-    out = [f'<svg viewBox="0 0 {W} {H}" class="chart" role="img">']
-    for gb in range(0, 6):                                   # $0-$5B gridlines
-        y = Y(gb * 1e9)
-        out.append(f'<line x1="{L}" y1="{y:.1f}" x2="{W-R}" y2="{y:.1f}" stroke="#D7DEDC" stroke-width="1"/>')
-        out.append(f'<text x="{L-8}" y="{y+4:.1f}" text-anchor="end" class="ax">${gb}B</text>')
-    for i, fy in enumerate(years):                           # x-axis year labels
-        out.append(f'<text x="{X(i):.1f}" y="{H-10}" text-anchor="middle" class="ax">FY{str(fy)[2:]}</text>')
-    cum = [0.0] * len(years)                                 # stacked bands
-    band_tops = []
-    for name, keys, color in OBLIG_BANDS:
-        top = [cum[i] + val(fy, keys) for i, fy in enumerate(years)]
-        pts = ([f"{X(i):.1f},{Y(top[i]):.1f}" for i in range(len(years))]
-               + [f"{X(i):.1f},{Y(cum[i]):.1f}" for i in reversed(range(len(years)))])
-        out.append(f'<polygon points="{" ".join(pts)}" fill="{color}" stroke="#fff" stroke-width="0.7"/>')
-        band_tops.append(top)
-        cum = top
-    # data-point dots at each year on every band's top line
-    for top in band_tops:
-        for i in range(len(years)):
-            out.append(f'<circle cx="{X(i):.1f}" cy="{Y(top[i]):.1f}" r="2.3" '
-                       f'fill="#fff" stroke="{FOREST}" stroke-width="1"/>')
-    all_keys = [k for _, ks, _ in OBLIG_BANDS for k in ks]
-    total0, totalN = val(years[0], all_keys), val(years[-1], all_keys)
-    # endpoint total labels (first year above stack, last year above stack)
-    out.append(f'<text x="{X(0)+2:.1f}" y="{Y(total0)-7:.1f}" class="vlab">{bill(total0)}</text>')
-    out.append(f'<text x="{X(len(years)-1)-2:.1f}" y="{Y(totalN)-7:.1f}" text-anchor="end" class="vlab">{bill(totalN)}</text>')
-    for i, fy in enumerate(years):                           # per-year hover zones
-        parts = " · ".join(f"{nm.split(' (')[0]} {bill(val(fy, ks))}" for nm, ks, _ in OBLIG_BANDS)
-        tip = f"FY{fy} — Obligated total {bill(val(fy, all_keys))} · {parts}"
-        out.append(f'<rect x="{X(i)-14:.1f}" y="{TM}" width="28" height="{ph}" fill="transparent" '
-                   f'pointer-events="all" class="iv" data-tip="{esc(tip)}"/>')
-    out.append("</svg>")
-    # Scrolls rather than shrinks on a phone; 11.5px is this chart's
-    # smallest label (.vlab), which is what sets how far it may scale
-    # down before the wrapper takes over.
-    return chart_scroll("".join(out), smallest_label=11.5)
+    return {
+        "type": "stacked-area",
+        "labels": [f"FY{str(fy)[2:]}" for fy in years],
+        "series": [{"name": name, "color": color,
+                    "data": [sum(series[str(fy)][k] for k in keys) for fy in years]}
+                   for name, keys, color in OBLIG_BANDS],
+        "tips": True, "grid": True, "axisMin": 0, "axisMax": 5.5e9,
+        "labelColor": INK, "format": {"prefix": "$", "scale": "B", "decimals": 0},
+        "labelFormat": {"prefix": "$", "scale": "B", "decimals": 2},
+    }
+
+
+def obligated_note():
+    """The note under the fixed-costs chart: the words are a slot, and its
+    {oblig_first} / {oblig_last} are the data's own totals, filled in as
+    derived figures so an edit to the sentence never retypes them."""
+    fig = lambda fy: (f'<span{C.derived("manual/obligated_costs.json (the BIB fixed sub-total)")}>'
+                      f'${OBLIG["series"][fy]["_printed_subtotal"] / 1e9:.2f}</span>')
+    return C("obligated.panel.note").format(oblig_first=fig("2018"), oblig_last=fig("2027"))
+
+
+def fig_obligated():
+    return chart(L, "obligated.chart", obligated_spec(), w=7.2, h=4.0)
+
 
 def fig2_rows_for(year):
     """Branch + department rows for Figure 2. FY2027 carries per-department
@@ -370,52 +349,66 @@ def fig2_rows_for(year):
                      d["code"] if d["code"] in DEPT_INFO else None))
     return rows
 
-def fig2_chart_for(year):
-    return fig2_svg(fig2_rows_for(year), attrs=f' data-fig="fig2" data-fy="{year}"'
-                    + ("" if year == 2027 else " hidden"))
+FIG2_SERIES = [("operating", "categories.legend.operating", SAGE),
+               ("capital", "categories.legend.capital", SAGE_MID),
+               ("one_time", "categories.legend.onetime", DARK),
+               ("emergency", "categories.legend.emergency", DARKEST)]
 
-def fig2_svg(rows, attrs=""):
-    # GAP is the single biggest lever on this chart's height: it multiplies by
-    # the 24 rows, and at 720 units to 7.26in one unit per row is ~0.24in on
-    # the page. Page 6 has no room to spare between the chart and the folio.
-    W, LEFT, RH, GAP = 720, 150, 17, 6
-    maxv = 5.5e9
-    plot_w = W - LEFT - 60
-    H = len(rows) * (RH + GAP) + 40
-    out = [f'<svg viewBox="0 0 {W} {H}" class="chart"{attrs} role="img">']
-    for gx in range(0, 6):
-        x = LEFT + plot_w * gx / 5.5
-        out.append(f'<line x1="{x:.0f}" y1="0" x2="{x:.0f}" y2="{H-34}" stroke="#D7DEDC" stroke-width="1"/>')
-        out.append(f'<text x="{x:.0f}" y="{H-18}" text-anchor="middle" class="ax">${gx}B</text>')
-    y = 4
-    for label, seg, code in rows:
-        total = sum(seg.values())
-        dept_attr = f' data-dept="{code}"' if code else ""
-        out.append(f'<text x="{LEFT-8}" y="{y+RH-4}" text-anchor="end" '
-                   f'class="ylab{" lk" if code else ""}"{dept_attr}>{esc(label)}</text>')
-        x = LEFT
-        for key in ("operating", "capital", "one_time", "emergency"):
-            v = seg[key]
-            if v <= 0:
-                continue
-            w = plot_w * v / maxv
-            tip = f"{label} — {key.replace('_', '-').title()}: {short(v)}"
-            if code:
-                tip += " · click for tracker link"
-            out.append(f'<rect x="{x:.1f}" y="{y}" width="{max(w,0.8):.1f}" height="{RH}" '
-                       f'fill="{SERIES[key]}" class="iv" data-tip="{esc(tip)}"{dept_attr}/>')
-            x += w
-        if x + 44 > W:                        # widest bars: label inside, white
-            out.append(f'<text x="{x-6:.0f}" y="{y+RH-4}" text-anchor="end" class="vlab" '
-                       f'fill="#fff">{short(total)}</text>')
-        else:
-            out.append(f'<text x="{x+5:.0f}" y="{y+RH-4}" class="vlab">{short(total)}</text>')
-        y += RH + GAP
-    out.append("</svg>")
-    # Scrolls rather than shrinks on a phone; 11.5px is this chart's
-    # smallest label (.vlab), which is what sets how far it may scale
-    # down before the wrapper takes over.
-    return chart_scroll("".join(out), smallest_label=11.5)
+
+def fig2_spec(year):
+    """Figure 2 as an ENGINE chart: a stacked row per branch and department,
+    operating / capital / one-time / emergency, its total at the end. It was a
+    hand-written SVG, where nobody but the renderer could change a label, a
+    colour or a number; now it opens in the Chart panel like Figures 3-6. The
+    numbers are still the data pipeline's (make -C report2027 data): the
+    Chart panel lays an edit over them, it does not replace the source."""
+    rows = fig2_rows_for(year)
+    return {
+        "type": "stacked-row",
+        "labels": [label for label, _seg, _code in rows],
+        "series": [{"name": C.text(k), "color": col,
+                    "data": [seg[key] for _l, seg, _c in rows]}
+                   for key, k, col in FIG2_SERIES],
+        # barGap is the share of each row left EMPTY: 0.2 draws bars as solid
+        # as the hand-drawn figure's (17 of every 23 units).
+        "totals": True, "tips": True, "grid": True, "barGap": 0.22,
+        "axisMin": 0, "axisMax": 6e9, "axisTicks": 7, "labelColor": INK,
+        "format": {"prefix": "$", "scale": "B", "decimals": 0},
+        "labelFormat": {"prefix": "$", "scale": "auto", "decimals": 1},
+    }
+
+
+def fig2_chart_for(year):
+    """One year's Figure 2, in the FY picker's wrapper (FY2026 starts hidden),
+    with each department's name still linking to its tracker page: the
+    engine draws the names, and data-dept is laid onto the ones that have a
+    page, which is all primer.js's click handler looks for."""
+    rows = fig2_rows_for(year)
+    html = chart(L, f"categories.fig2.{year}", fig2_spec(year), w=7.26, h=5.97)
+    eff = L.chart_spec(f"categories.fig2.{year}", fig2_spec(year))
+    for (label, _seg, code), shown in zip(rows, eff.get("labels") or []):
+        if code:
+            html = re.sub(r'(<text\b[^>]*?)(>' + re.escape(esc(shown)) + r'</text>)',
+                          lambda m: f'{m.group(1)} class="lk" data-dept="{code}"{m.group(2)}',
+                          html, count=1)
+    return (f'<div data-fig="fig2" data-fy="{year}"'
+            + ('' if year == 2027 else ' hidden') + f'>{html}</div>')
+
+
+def chart_legend(el_id, chart_id, spec, by="series"):
+    """A chart's key, built from what the chart DRAWS — its series (or, for a
+    pie, its labels) with any Chart-panel edit laid over them — so renaming a
+    slice or recolouring a series in the panel moves the key with it. Each
+    entry is derived: the words are edited on the chart, not here."""
+    eff = L.chart_spec(chart_id, spec)
+    if by == "series":
+        items = [(s.get("name", ""), s.get("color", "")) for s in eff.get("series") or []]
+    else:
+        items = list(zip(eff.get("labels") or [], eff.get("colors") or []))
+    src = C.derived(f"the chart's own {'series' if by == 'series' else 'labels'}: "
+                    f"edit them in the Chart panel ({chart_id})")
+    return legend([(f'<span{src}>{esc(n)}</span>', c) for n, c in items], el_id=el_id)
+
 
 # Each lifecycle callout owns a contiguous run of months; brackets outside the
 # month ring make that span explicit rather than leaving it to proximity.
@@ -640,7 +633,9 @@ def cip_total_for(budget):
 # ---------- year-picker plumbing (Figures 2/3/4/5 + Table 1) ----------
 def fy_picker(fig_id, label27="FY2027", label26="FY2026"):
     """Inline FY selector that replaces a hard-coded year in a figure caption."""
-    return (f'<select class="fy-pick" data-fig="{fig_id}" aria-label="Fiscal year">'
+    hook = ' data-desc="fy.picker.label"' if os.environ.get("DOCSYNC_EDIT") else ""
+    return (f'<select class="fy-pick" data-fig="{fig_id}" '
+            f'aria-label="{esc(C.text_or("fy.picker.label", "Fiscal year")).replace(chr(34), "&quot;")}"{hook}>'
             f'<option value="2027">{label27}</option>'
             f'<option value="2026">{label26}</option></select>')
 
@@ -822,7 +817,11 @@ def card(title, bullets, bg, light=None, key="", icon="", icon_id="", detachable
     lis = "".join(f"<li>{b}</li>" for b in bullets)
     ul = C.ul_attr(key) if key else ""
     override = L.style(el_id, "") if el_id else ""
-    style = f"background:{fill_css(bg)}" + (f";{override}" if override else "")
+    # position:relative from birth: the tile is the frame its title, bullets
+    # and icon are measured in once any of them is moved (L.frame's rule). A
+    # move's own position comes later in the style and wins.
+    style = (f"background:{fill_css(bg)};position:relative"
+             + (f";{override}" if override else ""))
     # A detachable tile keeps a floor height so it stays a visible panel after
     # its title and bullets are dragged out of it (an empty div would collapse
     # to nothing). In the flow, with the text still inside, the content is
@@ -855,7 +854,7 @@ def card(title, bullets, bg, light=None, key="", icon="", icon_id="", detachable
         base = key[:-len(".bullets")] if key.endswith(".bullets") else key
         title_id = base + ".title"
         tcls = (h4_cls + " ds-detachable").strip()
-        head = f'{L.spacer(title_id)}<h4 class="{tcls}"{L.attr(title_id)}>{h4_inner}</h4>'
+        head = f'{L.spacer(title_id)}<h4 class="{tcls}"{L.frame(title_id)}>{h4_inner}</h4>'
         bullets_el = (f'{L.spacer(key)}<div class="ds-detachable"{L.attr(key)}>'
                       f'<ul{ul}>{lis}</ul></div>')
     else:
@@ -885,7 +884,7 @@ def reform(n, key, accent, bg=MINT):
     light = is_light_bg(fill_repr(bg))
     cls = "reform" if light else "reform ondark"
     base = f"taxfair.items.{key}"
-    style = f"background:{fill_css(bg)}"
+    style = f"background:{fill_css(bg)};position:relative"   # a frame, like card()
     override = L.style(el_id, "")
     if override:
         style += f";{override}"
@@ -910,7 +909,17 @@ def graphic(el_id, svg, w=1.5, cls=""):
     return _graphic(L, el_id, svg, w=w, cls=cls)
 
 
-def img_el(el_id, cls, src, alt):
+def alt_text(alt, desc):
+    """An image's alt as a SLOT when `desc` names one: the renderer's wording
+    is the default, data-desc tells the editor (and docsync.check) which slot
+    it is. Without `desc` the literal passes through, as it always did."""
+    if not desc:
+        return alt, ""
+    words = esc(C.text_or(desc, alt.replace("&amp;", "&"))).replace('"', "&quot;")
+    return words, (f' data-desc="{desc}"' if os.environ.get("DOCSYNC_EDIT") else "")
+
+
+def img_el(el_id, cls, src, alt, desc=None):
     """One image element, honouring replace/radius/filter/crop overrides.
 
     Untouched, this emits exactly the literal it replaced — attribute order is
@@ -921,10 +930,11 @@ def img_el(el_id, cls, src, alt):
     src = L.img_src(el_id, src)
     css = L.img_css(el_id)
     crop = L.cropped(el_id)
+    alt, hook = alt_text(alt, desc)
     head = f'<img class="{cls}"' if cls else "<img"
     if not crop:
-        return f'{head}{L.attr(el_id, css)} src="{src}" alt="{alt}">'
-    inner = (f'<img src="{src}" alt="{alt}" style="position:absolute;'
+        return f'{head}{L.attr(el_id, css)} src="{src}" alt="{alt}"{hook}>'
+    inner = (f'<img src="{src}" alt="{alt}"{hook} style="position:absolute;'
              f'left:-{crop["dx"]}in;top:-{crop["dy"]}in;width:{crop["imgW"]}in;'
              f'max-width:none">')
     wcls = f"ds-cropw {cls}".strip()
@@ -945,10 +955,10 @@ def callout_open(key):
         c = L.fill(cid)
         cls = "callout onlight" if is_light_bg(fill_repr(c)) else "callout"
         bg = f"background:{fill_css(c)}"
-    return f'{L.spacer(cid)} <div class="{cls}"{L.attr(cid, bg)}{L.fill_tag(cid)}>'
+    return f'{L.spacer(cid)} <div class="{cls}"{L.frame(cid, bg)}{L.fill_tag(cid)}>'
 
 
-def svg_img(el_id, src, cls, alt):
+def svg_img(el_id, src, cls, alt, desc=None):
     """An <img> whose SVG can be recoloured from the editor.
 
     Unrecoloured it is exactly the <img> tag it always was — byte-identical
@@ -964,7 +974,8 @@ def svg_img(el_id, src, cls, alt):
     asset that fails it (or is missing) falls back to the plain <img> rather
     than half-rendering.
     """
-    plain = f'<img class="{cls}" src="{src}" alt="{alt}">'
+    alt, hook = alt_text(alt, desc)
+    plain = f'<img class="{cls}" src="{src}" alt="{alt}"{hook}>'
     if not L.refilled(el_id):
         return plain
     try:
@@ -985,7 +996,7 @@ def svg_img(el_id, src, cls, alt):
     wh = re.search(r'width="([\d.]+)"\s+height="([\d.]+)"', raw)
     size = f' width="{wh.group(1)}" height="{wh.group(2)}"' if wh else ""
     return (f'<svg class="{cls}" viewBox="{vb.group(1)}"{size} role="img" '
-            f'style="color:{color}" aria-label="{alt}">{inner}</svg>')
+            f'style="color:{color}" aria-label="{alt}"{hook}>{inner}</svg>')
 
 
 def endnote_link(n, sid, txt, url):
@@ -1161,7 +1172,7 @@ pages = []
 # in primer.css, ported from the FY2025–26 cover). Emitted from one place so the
 # front and back covers can never drift apart.
 RIBBONS = "".join(
-    f'<div class="ribbon {tone} r{i}"></div>' for i, tone in enumerate(
+    f'<div class="ribbon {tone} r{i}"{L.attr(f"cover.ribbon.{i}")}></div>' for i, tone in enumerate(
         ["rb-dark", "rb-dark", "rb-pale", "rb-pale",     # top
          "rb-dark", "rb-dark", "rb-pale", "rb-pale"], 1))  # bottom
 
@@ -1170,7 +1181,7 @@ pages.append(f"""
 <section class="page cover"{L.fill_attr(f"page.1")}>
  {L.layer(1)}{L.text_boxes(1)}{L.tables_html(1)}{RIBBONS}
  <div class="cover-inner">
-  {L.spacer("cover.logo")}<div class="logo-lockup"{L.attr("cover.logo")}>{svg_img("cover.logo", "assets/appleseed-logo.svg", "logo-img", "Hawaiʻi Appleseed — Center for Law &amp; Economic Justice")}</div>
+  {L.spacer("cover.logo")}<div class="logo-lockup"{L.attr("cover.logo")}>{svg_img("cover.logo", "assets/appleseed-logo.svg", "logo-img", "Hawaiʻi Appleseed — Center for Law &amp; Economic Justice", desc="brand.logo.desc")}</div>
   {L.spacer("cover.title")}<h1 class="cover-title"{L.attr("cover.title")}>{C.slot_span("cover.title", _cover_title)}</h1>
   {L.spacer("cover.year")}<div class="cover-year"{L.attr("cover.year")}>{C.t("cover.year")}</div>
  </div>
@@ -1180,7 +1191,7 @@ pages.append(f"""
 pages.append(f"""
 <section class="page toc-page"{L.fill_attr(f"page.2")}>
  <div class="toc-head">
-  {L.spacer("toc.logo")}<div class="logo-lockup light"{L.attr("toc.logo")}>{svg_img("toc.logo", "assets/appleseed-logo-white.svg", "logo-img", "Hawaiʻi Appleseed — Center for Law &amp; Economic Justice")}</div>
+  {L.spacer("toc.logo")}<div class="logo-lockup light"{L.attr("toc.logo")}>{svg_img("toc.logo", "assets/appleseed-logo-white.svg", "logo-img", "Hawaiʻi Appleseed — Center for Law &amp; Economic Justice", desc="brand.logo.desc")}</div>
   {L.spacer("toc.link")}<p class="toc-link"{L.attr("toc.link")}><a href="https://hiappleseed.org"{C.slot_attr("toc.link")}>{esc(C.text_or("toc.link", "www.hiappleseed.org"))}</a></p>
   {L.spacer("toc.author")}<p class="toc-author"{L.attr("toc.author")}>{C.t("toc.author")}</p>
  </div>
@@ -1205,7 +1216,7 @@ branch_cards = [
     ]
 ]
 bc = "".join(
-    f'<div class="branch">{L.spacer(f"branch.photo.{k}")}{img_el(f"branch.photo.{k}", "", f"assets/{img}", esc(C.text(f"basics.branch.{k}.title")))}'
+    f'<div class="branch">{L.spacer(f"branch.photo.{k}")}{img_el(f"branch.photo.{k}", "", f"assets/{img}", esc(C.text(f"basics.branch.{k}.title")), desc=f"basics.branch.{k}.title")}'
     f'<div class="branch-card{" onlight" if is_light_bg(fill_repr(L.fill(f"branch.{k}", bg))) else ""}"'
     f'{L.tag(f"branch.{k}")}{L.fill_tag(f"branch.{k}")} style="background:{fill_css(L.fill(f"branch.{k}", bg))}">'
     f'<h4>{t}</h4><ul{C.ul_attr(f"basics.branch.{k}.bullets")}>' + "".join(f"<li>{b}</li>" for b in bl) + "</ul></div></div>"
@@ -1258,11 +1269,7 @@ pages.append(f"""
  <span class="noprint figcap-hint">{C.t("categories.fig2.hint", esc=True)}</span></p>
  {fig2_chart_for(2027)}
  {fig2_chart_for(2026)}
- {legend([(C.t("categories.legend.operating", esc=True), SAGE),
-          (C.t("categories.legend.capital", esc=True), SAGE_MID),
-          (C.t("categories.legend.onetime", esc=True), DARK),
-          (C.t("categories.legend.emergency", esc=True), DARKEST)],
-         el_id="categories.legend")}
+ {chart_legend("categories.legend", "categories.fig2.2027", fig2_spec(2027))}
  {C.html("categories.fig2.note", cls="fig-note")}
  <div class="explore noprint"{L.attr("categories.explore")}>{C.t("categories.explore")}
   <a href="{TRACKER}#/enacted" target="_blank" rel="noopener">{C.t("categories.explore.link").replace(" →", "&nbsp;→")}</a></div>
@@ -1288,21 +1295,21 @@ pages.append(f"""
  </div>
  <details class="obligated noprint">
   <summary{L.attr("obligated.summary")}>{C.t("obligated.summary")}</summary>
-  <div class="obligated-panel">
+  <div class="obligated-panel"{L.frame("obligated.panel")}>
    <p class="figcap"{merge_attrs(C.slot_attr("obligated.panel.caption"), L.attr("obligated.panel.caption"))}>{C("obligated.panel.caption")}<span class="noprint">
    {C.t("obligated.panel.hint")}</span></p>
    {fig_obligated()}
-   {legend([(esc(n), c) for n, _k, c in OBLIG_BANDS])}
+   {chart_legend("obligated.legend", "obligated.chart", obligated_spec())}
    {C.html("obligated.p2")}
-   <p class="obligated-note">{C("obligated.panel.note").format(oblig_first=f"${OBLIG['series']['2018']['_printed_subtotal']/1e9:.2f}", oblig_last=f"${OBLIG['series']['2027']['_printed_subtotal']/1e9:.2f}")}</p>
+   {L.spacer("obligated.panel.note")}<p class="obligated-note"{merge_attrs(C.slot_attr("obligated.panel.note"), L.attr("obligated.panel.note"))}>{obligated_note()}</p>
   </div>
  </details>
  {L.spacer("cip.h3")}<h3 class="sub2"{L.attr("cip.h3")}>{C.t("cip.h3")}</h3>
  {L.spacer("cip.fig3.caption")}<p class="figcap"{L.attr("cip.fig3.caption")}><b{FIGNUM}>Figure 3.</b> {C.t("cip.fig3.caption")} {fy_picker("fig3")} {C.slot_span("cip.fig3.caption.suffix", esc(C.text_or("cip.fig3.caption.suffix", "($Millions)")))}</p>
- <div class="pie-row">{fy_chart_swap("fig3", "cip.fig3", fig3_slices_for(BUD), fig3_slices_for(BUD26), {"prefix": "$", "scale": "M", "decimals": 0, "unit": ""}, cls="pie-cip", w=4.05, h=4.05)}{legend([(esc(n), c) for n, c in zip(FIG3_ORDER, FIG3_COLORS)])}</div>
+ <div class="pie-row">{fy_chart_swap("fig3", "cip.fig3", fig3_slices_for(BUD), fig3_slices_for(BUD26), {"prefix": "$", "scale": "M", "decimals": 0, "unit": ""}, cls="pie-cip", w=4.05, h=4.05)}{chart_legend("cip.fig3.legend", "cip.fig3.2027", pie_spec(fig3_slices_for(BUD), {"prefix": "$", "scale": "M", "decimals": 0, "unit": ""}), by="labels")}</div>
  {L.wrap("cip.body", CIP_BODY)}
 {L.spacer("onetime.h3")}<h3 class="sub2"{L.attr("onetime.h3")}>{C.t("onetime.h3")}</h3>
- <ul class="approp-brief">{"".join(f"<li>{b}</li>" for b in ONE_TIME_BULLETS[:3])}</ul>
+ {C.movable("onetime.brief.items", f'<ul class="approp-brief"{C.ul_attr("onetime.brief.items")}>' + "".join(f"<li>{b}</li>" for b in C.list("onetime.brief.items")) + '</ul>')}
  {C.html("onetime.brief", "approp-note")}
  <details class="obligated approp noprint">
   <summary{L.attr("onetime.summary")}>{C.t("onetime.summary")}</summary>
@@ -1319,7 +1326,7 @@ pages.append(f"""
 <section class="page"{L.fill_attr(f"page.8")}>
  {L.spacer("funding.h1")}<h1{L.attr("funding.h1")}>{C.t("funding.h1")}</h1>
  {L.spacer("funding.fig4.caption")}<p class="figcap"{L.attr("funding.fig4.caption")}><b{FIGNUM}>Figure 4.</b> {C.t("funding.fig4.caption")} {fy_picker("fig4")} {C.t("funding.fig4.caption.suffix")}</p>
- <div class="pie-row">{fy_chart_swap("fig4", "funding.fig4", fig4_slices_for(BUD), fig4_slices_for(BUD26), {"prefix": "$", "scale": "B", "decimals": 1, "unit": ""}, cls="pie-mof", w=4.65, h=4.65)}{legend([(esc(n), c) for n, c in zip(FIG4_ORDER, FIG3_COLORS)])}</div>
+ <div class="pie-row">{fy_chart_swap("fig4", "funding.fig4", fig4_slices_for(BUD), fig4_slices_for(BUD26), {"prefix": "$", "scale": "B", "decimals": 1, "unit": ""}, cls="pie-mof", w=4.65, h=4.65)}{chart_legend("funding.fig4.legend", "funding.fig4.2027", pie_spec(fig4_slices_for(BUD), {"prefix": "$", "scale": "B", "decimals": 1, "unit": ""}), by="labels")}</div>
  {C.html("funding.fig4.note", cls="fig-note")}
  {C.html("funding.p1")}
  <div class="cards3">
@@ -1335,7 +1342,7 @@ pages.append(f"""
 <section class="page"{L.fill_attr(f"page.9")}>
  {L.spacer("taxes.h2")}<h2 class="sub"{L.attr("taxes.h2")}>{C.t("taxes.h2")}</h2>
  {L.spacer("taxes.fig5.caption")}<p class="figcap"{L.attr("taxes.fig5.caption")}><b{FIGNUM}>Figure 5.</b> {C.t("taxes.fig5.caption")} {fy_picker("fig5")} {C.t("taxes.fig5.caption.suffix")}</p>
- <div class="pie-row">{fy_chart_swap("fig5", "taxes.fig5", fig5_slices_for(REV), fig5_slices_for(REV26), {"prefix": "$", "scale": "B", "decimals": 2, "unit": ""}, cls="pie-tax", w=4.80, h=4.80)}{legend([(esc(n), c) for (n, _v, c, _l) in fig5_slices_for(REV)])}</div>
+ <div class="pie-row">{fy_chart_swap("fig5", "taxes.fig5", fig5_slices_for(REV), fig5_slices_for(REV26), {"prefix": "$", "scale": "B", "decimals": 2, "unit": ""}, cls="pie-tax", w=4.80, h=4.80)}{chart_legend("taxes.fig5.legend", "taxes.fig5.2027", pie_spec(fig5_slices_for(REV), {"prefix": "$", "scale": "B", "decimals": 2, "unit": ""}), by="labels")}</div>
  <div class="cards3">
   {card(C.t("taxes.cards.get.title"), C.list("taxes.cards.get.bullets"), DARK, key="taxes.cards.get.bullets", icon=GET_ICON, icon_id="taxes.cards.get.icon")}
   {card(C.t("taxes.cards.iit.title"), C.list("taxes.cards.iit.bullets"), SAGE_MID, key="taxes.cards.iit.bullets", icon=IIT_ICON, icon_id="taxes.cards.iit.icon")}

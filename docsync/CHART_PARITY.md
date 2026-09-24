@@ -181,3 +181,18 @@ is separate work.
 | `fig2` (branch/department rows) | **unblocked** — per-point colour (1) is in; a row chart's long department names now fit its gutter |
 | `fig_obligated` | **unblocked** — `stacked-area` (5) is the shape, `rules` (2) replace its hand-drawn endpoint callouts |
 | `fig1_lifecycle` | not a chart — a diagram; belongs in `graphic()` with slots |
+
+## Meters, stacked totals, and the right-hand tick (2026-09-24)
+
+- **`meter`** — a new type: one bar of parts on a track, to `axisMax` or the
+  parts' sum, `values` inside when they fit, `trackColor` / `radius`. New, so
+  nothing old can move. (`blocks.meter`, `blocks.meter_spec`.)
+- **`totals`** on stacked-bar / stacked-row — each bar's own sum past its end.
+  Opt-in: 0 renders moved when it landed.
+- **The last tick of a horizontal value axis is no longer cut off.** Its label
+  is centred on the plot's right edge, and a horizontal chart reserved no room
+  for the half past it — Budget Primer Figure 2 drew "$6B" as "$6". Row,
+  stacked-row and column charts with gridlines now reserve half that label's
+  width on the right. `chart_parity` shows 3,555 of 24,497 renders moved, every
+  one a horizontal chart with a grid: **the fix**. No bound report used a
+  horizontal engine chart before Figure 2, so no published page moved.

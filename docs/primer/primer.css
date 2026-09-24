@@ -363,13 +363,18 @@ svg .ph { font-size: 12px; font-family: var(--body); }
    Scoped to direct children of .page so it never captures .pie-row legends. */
 /* Margins kept tight: Figure 2 is 6.2in tall, so page 6 has almost no room
    between the chart and the folio. */
+/* Figure 2 is an engine chart per fiscal year now, each in the FY picker's
+   wrapper (div[data-fig="fig2"]), so the legend follows that wrapper. */
 .page > .chart + .legend,
-.page > .ds-chart-scroll + .legend { flex-direction: row; flex-wrap: wrap;
+.page > .ds-chart-scroll + .legend,
+.page > div[data-fig="fig2"] + .legend { flex-direction: row; flex-wrap: wrap;
                            justify-content: center; margin: 5px 0 7px; }
 .page > .chart + .legend .lg,
-.page > .ds-chart-scroll + .legend .lg { font-size: 15px; }
+.page > .ds-chart-scroll + .legend .lg,
+.page > div[data-fig="fig2"] + .legend .lg { font-size: 15px; }
 .page > .chart + .legend .sw,
-.page > .ds-chart-scroll + .legend .sw { width: 22px; height: 22px; }
+.page > .ds-chart-scroll + .legend .sw,
+.page > div[data-fig="fig2"] + .legend .sw { width: 22px; height: 22px; }
 
 /* Lifecycle callouts. Positions are computed in render_report.py from each
    bracket's stub endpoint and emitted as inline left/top; these classes only
@@ -546,6 +551,11 @@ svg .brk { stroke: var(--sage); stroke-width: 2; fill: none; stroke-linecap: rou
   svg .ylab.lk { fill: var(--dark); text-decoration: underline;
                  text-decoration-color: rgba(82,121,111,.35); text-underline-offset: 2px; }
   svg .ylab.lk:hover { fill: var(--forest); }
+  /* Figure 2's department names, now drawn by the engine chart (whose units
+     are inches, so no px font rule may touch them): the same affordance. */
+  .ds-chart svg text.lk { fill: var(--dark); text-decoration: underline;
+                          text-decoration-color: rgba(82,121,111,.35); }
+  .ds-chart svg text.lk:hover { fill: var(--forest); }
   .t1 th.lk { text-decoration: underline dotted rgba(255,255,255,.7); text-underline-offset: 3px; }
 }
 .explore { margin: 6px auto 12px; padding: 10px 16px; border: 1.5px solid var(--sage-light);
