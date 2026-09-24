@@ -194,5 +194,12 @@ is separate work.
   for the half past it — Budget Primer Figure 2 drew "$6B" as "$6". Row,
   stacked-row and column charts with gridlines now reserve half that label's
   width on the right. `chart_parity` shows 3,555 of 24,497 renders moved, every
-  one a horizontal chart with a grid: **the fix**. No bound report used a
-  horizontal engine chart before Figure 2, so no published page moved.
+  one a horizontal chart with a grid: **the fix**. The one other bound report
+  with a horizontal engine chart (retitc's burden chart) draws no grid, so no
+  published page moved — checked by rebuilding every report.
+- **The top tick of a vertical value axis is held inside the plot.** It sat on
+  the plot's upper edge with its top third above the drawing, cut off in an
+  inline chart's own viewBox (the primer's fixed-costs chart read "$6B" as a
+  sliver). `_tick_y()` keeps it just inside; every other tick is unchanged.
+  `chart_parity`: 9,415 renders moved — every vertical chart with a grid, the
+  top tick label only: **the fix**. No bound report's page moved (rebuilt all).

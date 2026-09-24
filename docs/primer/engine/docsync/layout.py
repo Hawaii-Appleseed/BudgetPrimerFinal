@@ -1809,7 +1809,7 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                 gy = py + ph - ph * t
                 parts.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
                              f'y2="{gy:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
-                parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
+                parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{_tick_y(gy, py, fs):.4f}" '
                              f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
                              f'fill="{ink["axis"]}">{ticklab[i]}</text>')
                 if lab2 is not None:
@@ -1999,6 +1999,15 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     return "".join(parts)
 
 
+def _tick_y(gy, py, fs) -> float:
+    """A vertical value axis's tick label baseline: level with its gridline,
+    except the TOP one, which sits on the plot's upper edge and so drew its
+    top third above the drawing — cut off in an inline chart's own viewBox
+    (the Budget Primer's fixed-costs chart read "$6B" as a sliver). It is held
+    just inside instead; every other tick is exactly where it was."""
+    return max(gy + fs * 0.3, py + _lfs(fs * 0.8) * 0.8)
+
+
 def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
                 xmin=None, xmax=None, nticks=5, fmt=None, wrap_lines=1,
                 hook_chart=None, xfmt=None, xspread=False) -> str:
@@ -2019,7 +2028,7 @@ def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
             gy = py + ph - ph * t
             parts.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
                          f'y2="{gy:.4f}" stroke="{ink["grid"]}" stroke-width="0.006"/>')
-            parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{gy + fs * 0.3:.4f}" '
+            parts.append(f'<text x="{px - fs * 0.3:.4f}" y="{_tick_y(gy, py, fs):.4f}" '
                          f'text-anchor="end" font-size="{_lfs(fs * 0.8):.4f}" '
                          f'fill="{ink["axis"]}">{ticklab[i]}</text>')
     if xlabels is not None:
