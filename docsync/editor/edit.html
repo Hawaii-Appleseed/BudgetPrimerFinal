@@ -5901,6 +5901,22 @@ function paintRot(d, el) {
 // stretch (the logo's image is 95px tall no matter how wide its box). Text
 // containers keep width-reflow; shapes keep w/h. This is the one distinction
 // the resize needs.
+/** A movable that stays its OWN object when it sits inside another movable.
+ *
+ *  A card, a list, a band can be picked up only if the words inside it can
+ *  still be picked up on their own — a card handle that glued its fields to it
+ *  would trade one frozen thing for many. So: a click on words inside a card
+ *  takes that field (it is selected, it drags, it resizes, it types); a click
+ *  on the card's own padding or edge takes the card. What holds words is a
+ *  movable carrying a slot or a derived value (on itself or inside it); a
+ *  graphic, a text box and a designed detachable piece already were. One
+ *  rule, read by dragify, hitPlaced and the marquee, so a pointer and a
+ *  rubber band agree about what is under them. */
+const holdsWords = el => el.matches('[data-slot],[data-fixed]')
+  || !!el.querySelector('[data-slot],[data-fixed]');
+const ownObject = el => isGraphic(el) || el.classList.contains('ds-textbox')
+  || el.classList.contains('ds-detachable') || holdsWords(el);
+
 const isGraphic = el => !el.dataset.shape && !el.matches('[data-slot]')
   && !el.querySelector('[data-slot]') && !el.classList.contains('ds-textbox')
   // A .ds-graphic is an inline-SVG graphic (render_report.graphic()); it scales
@@ -11285,8 +11301,9 @@ function hitPlaced(d, pg, e) {
   const x = (e.clientX - pr.left) / px, y = (e.clientY - pr.top) / px;
   let best = null, bestZ = -Infinity;
   pg.querySelectorAll('[data-el], [data-shape]').forEach(el => {
-    // Nested movables belong to their outer object — same rule as dragify.
-    if (el.parentElement && el.parentElement.closest('[data-el]')) return;
+    // Nested movables belong to their outer object unless they are their own
+    // (ownObject) — same rule as dragify.
+    if (!ownObject(el) && el.parentElement && el.parentElement.closest('[data-el]')) return;
     const b = inchBox(el, pg);
     if (!b.w && !b.h) return;
     if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) return;
@@ -11320,14 +11337,17 @@ function marquee(d, pg, e0) {
     // to clear the selection and leave nothing in hand, so the page's own
     // colour was reachable only by right-clicking it.
     if (!r || (r.w < 0.05 && r.h < 0.05)) { setSelPage(d, pageIdOf(pg)); return; }
-    const hit = [];
+    const hitEls = [];
     pg.querySelectorAll('[data-el], [data-shape]').forEach(el => {
-      if (el.parentElement && el.parentElement.closest('[data-el]')) return;
+      if (!ownObject(el) && el.parentElement && el.parentElement.closest('[data-el]')) return;
       const b = inchBox(el, pg);
       if ((b.w || b.h) && b.x < r.x + r.w && b.x + b.w > r.x
           && b.y < r.y + r.h && b.y + b.h > r.y)
-        hit.push(idOf(el));
+        hitEls.push(el);
     });
+    // A band round a card and its fields takes the CARD: its fields ride it,
+    // and taking both would move a thing and the frame it is measured in.
+    const hit = outermost(hitEls).map(idOf);
     // A group is all-or-nothing: touch one member, take them all.
     const all = withGroups(hit);
     setSel(d, all);
@@ -13922,9 +13942,7 @@ function dragify(d, roots) {
       });
       return;
     }
-    const independentObject = isGraphic(el) || el.classList.contains('ds-textbox')
-      || el.classList.contains('ds-detachable');
-    if (!independentObject && el.parentElement && el.parentElement.closest('[data-el]')) return;
+    if (!ownObject(el) && el.parentElement && el.parentElement.closest('[data-el]')) return;
     // A locked element wears its state: a padlock and a muted ring, and the
     // grab cursor gives way. It still SELECTS (so it can be unlocked) but the
     // drag refuses.

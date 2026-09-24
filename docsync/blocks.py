@@ -611,7 +611,7 @@ def slot_descriptions(C, html: str, prefix: str) -> str:
 # are the engine's grammar, so the engine fills them, and the one rule that
 # makes a field MOVABLE lives here where no renderer can leave it out.
 
-_MARK_RE = re.compile("⟦([ATSEB]):([a-z0-9_.-]+)⟧")
+_MARK_RE = re.compile("⟦([ATSEBF]):([a-z0-9_.-]+)⟧")
 _TOKEN_RE = re.compile(
     r"<!--.*?-->"
     r"|<(/?)([A-Za-z][A-Za-z0-9:_-]*)((?:[^>\"']|\"[^\"]*\"|'[^']*')*)>", re.S)
@@ -745,7 +745,10 @@ def _plan(els: list[_El]) -> dict:
     for el in els:
         if "A" not in el.marks or inside(el):
             continue
-        owner = el.parent if _unit(el.parent) else el
+        # A frame (⟦F⟧) is a container with its own handle, never a field: the
+        # slots in it keep theirs rather than becoming one unit under it.
+        owner = (el.parent if _unit(el.parent) and "F" not in el.parent.marks
+                 else el)
         plan.setdefault(owner, f"field.{el.marks['A']}")
     return plan
 
@@ -774,7 +777,8 @@ def fill_markers(C, L, body: str) -> str:
     for el in els:
         slot_key = el.marks.get("A")
         field = plan.get(el)
-        if not (slot_key or field or "E" in el.marks or "B" in el.marks):
+        if not (slot_key or field or "E" in el.marks or "B" in el.marks
+                or "F" in el.marks):
             continue
         raw = body[el.a0:el.a1]
         # Where the additions go: at the first marker, as the old substitution
@@ -795,6 +799,11 @@ def fill_markers(C, L, body: str) -> str:
             adds.append(L.attr(el.marks["E"]))
         if "B" in el.marks:
             adds.append(L.sec(el.marks["B"]))
+        if "F" in el.marks:
+            # A frame: the card/list/row moves as one, and — unlike ⟦E⟧, whose
+            # element swallows the slots inside it into one field — every field
+            # inside keeps its own handle (field_plan does not count F).
+            adds.append(L.frame(el.marks["F"]))
         # The element's own style joins the merge only when something else
         # brings one too; otherwise it stays exactly where the page wrote it.
         bare, own = split_style(head)

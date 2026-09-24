@@ -3934,6 +3934,22 @@ check_eq("check: movable, charted, the shape layer, or a glyph in a control are 
               '<svg class="shape-layer"></svg><button><svg></svg></button>'
               '<a href="#"><img src="x.png"></a></section>').graphics_paged, [])
 
+
+# --- frames: a container that moves whole while its fields stay their own ---
+from docsync.blocks import field_plan as _fplan                             # noqa: E402
+os.environ["DOCSYNC_EDIT"] = "1"
+_fl = _layout({})
+check_eq("L.frame: movable, and positioned from birth so a field moved in it keeps its place",
+         _fl.frame("card.a"), ' data-el="card.a" style="position:relative"')
+_fm = _layout({"positions": {"card.a": {"x": 1, "y": 2}}})
+check_eq("L.frame: once the card itself is moved, its placement's position wins",
+         "position:relative" in _fm.frame("card.a"), False)
+check_eq("⟦F⟧ is a frame, not a field: the slots inside keep their own handles",
+         [fid for fid, _, _ in _fplan('<div class="card"⟦F:card.a⟧><h3⟦A:t⟧>⟦T:t⟧</h3>'
+                                      '<p⟦A:b⟧>⟦T:b⟧</p></div>')],
+         ["field.t", "field.b"])
+del os.environ["DOCSYNC_EDIT"]
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

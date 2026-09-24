@@ -3692,6 +3692,24 @@ class Layout:
             return dict(base)
         return {**base, **over}
 
+    def frame(self, el_id: str, extra: str = "") -> str:
+        """attr() for a CONTAINER — a card, a panel, a list, a row — that
+        moves and resizes as one while every field inside it stays its own
+        object (the editor's ownObject: a click on words takes the field, a
+        click on the container's padding takes the container).
+
+        position:relative from birth, and that is load-bearing: a field moved
+        inside the container saves coordinates against its containing block,
+        so the container must BE that block before anything is saved. A static
+        container that became positioned only when it was first dragged would
+        re-base every field already moved inside it — the words would leap by
+        exactly the container's offset (card() learned this for its tile).
+        Once the container itself is moved, its placement's position wins.
+        """
+        frame = "" if el_id in self.positions else "position:relative"
+        both = ";".join(x for x in (frame, extra) if x)
+        return self.attr(el_id, both)
+
     def attr(self, el_id: str, extra: str = "") -> str:
         """Attributes for an element with no style of its own.
 

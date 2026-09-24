@@ -902,8 +902,10 @@ class _Coverage(HTMLParser):
             # blocks, draggable and impossible to retype, and the check called
             # the page clean. Any words now; data marks ("$500", "1") pass as
             # everywhere else. Panel-edited namespaces never reach here.
-            if (any(trap for _, _, _, trap, *_ in self.stack)
-                    and not is_data_mark(t)):
+            # The NEAREST movable decides: words in an endnote (panel-edited,
+            # never a trap) inside a movable endnotes box are the endnote's.
+            near = next(e for e in reversed(self.stack) if e[2])
+            if near[3] and not is_data_mark(t):
                 self.trapped.append(t)
             return
         self.dead_all.append(t)
