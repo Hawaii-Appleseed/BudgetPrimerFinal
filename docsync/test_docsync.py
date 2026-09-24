@@ -3950,6 +3950,14 @@ check_eq("⟦F⟧ is a frame, not a field: the slots inside keep their own handl
          ["field.t", "field.b"])
 del os.environ["DOCSYNC_EDIT"]
 
+
+# --- stacked totals: each bar's own total past its end ------------------------
+_tot = _chart_svg({"type": "stacked-row", "labels": ["a", "b"], "totals": True, "grid": False,
+                   "series": [{"name": "x", "data": [2, 5]}, {"name": "y", "data": [1, 0]}]},
+                  0, 0, 4, 1.2)
+check_eq("stacked totals: one per bar, the sum of its parts",
+         re.findall(r">(\d+)</text>", _tot)[-2:] if "totals" else None, ["3", "5"])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

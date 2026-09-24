@@ -144,7 +144,7 @@ CHART_SERIES_KINDS = ("bar", "line", "area")
 # renderer looking one up: a published report must not depend on a style
 # definition still existing, or say something different once someone edits it.
 CHART_LOOK = ("colors", "titleColor", "labelColor", "axisColor", "gridColor",
-              "legend", "legendPos", "values", "grid", "tips", "sliceLabel",
+              "legend", "legendPos", "values", "totals", "grid", "tips", "sliceLabel",
               "format", "labelFormat", "axis2Format", "barGap", "labelAngle",
               "wrapLabels", "axisTicks")
 CHART_COLORS = ("#6B9E78", "#52796F", "#95B7A2", "#354F52",
@@ -1906,6 +1906,22 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
                         parts.append(f'<text x="{bx + bw * 0.43:.4f}" '
                                      f'y="{ly:.4f}" text-anchor="middle" '
                                      f'font-size="{_lfs(fs * 0.78):.4f}" fill="{ink["label"]}">{_fmt_val(v, lfmt)}</text>')
+        if stacked and c.get("totals") and not c.get("stackPct") and up > 0:
+            # The stack's own total, past its end: what a reader compares
+            # across bars (Budget Primer Figure 2's "$5.3B" per department),
+            # where the segment labels only say what each bar is made of.
+            tot = sum(max(0.0, s["data"][gi] if gi < len(s["data"]) else 0)
+                      for s in bars)
+            tsz = _lfs(fs * 0.78)
+            if horizontal:
+                parts.append(f'<text x="{zx + pw * up + fs * 0.22:.4f}" '
+                             f'y="{base + bw * 0.62:.4f}" font-size="{tsz:.4f}" '
+                             f'fill="{ink["label"]}">{_fmt_val(tot, lfmt)}</text>')
+            else:
+                parts.append(f'<text x="{base + bw * 0.43:.4f}" '
+                             f'y="{zy - ph * up - fs * 0.22:.4f}" text-anchor="middle" '
+                             f'font-size="{tsz:.4f}" fill="{ink["label"]}">'
+                             f'{_fmt_val(tot, lfmt)}</text>')
         if name:
             # A label only asks for a different size once it is more than one
             # line — a single-line one keeps the size it always had, which is
@@ -2520,7 +2536,7 @@ def _check_chart(c, where: str) -> None:
     for j, col in enumerate(c.get("colors") or []):
         if col:
             _hex(col, f"{where}.colors[{j}]")
-    for flag in ("legend", "values", "grid", "tips", "stackPct"):
+    for flag in ("legend", "values", "grid", "tips", "stackPct", "totals"):
         if c.get(flag) is not None and not isinstance(c[flag], bool):
             raise LayoutError(f"{where}.{flag}: expected true or false")
     for k in ("titleColor", "labelColor", "axisColor", "gridColor", "trackColor"):

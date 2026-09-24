@@ -7590,7 +7590,7 @@ function chartApply(id, fn) {
 // bounds or the reference lines — those are about one figure, and a style
 // that moved them would be a way of quietly rewriting a chart's meaning.
 const CHART_LOOK = ['colors', 'titleColor', 'labelColor', 'axisColor',
-  'gridColor', 'legend', 'legendPos', 'values', 'grid', 'tips', 'sliceLabel',
+  'gridColor', 'legend', 'legendPos', 'values', 'totals', 'grid', 'tips', 'sliceLabel',
   'format', 'labelFormat', 'axis2Format', 'barGap', 'labelAngle',
   'wrapLabels', 'axisTicks'];
 
@@ -8206,6 +8206,11 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
       ]);
     }
     toggleRow(body, 'Data labels', 'values', false);
+    // A stacked bar's own total at its end — what a reader compares across
+    // bars, where the segment labels only say what each bar is made of.
+    if (['stacked-bar', 'stacked-row'].includes(c.type) && !c.stackPct) {
+      toggleRow(body, 'Totals', 'totals', false);
+    }
     // On the published page only: the editor suppresses the runtime so a
     // tooltip does not chase the pointer while a chart is being dragged.
     toggleRow(body, 'Hover tooltips', 'tips', false);

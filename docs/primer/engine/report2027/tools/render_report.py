@@ -486,7 +486,8 @@ def lifecycle_callouts():
         el = f"lc.{key}"
         tag = f' data-el="{el}"' if os.environ.get("DOCSYNC_EDIT") else ""
         out.append(f'<div class="lc lc-{side}"{tag} style="{L.style(el, style)}">'
-                   f'<span class="lc-mo">{lab}</span>{txt}</div>')
+                   f'<span class="lc-mo">{lab}</span>'
+                   f'{C.slot_span(f"process.lifecycle.{key}.text", txt)}</div>')
     return "".join(out)
 
 def fig1_lifecycle(size=560):
@@ -1021,6 +1022,23 @@ def movable_tag(html: str, el_id: str) -> str:
     return name + merge_attrs(html[len(name):end], L.attr(el_id)) + html[end:]
 
 
+# Table 1's amounts come from the data pipeline and are never retyped; its row
+# names are the report's own words, so they are slots (defaulting to these).
+T1_DATA = C.derived("make -C report2027 data  (report_data.json, Table 1)")
+# "Figure 3." is the figure's place in the report, numbered in page order.
+FIGNUM = C.derived("figure numbering, in page order (render_report.py)")
+
+
+def t1_label(key, default):
+    k = f"table1.row.{key}"
+    return f'<td{C.slot_attr(k)}>{esc(C.text_or(k, default))}</td>'
+
+
+def t1_row(key, default, field, *branches):
+    cells = "".join(f"<td{T1_DATA}>{words(b[field])}</td>" for b in branches)
+    return f"<tr>{t1_label(key, default)}{cells}</tr>"
+
+
 def table1_for(year):
     b = BRANCHES_BY_FY[year]
     e, j, l, o = b["exec"], b["jud"], b["leg"], b["oha"]
@@ -1043,17 +1061,13 @@ def table1_for(year):
 <thead><tr{L.fill_tag("table1.head")}><th></th><th class="lk" data-dept="__all"{C.slot_attr("table1.header.executive")}>{C("table1.header.executive")}</th><th{C.slot_attr("table1.header.judiciary")}>{C("table1.header.judiciary")}</th>
 <th{C.slot_attr("table1.header.legislature")}>{C("table1.header.legislature")}</th><th{C.slot_attr("table1.header.oha")}>{C("table1.header.oha")}</th></tr></thead>
 <tbody>
-<tr><td>Operating Budget</td><td>{words(e['op'])}</td><td>{words(j['op'])}</td>
-<td>{words(l['op'])}</td><td>{words(o['op'])}</td></tr>
-<tr><td>Capital Improvement Appropriations</td><td>{words(e['cip'])}</td>
-<td>{words(j['cip'])}</td><td>{words(l['cip'])}</td><td>{words(o['cip'])}</td></tr>
-<tr><td>One-Time Appropriations</td><td>{words(e['one'])}</td><td>{words(j['one'])}</td>
-<td>{words(l['one'])}</td><td>{words(o['one'])}</td></tr>
-<tr><td>Emergency Appropriations</td><td>{words(e['emerg'])}</td><td>{words(j['emerg'])}</td>
-<td>{words(l['emerg'])}</td><td>{words(o['emerg'])}</td></tr>
-<tr class="total"{L.fill_tag("table1.total")}><td>Total</td>
-<td>{words(tot(e))}</td><td>{words(tot(j))}</td>
-<td>{words(tot(l))}</td><td>{words(tot(o))}</td></tr>
+{t1_row("operating", "Operating Budget", "op", e, j, l, o)}
+{t1_row("capital", "Capital Improvement Appropriations", "cip", e, j, l, o)}
+{t1_row("one_time", "One-Time Appropriations", "one", e, j, l, o)}
+{t1_row("emergency", "Emergency Appropriations", "emerg", e, j, l, o)}
+<tr class="total"{L.fill_tag("table1.total")}>{t1_label("total", "Total")}
+<td{T1_DATA}>{words(tot(e))}</td><td{T1_DATA}>{words(tot(j))}</td>
+<td{T1_DATA}>{words(tot(l))}</td><td{T1_DATA}>{words(tot(o))}</td></tr>
 </tbody></table>"""
 
 # Pages that accept overflow slots: a [[extra.<page>.<slug>]] key in content.md
@@ -1099,9 +1113,29 @@ def folio(pid):
     n = PAGE_POS.get(pid)
     if n is None:
         return ""
+    # The running title is one slot shared by every folio, so retitling the
+    # report moves all eleven at once; the numeral is the page's position,
+    # derived from the page strip's order and never typed.
+    run = C.slot_span("folio.running", esc(C.text_or("folio.running", "BUDGET PRIMER")))
+    num = f'<span{C.derived("its position in the page strip (drag pages to renumber)")}>{n}</span>'
     if n % 2 == 0:
-        return f'<div class="folio">{n} • BUDGET PRIMER</div>'
-    return f'<div class="folio r">BUDGET PRIMER • {n}</div>'
+        return f'<div class="folio"{L.attr(f"folio.{pid}")}>{num} • {run}</div>'
+    return f'<div class="folio r"{L.attr(f"folio.{pid}")}>{run} • {num}</div>'
+
+# The contents list: each entry's words are a slot (defaulting to the section's
+# name), its page number is the page's position — derived, never typed.
+TOC_ENTRIES = [(3, "Budget Basics"), (5, "How Money Is Spent"),
+               (8, "Funding the Budget"), (12, "Endnotes")]
+
+
+def toc_rows():
+    num = C.derived("its page's position in the page strip")
+    return "".join(
+        f'<div><span{C.slot_attr(f"toc.entry.{pid}")}>'
+        f'{esc(C.text_or(f"toc.entry.{pid}", name))}</span>'
+        f'<span{num}>{pageno(pid)}</span></div>'
+        for pid, name in TOC_ENTRIES)
+
 
 def pageno(pid):
     """A page's printed number for the table of contents. A dash if it was
@@ -1147,18 +1181,13 @@ pages.append(f"""
 <section class="page toc-page"{L.fill_attr(f"page.2")}>
  <div class="toc-head">
   {L.spacer("toc.logo")}<div class="logo-lockup light"{L.attr("toc.logo")}>{svg_img("toc.logo", "assets/appleseed-logo-white.svg", "logo-img", "Hawaiʻi Appleseed — Center for Law &amp; Economic Justice")}</div>
-  <p class="toc-link"><a href="https://hiappleseed.org">www.hiappleseed.org</a></p>
+  {L.spacer("toc.link")}<p class="toc-link"{L.attr("toc.link")}><a href="https://hiappleseed.org"{C.slot_attr("toc.link")}>{esc(C.text_or("toc.link", "www.hiappleseed.org"))}</a></p>
   {L.spacer("toc.author")}<p class="toc-author"{L.attr("toc.author")}>{C.t("toc.author")}</p>
  </div>
  {C.html("toc.mission1", "mission")}
  {C.html("toc.mission2", "mission")}
  {L.spacer("toc.title")}<h2 class="toc-title"{L.attr("toc.title")}>{C.t("toc.title")}</h2>
- <div class="toc-list">
-  <div><span>Budget Basics</span><span>{pageno(3)}</span></div>
-  <div><span>How Money Is Spent</span><span>{pageno(5)}</span></div>
-  <div><span>Funding the Budget</span><span>{pageno(8)}</span></div>
-  <div><span>Endnotes</span><span>{pageno(12)}</span></div>
- </div>
+ <div class="toc-list"{L.frame("toc.list")}>{toc_rows()}</div>
  {L.spacer("toc.copyright")}<p class="copyright"{L.attr("toc.copyright")}>{C.slot_span("toc.copyright", "<br>".join(esc(l) for l in C.lines("toc.copyright")))}</p>
  {L.layer(2)}{L.text_boxes(2)}{L.tables_html(2)}{folio(2)}
 </section>""")
@@ -1195,7 +1224,7 @@ pages.append(f"""
 <section class="page"{L.fill_attr(f"page.4")}>
  {L.spacer("process.h2")}<h2 class="sub"{L.attr("process.h2")}>{C.t("process.h2")}</h2>
  {C.html("process.p1")}
- {L.spacer("process.fig1.caption")}<p class="figcap"{L.attr("process.fig1.caption")}><b>Figure 1.</b> {C.t("process.fig1.caption")}</p>
+ {L.spacer("process.fig1.caption")}<p class="figcap"{L.attr("process.fig1.caption")}><b{FIGNUM}>Figure 1.</b> {C.t("process.fig1.caption")}</p>
  <div class="lifecycle-wrap">
   {movable_tag(fig1_lifecycle(), "process.fig1.ring")}
   {lifecycle_callouts()}
@@ -1215,7 +1244,7 @@ pages.append(f"""
   {card(C.t("spent.cards.onetime.title", esc=True), C.list("spent.cards.onetime.bullets"), SAGE_LIGHT, light=True, key="spent.cards.onetime.bullets", icon=WARNING_ICON, icon_id="spent.cards.onetime.icon")}
  </div>
  {C.html("spent.p3")}
- {L.spacer("spent.table1.caption")}<p class="figcap"{L.attr("spent.table1.caption")}><b>Table 1.</b> {C.t("spent.table1.caption")} {fy_picker("table1", FY_LABEL[2027], FY_LABEL[2026])}</p>
+ {L.spacer("spent.table1.caption")}<p class="figcap"{L.attr("spent.table1.caption")}><b{FIGNUM}>Table 1.</b> {C.t("spent.table1.caption")} {fy_picker("table1", FY_LABEL[2027], FY_LABEL[2026])}</p>
  {L.wrap("table1", table1_for(2027) + NL_IN + table1_for(2026))}
 {C.extras("spent")} {L.layer(5)}{L.text_boxes(5)}{L.tables_html(5)}{folio(5)}
 </section>""")
@@ -1225,7 +1254,7 @@ pages.append(f"""
 <section class="page"{L.fill_attr(f"page.6")}>
  {L.spacer("categories.h2")}<h2 class="sub"{L.attr("categories.h2")}>{C.t("categories.h2")}</h2>
  {L.spacer("categories.h3")}<h3 class="sub2"{L.attr("categories.h3")}>{C.t("categories.h3")}</h3>
- {L.spacer("categories.fig2.caption")}<p class="figcap"{L.attr("categories.fig2.caption")}><b>Figure 2.</b> {C.t("categories.fig2.caption")} {fy_picker("fig2")}
+ {L.spacer("categories.fig2.caption")}<p class="figcap"{L.attr("categories.fig2.caption")}><b{FIGNUM}>Figure 2.</b> {C.t("categories.fig2.caption")} {fy_picker("fig2")}
  <span class="noprint figcap-hint">{C.t("categories.fig2.hint", esc=True)}</span></p>
  {fig2_chart_for(2027)}
  {fig2_chart_for(2026)}
@@ -1269,7 +1298,7 @@ pages.append(f"""
   </div>
  </details>
  {L.spacer("cip.h3")}<h3 class="sub2"{L.attr("cip.h3")}>{C.t("cip.h3")}</h3>
- {L.spacer("cip.fig3.caption")}<p class="figcap"{L.attr("cip.fig3.caption")}><b>Figure 3.</b> {C.t("cip.fig3.caption")} {fy_picker("fig3")} ($Millions)</p>
+ {L.spacer("cip.fig3.caption")}<p class="figcap"{L.attr("cip.fig3.caption")}><b{FIGNUM}>Figure 3.</b> {C.t("cip.fig3.caption")} {fy_picker("fig3")} {C.slot_span("cip.fig3.caption.suffix", esc(C.text_or("cip.fig3.caption.suffix", "($Millions)")))}</p>
  <div class="pie-row">{fy_chart_swap("fig3", "cip.fig3", fig3_slices_for(BUD), fig3_slices_for(BUD26), {"prefix": "$", "scale": "M", "decimals": 0, "unit": ""}, cls="pie-cip", w=4.05, h=4.05)}{legend([(esc(n), c) for n, c in zip(FIG3_ORDER, FIG3_COLORS)])}</div>
  {L.wrap("cip.body", CIP_BODY)}
 {L.spacer("onetime.h3")}<h3 class="sub2"{L.attr("onetime.h3")}>{C.t("onetime.h3")}</h3>
@@ -1289,7 +1318,7 @@ pages.append(f"""
 pages.append(f"""
 <section class="page"{L.fill_attr(f"page.8")}>
  {L.spacer("funding.h1")}<h1{L.attr("funding.h1")}>{C.t("funding.h1")}</h1>
- {L.spacer("funding.fig4.caption")}<p class="figcap"{L.attr("funding.fig4.caption")}><b>Figure 4.</b> {C.t("funding.fig4.caption")} {fy_picker("fig4")} {C.t("funding.fig4.caption.suffix")}</p>
+ {L.spacer("funding.fig4.caption")}<p class="figcap"{L.attr("funding.fig4.caption")}><b{FIGNUM}>Figure 4.</b> {C.t("funding.fig4.caption")} {fy_picker("fig4")} {C.t("funding.fig4.caption.suffix")}</p>
  <div class="pie-row">{fy_chart_swap("fig4", "funding.fig4", fig4_slices_for(BUD), fig4_slices_for(BUD26), {"prefix": "$", "scale": "B", "decimals": 1, "unit": ""}, cls="pie-mof", w=4.65, h=4.65)}{legend([(esc(n), c) for n, c in zip(FIG4_ORDER, FIG3_COLORS)])}</div>
  {C.html("funding.fig4.note", cls="fig-note")}
  {C.html("funding.p1")}
@@ -1305,7 +1334,7 @@ pages.append(f"""
 pages.append(f"""
 <section class="page"{L.fill_attr(f"page.9")}>
  {L.spacer("taxes.h2")}<h2 class="sub"{L.attr("taxes.h2")}>{C.t("taxes.h2")}</h2>
- {L.spacer("taxes.fig5.caption")}<p class="figcap"{L.attr("taxes.fig5.caption")}><b>Figure 5.</b> {C.t("taxes.fig5.caption")} {fy_picker("fig5")} {C.t("taxes.fig5.caption.suffix")}</p>
+ {L.spacer("taxes.fig5.caption")}<p class="figcap"{L.attr("taxes.fig5.caption")}><b{FIGNUM}>Figure 5.</b> {C.t("taxes.fig5.caption")} {fy_picker("fig5")} {C.t("taxes.fig5.caption.suffix")}</p>
  <div class="pie-row">{fy_chart_swap("fig5", "taxes.fig5", fig5_slices_for(REV), fig5_slices_for(REV26), {"prefix": "$", "scale": "B", "decimals": 2, "unit": ""}, cls="pie-tax", w=4.80, h=4.80)}{legend([(esc(n), c) for (n, _v, c, _l) in fig5_slices_for(REV)])}</div>
  <div class="cards3">
   {card(C.t("taxes.cards.get.title"), C.list("taxes.cards.get.bullets"), DARK, key="taxes.cards.get.bullets", icon=GET_ICON, icon_id="taxes.cards.get.icon")}
@@ -1319,7 +1348,7 @@ pages.append(f"""
 pages.append(f"""
 <section class="page"{L.fill_attr(f"page.10")}>
  {L.spacer("whopays.h3")}<h3 class="sub2"{L.attr("whopays.h3")}>{C.t("whopays.h3")}</h3>
- <p class="figcap"><b>Figure 6.</b> {C("whopays.fig6.caption")}</p>
+ {L.spacer("whopays.fig6.caption")}<p class="figcap"{L.attr("whopays.fig6.caption")}><b{FIGNUM}>Figure 6.</b> {C.t("whopays.fig6.caption")}</p>
  {fig6_chart()}
  {C.html("whopays.p1")}
 {C.extras("whopays")} {L.layer(10)}{L.text_boxes(10)}{L.tables_html(10)}{folio(10)}
