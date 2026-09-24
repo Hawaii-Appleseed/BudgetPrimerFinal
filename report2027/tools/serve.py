@@ -37,6 +37,7 @@ import re
 import mimetypes
 import os
 import shutil
+import select
 import signal
 import socket
 import subprocess
@@ -356,6 +357,202 @@ def _host_lock(timeout: float = 30.0):
 # rebuild — so one entry, replaced whenever the version moves, is the entire
 # cache anyone needs.
 INVENTORY_IDS: dict = {}
+
+
+class _WarmChrome:
+    """One headless Chrome kept running between PDF exports, driven over
+    --remote-debugging-pipe (the DevTools protocol on fds 3/4: NUL-terminated
+    JSON, so no websocket client and no dependency).
+
+    Why: a cold `--print-to-pdf` launch per export spent seconds starting
+    Chrome for a print that takes a fraction of one — every Download PDF was
+    6-8 s, and a launch that stalled (as one did right after Chrome updated
+    itself) ran past the time limit and failed outright. A warm tab prints the
+    same bytes in well under a second. Chrome exits by itself when its pipe
+    closes, so a killed server cannot leave it running."""
+
+    def __init__(self):
+        self.prof = tempfile.mkdtemp(prefix="primer-chrome-warm-")
+        to_chrome, self._w = os.pipe()
+        self._r, from_chrome = os.pipe()
+
+        def fds():               # park both high first: neither dup2 may clobber the other
+            os.dup2(to_chrome, 100)
+            os.dup2(from_chrome, 101)
+            os.dup2(100, 3)
+            os.dup2(101, 4)
+        self.proc = subprocess.Popen(
+            [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
+             "--no-first-run", f"--user-data-dir={self.prof}",
+             "--remote-debugging-pipe", "about:blank"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True, preexec_fn=fds, pass_fds=(3, 4))
+        os.close(to_chrome)
+        os.close(from_chrome)
+        self._n, self._buf, self._inbox = 0, b"", []
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def close(self):
+        for fd in (self._w, self._r):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if self.proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                self.proc.kill()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        shutil.rmtree(self.prof, ignore_errors=True)
+
+    def _wait(self, match, deadline: float) -> dict:
+        """The first message `match` accepts, keeping every other one for a
+        later wait — an event can arrive before the reply that precedes it."""
+        while True:
+            for i, d in enumerate(self._inbox):
+                if match(d):
+                    return self._inbox.pop(i)
+            while b"\0" not in self._buf:
+                left = deadline - time.time()
+                if left <= 0:
+                    raise TimeoutError("Chrome did not answer in time")
+                if not select.select([self._r], [], [], left)[0]:
+                    continue
+                chunk = os.read(self._r, 1 << 20)
+                if not chunk:
+                    raise EOFError("Chrome closed the pipe")
+                self._buf += chunk
+            msg, self._buf = self._buf.split(b"\0", 1)
+            self._inbox.append(json.loads(msg))
+
+    def call(self, method, params=None, session=None, deadline=None) -> dict:
+        self._n += 1
+        mid = self._n
+        m = {"id": mid, "method": method, "params": params or {}}
+        if session:
+            m["sessionId"] = session
+        os.write(self._w, json.dumps(m).encode() + b"\0")
+        d = self._wait(lambda d: d.get("id") == mid, deadline or time.time() + 30)
+        if "error" in d:
+            raise RuntimeError(f"{method}: {d['error'].get('message')}")
+        return d.get("result", {})
+
+    def pdf(self, url: str, budget_ms: int = 12000, timeout: float = 45) -> bytes:
+        """What `--virtual-time-budget=12000 --no-pdf-header-footer
+        --print-to-pdf` wrote, byte for byte bar the timestamps: load, then
+        budget_ms of fast-forwarded page time for timers, fonts and
+        script-drawn charts, then print with the page's own @page size."""
+        deadline = time.time() + timeout
+        self._inbox.clear()
+        tid = self.call("Target.createTarget", {"url": "about:blank"},
+                        deadline=deadline)["targetId"]
+        try:
+            s = self.call("Target.attachToTarget", {"targetId": tid, "flatten": True},
+                          deadline=deadline)["sessionId"]
+            on = lambda ev: (lambda d: d.get("method") == ev and d.get("sessionId") == s)
+            self.call("Page.enable", None, s, deadline)
+            self.call("Page.navigate", {"url": url}, s, deadline)
+            self._wait(on("Page.loadEventFired"), deadline)
+            self.call("Emulation.setVirtualTimePolicy",
+                      {"policy": "pauseIfNetworkFetchesPending", "budget": budget_ms},
+                      s, deadline)
+            self._wait(on("Emulation.virtualTimeBudgetExpired"), deadline)
+            # Budget spent leaves time paused, and a paused page cannot print.
+            self.call("Emulation.setVirtualTimePolicy", {"policy": "advance"}, s, deadline)
+            r = self.call("Page.printToPDF", {"printBackground": True,
+                                              "preferCSSPageSize": True,
+                                              "displayHeaderFooter": False}, s, deadline)
+            return base64.b64decode(r["data"])
+        finally:
+            try:
+                self.call("Target.closeTarget", {"targetId": tid},
+                          deadline=time.time() + 5)
+            except Exception:                                # noqa: BLE001
+                pass
+
+
+WARM_CHROME: list = [None]
+WARM_LOCK = threading.Lock()     # one print at a time through the one Chrome
+
+
+def _warm_chrome() -> _WarmChrome:
+    """The running warm Chrome, started if there is none (call under WARM_LOCK)."""
+    c = WARM_CHROME[0]
+    if c is None or not c.alive():
+        if c is not None:
+            c.close()
+        c = WARM_CHROME[0] = _WarmChrome()
+        c.call("Browser.getVersion", deadline=time.time() + 30)   # up and answering
+    return c
+
+
+def _warm_pdf(html: Path) -> bytes | None:
+    """html printed by the warm Chrome, or None if that failed for any reason
+    — the caller then takes the cold one-shot launch, so this can only make an
+    export faster, never make one fail. A failed Chrome is dropped, and the
+    next export starts a fresh one."""
+    with WARM_LOCK:
+        try:
+            return _warm_chrome().pdf(html.resolve().as_uri())
+        except Exception as e:                               # noqa: BLE001
+            print(f"  warm Chrome PDF failed ({e}); using a one-shot Chrome")
+            if WARM_CHROME[0] is not None:
+                WARM_CHROME[0].close()
+                WARM_CHROME[0] = None
+            return None
+
+
+def _leave_background():
+    """Take this process out of macOS's darwin-background band.
+
+    The Budget Primer Editor app starts this server with `nohup … &` and then
+    exits, and a process left behind that way runs as background work: CPU
+    and I/O throttled, and every child inheriting it. Measured on one machine,
+    the same PDF export took ~3 s from the app and 0.4 s from a terminal; a
+    report build took 0.35 s instead of 0.04 s; and the one-shot Chrome's
+    start slowed enough that an export could run out the time limit and
+    fail. setpriority(PRIO_DARWIN_PROCESS, 0, 0) is what `taskpolicy -B`
+    does. Anywhere else, or if the call is refused, nothing changes."""
+    if sys.platform != "darwin":
+        return
+    try:
+        import ctypes
+        PRIO_DARWIN_PROCESS = 4
+        ctypes.CDLL(None, use_errno=True).setpriority(PRIO_DARWIN_PROCESS, 0, 0)
+    except Exception:                                        # noqa: BLE001
+        pass
+
+
+def _prewarm_chrome():
+    """Start the warm Chrome before anyone asks, so the FIRST Download PDF is
+    fast too. Off under the test suite, which never really exports."""
+    if os.environ.get("PRIMER_TEST_SAFE") == "1" or not Path(CHROME).exists():
+        return
+    try:
+        with WARM_LOCK:
+            _warm_chrome()
+    except Exception as e:                                   # noqa: BLE001
+        print(f"  (could not pre-start Chrome for PDF export: {e})")
+
+
+def _output_complete(path: Path) -> bool:
+    """True once a Chrome-written PDF or PNG carries its end marker: %%EOF
+    closes a PDF, the IEND chunk (name + CRC) closes a PNG. Anything else
+    answers False and falls back to _chrome_capture's settle wait."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 32))
+            tail = f.read()
+    except OSError:
+        return False
+    return tail.rstrip().endswith(b"%%EOF") or tail.endswith(b"IEND\xaeB`\x82")
 
 
 def _export_bad_args(req: dict) -> str | None:
@@ -2352,20 +2549,27 @@ class Handler(SimpleHTTPRequestHandler):
 
         This build of Chrome writes the PDF/PNG in a few seconds but then does
         NOT exit under --headless=new, so waiting on the process (subprocess.run)
-        hangs forever. We watch the OUTPUT instead: once its size holds steady
-        it is done, and we kill the whole process group — main plus the gpu/
-        renderer helpers — so nothing lingers between exports."""
+        hangs forever. We watch the OUTPUT instead and kill the whole process
+        group — main plus the gpu/renderer helpers — so nothing lingers.
+
+        "Done" is the file's own end marker (_output_complete): a PDF's %%EOF,
+        a PNG's IEND chunk. Chrome writes either in one go, so the marker is
+        there the moment the file is usable. The size-held-steady wait is only
+        the fallback for any other output; it used to be the only test, and
+        its `settle` seconds were most of every export's wall time."""
         proc = subprocess.Popen(args, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, start_new_session=True)
-        start, last, held = time.time(), -1, 0.0
+        start, last, held, tick = time.time(), -1, 0.0, 0.1
         try:
             while time.time() - start < deadline:
                 if proc.poll() is not None:       # some versions do self-exit
                     break
-                time.sleep(0.4)
+                time.sleep(tick)
                 sz = out_file.stat().st_size if out_file.exists() else -1
                 if sz > 0 and sz == last:
-                    held += 0.4
+                    if _output_complete(out_file):
+                        break
+                    held += tick
                     if held >= settle:
                         break
                 else:
@@ -2390,6 +2594,9 @@ class Handler(SimpleHTTPRequestHandler):
         prof = Path(tempfile.mkdtemp(prefix="primer-chrome-"))
         pdf = prof / "out.pdf"
         try:
+            data = _warm_pdf(out_html)
+            if data:
+                return data
             if not self._chrome_capture(
                 [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
                  "--no-first-run", f"--user-data-dir={prof}",
@@ -2804,6 +3011,7 @@ def _serve_forever(servers):
 
 
 def main():
+    _leave_background()          # before any build or Chrome, which inherit it
     if not PROJECTS:
         print("  no projects found — check docsync.yml and docs/primer/projects.json")
     for pid in PROJECTS:
@@ -2842,6 +3050,7 @@ def main():
     if os.environ.get("PRIMER_OPEN", "1") == "1":
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     SERVERS[:] = servers
+    threading.Thread(target=_prewarm_chrome, daemon=True).start()
     if LINGER > 0:
         threading.Thread(target=_idle_reaper, daemon=True).start()
     try:
