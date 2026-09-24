@@ -239,6 +239,11 @@ The total FY{fy} Capital Improvement Projects (CIP) budget is {cip_total}. Trans
 [[onetime.h3]]
 ### One-Time and Emergency Appropriations
 
+[[onetime.brief.items]]
+- **$700M** Transportation & Budget/Finance — county-surcharge transit funding ($600M) and a new major disaster fund ($100M), under Act 99.[^act99]
+- **$200M** Accounting, Transportation, Land — Maui wildfire insurance proceeds, to rebuild King Kamehameha III Elementary and restore Lahaina’s harbor.[^act123]
+- **$49.5M** DBEDT — the New Aloha Stadium district.[^act184]
+
 [[onetime.brief]]
 Plus further one-time appropriations for UH student housing, ACA premium support and school meals, and $2.9 million in FY27 emergency appropriations.
 

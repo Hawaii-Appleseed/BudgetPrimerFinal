@@ -38,6 +38,9 @@ test.describe('adopt an existing project', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('start.html');
     await page.waitForFunction(() => typeof adoptProject === 'function');
+    // The list loads by fetch AFTER the script defines adoptProject; a test
+    // that asks "is this slug already listed?" must not ask an empty list.
+    await page.waitForFunction(() => REGISTRY && Object.keys(REGISTRY).length > 0);
   });
 
   test('the Adopt button opens a modal that asks where the project lives', async ({ page }) => {

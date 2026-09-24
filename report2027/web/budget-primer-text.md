@@ -160,56 +160,102 @@ PAGE 6
 **Figure 2.** Hawaiʻi State Budget by Branch and Department, FY2027 — click a department for details & tracker link
 
 DATA:
-  Judiciary — Operating: $219M
-  Judiciary — Capital: $45.4M
-  Judiciary — One-Time: $0.68M
-  Legislature — Operating: $52.8M
-  OHA — Operating: $6M
-  OHA — One-Time: $55M
-  Human Services — Operating: $5B
-  Human Services — Capital: $22.8M
-  Human Services — One-Time: $16.5M
-  Transportation — Operating: $1.6B
-  Transportation — Capital: $2.7B
-  Transportation — One-Time: $612M
-  Budget, Finance — Operating: $4.3B
-  Budget, Finance — One-Time: $100M
-  Budget, Finance — Emergency: $2.87M
-  Education — Operating: $3.1B
-  Education — Capital: $636M
-  Education — One-Time: $3.37M
-  Health — Operating: $2.4B
-  Health — Capital: $249M
-  UH System — Operating: $1.4B
-  UH System — Capital: $214M
-  UH System — One-Time: $28.5M
-  Bus, Econ, Dev, Tour — Operating: $344M
-  Bus, Econ, Dev, Tour — Capital: $269M
-  Bus, Econ, Dev, Tour — One-Time: $49.5M
-  Land, Natural Res — Operating: $475M
-  Land, Natural Res — Capital: $97.7M
-  Land, Natural Res — One-Time: $12M
-  Labor — Operating: $463M
-  Labor — Capital: $20M
-  Accounting, Gen Serv — Operating: $260M
-  Accounting, Gen Serv — Capital: $147M
-  Accounting, Gen Serv — One-Time: $176M
-  Corrections — Operating: $319M
-  Corrections — Capital: $3M
-  Agriculture — Operating: $90.6M
-  Agriculture — Capital: $76M
-  Defense — Operating: $119M
-  Defense — Capital: $34.8M
-  Attorney General — Operating: $138M
-  Hwn Home Lands — Operating: $97.2M
-  Hwn Home Lands — Capital: $34.3M
-  Commerce — Operating: $109M
-  Law Enforcement — Operating: $101M
-  Law Enforcement — Capital: $2M
-  Taxation — Operating: $43.8M
-  Human Resources — Operating: $36M
-  Governor — Operating: $4.93M
-  Lt. Governor — Operating: $2.5M
+  Judiciary — Operating Budget: $218.8M
+  Judiciary — Capital Improvement Appr: $45.4M
+  Judiciary — One-Time Appr: $684.4K
+  Judiciary — Emergency Appr: $0.0
+  Legislature — Operating Budget: $52.8M
+  Legislature — Capital Improvement Appr: $0.0
+  Legislature — One-Time Appr: $0.0
+  Legislature — Emergency Appr: $0.0
+  OHA — Operating Budget: $6.0M
+  OHA — Capital Improvement Appr: $0.0
+  OHA — One-Time Appr: $55.0M
+  OHA — Emergency Appr: $0.0
+  Human Services — Operating Budget: $5.0B
+  Human Services — Capital Improvement Appr: $22.8M
+  Human Services — One-Time Appr: $16.5M
+  Human Services — Emergency Appr: $0.0
+  Transportation — Operating Budget: $1.6B
+  Transportation — Capital Improvement Appr: $2.7B
+  Transportation — One-Time Appr: $612.0M
+  Transportation — Emergency Appr: $0.0
+  Budget, Finance — Operating Budget: $4.3B
+  Budget, Finance — Capital Improvement Appr: $0.0
+  Budget, Finance — One-Time Appr: $100.0M
+  Budget, Finance — Emergency Appr: $2.9M
+  Education — Operating Budget: $3.1B
+  Education — Capital Improvement Appr: $635.6M
+  Education — One-Time Appr: $3.4M
+  Education — Emergency Appr: $0.0
+  Health — Operating Budget: $2.4B
+  Health — Capital Improvement Appr: $249.0M
+  Health — One-Time Appr: $0.0
+  Health — Emergency Appr: $0.0
+  UH System — Operating Budget: $1.4B
+  UH System — Capital Improvement Appr: $213.5M
+  UH System — One-Time Appr: $28.5M
+  UH System — Emergency Appr: $0.0
+  Bus, Econ, Dev, Tour — Operating Budget: $343.6M
+  Bus, Econ, Dev, Tour — Capital Improvement Appr: $268.9M
+  Bus, Econ, Dev, Tour — One-Time Appr: $49.5M
+  Bus, Econ, Dev, Tour — Emergency Appr: $0.0
+  Land, Natural Res — Operating Budget: $475.5M
+  Land, Natural Res — Capital Improvement Appr: $97.7M
+  Land, Natural Res — One-Time Appr: $12.0M
+  Land, Natural Res — Emergency Appr: $0.0
+  Labor — Operating Budget: $462.9M
+  Labor — Capital Improvement Appr: $20.0M
+  Labor — One-Time Appr: $0.0
+  Labor — Emergency Appr: $0.0
+  Accounting, Gen Serv — Operating Budget: $260.2M
+  Accounting, Gen Serv — Capital Improvement Appr: $147.1M
+  Accounting, Gen Serv — One-Time Appr: $176.0M
+  Accounting, Gen Serv — Emergency Appr: $0.0
+  Corrections — Operating Budget: $319.5M
+  Corrections — Capital Improvement Appr: $3.0M
+  Corrections — One-Time Appr: $0.0
+  Corrections — Emergency Appr: $0.0
+  Agriculture — Operating Budget: $90.6M
+  Agriculture — Capital Improvement Appr: $76.0M
+  Agriculture — One-Time Appr: $0.0
+  Agriculture — Emergency Appr: $0.0
+  Defense — Operating Budget: $119.3M
+  Defense — Capital Improvement Appr: $34.8M
+  Defense — One-Time Appr: $0.0
+  Defense — Emergency Appr: $0.0
+  Attorney General — Operating Budget: $137.8M
+  Attorney General — Capital Improvement Appr: $0.0
+  Attorney General — One-Time Appr: $0.0
+  Attorney General — Emergency Appr: $0.0
+  Hwn Home Lands — Operating Budget: $97.2M
+  Hwn Home Lands — Capital Improvement Appr: $34.3M
+  Hwn Home Lands — One-Time Appr: $0.0
+  Hwn Home Lands — Emergency Appr: $0.0
+  Commerce — Operating Budget: $109.2M
+  Commerce — Capital Improvement Appr: $0.0
+  Commerce — One-Time Appr: $0.0
+  Commerce — Emergency Appr: $0.0
+  Law Enforcement — Operating Budget: $100.5M
+  Law Enforcement — Capital Improvement Appr: $2.0M
+  Law Enforcement — One-Time Appr: $0.0
+  Law Enforcement — Emergency Appr: $0.0
+  Taxation — Operating Budget: $43.8M
+  Taxation — Capital Improvement Appr: $0.0
+  Taxation — One-Time Appr: $0.0
+  Taxation — Emergency Appr: $0.0
+  Human Resources — Operating Budget: $36.0M
+  Human Resources — Capital Improvement Appr: $0.0
+  Human Resources — One-Time Appr: $0.0
+  Human Resources — Emergency Appr: $0.0
+  Governor — Operating Budget: $4.9M
+  Governor — Capital Improvement Appr: $0.0
+  Governor — One-Time Appr: $0.0
+  Governor — Emergency Appr: $0.0
+  Lt. Governor — Operating Budget: $2.5M
+  Lt. Governor — Capital Improvement Appr: $0.0
+  Lt. Governor — One-Time Appr: $0.0
+  Lt. Governor — Emergency Appr: $0.0
 
 KEY: Operating Budget | Capital Improvement Appr | One-Time Appr | Emergency Appr
 
@@ -233,16 +279,46 @@ Before any other spending, the Hawaiʻi constitution requires the state to pay i
 **General-fund obligated costs, FY2018–FY2027 ($Billions).**[^8]Hover a year for the breakdown.
 
 DATA:
-  FY2018: Obligated total $3.64B · Retirement $0.81B · Health Benefits $1.02B · Medicaid & Entitlements $1.06B · Debt Service $0.75B
-  FY2019: Obligated total $3.84B · Retirement $0.83B · Health Benefits $1.08B · Medicaid & Entitlements $1.10B · Debt Service $0.83B
-  FY2020: Obligated total $4.08B · Retirement $1.02B · Health Benefits $1.13B · Medicaid & Entitlements $1.07B · Debt Service $0.87B
-  FY2021: Obligated total $4.28B · Retirement $1.12B · Health Benefits $1.17B · Medicaid & Entitlements $1.12B · Debt Service $0.86B
-  FY2022: Obligated total $4.11B · Retirement $1.10B · Health Benefits $0.83B · Medicaid & Entitlements $1.16B · Debt Service $1.02B
-  FY2023: Obligated total $4.22B · Retirement $1.10B · Health Benefits $0.87B · Medicaid & Entitlements $1.18B · Debt Service $1.07B
-  FY2024: Obligated total $4.64B · Retirement $1.18B · Health Benefits $1.16B · Medicaid & Entitlements $1.16B · Debt Service $1.14B
-  FY2025: Obligated total $4.88B · Retirement $1.24B · Health Benefits $1.21B · Medicaid & Entitlements $1.17B · Debt Service $1.26B
-  FY2026: Obligated total $4.88B · Retirement $1.29B · Health Benefits $1.25B · Medicaid & Entitlements $1.21B · Debt Service $1.13B
-  FY2027: Obligated total $5.03B · Retirement $1.32B · Health Benefits $1.27B · Medicaid & Entitlements $1.25B · Debt Service $1.18B
+  FY18 — Retirement (ERS): $0.81B
+  FY19 — Retirement (ERS): $0.83B
+  FY20 — Retirement (ERS): $1.02B
+  FY21 — Retirement (ERS): $1.12B
+  FY22 — Retirement (ERS): $1.10B
+  FY23 — Retirement (ERS): $1.10B
+  FY24 — Retirement (ERS): $1.18B
+  FY25 — Retirement (ERS): $1.24B
+  FY26 — Retirement (ERS): $1.29B
+  FY27 — Retirement (ERS): $1.32B
+  FY18 — Health Benefits (EUTF): $1.02B
+  FY19 — Health Benefits (EUTF): $1.08B
+  FY20 — Health Benefits (EUTF): $1.13B
+  FY21 — Health Benefits (EUTF): $1.17B
+  FY22 — Health Benefits (EUTF): $0.83B
+  FY23 — Health Benefits (EUTF): $0.87B
+  FY24 — Health Benefits (EUTF): $1.16B
+  FY25 — Health Benefits (EUTF): $1.21B
+  FY26 — Health Benefits (EUTF): $1.25B
+  FY27 — Health Benefits (EUTF): $1.27B
+  FY18 — Medicaid & Entitlements: $1.06B
+  FY19 — Medicaid & Entitlements: $1.10B
+  FY20 — Medicaid & Entitlements: $1.07B
+  FY21 — Medicaid & Entitlements: $1.12B
+  FY22 — Medicaid & Entitlements: $1.16B
+  FY23 — Medicaid & Entitlements: $1.18B
+  FY24 — Medicaid & Entitlements: $1.16B
+  FY25 — Medicaid & Entitlements: $1.17B
+  FY26 — Medicaid & Entitlements: $1.21B
+  FY27 — Medicaid & Entitlements: $1.25B
+  FY18 — Debt Service: $0.75B
+  FY19 — Debt Service: $0.83B
+  FY20 — Debt Service: $0.87B
+  FY21 — Debt Service: $0.86B
+  FY22 — Debt Service: $1.02B
+  FY23 — Debt Service: $1.07B
+  FY24 — Debt Service: $1.14B
+  FY25 — Debt Service: $1.26B
+  FY26 — Debt Service: $1.13B
+  FY27 — Debt Service: $1.18B
 
 KEY: Retirement (ERS) | Health Benefits (EUTF) | Medicaid & Entitlements | Debt Service
 
@@ -255,13 +331,6 @@ General-fund fixed costs have climbed from $3.64 billion in FY2018 to $5.03 bill
 ### Capital Improvement Appropriations
 
 **Figure 3.** Distribution of Capital Improvement Project Funding, FY2027 ($Millions)
-
-DATA:
-  Transportation: $2,691 (59.3%)
-  Formal Education: $880 (19.4%)
-  All Others: $419 (9.2%)
-  Economic Development: $342 (7.5%)
-  Health: $203 (4.5%)
 
 KEY: Transportation | Formal Education | All Others | Economic Development | Health
 

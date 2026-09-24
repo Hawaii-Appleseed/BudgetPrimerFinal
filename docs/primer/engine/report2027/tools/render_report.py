@@ -305,7 +305,7 @@ def obligated_spec():
         "series": [{"name": name, "color": color,
                     "data": [sum(series[str(fy)][k] for k in keys) for fy in years]}
                    for name, keys, color in OBLIG_BANDS],
-        "tips": True, "grid": True, "axisMin": 0, "axisMax": 5.5e9,
+        "tips": True, "grid": True, "axisMin": 0, "axisMax": 6e9, "axisTicks": 7,
         "labelColor": INK, "format": {"prefix": "$", "scale": "B", "decimals": 0},
         "labelFormat": {"prefix": "$", "scale": "B", "decimals": 2},
     }

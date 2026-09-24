@@ -14,6 +14,9 @@
 bindings:
   - id: budget-primer
     content: report2027/content.md
+    # Strict since 2026-09-24: every word, chart, image and surface on the
+    # primer has an editor handle, and docsync.check fails CI on any new gap.
+    editability: strict
     # The one build command, shared by the live server, the save endpoint and
     # CI — so the deployed page is always exactly what a build produces.
     build: make -C report2027 pub

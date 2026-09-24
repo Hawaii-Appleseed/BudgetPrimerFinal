@@ -1,0 +1,45 @@
+name: Report output checks
+
+# Copied from primer-editor (2026-09-24), where it guards every bound report:
+# this repo is where the live Budget Primer is built, and it had no check at
+# all, so its editability: strict enforced nothing. Separate from
+# editor-tests.yml on purpose. This job is seconds of Python with
+# one dependency, and it needs to run on every change to a REPORT -- including
+# the content commits the editor writes on Save. Folding it into the Playwright
+# workflow would either mean booting Chromium for a one-word copy edit, or
+# leaving report output unchecked; this way neither happens.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docsync/**"
+      - "report2027/**"
+      - "docsync.yml"
+      - ".github/workflows/report-checks.yml"
+  pull_request:
+    paths:
+      - "docsync/**"
+      - "report2027/**"
+      - "docsync.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install --quiet pyyaml
+
+      # Checks the COMMITTED output rather than rebuilding, so it also catches
+      # an index.html that no longer matches the renderer that claims to
+      # produce it. Bindings are found by walking docsync.yml -- a new report
+      # is covered the day it is registered, with nothing to remember.
+      - name: Verify every report's rendered output
+        run: python3 -m docsync.check
