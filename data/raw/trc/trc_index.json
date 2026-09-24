@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-09-17T20:01:10+00:00",
+  "checked_at": "2026-09-24T20:16:52+00:00",
   "documents": {
     "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-01-15-TRC_Presentation-DOTAX-TRP.pdf": {
       "doc_type": "presentation",
@@ -62,6 +62,20 @@
       "pdf": "data/raw/trc/pdfs/2026-09-01-Solar-credit-dollar-by-dollar.pdf",
       "text": "data/raw/trc/extracted/2026-09-01-Solar-credit-dollar-by-dollar.txt",
       "title": "Dylan Moore (UHERO) Presentation on Interim Findings 2026-09-01"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-09-18-Council_State_Taxation_Presentation.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-09-18",
+      "pdf": "data/raw/trc/pdfs/2026-09-18-Council_State_Taxation_Presentation.pdf",
+      "text": "data/raw/trc/extracted/2026-09-18-Council_State_Taxation_Presentation.txt",
+      "title": "Council on State Taxation Presentation-2026-09-18"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-09-18-Dr_John_Knox_Presentation.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-09-18",
+      "pdf": "data/raw/trc/pdfs/2026-09-18-Dr_John_Knox_Presentation.pdf",
+      "text": "data/raw/trc/extracted/2026-09-18-Dr_John_Knox_Presentation.txt",
+      "title": "Dr. John Knox Presentation-2026-09-18"
     },
     "https://files.hawaii.gov/tax/stats/trc/docs2025/HCR _82.pdf": {
       "doc_type": "presentation",
@@ -170,17 +184,29 @@
       "meeting_date": "2026-09-01",
       "title": "September 1, 2026 at 2:00 P.M."
     },
-    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-01_min_draft.pdf": {
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-01_min.pdf": {
       "doc_type": "minutes_final",
       "meeting_date": "2026-09-01",
-      "pdf": "data/raw/trc/pdfs/2026trc09-01_min_draft.pdf",
-      "text": "data/raw/trc/extracted/2026trc09-01_min_draft.txt",
-      "title": "September 1, 2026 Minutes"
+      "pdf": "data/raw/trc/pdfs/2026trc09-01_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc09-01_min.txt",
+      "title": "September 1, 2026"
     },
     "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-18.pdf": {
       "doc_type": "notice",
       "meeting_date": "2026-09-18",
       "title": "September 18, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-18_min_draft.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-09-18",
+      "pdf": "data/raw/trc/pdfs/2026trc09-18_min_draft.pdf",
+      "text": "data/raw/trc/extracted/2026trc09-18_min_draft.txt",
+      "title": "September 18, 2026"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-29.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-09-29",
+      "title": "September 29, 2026 at 2:00 P.M."
     },
     "https://www.youtube.com/watch?v=-YIVfkYDMSE": {
       "doc_type": "video",
@@ -201,6 +227,11 @@
       "doc_type": "video",
       "meeting_date": "2026-05-26",
       "title": "May 26, 2026 VIDEO"
+    },
+    "https://www.youtube.com/watch?v=JJmulgwRl5M": {
+      "doc_type": "video",
+      "meeting_date": "2026-09-18",
+      "title": "September 18, 2026 VIDEO"
     },
     "https://www.youtube.com/watch?v=_a4zbzeWSKU": {
       "doc_type": "video",
@@ -233,5 +264,5 @@
       "title": "September 1, 2026 VIDEO"
     }
   },
-  "page_last_updated": "September 11, 2026"
+  "page_last_updated": "September 22, 2026"
 }

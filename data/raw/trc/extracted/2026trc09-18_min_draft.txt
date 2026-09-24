@@ -1,0 +1,205 @@
+
+===== page 1 =====
+Draft
+TAX REVIEW COMMISSION 2025-2027
+Meeting Minutes,
+Friday, September 18, 2026
+Virtual Meeting
+Meeting was held virtually and video recorded.
+Recorded Video Link: https://www.youtube.com/watch?v=JJmulgwRl5M
+Friday, September 18, 2026
+2:00 p.m.
+PRESENT:
+Commission Members:
+Jonathan White (Chair), Judith Chock (Vice-Chair), Jessica Enos, Mark
+Fukunaga, Stacey Katakura, Jeffrey Ueoka and Jon Yasuda
+Staff Members:
+Department of Taxation (DOTAX): TRC Executive Director Dr. Baybars
+Karacaovali (DOTAX Tax Research & Planning Officer)
+Attorney General’s Office:
+Deputy Attorney General Joshua Michaels
+Guest Panelists:
+Karl Frieden and Dylan Waits (Council On State Taxation)
+Dr. John Knox
+Dr. Dylan Moore (UHERO)
+1. CALL TO ORDER
+Chair White called the meeting to order at 2:02 p.m. A quorum was present.
+Roll Call:
+Mr. Jonathan White Present
+Ms. Judith Chock Present
+Ms. Jessica Enos Present
+Mr. Mark Fukunaga Present
+
+===== page 2 =====
+Minutes of the Tax Review Commission Meeting
+Tuesday, September 1, 2026
+Page 2 of 6
+Ms. Stacey Katakura Present
+Mr. Jeffrey Ueoka Present
+Mr. Jon Yasuda Present
+2. COMMUNICATIONS TO THE COMMISSION AND PUBLIC COMMENT
+Chair White asked if there was any communication to the Tax Review Commission (TRC).
+Dr. Karacaovali said there was no written communication received and invited public to come
+forward using the chat/Q&A function over Zoom.
+Chair White allowed time for comments from the public. Five members of the public were in
+attendance; no public comments were submitted in chat or Q&A.
+3. MINUTES OF THE MEETING OF SEPTEMBER 1, 2026
+Chair White asked the Commission if there were any changes to the September 1, 2026, minutes.
+Chair White asked if there were no objections, the minutes would be approved by acclamation.
+There were no objections, so the minutes got approved.
+4. PRESENTATION BY KARL FRIEDEN AND DYLAN WAITS (COUNCIL ON
+STATE TAXATION) TITLED “A NATIONAL PERSPECTIVE ON HAWAII'S
+STATE AND LOCAL TAXES: A LOOK AT EXCISE TAXES,
+ADMINISTRABILITY, AND CORPORATE TAXES”:
+Overview
+This was the second external presentation in the Commission’s planned series. COST provided a
+comprehensive comparative review of Hawaii’s tax structure relative to national norms, with
+particular focus on:
+• Composition of state and local taxation
+• Business tax burden data
+• Hawaii’s General Excise Tax (GET)
+• Administrative best practices
+• Corporate income tax structure
+
+===== page 3 =====
+Minutes of the Tax Review Commission Meeting
+Tuesday, September 1, 2026
+Page 3 of 6
+Major Themes & Discussion Points
+National vs. Hawaii Tax Composition
+• Hawaii relies heavily on consumption taxes, particularly the GET, compared with
+national averages.
+• Hawaii’s property tax share is much lower relative to other states, largely due to the
+structure of the state economy and relatively limited industrial base.
+• While Hawaii’s income tax system is progressive, reliance on consumption taxes places
+Hawaii near the national middle in overall regressivity.
+Business Tax Burden
+• Hawaii’s business share of total state/local taxes is near the national average.
+• COST emphasized the importance of looking beyond corporate income tax—property
+tax, excise tax, and business input taxation are more influential in business tax burden.
+General Excise Tax (GET) Structure
+Key observations:
+• Hawaii’s GET has an exceptionally broad base, similar only to South Dakota and New
+Mexico.
+• The broad GET base allows Hawaii to capture revenue from emerging digital sectors
+without new laws but also creates significant pyramiding, taxing goods and services
+multiple times along supply chains.
+• Pyramiding leads to effective tax rates higher than the statutory 4–4.5%, depending on
+industry structure.
+• Most states exempt many business inputs to mitigate pyramiding; Hawaii exempts very
+few, making pyramiding a central concern for business taxpayers.
+Digital Taxation Trends
+• Many states are slowly expanding sales tax bases to digital products and software. Hawaii
+is already far ahead due to the GET’s broad reach.
+• COST cautioned against separate digital advertising taxes; Hawaii already taxes such
+activities within the GET.
+Administrative Practices
+COST identified areas for potential improvement that are revenue-neutral:
+• Extend corporate filing deadlines to align with federal extended deadlines.
+• Adopt longer appeal periods (moving from 30 days to the recommended 90 days).
+• Improve federal audit adjustment conformity.
+• Ensure even-handedness in interest rates on assessments vs. refunds.
+
+===== page 4 =====
+Minutes of the Tax Review Commission Meeting
+Tuesday, September 1, 2026
+Page 4 of 6
+Corporate Income Tax
+• Hawaii’s CIT structure (rate, water’s-edge reporting, exclusion of GILTI/“NECTY”)
+places it roughly in the national mainstream.
+• Hawaii’s use of three-factor apportionment stands out, as most states have shifted to
+single-sales-factor apportionment.
+Commission Questions
+Commissioners asked about:
+• Effective tax rates after pyramiding
+• Equity and competitiveness implications
+• Relationship between Hawaii’s economic composition and tax structure
+• Treatment of flow-through entities
+COST responded with detailed analysis of pyramiding studies, national comparisons, and
+Hawaii’s unusual structural profile.
+Chair White reminded presenters of time constraints due to subsequent agenda items.
+The Commission thanked the presenters for their comprehensive review.
+Council on State Taxation Presentation slides are available at the Tax Review Commission
+website and also at the following url:
+https://files.hawaii.gov/tax/stats/trc/docs2025/2026-09-18-Council_State_Taxation_Presentation.pdf
+BREAK:
+Chair White called for a brief break at approximately 3:04 PM and asked each Commission
+member to turn off their microphones, turn off their cameras, and avoid discussing any TRC
+business during the break.
+Commission members returned from their break at 3:15pm to resume the meeting.
+5. PRESENTATION BY DR. JOHN KNOX TITLED “TOURISM, TRANSIENT
+ACCOMMODATIONS TAX (TAT), AND COMPETITIVENESS”:
+Overview
+Dr. Knox presented an extensive data-driven review of Hawaii’s tourism trends and the historical
+interplay between visitor taxes (TAT and GET) and visitor behavior.
+
+===== page 5 =====
+Minutes of the Tax Review Commission Meeting
+Tuesday, September 1, 2026
+Page 5 of 6
+Major Themes & Discussion Points
+Tourism Market Composition
+• Hawaii is now overwhelmingly dependent on the U.S. West and U.S. East markets (over
+80% of visitor volume and spending).
+• Japan and other international markets have fallen dramatically.
+Visitor Tax Burden Over Time
+• Combined GET, county surcharges, green fees, and TAT now total 18.71%, among the
+highest lodging tax burdens nationwide.
+• Historical increases in TAT and reallocation of revenues have steadily shifted funds
+toward the general fund and away from tourism marketing or management.
+Historical Correlation Analysis
+Dr. Knox reviewed correlations between tax rates and tourism outcomes:
+• Visitor arrivals: Positive long-term correlation; tax increases did not correspond with
+declines.
+• Visitor census (average visitors present): Same positive correlation, though recent
+decreases reflect shorter stays.
+• Length of stay: Weak long-term correlation; declines since 2011 not clearly tied to tax
+changes.
+• Real visitor spending: Near-zero correlation with tax rate changes.
+• Daily spending: Historically negative correlation (higher taxes, lower daily spending), but
+reversed upward after the pandemic, indicating higher per-day expenditures.
+Dr. Knox emphasized that tax changes tend not to move major tourism metrics on their own.
+Shift in Visitor Spending Patterns
+• Growing share of spending is directed to lodging, possibly influenced by rising lodging
+taxes and fees.
+• Shopping has declined as a spending category.
+Visitor Attitudes
+Visitor satisfaction surveys continue to show:
+• “Too expensive” remains the top reason for not planning a return trip.
+• Post-pandemic concern about costs has increased.
+Use of TAT Revenues
+• Based on national comparisons, Hawaii allocates very little of lodging tax revenue to
+tourism-related uses (roughly 2.5% vs. a national average of 41%).
+• Hawaii allocates far more to the general fund (about 72%).
+
+===== page 6 =====
+Minutes of the Tax Review Commission Meeting
+Tuesday, September 1, 2026
+Page 6 of 6
+Dr. Knox noted long-standing industry concerns that tourism-related revenues are not reinvested
+into tourism competitiveness or management.
+Policy Considerations
+Knox encouraged the Commission to consider:
+• Ensuring stable revenue streams for tourism marketing and management
+• Tracking all tourism-related revenues (including fees and minor taxes)
+• Possible guidelines for TAT allocation by category
+• Acknowledging political resistance to major structural changes in TAT use or rate
+Commission Discussion
+Commissioners asked about:
+• Variations in tax impact across hotel market segments
+• Reliability of visitor data (especially front/back of arrival forms)
+• Possible explanations for rising average daily spend
+Dr. Knox clarified current data availability, noted that average party size has slightly increased,
+and discussed potential methodological concerns with electronic arrival forms.
+Dr. Knox’s presentation slides are available at the Tax Review Commission website and also at
+the following url:
+https://files.hawaii.gov/tax/stats/trc/docs2025/2026-09-18-Dr_John_Knox_Presentation.pdf
+6. CLOSING DISCUSSION: FUTURE MEETING AGENDA & SCHEDULING
+• The next TRC meeting is scheduled for September 29, 2026 at 2:00 PM HST.
+• Commissioners agreed to invite UHERO for a brief status update related to the
+Commission’s interim report timeline.
+• Additional agenda items will include updates on communications with the Legislature
+and continued topic prioritization.
+Chair White opted to postpone scheduling of meetings beyond September 29 until that date.
+7. ADJOURNMENT:
+With no further business, Chair White adjourned the meeting at 3:51 p.m.
