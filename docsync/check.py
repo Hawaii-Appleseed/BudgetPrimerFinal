@@ -500,6 +500,7 @@ CHECKS = (check_citations, check_markdown, check_svg_bounds,
 _VOID = frozenset("area base br col embed hr img input link meta source track "
                   "wbr".split())
 _OPAQUE_TAGS = frozenset(("script", "style", "head", "title", "template"))
+_GRAPHIC_TAGS = frozenset(("img", "svg", "video", "canvas", "iframe", "object"))
 # Words = runs with a letter or digit; two alnum chars = worth a look.
 _ALNUM2 = re.compile(r"[^\W_].*[^\W_]", re.S)
 _SENT_END = re.compile(r"[.!?:;]\s*$")
@@ -586,6 +587,10 @@ class _Coverage(HTMLParser):
         # inside, or None; whether an engine chart already draws it). A width
         # typed as a percentage inside such a figure is a HAND-DRAWN BAR.
         self.bar_ctx: list[tuple[str | None, bool]] = []
+        # Images and drawings nothing can move (_graphic), by alt/label/file.
+        self.graphics_all: list[str] = []
+        self.cls_stack: list[str] = []      # parallel to stack: first class, to name a graphic
+        self.graphics_paged: list[str] = []
         self.hand_bars: list[str] = []
         self._hand_seen: set[int] = set()
         # <foreignObject> depth: HTML inside a drawing, judged like SVG text.
@@ -661,11 +666,43 @@ class _Coverage(HTMLParser):
             else:
                 self.desc_all.append(v)
 
+    def _graphic(self, tag: str, a: dict) -> None:
+        """An image or drawing on the page that nothing can pick up.
+
+        Text had four nets; a picture had none. An <img>, an outermost <svg>,
+        a <video>/<canvas>/<iframe> with no data-el on it or on anything
+        holding it cannot be selected, moved, resized or swapped — the
+        Budget Primer's lifecycle wheel and fixed-costs chart were this
+        (chart_scroll() around a bare <svg>, never graphic()). Exempt: the
+        page's own shape layer (it holds movable shapes), and a glyph inside a
+        link or button — the skill's rule that an icon living inside a control
+        stays inline with it."""
+        if tag not in _GRAPHIC_TAGS:
+            return
+        if any(sv for *_, sv, _ in self.stack):
+            return                                   # inside a drawing already
+        cls = (a.get("class") or "").split()
+        if "shape-layer" in cls or "data-el" in a or "data-shape" in a or "data-chart" in a:
+            return
+        if any(el for _, _, el, *_ in self.stack):
+            return
+        if any(t in ("a", "button") for t, *_ in self.stack):
+            return
+        near = next((c for c in reversed(self.cls_stack) if c), "")
+        name = (a.get("alt") or a.get("aria-label") or
+                (a.get("src") or "").rsplit("/", 1)[-1] or
+                (f"{tag}.{cls[0]}" if cls else f"{tag} in .{near}" if near else tag))
+        name = " ".join(name.split())[:80]
+        self.graphics_all.append(name)
+        if any(pg for *_, pg in self.stack) or "page" in cls:
+            self.graphics_paged.append(name)
+
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         # BEFORE the _VOID return: <img> never comes back down, and alt is a
         # description exactly as much as aria-label is.
         self._descriptions(tag, a)
+        self._graphic(tag, a)
         if tag in _VOID:
             return
         classes = (a.get("class") or "").split()
@@ -690,6 +727,7 @@ class _Coverage(HTMLParser):
         self.saw_page = self.saw_page or page
         self.stack.append((tag, covered, el, trap, tag == "svg", page))
         self.kinds.append("slot" if slot else "fixed" if fixed else "")
+        self.cls_stack.append(classes[0] if classes else "")
         self._bar(a, classes)
         if slot and (a.get("data-slot") or "").strip():
             self._slots.append((len(self.stack), a["data-slot"].strip(), []))
@@ -768,6 +806,7 @@ class _Coverage(HTMLParser):
                 del self.stack[i:]
                 del self.kinds[i:]
                 del self.bar_ctx[i:]
+                del self.cls_stack[i:]
                 break
         while self._slots and self._slots[-1][0] > len(self.stack):
             _, key, runs = self._slots.pop()
@@ -854,11 +893,17 @@ class _Coverage(HTMLParser):
                 self.fixed_prose.append(t)
             return
         if any(el for _, _, el, *_ in self.stack):
-            # Movable, not slotted. Short strings ride along with their
-            # graphic legitimately; a sentence (or a long heading) is the
-            # C() trap. Panel-edited namespaces never reach here as traps.
+            # Movable, not slotted: the C() trap. It used to count only a
+            # sentence or a long heading, on the theory that short strings
+            # "ride along with their graphic" — but that is true of words in
+            # a DRAWING (the svg branch above), not of HTML. In HTML a short
+            # label is exactly as frozen: rxkids' timeline ("Month 4",
+            # "Prenatal", "TANF") and option cards ("Option 1") sat in movable
+            # blocks, draggable and impossible to retype, and the check called
+            # the page clean. Any words now; data marks ("$500", "1") pass as
+            # everywhere else. Panel-edited namespaces never reach here.
             if (any(trap for _, _, _, trap, *_ in self.stack)
-                    and _prose(t, loose=True)):
+                    and not is_data_mark(t)):
                 self.trapped.append(t)
             return
         self.dead_all.append(t)
@@ -1174,6 +1219,17 @@ def check_editability(binding) -> list[Problem]:
             f"(its card, its list, its table), graphic() for words in a "
             f"drawing, blocks.fill_markers for an imported page's markers",
             level))
+    graphics = [t for t in (cov.graphics_paged if cov.saw_page else cov.graphics_all)
+                if t not in accepted]
+    if graphics:
+        problems.append(Problem(
+            "editability",
+            f"{len(graphics)} image(s) or drawing(s) nothing can select, move or "
+            f"resize — no data-el on it or on anything holding it: "
+            f"{_samples(graphics)}. Draw each through blocks.graphic (a drawing), "
+            f"blocks.chart / blocks.meter (a chart), L.attr on the <img> or its "
+            f"figure, or L.wrap around a composite",
+            level))
     hand_bars = [t for t in cov.hand_bars if t not in accepted]
     if hand_bars:
         problems.append(Problem(
@@ -1201,7 +1257,7 @@ def check_editability(binding) -> list[Problem]:
     if trapped:
         problems.append(Problem(
             "editability",
-            f"{len(trapped)} sentence(s) inside a movable (data-el) wrapper "
+            f"{len(trapped)} text string(s) inside a movable (data-el) wrapper "
             f"with no data-slot — draggable, words frozen (the C() trap): "
             f"{_samples(trapped)}. Give the text a slot: C.html / C.slot_span "
             f"/ C.slot_attr",

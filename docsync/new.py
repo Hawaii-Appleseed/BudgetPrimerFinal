@@ -89,11 +89,15 @@ body += L.pagemeta(range(1, DESIGNED_PAGES + 1))
 body += L.notices(NOTICES)
 body = C.fn.resolve(body)
 
-notes = C.fn.endnotes()
-endnotes = "".join(
-    f'<li id="en{{i + 1}}">{{txt}} <a href="{{url}}">{{url}}</a></li>'
-    for i, (txt, url) in enumerate(notes)
-)
+# The citation list. An endnotes section placed in the editor (Insert ▸
+# Endnotes) already carries it, titled and movable — so nothing more is
+# emitted, where this used to add a second, hand-built copy after the last
+# page: uneditable, duplicating every anchor id (two id="en1"), and printed
+# as a stray extra sheet. With no section placed yet, the list still renders
+# so no citation dangles, through the engine's endnotes_html: every entry
+# carries its endnote.<id> hook and edits in the Sources panel.
+endnotes = ("" if "ds-endnotes-sec" in body or not C.fn.endnotes()
+            else C.fn.endnotes_html(L))
 
 html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -129,7 +133,7 @@ html = f"""<!DOCTYPE html>
 </head>
 <body>
 {{body}}
-{{f'<ol class="endnotes">{{endnotes}}</ol>' if endnotes else ''}}
+{{f'<div class="endnotes">{{endnotes}}</div>' if endnotes else ''}}
 </body>
 </html>
 """

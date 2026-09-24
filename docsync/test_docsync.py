@@ -2953,9 +2953,12 @@ check_eq("a long unpunctuated heading is trapped too",
          len(_cov('<section class="page"><h1 data-el="hero.h1">Seven word '
                   "heading without any period here yes</h1></section>")
              .trapped), 1)
-check_eq("...but a short movable label is not",
+# A short label used to pass ("rides along with its graphic"): true of words
+# in a drawing, not of HTML, where it is exactly as frozen — rxkids' timeline
+# labels sat in a movable block, draggable and impossible to retype.
+check_eq("...and so is a short movable label (it was exempt until 2026-09-24)",
          _cov('<section class="page"><div data-el="badge">Fiscal estimate '
-              "2028</div></section>").trapped, [])
+              "2028</div></section>").trapped, ["Fiscal estimate 2028"])
 check_eq("a slot inside the wrapper clears the trap (C.html pattern)",
          _cov('<section class="page"><div data-el="para.k"><p data-slot="k">'
               "The governor submits the budget in December.</p></div>"
@@ -3911,6 +3914,25 @@ check_eq("check: the same inside an engine chart is not",
                     '<div style="width:43.8%"></div></svg></span>'), [])
 check_eq("check: a percentage width outside any figure is layout, not a bar",
          _hand_bars('<div style="width:50%"><p>two columns</p></div>'), [])
+
+
+check_eq("check: a short label in a movable block with no slot is the C() trap too",
+         _cov('<section class="page"><div data-el="tl"><span>Month 4</span>'
+              '<span>$500</span></div></section>').trapped, ["Month 4"])
+check_eq("check: a label with a slot, or a data mark, is not",
+         _cov('<section class="page"><div data-el="tl"><span data-slot="m">Month 4</span>'
+              '<span>$500</span></div></section>').trapped, [])
+check_eq("check: an image nothing can move is found, named by its file",
+         _cov('<section class="page"><img src="assets/hero.png"></section>').graphics_paged,
+         ["hero.png"])
+check_eq("check: a drawing is named by its container when it has no name of its own",
+         _cov('<section class="page"><div class="brand"><svg></svg></div></section>').graphics_paged,
+         ["svg in .brand"])
+check_eq("check: movable, charted, the shape layer, or a glyph in a control are not",
+         _cov('<section class="page"><div data-el="g"><svg></svg></div>'
+              '<span data-chart="c" data-el="c"><svg></svg></span>'
+              '<svg class="shape-layer"></svg><button><svg></svg></button>'
+              '<a href="#"><img src="x.png"></a></section>').graphics_paged, [])
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
