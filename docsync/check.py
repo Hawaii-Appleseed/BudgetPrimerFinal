@@ -582,6 +582,12 @@ class _Coverage(HTMLParser):
         # Per stack entry, parallel to self.stack: "slot", "fixed" or "".
         # Kept apart so the six-field tuples above keep their shape.
         self.kinds: list[str] = []
+        # Also parallel to self.stack: (the role="img" figure this element is
+        # inside, or None; whether an engine chart already draws it). A width
+        # typed as a percentage inside such a figure is a HAND-DRAWN BAR.
+        self.bar_ctx: list[tuple[str | None, bool]] = []
+        self.hand_bars: list[str] = []
+        self._hand_seen: set[int] = set()
         # <foreignObject> depth: HTML inside a drawing, judged like SVG text.
         self.fo = 0
         # A sentence whose only cover is data-fixed. C.derived is for a
@@ -684,6 +690,7 @@ class _Coverage(HTMLParser):
         self.saw_page = self.saw_page or page
         self.stack.append((tag, covered, el, trap, tag == "svg", page))
         self.kinds.append("slot" if slot else "fixed" if fixed else "")
+        self._bar(a, classes)
         if slot and (a.get("data-slot") or "").strip():
             self._slots.append((len(self.stack), a["data-slot"].strip(), []))
             # Movable is data-el on the slot or on anything holding it: the
@@ -726,6 +733,33 @@ class _Coverage(HTMLParser):
             self._desc_ok = declared(a, "data-desc") or declared(a, "data-fixed")
             self._desc_key = (a.get("data-desc") or "").strip()
 
+    def _bar(self, a: dict, classes: list[str]) -> None:
+        """Catch a bar drawn by hand: a part sized by a typed-in percentage
+        width, inside a figure (role="img"), that no engine chart draws.
+
+        That was every vote bar on tfc-2027-priorities — <i style="width:
+        43.8%"> in a role="img" span — and it passed every other test here:
+        the tally beside it was a slot, the aria-label a slot, the row movable.
+        What nothing could reach was the bar itself. Retyping the tally never
+        moved it, no panel opened it, and a regenerated count left it drawing
+        the old number. The fix is blocks.meter (or blocks.chart): a chart the
+        Chart panel edits, with the words that restate it derived from it."""
+        parent = self.bar_ctx[-1] if self.bar_ctx else (None, False)
+        fig, in_chart = parent
+        in_chart = (in_chart or "data-chart" in a
+                    or bool({"ds-graphic", "ds-chart", "ds-meter"} & set(classes)))
+        if (a.get("role") or "").lower() == "img" and fig is None:
+            fig = " ".join((a.get("aria-label") or a.get("class") or "figure").split())
+            self._fig_n = getattr(self, "_fig_n", 0) + 1
+            fig = f"{self._fig_n}\0{fig}"
+        self.bar_ctx.append((fig, in_chart))
+        if fig and not in_chart and re.search(
+                r"(?:^|;)\s*width\s*:\s*[\d.]+%", a.get("style") or ""):
+            n, label = fig.split("\0", 1)
+            if int(n) not in self._hand_seen:
+                self._hand_seen.add(int(n))
+                self.hand_bars.append(label)
+
     def handle_endtag(self, tag):
         if tag in _VOID:
             return
@@ -733,6 +767,7 @@ class _Coverage(HTMLParser):
             if self.stack[i][0] == tag:
                 del self.stack[i:]
                 del self.kinds[i:]
+                del self.bar_ctx[i:]
                 break
         while self._slots and self._slots[-1][0] > len(self.stack):
             _, key, runs = self._slots.pop()
@@ -1138,6 +1173,16 @@ def check_editability(binding) -> list[Problem]:
             f"paragraph, L.attr on the element or on the block it sits in "
             f"(its card, its list, its table), graphic() for words in a "
             f"drawing, blocks.fill_markers for an imported page's markers",
+            level))
+    hand_bars = [t for t in cov.hand_bars if t not in accepted]
+    if hand_bars:
+        problems.append(Problem(
+            "editability",
+            f"{len(hand_bars)} bar(s) drawn by hand — parts sized by a typed-in "
+            f"width, which no editor panel opens and no retyped number moves: "
+            f"{_samples(hand_bars)}. Draw each with blocks.meter (one bar of "
+            f"parts) or blocks.chart, so it edits in the Chart panel, and build "
+            f"any tally that restates it from blocks.meter_values",
             level))
     if frozen:
         problems.append(Problem(

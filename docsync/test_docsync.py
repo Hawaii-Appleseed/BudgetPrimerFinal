@@ -3877,6 +3877,41 @@ check_eq("the stress layout moves every movable and styles every slot",
          (sorted(_stress["positions"]), sorted(_stress["text"])), (["a"], ["b"]))
 
 
+# --- meter: one bar of parts, a chart the Chart panel edits -----------------
+from docsync.layout import chart_svg as _chart_svg, _check_chart as _cc  # noqa: E402
+from docsync.blocks import meter_spec as _mspec                          # noqa: E402
+_ms = _mspec([("Agree", 7, "#52796F"), ("Pass", 4, "#C4A23E"), ("Disagree", 0, "#A8603F")], of=16)
+_cc(_ms, "meter")
+_msvg = _chart_svg(_ms, 0, 0, 1.6, 0.1)
+check_eq("meter: a zero part draws nothing, the rest end to end over the track",
+         _msvg.count("<path"), 3)
+check_eq("meter: the parts run to axisMax, so what is left is track (7 of 16)",
+         'H0.7000V' in _msvg, True)
+check_eq("meter: keeps its slim height (no 0.2in chart floor)", 'V0.1000' in _msvg, True)
+check_eq("meter: one category row, so the Chart panel's grid has cells to type in",
+         _ms["labels"], ["Value"])
+_mv = _chart_svg(_mspec([("a", 54, "#52796F"), ("b", 24, "#C3CEC5")], values=True), 0, 0, 9, 0.35)
+check_eq("meter: values write each part's number inside it, ink by contrast",
+         ('>54</text>' in _mv, 'fill="#FFFFFF">54' in _mv, 'fill="#1F2E2A">24' in _mv),
+         (True, True, True))
+
+
+def _hand_bars(html):
+    c = _Coverage()
+    c.feed(html)
+    return c.hand_bars
+
+
+check_eq("check: a bar sized by typed-in widths inside a figure is found",
+         _hand_bars('<span class="bar" role="img" aria-label="7 agree">'
+                    '<i style="width:43.8%"></i><i style="width:25%"></i></span>'),
+         ["7 agree"])
+check_eq("check: the same inside an engine chart is not",
+         _hand_bars('<span class="ds-chart" data-chart="x"><svg role="img" aria-label="7 agree">'
+                    '<div style="width:43.8%"></div></svg></span>'), [])
+check_eq("check: a percentage width outside any figure is layout, not a bar",
+         _hand_bars('<div style="width:50%"><p>two columns</p></div>'), [])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

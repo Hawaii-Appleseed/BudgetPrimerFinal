@@ -845,9 +845,98 @@ def _graphic_mobile_once(L) -> str:
             "</style>")
 
 
+def _svg_fit(h: float, fixed_h: bool) -> str:
+    """How a chart's <svg> fills its column. Normally it keeps its aspect —
+    the whole drawing scales, labels included. A slim bar with no words in it
+    (fixed_h) keeps its HEIGHT instead and stretches only sideways: scaled
+    whole, a 9px vote bar is 3px on a phone, and a 0.03in end-rounding
+    stretched a little is invisible where a bar gone to a hairline is not."""
+    if fixed_h:
+        return (f' preserveAspectRatio="none"'
+                f' style="display:block;width:100%;height:{h:g}in"')
+    return ' style="display:block;width:100%;height:auto"'
+
+
+def meter_spec(parts, of=None, values: bool = False, label: str = "") -> dict:
+    """The spec for a `meter` chart: ONE bar, its parts end to end.
+
+    parts is [(name, value, "#hex"), …] in drawing order; `of` is what the
+    whole bar stands for (16 voters, 28 invited) when that is more than the
+    parts add up to, and what is left shows as track. `values` writes each
+    part's number inside it. `label` names the one row the Chart panel's data
+    grid shows (a meter is one category; the grid is rows of categories, so
+    with none it would offer nothing to type into). Hand the result to
+    meter(), and to meter_values() for the numbers it will actually draw."""
+    spec = {"type": "meter", "legend": False, "labels": [label or "Value"],
+            "series": [{"name": n, "data": [v], "color": c} for n, v, c in parts]}
+    if of:
+        spec["axisMax"] = of
+    if values:
+        spec["values"] = True
+    return spec
+
+
+def meter_values(L, el_id: str, spec: dict) -> dict:
+    """{part name: number} as the meter will DRAW it — the renderer's spec
+    with any Chart-panel edit laid over it (L.chart_spec). Every piece of text
+    that restates the bar — a tally, a total, a share — is built from this,
+    never from the renderer's own numbers, or an edit in the panel would move
+    the bar and leave the words saying the old thing. Read `axisMax` off
+    L.chart_spec(el_id, spec) the same way when the text needs the whole."""
+    eff = L.chart_spec(el_id, spec)
+    return {s.get("name"): float((s.get("data") or [0])[0] or 0)
+            for s in eff.get("series") or []}
+
+
+def meter(C, L, el_id: str, spec: dict, w: float = 2.0, h: float = 0.094,
+          derived: str = "", cls: str = "") -> str:
+    """A meter — one bar of parts — drawn inline and editable in the Chart
+    panel: select it, open Chart, change a number, and the bar redraws. The
+    bar that reports used to build from sized <i> elements with a width typed
+    into each: nothing could open those, and retyping the tally beside one
+    never moved it (docsync.check now refuses them under strict).
+
+    `derived` is for a bar whose numbers are not its own — a card's total
+    summed from the meters above it, the same idea's split drawn a second
+    time. It then draws the same way but does not open in the Chart panel
+    (editing a sum would leave its parts disagreeing with it); clicking it
+    says where the numbers come from, which is what `derived` names, exactly
+    as C.derived does for a tally. It still moves and resizes.
+
+    The accessible name is written from the numbers being drawn, so a screen
+    reader hears what the bar shows after every edit. w x h is the design
+    size in inches; the bar fills its column and keeps that aspect."""
+    from .layout import chart_svg, _lfs
+    eff = L.chart_spec(el_id, spec) if not derived else dict(spec)
+    vals = [(s.get("name"), float((s.get("data") or [0])[0] or 0))
+            for s in eff.get("series") or []]
+    fmt = lambda v: f"{v:g}"
+    said = ", ".join(f"{n} {fmt(v)}" for n, v in vals)
+    if eff.get("axisMax"):
+        said += f", of {fmt(float(eff['axisMax']))}"
+    why = derived or "this bar's own numbers: open it in the Chart panel to change them"
+    name = f' role="img" aria-label="{_xml_attr(said)}"{C.derived(why)}'
+    # Words inside the bar are the only reason to hold it at a phone-legible
+    # width; a bar with none can shrink with its column like any block.
+    small = _lfs(min(0.2, h * 0.5)) if eff.get("values") else 1000.0
+    if not derived:
+        return chart(L, el_id, spec, w=w, h=h, cls=("ds-meter " + cls).strip(),
+                     smallest_label=small, desc=name,
+                     fixed_h=not eff.get("values"))
+    body = chart_svg(eff, 0.0, 0.0, w, h)
+    svg = (f'<svg viewBox="0 0 {w:g} {h:g}" class="chart"{name}'
+           f'{_svg_fit(h, not eff.get("values"))}>{body}</svg>')
+    base = "display:block;line-height:0"
+    if not L.positions.get(el_id, {}).get("w"):
+        base += ";width:100%"
+    klass = ("ds-graphic ds-meter " + cls).strip()
+    return (f'{L.spacer(el_id)}<span class="{klass}"{L.attr(el_id, base)}>'
+            f'{chart_scroll(svg, smallest_label=small)}</span>')
+
+
 def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
           cls: str = "", attrs: str = "", smallest_label: float = 0.0,
-          desc: str = "") -> str:
+          desc: str = "", fixed_h: bool = False) -> str:
     """A chart drawn INLINE, in the document's flow, that the editor can still
     open in its Chart panel and edit.
 
@@ -898,7 +987,7 @@ def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
     else:
         name = ""
     svg = (f'<svg viewBox="0 0 {w:g} {h:g}" class="chart"{name}{attrs}'
-           f' style="display:block;width:100%;height:auto">{body}</svg>')
+           f'{_svg_fit(h, fixed_h)}>{body}</svg>')
     klass = ("ds-graphic ds-chart " + cls).strip()
     base = "display:block;line-height:0"
     if not L.positions.get(el_id, {}).get("w"):

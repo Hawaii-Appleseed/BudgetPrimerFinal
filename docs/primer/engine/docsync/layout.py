@@ -117,7 +117,7 @@ LINE_ENDS = ("none", "start", "end", "both")
 # report that is printed — every type here has to survive being a PDF.
 CHART_TYPES = ("bar", "stacked-bar", "row", "stacked-row", "column",
                "pie", "donut", "line", "area", "stacked-area", "scatter",
-               "histogram", "radar", "funnel", "packed", "treemap")
+               "histogram", "radar", "funnel", "packed", "treemap", "meter")
 # Which types read a value PER LABEL (one series) rather than per series, and
 # so name their key by label the way a pie does.
 CHART_BY_ITEM = ("pie", "donut", "funnel", "packed", "treemap", "histogram")
@@ -1307,7 +1307,10 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
     body_x = x + lg_w if pos == "left" else x
     body_w = max(0.2, w - lg_w)
     body_top = top + (lg_h if pos == "top" else 0.0)
-    body_h = max(0.2, (y + h) - body_top - (lg_h if pos == "bottom" else 0.0))
+    # A meter is a slim bar by nature (a 9px vote split), so it keeps the
+    # height it was given; every other type keeps the floor it always had.
+    body_h = max(0.0 if kind == "meter" else 0.2,
+                 (y + h) - body_top - (lg_h if pos == "bottom" else 0.0))
 
     ink = {"label": c_label, "axis": c_axis, "grid": c_grid}
     args = (c, kind, labels, series, body_x + t_left, body_top,
@@ -1333,6 +1336,8 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
         parts.append(_treemap_svg(*args))
     elif kind == "histogram":
         parts.append(_histogram_svg(*args, anim=bar_anim))
+    elif kind == "meter":
+        parts.append(_meter_svg(*args))
     else:
         parts.append(_bars_svg(*args, anim=bar_anim))
 
@@ -1343,6 +1348,68 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
     if legend:
         parts.append(_legend_svg(c, keys, pos, x, y, w, h, top, lg_w, lg_h,
                                  body_top, body_h, fs, c_label))
+    return "".join(parts)
+
+
+def _meter_rect(x0, x1, y, h, r, left, right, fill) -> str:
+    """One meter segment, rounded only at the bar's own two ends: a segment
+    in the middle of the run is square, so the joins between parts read as
+    one continuous bar. An SVG rect's rx rounds all four corners or none."""
+    r = min(r, h / 2, max(0.0, x1 - x0) / 2)
+    rl, rr = (r if left else 0.0), (r if right else 0.0)
+    return (f'<path d="M{x0 + rl:.4f} {y:.4f}H{x1 - rr:.4f}'
+            f'{f"A{rr:.4f} {rr:.4f} 0 0 1 {x1:.4f} {y + rr:.4f}" if rr else ""}'
+            f'V{y + h - rr:.4f}'
+            f'{f"A{rr:.4f} {rr:.4f} 0 0 1 {x1 - rr:.4f} {y + h:.4f}" if rr else ""}'
+            f'H{x0 + rl:.4f}'
+            f'{f"A{rl:.4f} {rl:.4f} 0 0 1 {x0:.4f} {y + h - rl:.4f}" if rl else ""}'
+            f'V{y + rl:.4f}'
+            f'{f"A{rl:.4f} {rl:.4f} 0 0 1 {x0 + rl:.4f} {y:.4f}" if rl else ""}Z"'
+            f' {fill}/>')
+
+
+def _meter_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
+    """ONE bar, its parts laid end to end on a track: a turnout bar, a vote
+    split, a share of a whole. The chart a report draws most often and, until
+    this type, the one it had to draw by hand — sized divs with widths typed
+    in, which nothing could open and a retyped number never moved.
+
+    Each series is one part and its first value is the part's size. The bar
+    runs to `axisMax` when the spec sets one (16 voters, 28 invited: what is
+    left over shows as track), otherwise to the parts' own sum. No axis, no
+    gridlines, no category gutter — the whole box is the bar. `values` writes
+    each part's number inside it when it fits.
+
+    The track takes `trackColor` when the spec names one, and otherwise the
+    page's `--ds-meter-track` (default #EDF1EC), so a report with a dark
+    theme can recolour every track from its own stylesheet."""
+    vals = [max(0.0, (s["data"][0] if s["data"] else 0.0) or 0.0) for s in series]
+    total = float(c["axisMax"]) if c.get("axisMax") else sum(vals)
+    r = float(c["radius"]) if c.get("radius") is not None else min(h / 2, 0.03)
+    track = (f'fill="{c["trackColor"]}"' if c.get("trackColor")
+             else 'style="fill:var(--ds-meter-track,#EDF1EC)"')
+    parts = [_meter_rect(x, x + w, y, h, r, True, True, track)]
+    if total <= 0:
+        return "".join(parts)
+    show_vals = bool(c.get("values"))
+    fmt = _num_format(c)
+    lsz = _lfs(min(0.2, h * 0.5))
+    at, drawn = x, [i for i, v in enumerate(vals) if v > 0]
+    for n, i in enumerate(drawn):
+        x1 = min(x + w, at + w * vals[i] / total)   # parts past axisMax are cut at the end
+        col = series[i]["color"]
+        full = x1 >= x + w - 1e-6
+        parts.append(_meter_rect(at, x1, y, h, r, n == 0, full,
+                                 f'fill="{col}"'))
+        if show_vals:
+            txt = _fmt_val(vals[i], fmt)
+            if len(txt) * _EM_W * lsz + lsz * 0.6 <= x1 - at:
+                tc = "#1F2E2A" if _is_light(col) else "#FFFFFF"
+                parts.append(f'<text x="{(at + x1) / 2:.4f}" '
+                             f'y="{y + h / 2 + lsz * 0.36:.4f}" text-anchor="middle" '
+                             f'font-size="{lsz:.4f}" font-weight="700" '
+                             f'fill="{tc}">{_xml(txt)}</text>')
+        at = x1
     return "".join(parts)
 
 
@@ -2456,9 +2523,11 @@ def _check_chart(c, where: str) -> None:
     for flag in ("legend", "values", "grid", "tips", "stackPct"):
         if c.get(flag) is not None and not isinstance(c[flag], bool):
             raise LayoutError(f"{where}.{flag}: expected true or false")
-    for k in ("titleColor", "labelColor", "axisColor", "gridColor"):
+    for k in ("titleColor", "labelColor", "axisColor", "gridColor", "trackColor"):
         if c.get(k):
             _hex(c[k], f"{where}.{k}")
+    if c.get("radius") is not None:
+        _num(c["radius"], f"{where}.radius")
     for k in ("axisMin", "axisMax", "axis2Min", "axis2Max"):
         if c.get(k) is not None:
             _num(c[k], f"{where}.{k}")
