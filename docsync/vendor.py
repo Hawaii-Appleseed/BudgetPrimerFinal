@@ -209,7 +209,7 @@ def vendor_one(repo: Path, files: list[str], *, dry: bool, force: bool,
     dirty = dirty_engine_paths(repo)
     if dirty and not force:
         print("  REFUSING: engine paths are dirty in the consumer — engine "
-              "changes must be made in primer-editor, not here. Reconcile "
+              "changes must be made in Cider, not here. Reconcile "
               "(or --force to overwrite):")
         for l in dirty[:10]:
             print(f"    {l}")
@@ -263,8 +263,8 @@ def vendor_one(repo: Path, files: list[str], *, dry: bool, force: bool,
         bits = ([f"Files: {', '.join(changed)}"] if changed else []) \
              + (["Added a permissions.ask guard on engine paths in "
                  ".claude/settings.json"] if guarded else [])
-        msg = ("vendor engine from primer-editor\n\n"
-               "Automated copy by python3 -m docsync.vendor (primer-editor "
+        msg = ("vendor engine from Cider\n\n"
+               "Automated copy by python3 -m docsync.vendor (Cider "
                "is the engine's canonical home; see its CLAUDE.md). "
                + " ".join(bits))
         r = subprocess.run(["git", "commit", "-m", msg], cwd=repo,

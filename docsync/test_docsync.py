@@ -3958,6 +3958,29 @@ _tot = _chart_svg({"type": "stacked-row", "labels": ["a", "b"], "totals": True, 
 check_eq("stacked totals: one per bar, the sum of its parts",
          re.findall(r">(\d+)</text>", _tot)[-2:] if "totals" else None, ["3", "5"])
 
+
+# --- a renamed repo keeps the slug its documents are keyed under --------------
+# 2026-09: primer-editor became Cider on GitHub. A room is owner~repo~project,
+# so a checkout whose origin now names Cider must still stage the old slug, or
+# every hub document re-keys on the next vendor and opens empty.
+import subprocess as _sp                                                      # noqa: E402
+import tempfile as _tf                                                        # noqa: E402
+from docsync.stage import _origin_slug                                       # noqa: E402
+
+
+def _slug_for(url):
+    d = _tf.mkdtemp()
+    _sp.run(["git", "init", "-q", d], check=True)
+    _sp.run(["git", "-C", d, "remote", "add", "origin", url], check=True)
+    return _origin_slug(d)
+
+
+check_eq("an origin naming Cider stages Cider's own slug (its documents were migrated)",
+         _slug_for("git@github.com:Hawaii-Appleseed/Cider.git"), "Hawaii-Appleseed/Cider")
+check_eq("any other repo's slug passes through untouched",
+         _slug_for("https://github.com/Hawaii-Appleseed/BudgetPrimerFinal.git"),
+         "Hawaii-Appleseed/BudgetPrimerFinal")
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

@@ -26,7 +26,7 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#2F3E46">
-<title>Draft editor</title>
+<title>Cider</title>
 <!--
   Edit the report's prose in the report itself.
 
@@ -15195,9 +15195,10 @@ async function boot() {
   // The window/tab title is the report, not the tool. Several of these are
   // open at once in normal use, and "Draft editor" on every one of them named
   // the thing they had in common instead of the thing that told them apart.
-  // The registry's display name when there is one, the id otherwise.
-  document.title = (REGISTRY && REGISTRY[PROJECT] && REGISTRY[PROJECT].name) || M.id
-    || 'Draft editor';
+  // The registry's display name when there is one, the id otherwise, then
+  // the editor's name (Cider) after it, so the report still leads the tab.
+  const docName = (REGISTRY && REGISTRY[PROJECT] && REGISTRY[PROJECT].name) || M.id;
+  document.title = docName ? docName + ' \u2014 Cider' : 'Cider';
   // Fire-and-forget, the moment the project is known: the canvas paints while
   // the ping below and the engine compile run. A draft link skips it — that
   // content comes from the draft branch, and flashing the live copy first

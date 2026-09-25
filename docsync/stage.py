@@ -125,7 +125,22 @@ def _origin_slug(root) -> str | None:
         return None
     url = url.removesuffix(".git")
     m = re.search(r"[:/]([^/:]+/[^/]+)$", url)
-    return m.group(1) if m else None
+    if not m:
+        return None
+    return RENAMED.get(m.group(1).lower(), m.group(1))
+
+
+# Repos renamed on GitHub, new slug -> the slug the project is still KNOWN by.
+# The slug is not just where Push goes (GitHub redirects the old name, so that
+# keeps working): it is also half of every hub document's key
+# (`owner~repo~project` — its text, history, comments and share list in R2 and
+# the relay) and what the relay's ALLOWED_REPOS names. A checkout whose origin
+# now says Cider would otherwise re-key every document on the next vendor and
+# they would all open empty. Drop an entry only together with a migration of
+# those keys and the allowlist.
+# Cider (formerly primer-editor) was migrated 2026-09-25: its documents were
+# copied to `Hawaii-Appleseed~Cider~<id>` keys, so it needs no entry here.
+RENAMED: dict[str, str] = {}
 
 
 def stage(b: Binding, repo: str = "") -> None:

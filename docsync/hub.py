@@ -100,8 +100,8 @@ def page_refs(html: str) -> set[str]:
                 out.add(ref)
     return out
 WEBMANIFEST = {
-    "name": "Report editor — Hawaiʻi Appleseed staff",
-    "short_name": "Editor",
+    "name": "Cider — Hawaiʻi Appleseed staff",
+    "short_name": "Cider",
     "start_url": "./index.html",
     "scope": "./",
     "display": "standalone",
