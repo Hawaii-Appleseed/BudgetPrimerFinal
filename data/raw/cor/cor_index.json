@@ -160,6 +160,12 @@
       "meeting_date": "2026-07-30",
       "title": "July 30, 2026 minutes"
     },
+    "https://files.hawaii.gov/tax/useful/cor/2026tpi09_03_min_draft.pdf": {
+      "doc_type": "minutes",
+      "first_seen": "2026-09-28",
+      "meeting_date": "2026-09-03",
+      "title": "September 3, 2026 minutes \u2013 draft"
+    },
     "https://files.hawaii.gov/tax/useful/cor/COR-Minutes-March-10-2026-GF-Final.pdf": {
       "doc_type": "minutes",
       "first_seen": "2026-08-17",
@@ -197,8 +203,8 @@
       "title": "September 3, 2026 VIDEO"
     }
   },
-  "generated": "2026-09-21",
+  "generated": "2026-09-28",
   "next_meeting": null,
-  "page_last_updated": "September 9, 2026",
+  "page_last_updated": "September 22, 2026",
   "source": "https://tax.hawaii.gov/useful/a9_1cor/"
 }
