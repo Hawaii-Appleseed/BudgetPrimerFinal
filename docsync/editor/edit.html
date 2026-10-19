@@ -3214,9 +3214,27 @@ const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+))\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame))\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
-                    date: 'date', contents: 'contents', pageof: 'page of' };
+                    date: 'date', contents: 'contents', pageof: 'page of',
+                    'break:line': '↵ line break', 'break:optional': '⁝ may break',
+                    'break:column': '⇥ column break', 'break:frame': '⇥ frame break' };
+// The characters InDesign's Insert White Space / Hyphens menus put in, and
+// how each shows while typing (INDESIGN_PARITY.md 31). In the file and on the
+// page they are the plain Unicode character; only the text editor shows them,
+// as chips, so an invisible character can be seen, and an edit hands back
+// exactly the character it found.
+const SPECIAL_CHARS = [
+  ['\u00A0', 'nbsp', '⍽', 'Nonbreaking space'], ['\u2011', 'nbhy', '‑', 'Nonbreaking hyphen'],
+  ['\u2003', 'em', 'em', 'Em space'], ['\u2002', 'en', 'en', 'En space'],
+  ['\u2009', 'thin', 'thin', 'Thin space'], ['\u200A', 'hair', 'hair', 'Hair space'],
+  ['\u2007', 'fig', 'fig', 'Figure space'], ['\u00AD', 'shy', '-?', 'Discretionary hyphen'],
+];
+const SPECIAL_RE = new RegExp(`[${SPECIAL_CHARS.map(c => c[0]).join('')}]`, 'g');
+const specialChipHtml = ch => {
+  const c = SPECIAL_CHARS.find(x => x[0] === ch);
+  return `<span class="ds-chip ds-spchip" contenteditable="false" data-ch="${c[1]}" title="${c[3]}">${c[2]}</span>`;
+};
 const varToken = (name, ref) => name === 'pageof' ? `{pageof:${ref}}` : `{${name}}`;
 const varChipHtml = (name, ref) =>
   `<span class="ds-chip ds-varchip" contenteditable="false" data-var="${escAttr(name)}"`
@@ -3264,6 +3282,7 @@ function mdInlineToHtml(text, fnLabels) {
     return `\x02CS${cnames.length - 1}\x02${txt}\x03`;
   });
   s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  s = s.replace(SPECIAL_RE, ch => specialChipHtml(ch));
   s = s.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
   s = s.replace(/__([\s\S]+?)__/g, '<u>$1</u>');   // see content.py's md_inline
   s = s.replace(/(?<![\w*])\*(?!\s)([\s\S]+?)(?<!\s)\*(?![\w*])/g, '<i>$1</i>');
@@ -3541,6 +3560,10 @@ function nodeToMdInline(node, br = ' ') {
     if (n.nodeType !== Node.ELEMENT_NODE) return;
     if (n.classList && n.classList.contains('ds-fnchip')) { out += `[^${n.dataset.fnId}]`; return; }
     if (n.classList && n.classList.contains('ds-varchip')) { out += varToken(n.dataset.var, n.dataset.ref); return; }
+    if (n.classList && n.classList.contains('ds-spchip')) {
+      const c = SPECIAL_CHARS.find(x => x[1] === n.dataset.ch);
+      out += c ? c[0] : ''; return;
+    }
     // A run of no words wears nothing. A `]` of the person's own inside a
     // run would end the run's brackets early, so such a run keeps its words
     // and loses the style rather than the other way round (a link inside is
@@ -3886,6 +3909,17 @@ function insertNodeAt(d, host, range, node) {
     ? range
     : (() => { const rr = d.createRange(); rr.selectNodeContents(host); rr.collapse(false); return rr; })();
   r.collapse(true);
+  // A caret BETWEEN blocks (the host itself is the container — a select-all
+  // collapsed, a click on the box's padding) would put an inline chip beside
+  // the paragraphs rather than in one, where it serializes as its own
+  // paragraph of nothing. Step into the block beside it: the start of the
+  // next one, or the end of the last.
+  if (r.startContainer === host && host.children.length) {
+    const next = host.childNodes[r.startOffset];
+    if (next && next.nodeType === Node.ELEMENT_NODE) r.setStart(next, 0);
+    else { const last = host.lastElementChild; r.selectNodeContents(last); r.collapse(false); }
+    r.collapse(true);
+  }
   r.insertNode(node);
   r.setStartAfter(node);
   r.collapse(true);
@@ -4276,6 +4310,7 @@ function textMenu(d, host, e) {
   buildEndnoteRows(d, m, host, range);
   sep();
   buildVarRows(d, m, host, range);
+  buildSpecialRows(d, m, host, range);
   d.body.appendChild(m);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
@@ -4326,6 +4361,27 @@ function buildVarRows(d, m, host, range) {
       });
     });
   }
+}
+
+/** Insert special ▸ — white space, hyphens and breaks (INDESIGN_PARITY.md
+ *  31), at the caret. A character goes in as its chip; a break as its token
+ *  chip; both serialize to exactly what the file holds. */
+function buildSpecialRows(d, m, host, range) {
+  submenuRow(d, m, 'Insert special ▸', sub => {
+    const add = (label, node) => {
+      const b = d.createElement('button');
+      b.textContent = label;
+      b.addEventListener('click', async () => { closeMenu(d); await insertNodeAt(d, host, range, node()); });
+      sub.appendChild(b);
+    };
+    const chipOf = html => () => { const t = d.createElement('template'); t.innerHTML = html; return t.content.firstChild; };
+    SPECIAL_CHARS.forEach(([ch, , , label]) => add(label, chipOf(specialChipHtml(ch))));
+    const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; sub.appendChild(sep);
+    [['break:line', 'Line break'], ['break:optional', 'Optional line break'],
+     ['break:column', 'Column break (paragraph starts the next column)'],
+     ['break:frame', 'Frame break (paragraph starts the next frame)']]
+      .forEach(([k, label]) => add(label, () => makeVarChip(d, k)));
+  });
 }
 
 /** The endnote rows: one for a brand-new source, one that opens the list of
@@ -5325,6 +5381,84 @@ async function editMdAlt(at) {
     : 'image marked as decoration — a screen reader skips it';
 }
 
+// ------------------------------------------------------ frame fitting
+// How a picture sits in its frame (INDESIGN_PARITY.md 30): layout.FITS.
+// Two kinds of image take it. A DESIGNED image keeps it in layout.img[id]
+// with a frame height `h` when it is still in the flow (a placed one's height
+// is in positions{}); an INSERTED image is a box that is one picture, and
+// keeps it on the box. Fitting never moves a frame: it fixes the frame at
+// the size it has now, then fits the picture into it.
+const FIT_LABELS = [['cover', 'Fill frame proportionally'], ['contain', 'Fit content proportionally'],
+  ['none', 'Center content (actual size)'], ['fill', 'Fit content to frame (stretches)']];
+const ONE_IMAGE_RE = /^\s*!\[[^\]]*\]\([^)\s]+\)\s*$/;
+/** What `id` is, for fitting: a designed image, an image box, or nothing. */
+function fitKind(id) {
+  const b = boxOf(id);
+  if (b) return ONE_IMAGE_RE.test(b.md || '') && !masterItemOf(id) ? 'box' : null;
+  const el = $('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  return el && (el.tagName === 'IMG' || el.classList.contains('ds-cropw')) ? 'img' : null;
+}
+function fitNow(id) {
+  const k = fitKind(id);
+  if (k === 'box') { const b = boxOf(id); return { fit: b.fit || null, align: b.fitAlign || null }; }
+  const g = (layout.img || {})[id] || {};
+  return { fit: g.fit || null, align: g.fitAlign || null };
+}
+function _frameHeightIn(id) {
+  const d = $('out').contentDocument;
+  const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  const pg = el && el.closest('section.page');
+  return el && pg ? +inchBox(el, pg).h.toFixed(2) : null;
+}
+function _pilotValidateFit(id, mode, align) {
+  if (!fitKind(id)) return { ok: false, error: `'${id}' is not an image — fit is for a designed image or a box that is one picture` };
+  if (mode != null && !FIT_LABELS.some(f => f[0] === mode))
+    return { ok: false, error: `fit '${mode}' — one of ${FIT_LABELS.map(f => f[0]).join(', ')}, or null` };
+  const A = ['center', 'top', 'bottom', 'left', 'right', 'top left', 'top right', 'bottom left', 'bottom right'];
+  if (align != null && !A.includes(align)) return { ok: false, error: `fitAlign '${align}' — one of ${A.join(', ')}` };
+  return { ok: true };
+}
+/** mode null clears fitting. align undefined keeps the current one. */
+function _pilotApplyFit(id, mode, align) {
+  const k = fitKind(id);
+  if (k === 'box') {
+    const b = boxOf(id);
+    if (!mode) { delete b.fit; delete b.fitAlign; return { id, fit: null }; }
+    if (b.h == null) b.h = _frameHeightIn(id) || 2;
+    b.fit = mode;
+    if (align !== undefined) { if (align) b.fitAlign = align; else delete b.fitAlign; }
+    return { id, fit: mode, align: b.fitAlign || 'center' };
+  }
+  layout.img = layout.img || {};
+  const g = (layout.img[id] = layout.img[id] || {});
+  if (!mode) {
+    delete g.fit; delete g.fitAlign; delete g.h;
+    if (!Object.keys(g).length) delete layout.img[id];
+    return { id, fit: null };
+  }
+  const placedH = (layout.positions[id] || {}).h;
+  if (!placedH && g.h == null) g.h = _frameHeightIn(id) || 2;
+  delete g.crop;
+  g.fit = mode;
+  if (align !== undefined) { if (align) g.fitAlign = align; else delete g.fitAlign; }
+  return { id, fit: mode, align: g.fitAlign || 'center' };
+}
+/** Fit Frame to Content: the frame's height becomes what the picture's own
+ *  shape makes it at the frame's width, so nothing is cut or letterboxed. */
+function _pilotApplyFitFrame(id) {
+  const d = $('out').contentDocument;
+  const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  const img = el && (el.tagName === 'IMG' ? el : el.querySelector('img'));
+  if (!img || !img.naturalWidth) return { ok: false, error: `'${id}' has no loaded picture to measure` };
+  const pg = el.closest('section.page');
+  const box = inchBox(img, pg), frame = inchBox(el, pg);
+  const h = +(box.w * img.naturalHeight / img.naturalWidth + (frame.h - box.h > 0 && fitKind(id) === 'box' ? frame.h - box.h : 0)).toFixed(2);
+  if (fitKind(id) === 'box') boxOf(id).h = h;
+  else if ((layout.positions[id] || {}).h) layout.positions[id].h = h;
+  else { layout.img = layout.img || {}; (layout.img[id] = layout.img[id] || {}).h = h; if (!layout.img[id].fit) layout.img[id].fit = 'contain'; }
+  return { ok: true, id, h };
+}
+
 function layerMenu(d, el, e) {
   closeMenu(d);
   const id = el.dataset.shape || el.dataset.el || el.dataset.fill;
@@ -5747,6 +5881,42 @@ function layerMenu(d, el, e) {
         markDirty(); await render();
       });
     }
+  }
+  if (fitKind(id)) {
+    const cur = fitNow(id);
+    submenuRow(d, m, 'Fitting ▸', sub => {
+      const row = (label, fn, on) => {
+        const b = d.createElement('button');
+        b.textContent = (on ? '✓ ' : '') + label;
+        b.addEventListener('click', async () => {
+          closeMenu(d); pushHistory();
+          const r = fn();
+          if (r && r.ok === false) { $('stat').textContent = r.error; return; }
+          markDirty(); await render();
+        });
+        sub.appendChild(b);
+      };
+      FIT_LABELS.forEach(([mode, label]) => row(label, () => _pilotApplyFit(id, mode), cur.fit === mode));
+      row('Fit frame to content', () => _pilotApplyFitFrame(id), false);
+      if (cur.fit) {
+        const head = d.createElement('div'); head.className = 'ds-menu-head';
+        head.textContent = 'Anchor the picture'; sub.appendChild(head);
+        const grid = d.createElement('div'); grid.className = 'ds-fitgrid';
+        ['top left', 'top', 'top right', 'left', 'center', 'right', 'bottom left', 'bottom', 'bottom right']
+          .forEach(a2 => {
+            const b = d.createElement('button');
+            b.title = a2; b.className = (cur.align || 'center') === a2 ? 'on' : '';
+            b.addEventListener('click', async () => {
+              closeMenu(d); pushHistory();
+              _pilotApplyFit(id, cur.fit, a2 === 'center' ? null : a2);
+              markDirty(); await render();
+            });
+            grid.appendChild(b);
+          });
+        sub.appendChild(grid);
+        row('Clear fitting', () => _pilotApplyFit(id, null), false);
+      }
+    });
   }
   const desc = descOf(el, e);
   if (desc) {
@@ -6424,6 +6594,7 @@ function cropMode(d, el) {
     ov.remove();
     if (!keep) { await undo(); return; }
     g.crop = { imgW: +c.imgW.toFixed(2), dx: +c.dx.toFixed(2), dy: +c.dy.toFixed(2) };
+    delete g.fit; delete g.fitAlign; delete g.h;   // crop and fit are two ways to frame one image
     markDirty();
     await render();
     $('stat').textContent = `${id} cropped — the resize handles size the window`;
@@ -19562,6 +19733,11 @@ function wire(roots) {
        Setting either here would put the reflow straight back. */
     .ds-chip.ds-fnchip { color:#2F3E46; }
     .ds-thread-arm [data-el^="text."] { cursor:copy !important; }
+    .ds-fitgrid { display:grid; grid-template-columns:repeat(3,18px); gap:3px; padding:4px 10px 8px; }
+    .ds-fitgrid button { width:18px; height:18px; padding:0; border:1px solid #B9C9BE; border-radius:3px;
+               background:#fff; cursor:pointer; }
+    .ds-fitgrid button.on { background:#6B9E78; border-color:#6B9E78; }
+    .ds-chip.ds-spchip { color:#5B6E66; font:600 .62em/1 system-ui; padding:0 2px; vertical-align:.15em; }
     .ds-chip.ds-varchip { color:#2F3E46; font-size:.82em; font-style:normal; white-space:nowrap; }
     .ds-endnote-edit { display:block; padding:2px 0; }
     .ds-endnote-edit input { display:block; width:100%; box-sizing:border-box; font:inherit;
@@ -26106,6 +26282,7 @@ const PILOT_BATCH_VERBS = {
   setStyle: { validate: (k, p) => _pilotValidateSetStyle(k, p), apply: (k, p) => _pilotApplySetStyle(k, p) },
   setBoxText: { validate: (id, m) => _pilotValidateSetBoxText(id, m), apply: (id, m) => _pilotApplySetBoxText(id, m) },
   thread: { validate: (a, b) => _threadValidate(a, b), apply: (a, b) => _threadApply(a, b) },
+  fit: { validate: (i, m, a) => _pilotValidateFit(i, m, a), apply: (i, m, a) => _pilotApplyFit(i, m, a) },
   unthread: { validate: id => (boxOf(id) && boxOf(id).next) ? { ok: true }
                 : { ok: false, error: `'${id}' does not continue into another frame` },
               apply: id => _unthreadApply(id) },
@@ -26132,7 +26309,7 @@ const PILOT_BATCH_VERBS = {
 // and renders nothing — it is here because this set is also the allowlist of
 // what a room message may reach, and asking what styles exist has to be
 // possible before dressing anything in one.
-const PILOT_SINGLE_VERBS = new Set(['remove', 'duplicate', 'addPage', 'duplicatePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles']);
+const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles']);
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
@@ -26645,6 +26822,33 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     markDirty();
     await render();
     return { ...docsync.api.status(), id, box: _pilotMeasure(id) };
+  },
+
+  /** How a picture sits in its frame: fit(id, 'cover'|'contain'|'fill'|'none'
+   *  |null, align?) on a designed image or a box that is one picture. The
+   *  frame keeps its current size; null clears fitting. align is the anchor
+   *  point ('top left' … 'bottom right'; undefined keeps it). */
+  async fit(id, mode, align) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateFit(id, mode, align);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplyFit(id, mode, align);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
+  },
+
+  /** Fit Frame to Content: the frame's height follows the picture's shape. */
+  async fitFrame(id) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    if (!fitKind(id)) return { ok: false, error: `'${id}' is not an image` };
+    pushHistory();
+    const r = _pilotApplyFitFrame(id);
+    if (r.ok === false) return r;
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
   },
 
   /** Thread a's words on into b (InDesign's threaded frames). b's own words

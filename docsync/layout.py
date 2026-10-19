@@ -34,7 +34,7 @@ from pathlib import Path
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
 from .content import (Footnotes, block_html, char_styles_used, md_inline,
-                      paragraph, uses_vars)
+                      paragraph, uses_breaks, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
 # different page passes its own size in — this is a default, not a law. It is
@@ -1049,6 +1049,37 @@ GREP_JS = (
     "if(R2)blocks(root).forEach(function(b){apply(b,R2);});}}"
     "window.__dsGrep=go;go();addEventListener('load',function(){go();});})();"
 )
+
+# Frame fitting (INDESIGN_PARITY.md 30). An image's FRAME is its box on the
+# page; `fit` says how the picture sits in it, InDesign's fitting commands
+# as the CSS that already does them:
+#   cover   Fill Frame Proportionally   (the frame is filled; the overhang is cut)
+#   contain Fit Content Proportionally  (the whole picture shows; may letterbox)
+#   fill    Fit Content to Frame        (stretched to the frame — distorts)
+#   none    Center Content              (actual size, nothing scaled)
+# and `fitAlign` is the reference point the picture is anchored to. Because
+# the browser applies object-fit on every layout, a resized frame refits
+# itself: InDesign's Auto-Fit is what CSS does anyway.
+FITS = ("cover", "contain", "fill", "none")
+FIT_ALIGNS = ("center", "top", "bottom", "left", "right",
+              "top left", "top right", "bottom left", "bottom right")
+# An inserted image is a text box whose words are the image (<p><img></p>);
+# fitting makes the paragraph and the image the box's whole height.
+FIT_CSS = (".ds-fitbox>p{height:100%;margin:0}"
+           ".ds-fitbox img.inline-img{height:100%!important;"
+           "object-fit:var(--ds-fit);object-position:var(--ds-fitpos,center)}")
+_ONE_IMAGE = re.compile(r"^\s*!\[[^\]]*\]\([^)\s]+\)\s*$")
+
+
+def _check_fit(g: dict, where: str) -> None:
+    if g.get("fit") is not None and g["fit"] not in FITS:
+        raise LayoutError(f"{where}.fit {g['fit']!r} must be one of {', '.join(FITS)}")
+    if g.get("fitAlign") is not None and g["fitAlign"] not in FIT_ALIGNS:
+        raise LayoutError(f"{where}.fitAlign {g['fitAlign']!r} must be one of "
+                          f"{', '.join(FIT_ALIGNS)}")
+    if g.get("fitAlign") is not None and g.get("fit") is None:
+        raise LayoutError(f"{where}.fitAlign without a fit — nothing to align")
+
 
 SPACE_CSS = (
     _space_rule("--ds-sb", "margin-top") + _space_rule("--ds-sa", "margin-bottom")
@@ -3443,6 +3474,11 @@ VARS_JS = (
 # load, when fonts arrive and on resize, from the story it saved, so a reflow
 # never compounds; window.__dsThreadGather(head) puts a story back in its
 # first frame for the editor to open it as one piece.
+# Column and frame breaks (content.py BREAKS). A column break is CSS's own
+# break-before on the paragraph that holds the marker; a frame break is
+# THREAD_JS's — the paragraph holding it starts the next frame.
+BREAK_CSS = (":is(p,h1,h2,h3,h4,h5,h6,li):has(.ds-brk[data-brk=column])"
+             "{break-before:column}.ds-brk{display:none}")
 THREAD_CSS = (
     ".ds-thread .ds-cont{text-indent:0!important;margin-top:0!important}"
     ".ds-thread>:first-child{margin-top:0}"
@@ -3486,8 +3522,12 @@ THREAD_JS = (
     "if(getComputedStyle(fs[0]).position==='static')return;"
     "for(var i=0;i<fs.length;i++){var f=fs[i],nx=fs[i+1],L=lim(f),kids=[].slice.call(f.children),k=-1;"
     "for(var j=0;j<kids.length;j++)if(kids[j].getBoundingClientRect().bottom>L+.5){k=j;break;}"
-    "if(k<0)continue;if(!nx){f.setAttribute('data-overset','');break;}"
-    "var mv=[],t=split(kids[k],L);if(t===null)mv.push(kids[k]);else if(t)mv.push(t);"
+    # A frame break: the first block after this frame's first that holds one
+    # starts the next frame, whether or not it would have fitted here.
+    "for(j=1;j<kids.length&&(k<0||j<k);j++)if(kids[j].querySelector('.ds-brk[data-brk=frame]')){k=j;break;}"
+    "if(k<0)continue;if(!nx){if(kids[k].getBoundingClientRect().bottom>L+.5)f.setAttribute('data-overset','');break;}"
+    "var mv=[],t=kids[k].querySelector('.ds-brk[data-brk=frame]')&&kids[k].getBoundingClientRect().bottom<=L+.5?null:split(kids[k],L);"
+    "if(t===null)mv.push(kids[k]);else if(t)mv.push(t);"
     "for(j=k+1;j<kids.length;j++)mv.push(kids[j]);"
     "for(j=0;j<mv.length;j++)nx.appendChild(mv[j]);}}"
     "function go(){var g=groups();for(var k in g)pour(g[k].filter(Boolean));}"
@@ -4071,6 +4111,12 @@ class Layout:
             where = f"img '{el}'"
             if not isinstance(g, dict):
                 raise LayoutError(f"{where}: expected an image-override object")
+            _check_fit(g, where)
+            if g.get("h") is not None and _num(g["h"], f"{where}.h") <= 0:
+                raise LayoutError(f"{where}.h: a frame height must be positive")
+            if g.get("fit") and g.get("crop"):
+                raise LayoutError(f"{where}: crop and fit are two ways to frame one "
+                                  f"image — use one")
             if g.get("radius") is not None and _num(g["radius"], f"{where}.radius") < 0:
                 raise LayoutError(f"{where}: radius cannot be negative")
             if g.get("src") is not None and (
@@ -4338,6 +4384,19 @@ class Layout:
             return ""
         self._char_sent = True
         return f"<style>{rules}</style>"
+
+    def _breaks_once(self) -> str:
+        """BREAK_CSS, once, when some text holds a column or frame break."""
+        if getattr(self, "_breaks_sent", False):
+            return ""
+        c = getattr(self, "_content", None)
+        words = [str(b.get("md", "")) for b in self.all_boxes()]
+        if c is not None:
+            words += [v for v in getattr(c, "_raw", {}).values() if isinstance(v, str)]
+        if not any(uses_breaks(w) for w in words):
+            return ""
+        self._breaks_sent = True
+        return f"<style>{BREAK_CSS}</style>"
 
     def _vars_once(self) -> str:
         """VARS_JS and its CSS, once per document and only when some text box
@@ -4781,6 +4840,14 @@ class Layout:
         if b.get("anchor") is not None:
             _check_anchor(b["anchor"], where)
         _check_wrap(b, where)
+        if b.get("fit") is not None or b.get("fitAlign") is not None:
+            _check_fit(b, where)
+            if not _ONE_IMAGE.match(str(b.get("md", ""))):
+                raise LayoutError(f"{where}: fit is for a box that is one image — "
+                                  f"this one has words")
+            if b.get("h") is None:
+                raise LayoutError(f"{where}: a fitted image needs the frame's height "
+                                  f"'h' — without one the frame is the picture")
         _check_object_use(b, "box", self.object_styles, where)
         _check_box_look(self.dressed(b), where)
 
@@ -5166,6 +5233,16 @@ class Layout:
             fx.append(f'grayscale({f["gray"]:g})')
         if fx:
             out.append("filter:" + " ".join(fx))
+        if g.get("h") is not None and g.get("fit"):
+            # The frame's height, for an image still in the flow: its width
+            # stays whatever the report's CSS gives it, and the height is
+            # fixed so the picture has a frame to fit. A PLACED image keeps
+            # its height in positions{} instead, and the editor writes only one.
+            out.append(f'height:{float(g["h"]):g}in')
+        if g.get("fit"):
+            # The <img> is the frame: its width and height are the element's
+            # (placed by the editor), the picture fits inside them.
+            out.append(f'object-fit:{g["fit"]};object-position:{g.get("fitAlign", "center")}')
         return ";".join(out)
 
     def cropped(self, el_id: str):
@@ -5299,6 +5376,9 @@ class Layout:
                 thread_of[fb.get("id")] = (chain[0].get("id"), i)
         if any(b.get("id") in thread_of for b in mine):
             out.append(self._thread_once())
+        if any(b.get("fit") for b in mine) and not getattr(self, "_fit_sent", False):
+            self._fit_sent = True
+            out.append(f"<style>{FIT_CSS}</style>")
         for b in mine:
             b = self.dressed(b)
             act = b.get("act")
@@ -5314,7 +5394,12 @@ class Layout:
                    f'left:{b["x"]}in;top:{b["y"]}in;'
                    f'width:{b["w"]}in;z-index:{int(b.get("z", 2))}')
             thr = thread_of.get(b.get("id"))
-            if thr is not None:
+            if b.get("fit"):
+                # A fitted image's frame is exactly its height; the picture
+                # fits inside it (FIT_CSS reads the two custom properties).
+                css += (f';height:{b["h"]}in;--ds-fit:{b["fit"]}'
+                        f';--ds-fitpos:{b.get("fitAlign", "center")}')
+            elif thr is not None:
                 # A frame is exactly its height: the overflow is the next
                 # frame's, which is the whole idea. Nothing is ever hidden —
                 # a last frame that still overflows spills visibly, and the
@@ -5452,6 +5537,8 @@ class Layout:
             # to recolour it. Shut-side (pointing down), because that is the
             # state a reader meets the button in.
             arrow = self.tgl_arrow(b["id"], edit) if act == "toggle" else ""
+            if b.get("fit"):
+                klass += " ds-fitbox"
             thr = thread_of.get(b.get("id"))
             if thr is not None:
                 klass += " ds-thread"
@@ -5875,7 +5962,7 @@ class Layout:
         page that holds no shapes."""
         head = (self._mobile_css_once() + self._page_style_once()
                 + self._chart_tip_once() + self._anchor_once() + self._type_once()
-                + self._vars_once() + self._char_once())
+                + self._vars_once() + self._breaks_once() + self._char_once())
         # A blank page that is a COPY of a designed one draws that page's
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.

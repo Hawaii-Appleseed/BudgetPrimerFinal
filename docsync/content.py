@@ -105,7 +105,19 @@ _DEST = r"(?:[^()\s]+|\([^()\s]*\))+"
 # Only these names, so a brace in prose ("{fy}" in a renderer's own template)
 # is never touched.
 VAR_NAMES = ("page", "pages", "section", "title", "date", "contents")
-VAR_RE = re.compile(r"\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+))\}")
+VAR_RE = re.compile(r"\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)"
+                    r"|break:(?:line|optional|column|frame))\}")
+# Breaks (INDESIGN_PARITY.md 31) ride the same token grammar, so the editor
+# shows them as the same atomic chips while typing:
+#   {break:line}      a forced line break — a <br> in a heading or an address
+#   {break:optional}  where a line MAY break and nowhere else — <wbr>
+#   {break:column}    the paragraph holding it starts in the next column
+#   {break:frame}     the paragraph holding it starts in the next threaded frame
+# A column or frame break moves its whole PARAGRAPH (InDesign breaks at the
+# character): the markup cannot split a paragraph without changing the words.
+# There is no page break — a page here is a fixed sheet, and a break inside
+# one would split the sheet in the PDF.
+BREAKS = ("line", "optional", "column", "frame")
 
 
 def build_date() -> str:
@@ -122,6 +134,10 @@ def var_span(m) -> str:
     reader sees with no script (a PDF printer that runs none, a feed reader):
     the build date, or a question mark where a page number would be."""
     name = m.group(1)
+    if name.startswith("break:"):
+        kind = name[6:]
+        return {"line": "<br>", "optional": "<wbr>"}.get(
+            kind, f'<span class="ds-brk" data-brk="{kind}"></span>')
     if name.startswith("pageof:"):
         return (f'<span class="ds-var" data-var="pageof" data-ref="{m.group(2)}">'
                 '?</span>')
@@ -131,7 +147,15 @@ def var_span(m) -> str:
 
 
 def uses_vars(text: str) -> bool:
-    return bool(text) and VAR_RE.search(text) is not None
+    """A token the variables runtime has to fill — a break needs none."""
+    return bool(text) and any(not m.group(1).startswith("break:")
+                              for m in VAR_RE.finditer(text))
+
+
+def uses_breaks(text: str) -> set:
+    """The column and frame breaks a text holds (the ones needing CSS)."""
+    return {m.group(1)[6:] for m in VAR_RE.finditer(text or "")
+            if m.group(1) in ("break:column", "break:frame")}
 
 
 def page_refs(text: str) -> set:

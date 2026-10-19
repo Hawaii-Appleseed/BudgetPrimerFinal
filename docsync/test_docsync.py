@@ -4241,6 +4241,44 @@ for _bad, _says in (({"grep": [{"pattern": "(", "style": "Fig"}]}, "not a patter
     check_eq(f"an automatic rule is refused: {_says}",
              _says in _layout_error({"textStyles": _ats, "text": {"a.b": _bad}}), True)
 
+# --- frame fitting (INDESIGN_PARITY 30) -------------------------------------
+from docsync.layout import FIT_CSS                                           # noqa: E402
+
+_fb = _layout({"boxes": [_tf(id="i", md="![a photo](assets/p.jpg)", fit="cover", fitAlign="top")]})
+_fbh = _fb.text_boxes(1)
+check_eq("an image box fits: exact height, the class, the two custom properties, the rule once",
+         ('class="ds-textbox ds-fitbox"' in _fbh, "height:2in;--ds-fit:cover;--ds-fitpos:top" in _fbh,
+          "min-height" in _fbh, _fbh.count(FIT_CSS)), (True, True, False, 1))
+check_eq("a designed image fits in the flow with its frame height",
+         _layout({"img": {"p": {"fit": "contain", "fitAlign": "bottom right", "h": 3}}}).img_css("p"),
+         "height:3in;object-fit:contain;object-position:bottom right")
+check_eq("no fit, no rule and no height",
+         (FIT_CSS in _layout({"boxes": [_tf(id="i", md="![a](b.jpg)")]}).text_boxes(1),
+          _layout({"img": {"p": {"h": 3}}}).img_css("p")), (False, ""))
+for _bad, _says in (({"boxes": [_tf(id="i", md="words", fit="cover")]}, "one image"),
+                    ({"boxes": [dict(_tf(id="i", md="![a](b.jpg)", fit="cover"), h=None)]}, "height"),
+                    ({"img": {"p": {"fit": "cover", "crop": {"imgW": 3, "dx": 0, "dy": 0}}}}, "crop and fit"),
+                    ({"img": {"p": {"fit": "zoom"}}}, "must be one of"),
+                    ({"img": {"p": {"fitAlign": "top"}}}, "without a fit")):
+    check_eq(f"fitting is refused: {_says}", _says in _layout_error(_bad), True)
+
+# --- special characters and breaks (INDESIGN_PARITY 31) ---------------------
+from docsync.layout import BREAK_CSS                                         # noqa: E402
+
+check_eq("breaks: a <br>, a <wbr>, and markers for column and frame",
+         _mdi("a{break:line}b{break:optional}c{break:column}d{break:frame}e"),
+         'a<br>b<wbr>c<span class="ds-brk" data-brk="column"></span>d'
+         '<span class="ds-brk" data-brk="frame"></span>e')
+check_eq("there is no page break: {break:page} stays as typed",
+         _mdi("{break:page}"), "{break:page}")
+check_eq("special characters pass through as themselves",
+         _mdi("$1.2\u00a0million re\u00adform"), "$1.2\u00a0million re\u00adform")
+_bk = _layout({"boxes": [_tf(id="a", md="x{break:column}y")]})
+check_eq("BREAK_CSS rides once when a column or frame break is used; a break needs no variables runtime",
+         ((_bk.layer(1) + _bk.layer(2)).count(BREAK_CSS), "__dsVars" in _bk.layer(1)), (1, False))
+check_eq("a line break alone needs no CSS",
+         BREAK_CSS in _layout({"boxes": [_tf(id="a", md="x{break:line}y")]}).layer(1), False)
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

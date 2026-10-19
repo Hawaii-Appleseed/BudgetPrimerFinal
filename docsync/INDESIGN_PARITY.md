@@ -681,13 +681,66 @@ questions as the rest of this file. Numbering continues from (27).
     a script (a feed reader) the words are simply unformatted; the PDF runs
     it.
 
-30. **Frame fitting for images** (Fit Content Proportionally, Fill Frame
-    Proportionally, Center Content, Frame Fitting Options, Auto-Fit). Cider
-    has crop only, so every resize of an image box is a re-crop by hand.
-31. **Special characters and breaks** (Insert White Space / Break
-    Character: nonbreaking space and hyphen, em/en/thin space, column,
-    frame and page break). No way to keep "$1.2 million" on one line, or to
-    push text to the next threaded frame (4).
+30. **Frame fitting for images. — CLOSED 2026-10-19.** InDesign's fitting
+    commands, as the CSS that already does them: `fit` is `cover` (Fill
+    Frame Proportionally), `contain` (Fit Content Proportionally), `fill`
+    (Fit Content to Frame — stretches) or `none` (Center Content, actual
+    size); `fitAlign` is the reference point (`center`, `top`, `bottom`,
+    `left`, `right`, and the four corners). The browser applies
+    `object-fit` on every layout, so a resized frame refits itself —
+    InDesign's Auto-Fit is what CSS does anyway, and the re-crop by hand on
+    every resize is gone.
+
+    Two kinds of image take it. An **inserted image** is a text box whose
+    markdown is one picture: `fit` on the box makes it exactly its `h` (the
+    `ds-fitbox` class and `FIT_CSS`, emitted once and only when used, size
+    the picture to it). A **designed image** keeps `fit` in `layout.img`
+    beside its flip, tone and corners, through `img_css`: a placed image's
+    frame is its placement, and one still in the flow gets a frame height
+    `h` in `layout.img` so it can be fitted without being pinned.
+
+    Fitting never moves a frame: the first fit fixes the frame at the size
+    it has, then fits the picture into it. **Fit frame to content** goes
+    the other way — the frame's height becomes what the picture's own shape
+    makes it at the frame's width. Crop and fit are two ways to frame one
+    image, so a document may use one (refused at load if both); choosing a
+    crop takes fitting off. Also refused: fit on a box with words in it, a
+    fitted box with no `h`, an unknown mode or anchor, an anchor with no fit.
+
+    In the editor, right-click an image ▸ **Fitting ▸**: the four modes, Fit
+    frame to content, and — once fitted — a 3 × 3 grid to anchor the
+    picture and Clear fitting. Pilot: `fit(id, mode|null, align?)`
+    (batchable) and `fitFrame(id)`. InDesign's Content-Aware Fit is an AI
+    crop and is not here.
+
+31. **Special characters and breaks. — CLOSED 2026-10-19.** White space
+    and hyphens are the plain Unicode characters, in the file and on the
+    page: nonbreaking space and hyphen, em, en, thin, hair and figure
+    spaces, and the discretionary hyphen — so "$1.2 million" keeps together
+    and nothing about rendering changed. They are invisible, which is the
+    problem InDesign's Show Hidden Characters solves; here the text editor
+    shows each as a small chip (`ds-spchip`) while typing, and gives back
+    exactly the character it found. Breaks are tokens in the variables
+    grammar (19), so they are the same atomic chips:
+    `{break:line}` (a `<br>`, for a heading or an address),
+    `{break:optional}` (`<wbr>`, where a line may break and nowhere else),
+    `{break:column}` (its paragraph starts the next column of a box with
+    columns — `break-before`, via `BREAK_CSS`, emitted once when used) and
+    `{break:frame}` (its paragraph starts the next frame of a thread —
+    `THREAD_JS` moves it on). Right-click in the words ▸ **Insert
+    special ▸** offers all of them.
+
+    Two differences from InDesign, both said here. A column or frame break
+    moves its whole paragraph, not the words after the character: splitting
+    a paragraph would change the words in the file. And there is no page
+    break — a page here is a fixed sheet, and a break inside one would split
+    the sheet in the PDF; `{break:page}` is left as typed.
+
+    On the way: an insert from the text menu (a chip, an endnote) whose
+    caret sat BETWEEN paragraphs — the select-all a box opens with,
+    collapsed — landed beside the paragraphs, where it serialized as a
+    paragraph of its own. `insertNodeAt` now steps into the block beside it.
+
 32. **Tab stops with leaders** (the Tabs panel). Absent.
 33. **Table structure** (Table menu): merged and split cells — Cider has no
     rowspan/colspan anywhere — header and footer rows, cell insets and
