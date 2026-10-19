@@ -1482,6 +1482,16 @@
         border-top:1px solid #E8EEEA; border-radius:8px 8px 0 0; }
   /* the layers panel: this page's objects, top of the stack first */
   #layerspop { min-width:230px; max-height:420px; overflow-y:auto; }
+  #linkspop { min-width:300px; max-width:380px; max-height:420px; overflow-y:auto; }
+  .lk-row { display:grid; grid-template-columns:36px 1fr auto; gap:8px; align-items:center;
+            padding:5px 2px; border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
+  .lk-row img { width:36px; height:28px; object-fit:cover; border-radius:3px; background:#eee; }
+  .lk-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lk-meta { color:#6b7280; font-size:11px; }
+  .lk-row.missing .lk-meta { color:#B42318; }
+  .lk-row.lowres .lk-meta { color:#B54708; }
+  .lk-acts { display:flex; gap:4px; }
+  .lk-acts button { font-size:11px; padding:2px 6px; }
   .dl-row { display:flex; align-items:center; gap:4px; }
   .dl-row .lrow-id { flex:1; }
   .dl-btn { border:0; background:none; cursor:pointer; padding:1px 3px; font-size:12px; opacity:.55; }
@@ -2151,6 +2161,14 @@
       stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" rx="1"/>
       <path d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"
         stroke-linecap="round"/></svg></button>
+  <button id="links" aria-label="Links — every picture in the report, missing ones flagged; relink a file everywhere it is used">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.3" stroke-linecap="round"><path d="M6 8a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/>
+      <path d="M8 6a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/></svg></button>
+  <div class="pop" id="linkspop" hidden>
+    <p class="pop-h">Links</p>
+    <div id="links-list"></div>
+  </div>
   <button id="layers" aria-label="Layers — this page's objects in stacking order; drag to restack">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.3" stroke-linejoin="round"><path d="M7 1.8L12.6 4.6 7 7.4 1.4 4.6z"/>
@@ -2242,6 +2260,14 @@
       <button class="shp" data-k="arrow"><span class="tile-art"><svg viewBox="0 0 15 15"
         fill="#CAD2C5" stroke="#52796F" stroke-width="1.2" stroke-linejoin="round"><path
         d="M1.5 5.8h6.5V3.2l5.5 4.3-5.5 4.3V9.2H1.5z"/></svg></span>Arrow</button>
+      <button class="shp" data-k="polygon"><span class="tile-art"><svg viewBox="0 0 15 15"
+        fill="#CAD2C5" stroke="#52796F" stroke-width="1.2" stroke-linejoin="round"><path
+        d="M7.5 1.8L12.9 5.4V10.6L7.5 13.2L2.1 10.6V5.4z"/></svg></span>Polygon</button>
+      <button class="shp" data-k="star"><span class="tile-art"><svg viewBox="0 0 15 15"
+        fill="#CAD2C5" stroke="#52796F" stroke-width="1.1" stroke-linejoin="round"><path
+        d="M7.5 1.5l1.7 3.9 4.2.4-3.2 2.8 1 4.1-3.7-2.2-3.7 2.2 1-4.1-3.2-2.8 4.2-.4z"/></svg></span>Star</button>
+      <button class="shp" data-qr title="A QR code for a link — for a printed page"><span class="tile-art"><svg viewBox="0 0 15 15"
+        fill="#52796F"><path d="M2 2h4v4H2zM9 2h4v4H9zM2 9h4v4H2zM8 8h2v2H8zM11 11h2v2h-2zM10 9h1v1h-1z"/></svg></span>QR code</button>
       <button class="shp" data-pen title="Click to place points, drag to pull a curve; Enter or the first point to close, Esc to finish open"><span class="tile-art"><svg viewBox="0 0 15 15"
         fill="none" stroke="#52796F" stroke-width="1.3" stroke-linecap="round"><path
         d="M2 12C4 3 9 13 13 3"/><circle cx="2" cy="12" r="1.2" fill="#52796F"/><circle cx="13" cy="3" r="1.2" fill="#52796F"/></svg></span>Pen</button>
@@ -2397,6 +2423,17 @@
       <option value="">off</option><option value="small">small caps</option>
       <option value="all">all small caps (acronyms)</option></select></label>
     <label><span>Ligatures</span><input type="checkbox" id="ty-liga"></label>
+    <label><span>Strikethrough</span><input type="checkbox" id="ty-strike"></label>
+    <label><span>Baseline shift</span><input id="ty-shift" type="number" step="0.5" min="-24" max="24" placeholder="pt"></label>
+    <label><span>OpenType</span><span class="ty-ot" style="width:auto">
+      <label title="Fractions (1/2 as ½)"><input type="checkbox" data-ot="frac">½</label>
+      <label title="Ordinals (1st)"><input type="checkbox" data-ot="ordn">1ˢᵗ</label>
+      <label title="Stylistic alternates"><input type="checkbox" data-ot="salt">alt</label>
+      <label title="Swash"><input type="checkbox" data-ot="swsh">swash</label>
+      <label title="Discretionary ligatures"><input type="checkbox" data-ot="dlig">dlig</label>
+      <label title="Slashed zero"><input type="checkbox" data-ot="zero">0̸</label></span></label>
+    <label><span>Stylistic set</span><select id="ty-ss"><option value="">none</option></select></label>
+    <label><span>Tab stops</span><button type="button" id="ty-tabs" title="Where a tab in this text lands — with a leader if you like">none</button></label>
     <p class="pop-h">Drop cap and lists</p>
     <label><span>Drop cap</span><select id="ty-dcap">
       <option value="">none</option><option value="2">2 lines</option>
@@ -3233,7 +3270,7 @@ const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame))\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|caption:[A-Za-z0-9._@-]+)\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
@@ -3258,7 +3295,8 @@ const varToken = (name, ref) => name === 'pageof' ? `{pageof:${ref}}` : `{${name
 const varChipHtml = (name, ref) =>
   `<span class="ds-chip ds-varchip" contenteditable="false" data-var="${escAttr(name)}"`
   + (ref ? ` data-ref="${escAttr(ref)}"` : '') + ` title="${escAttr(varToken(name, ref))}">`
-  + `${escAttr(VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
+  + `${escAttr(name.startsWith('caption:') ? 'caption of ' + name.slice(8)
+             : VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
 function makeVarChip(d, name, ref) {
   const t = d.createElement('template');
   t.innerHTML = varChipHtml(name, ref);
@@ -3295,6 +3333,12 @@ function mdInlineToHtml(text, fnLabels) {
   });
   // Character styles, content.py's CHAR_STYLE_RE: stashed like a link so the
   // passes below format the words inside but cannot cut across the span.
+  // Conditional text, content.py's COND_RE: `[words]{?print}` and the like.
+  const conds = [];
+  s = s.replace(/\[([^\]^][^\]]*)\]\{\?([A-Za-z0-9_-]{1,20})\}/g, (m, txt, name) => {
+    conds.push(name);
+    return `\x04CD${conds.length - 1}\x04${txt}\x05`;
+  });
   const cnames = [];
   s = s.replace(CHAR_STYLE_RE_G, (m, txt, name) => {
     cnames.push(name.trim());
@@ -3307,6 +3351,8 @@ function mdInlineToHtml(text, fnLabels) {
   s = s.replace(/(?<![\w*])\*(?!\s)([\s\S]+?)(?<!\s)\*(?![\w*])/g, '<i>$1</i>');
   s = s.replace(/\x00LINK(\d+)\x00([\s\S]*?)\x01/g,
     (m, i, inner) => `<a href="${escAttr(urls[+i])}">${inner}</a>`);
+  s = s.replace(/\x04CD(\d+)\x04([\s\S]*?)\x05/g,
+    (m, i, inner) => `<span class="ds-cond" data-cond="${escAttr(conds[+i])}">${inner}</span>`);
   s = s.replace(/\x02CS(\d+)\x02([\s\S]*?)\x03/g,
     (m, i, inner) => `<span class="ds-cs" data-cs="${escAttr(cnames[+i])}">${inner}</span>`);
   s = s.replace(/\x00IMG(\d+)\x00/g, (m, i) => {
@@ -3576,6 +3622,7 @@ function nodeToMdInline(node, br = ' ') {
     // Zero-width spaces are caret scaffolding (insertBreak drops one after a
     // <br> so the new line is reachable). They are never content.
     if (n.nodeType === Node.TEXT_NODE) { out += n.nodeValue.replace(/​/g, ''); return; }
+    if (n.classList && n.classList.contains('ds-tab')) { out += '\t'; return; }   // TABS_JS's span
     if (n.nodeType !== Node.ELEMENT_NODE) return;
     if (n.classList && n.classList.contains('ds-fnchip')) { out += `[^${n.dataset.fnId}]`; return; }
     if (n.classList && n.classList.contains('ds-varchip')) { out += varToken(n.dataset.var, n.dataset.ref); return; }
@@ -3590,6 +3637,12 @@ function nodeToMdInline(node, br = ' ') {
     // A run automatic formatting made (GREP_JS) is the style's, not the
     // document's: its words go back as words.
     if (n.classList && n.classList.contains('ds-auto')) { out += nodeToMdInline(n, br); return; }
+    if (n.classList && n.classList.contains('ds-cond')) {
+      const inner = nodeToMdInline(n, br);
+      out += inner.trim() && !inner.includes(']')
+        ? edgeOut(inner, '\u0000').replace(/\u0000([\s\S]*)\u0000/, `[$1]{?${n.dataset.cond}}`) : inner;
+      return;
+    }
     if (n.classList && n.classList.contains('ds-cs')) {
       const inner = nodeToMdInline(n, br);
       const bare = inner.replace(new RegExp(`\\[[^\\]]*\\]\\(${DEST}\\)`, 'g'), '');
@@ -3833,6 +3886,35 @@ function applyCharStyle(d, host, name) {
     sel.removeAllRanges();
     sel.addRange(nr);
   }
+  host.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Conditional text on the selected words (INDESIGN_PARITY.md 45): wrap them
+ *  in span.ds-cond naming the condition, or (name null) take any off — the
+ *  same split-and-wrap applyCharStyle does for a style. */
+function applyCondition(d, host, name) {
+  const sel = d.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  if (r.collapsed) return;
+  let n = r.commonAncestorContainer;
+  if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+  const inside = n && n.closest && n.closest('span.ds-cond');
+  let mid;
+  if (inside && host.contains(inside)) mid = splitMarkOut(d, inside, r);
+  else {
+    const frag = r.extractContents();
+    frag.querySelectorAll('span.ds-cond').forEach(el => el.replaceWith(...el.childNodes));
+    mid = [...frag.childNodes];
+    r.insertNode(frag);
+  }
+  mid = mid.filter(x => x.isConnected);
+  if (name && mid.length) {
+    const span = d.createElement('span');
+    span.className = 'ds-cond'; span.dataset.cond = name;
+    mid[0].before(span); mid.forEach(x => span.appendChild(x));
+  }
+  host.querySelectorAll('span.ds-cond').forEach(el => { if (!el.textContent) el.remove(); });
   host.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
@@ -4330,6 +4412,25 @@ function textMenu(d, host, e) {
   sep();
   buildVarRows(d, m, host, range);
   buildSpecialRows(d, m, host, range);
+  submenuRow(d, m, 'Show only in ▸', sub => {
+    const add = (label, name) => {
+      const b = d.createElement('button'); b.textContent = label;
+      b.addEventListener('click', async () => {
+        closeMenu(d); restoreRange(d, range);
+        let nm = name;
+        if (nm === '?') {
+          const got = await dsForm('Condition', [{ name: 'c', type: 'text', label: 'A name — turn it off in the document to hide this text', value: '' }],
+            { okLabel: 'Apply', validate: v => /^[A-Za-z0-9_-]{1,20}$/.test(v.c.trim()) ? '' : 'letters, digits, - and _' });
+          if (got == null) return;
+          nm = got.c.trim(); restoreRange(d, range);
+        }
+        applyCondition(d, host, nm);
+      });
+      sub.appendChild(b);
+    };
+    add('Print (the PDF)', 'print'); add('Web (on screen)', 'web');
+    add('Another condition…', '?'); add('Always (no condition)', null);
+  });
   d.body.appendChild(m);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
@@ -4651,12 +4752,13 @@ async function uploadImageFile(d, onDone) {
 }
 
 /** Show just-uploaded images before they are deployed: the page resolves
- *  assets/… against the live site, where a new file does not exist yet. */
+ *  assets/… against the live site, where a new file does not exist yet. The
+ *  path it stood for is kept on the element, for the Links panel. */
 function showLocalImages(d, roots) {
   if (!localImages.size) return;
   within(d, roots, 'img[src^="assets/"]').forEach(img => {
     const local = localImages.get(img.getAttribute('src'));
-    if (local) img.src = local;
+    if (local) { img.dataset.dsSrc = img.getAttribute('src'); img.src = local; }
   });
 }
 
@@ -4925,7 +5027,67 @@ async function eyedrop(onPick) {
 
 /** An eyedropper button and the current in-use colours, shared by every colour
  *  surface. `onPick(hex)` applies a chosen colour. */
+// Named swatches (INDESIGN_PARITY.md 40): layout.swatches, referenced as
+// "@Name" or "@Name 40%" (a tint) in any colour field; layout.py resolves them
+// when it reads the layout, so redefining a swatch recolours everything. This
+// mirror is for previews in the editor's own controls only.
+const swatches = () => layout.swatches || {};
+function swatchHex(v) {
+  const m = /^@([A-Za-z0-9 _-]{1,30}?)(?:\s+(\d{1,3})%)?$/.exec((v || '').trim());
+  if (!m) return v;
+  const hx = swatches()[m[1].trim()];
+  if (!hx || !m[2]) return hx || v;
+  const h = hx.replace('#', ''), t = Math.min(100, +m[2]) / 100;
+  return '#' + [0, 2, 4].map(i => Math.round(255 - (255 - parseInt(h.slice(i, i + 2), 16)) * t)
+    .toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+/** Dropping a swatch writes its colour (or tint) into everything that named
+ *  it — a reference to a swatch that is gone would stop the document loading. */
+function swatchUnlink(name) {
+  const walk = o => {
+    if (Array.isArray(o)) { o.forEach(walk); return; }
+    if (!o || typeof o !== 'object') return;
+    Object.keys(o).forEach(k => {
+      const v = o[k];
+      if (typeof v === 'string' && v.startsWith('@')) {
+        const m = /^@([A-Za-z0-9 _-]{1,30}?)(?:\s+(\d{1,3})%)?$/.exec(v.trim());
+        if (m && m[1].trim() === name) o[k] = swatchHex(v);
+      } else walk(v);
+    });
+  };
+  Object.keys(layout).forEach(k => { if (k !== 'swatches') walk(layout[k]); });
+}
+function swatchRow(d, host, current, onPick) {
+  const names = Object.keys(swatches());
+  const row = d.createElement('div');
+  row.className = 'ds-swatches ds-named';
+  names.forEach(n => [100, 60, 30].forEach(t => {
+    const ref = t === 100 ? `@${n}` : `@${n} ${t}%`;
+    const b = d.createElement('button');
+    b.className = 'ds-sw' + (current === ref ? ' on' : '');
+    b.style.background = swatchHex(ref);
+    b.title = t === 100 ? `${n} (swatch)` : `${n} at ${t}%`;
+    b.addEventListener('click', () => onPick(ref));
+    row.appendChild(b);
+  }));
+  if (current && /^#[0-9a-f]{6}$/i.test(current)) {
+    const add = d.createElement('button');
+    add.className = 'ds-sw ds-sw-eye'; add.textContent = '+'; add.title = 'Save this colour as a named swatch';
+    add.addEventListener('click', async () => {
+      const got = await dsForm('New swatch', [{ name: 'name', type: 'text', label: `Name for ${current}`, value: '' }],
+        { okLabel: 'Save', validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(v.name.trim()) ? '' : 'letters, digits, spaces, - and _' });
+      if (got == null) return;
+      pushHistory();
+      (layout.swatches = layout.swatches || {})[got.name.trim()] = current.toUpperCase();
+      markDirty(); await render();
+      $('stat').textContent = `swatch "${got.name.trim()}" saved — it is in every colour menu now`;
+    });
+    row.appendChild(add);
+  }
+  if (row.children.length) host.appendChild(row);
+}
 function colorExtras(d, host, current, onPick) {
+  swatchRow(d, host, current, onPick);
   const inUse = colorsInUse().filter(c => c.slice(0, 7) !== (current || '').slice(0, 7));
   if (hasEyeDropper() || inUse.length) {
     const row = d.createElement('div');
@@ -5265,6 +5427,9 @@ function pageMenu(d, pg, e) {
     await render();
   }, !!(pageClip || pageStyleClip));
   item('Duplicate page', () => duplicatePage(pid));
+  item('Margins and columns…', () => marginsDialog(pid));
+  item('Create guides…', () => createGuidesDialog(pid));
+  item('Reading order…', () => readingOrderDialog(pid));
   if (masterNameOf(pid)) {
     item(`Detach shared layout “${masterNameOf(pid)}” to this page`, () => masterDetach(pid));
   }
@@ -5667,6 +5832,19 @@ function layerMenu(d, el, e) {
     const clonable = !!shapeOf(id) || !!boxOf(id);
     item('Copy', () => { if (!selIds.has(id)) setSel(d, [id]); copySel(d); }, clonable);
     if (clip) item('Paste', () => pasteClip(d));
+    if (clip) item('Paste in place', () => pasteClip(d, true));
+    if (boxOf(id) && /[\t|,]/.test(boxOf(id).md || '') && !/!\[/.test(boxOf(id).md || ''))
+      item('Convert text to table', async () => {
+        pushHistory();
+        const r = textToTable(id);
+        if (r.error) { past.pop(); $('stat').textContent = r.error; return; }
+        markDirty(); await render();
+        setSel($('out').contentDocument, [r.id]);
+        $('stat').textContent = `${r.rows} rows × ${r.cols} columns`;
+      });
+    if (clonable || (tableOf(id) && !tableOf(id).flow))
+      item('Step and repeat…', () => { if (!selIds.has(id)) setSel(d, [id]); stepRepeatDialog(d); });
+    if (lastXform) item('Transform again', () => { if (!selIds.has(id)) setSel(d, [id]); transformAgain(d); });
     item('Copy style', () => { setSel(d, [id]); copyStyle(d); }, !!styleType(d, id));
     if (styleClip) item('Paste style',
       () => { if (!selIds.has(id)) setSel(d, [id]); pasteStyle(d); },
@@ -5687,6 +5865,8 @@ function layerMenu(d, el, e) {
     item('Forward',        () => layerStep(d, 1, false, [el]));
     item('Backward',       () => layerStep(d, -1, false, [el]));
     item('Send to back',   () => layerStep(d, -1, true, [el]));
+    item('Select next above', () => { setSel(d, [id]); selectNextObject(d, 1); });
+    item('Select next below', () => { setSel(d, [id]); selectNextObject(d, -1); });
     item(isLocked(id) ? 'Unlock' : 'Lock', () => {
       pushHistory();
       layout.locked = isLocked(id) ? lockedList().filter(x => x !== id)
@@ -5930,6 +6110,33 @@ function layerMenu(d, el, e) {
       });
     }
     const one = shapeOf(id);
+    if (one && one.kind === 'qr') item('QR code link…', async () => {
+      closeMenu(d);
+      const got = await dsForm('QR code', [{ name: 'data', type: 'text', label: 'The link it opens', value: one.data }],
+        { okLabel: 'Save', validate: v => !v.data.trim() ? 'what should it open?'
+          : new TextEncoder().encode(v.data.trim()).length > 213 ? 'longer than a QR code here carries (213 bytes)' : '' });
+      if (got == null) return;
+      pushHistory(); one.data = got.data.trim(); markDirty(); await render();
+    });
+    if (one && ['polygon', 'star', 'rect'].includes(one.kind)) item('Shape options…', async () => {
+      closeMenu(d);
+      const f = one.kind === 'polygon' ? [{ name: 'sides', type: 'number', label: 'Sides (3–12)', value: one.sides || 6 }]
+        : one.kind === 'star' ? [{ name: 'points', type: 'number', label: 'Points (3–24)', value: one.points || 5 },
+                                 { name: 'inner', type: 'number', label: 'Inner radius, a fraction (0.2–0.9)', value: one.inner ?? 0.5 }]
+        : [{ name: 'corner', type: 'text', label: 'Corners: round, bevel or inset', value: one.corner || 'round' },
+           { name: 'r', type: 'number', label: 'Corner size, inches', value: one.r || 0.15 }];
+      const got = await dsForm('Shape options', f, { okLabel: 'Apply' });
+      if (got == null) return;
+      pushHistory();
+      if (one.kind === 'polygon') one.sides = Math.max(3, Math.min(12, Math.round(+got.sides) || 6));
+      else if (one.kind === 'star') { one.points = Math.max(3, Math.min(24, Math.round(+got.points) || 5)); one.inner = Math.max(0.2, Math.min(0.9, +got.inner || 0.5)); }
+      else {
+        const c = String(got.corner).trim().toLowerCase();
+        if (['bevel', 'inset'].includes(c)) one.corner = c; else delete one.corner;
+        one.r = Math.max(0, Math.min(2, +got.r || 0));
+      }
+      markDirty(); await render();
+    });
     if (one && one.kind === 'compound') item('Release compound', async () => {
       pushHistory(); const r = _releaseApply(id); markDirty(); await render();
       setSel($('out').contentDocument, r.released);
@@ -5939,6 +6146,20 @@ function layerMenu(d, el, e) {
       pathPointEdit(d, one, d.querySelector(`[data-shape="${CSS.escape(id)}"]`));
     });
   }
+  if (fitKind(id)) item('Add a caption', async () => {
+    // A live caption (INDESIGN_PARITY.md 43): a box under the picture whose
+    // words are the picture's own description, kept in step on every render.
+    const pg = el.closest('section.page');
+    const b = inchBox(el, pg);
+    const mount = pg && pg.querySelector('[data-ds-mount]');
+    const pid = mount ? (/^\d+$/.test(mount.dataset.dsMount) ? +mount.dataset.dsMount : mount.dataset.dsMount) : visiblePageId();
+    pushHistory();
+    const r = _pilotApplyAddTextBox({ page: pid, x: +b.x.toFixed(2), y: +(b.y + b.h + 0.06).toFixed(2), w: +b.w.toFixed(2),
+      md: `{caption:${id}}`, style: { italic: true, size: 12 } });
+    markDirty(); await render();
+    $('stat').textContent = 'caption added — it shows the image\'s description (right-click the image ▸ Description to change it)';
+    void r;
+  });
   if (fitKind(id)) {
     const cur = fitNow(id);
     submenuRow(d, m, 'Fitting ▸', sub => {
@@ -6539,6 +6760,8 @@ function startRotate(d, el, e0) {
   };
   const up = () => {
     dragUnlisten(d, move, up);
+    const turned = (st.rot || 0) - start;
+    if (turned) lastXform = { kind: 'rot', deg: Math.round(turned * 10) / 10 };
     markDirty();
     paintSel(d);
   };
@@ -7659,6 +7882,7 @@ function tableMenu(d, td, e) {
   item('copy', 'Copy', '⌘C', () => copySel(d), true, true);
   item('style', 'Copy style', '⌥⌘C', () => copyStyle(d), true, true);
   item('paste', 'Paste', '⌘V', () => pasteClip(d), !!clip, true);
+  item('paste', 'Paste in place', '⌥⇧⌘V', () => pasteClip(d, true), !!clip, true);
   item('dup', 'Duplicate', '⌘D', () => duplicateSel(d), true, true);
   item('grid', 'Delete table', '', () => {
     setSel(d, ['table.' + t.id]); clearCellSel(d); deleteSel(d);
@@ -7693,6 +7917,17 @@ function tableMenu(d, td, e) {
   sep();
   item('grid', t.header ? 'Remove header row' : 'Make first row a header', '',
     () => { t.header = !t.header; });
+  {
+    const rg = cellRange() || { r0: ri, r1: ri, c0: ci, c1: ci };
+    const many = rg.r1 > rg.r0 || rg.c1 > rg.c0;
+    item('grid', 'Merge cells', '', () => {
+      const err = tableMerge(t, rg.r0, rg.c0, rg.r1, rg.c1);
+      if (err) $('stat').textContent = err;
+      else selectCell(idOf(tableEl), rg.r0, rg.c0);
+    }, many);
+    item('grid', 'Unmerge cells', '', () => tableUnmerge(t, ri, ci), !!mergeAt(t, ri, ci));
+  }
+  item('sliders', 'Table options…', '', () => tableOptionsDialog(t, ri), true, true);
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
   d.body.appendChild(m);
@@ -7741,24 +7976,143 @@ function cellSelSwap(t, kind, x, y) {
   if (kind === 'row') { cellSel.r0 = sw(cellSel.r0); cellSel.r1 = sw(cellSel.r1); }
   else { cellSel.c0 = sw(cellSel.c0); cellSel.c1 = sw(cellSel.c1); }
 }
+/** Merges move with the lines around them, as `cells` do: a line inserted
+ *  or deleted before a merge shifts it, inside one grows or shrinks it, and
+ *  a merge left covering one cell is no merge. Header and footer row counts
+ *  and row heights follow too — the engine refuses any that no longer fit. */
+function reindexMerges(t, kind, at, delta) {
+  if (t.merges) {
+    const [a, n] = kind === 'row' ? [0, 2] : [1, 3];
+    t.merges = t.merges.map(m => {
+      const x = m.slice();
+      if (delta > 0) { if (at <= x[a]) x[a] += 1; else if (at < x[a] + x[n]) x[n] += 1; }
+      else if (at < x[a]) x[a] -= 1;
+      else if (at < x[a] + x[n]) x[n] -= 1;
+      return x;
+    }).filter(x => x[2] >= 1 && x[3] >= 1 && x[2] * x[3] >= 2);
+    if (!t.merges.length) delete t.merges;
+  }
+  if (kind === 'row') {
+    if (t.rowh) { delta > 0 ? t.rowh.splice(at, 0, null) : t.rowh.splice(at, 1); if (!t.rowh.some(v => v != null)) delete t.rowh; }
+    const n = t.rows.length + delta;
+    ['headerRows', 'footerRows'].forEach(k => { if (t[k] != null && t[k] > n) t[k] = n; });
+    if ((t.headerRows || 0) + (t.footerRows || 0) > n) t.footerRows = Math.max(0, n - (t.headerRows || 0));
+  }
+}
+/** Swapping two lines splits any merge across either of them. */
+function dropMergesOn(t, kind, lines) {
+  if (!t.merges) return;
+  const [a, n] = kind === 'row' ? [0, 2] : [1, 3];
+  t.merges = t.merges.filter(m => !lines.some(i => i >= m[a] && i < m[a] + m[n]));
+  if (!t.merges.length) delete t.merges;
+}
+function mergeAt(t, r, c) {
+  return (t.merges || []).find(m => r >= m[0] && r < m[0] + m[2] && c >= m[1] && c < m[1] + m[3]);
+}
+/** Merge a rectangle of cells into one: its words joined into the top-left
+ *  cell, the merges inside it replaced. Refused (null) where a merge sticks
+ *  out of the rectangle — InDesign's rule too. */
+function tableMerge(t, r0, c0, r1, c1) {
+  if (r1 - r0 + 1 < 1 || c1 - c0 + 1 < 1 || (r0 === r1 && c0 === c1)) return 'select two or more cells to merge';
+  const inside = m => m[0] >= r0 && m[1] >= c0 && m[0] + m[2] - 1 <= r1 && m[1] + m[3] - 1 <= c1;
+  const touches = m => !(m[0] > r1 || m[0] + m[2] - 1 < r0 || m[1] > c1 || m[1] + m[3] - 1 < c0);
+  if ((t.merges || []).some(m => touches(m) && !inside(m))) return 'a merged cell runs out of the selection — unmerge it first';
+  const words = [];
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const v = String(t.rows[r][c] ?? '').trim();
+    if (v) words.push(v);
+    if (r !== r0 || c !== c0) t.rows[r][c] = '';
+  }
+  t.rows[r0][c0] = words.join(' ');
+  t.merges = (t.merges || []).filter(m => !inside(m));
+  t.merges.push([r0, c0, r1 - r0 + 1, c1 - c0 + 1]);
+  return null;
+}
+function tableUnmerge(t, r, c) {
+  const m = mergeAt(t, r, c);
+  if (!m) return false;
+  t.merges = t.merges.filter(x => x !== m);
+  if (!t.merges.length) delete t.merges;
+  return true;
+}
+/** Table Options: header and footer rows, cell inset, vertical alignment,
+ *  this row's height and the alternating stroke — InDesign's dialog, in one
+ *  form. Blank takes a setting off. */
+async function tableOptionsDialog(t, ri) {
+  const bs = t.bandStroke || {};
+  const got = await dsForm('Table options', [
+    { name: 'headerRows', label: 'Header rows', value: String(t.headerRows ?? (t.header ? 1 : 0)) },
+    { name: 'footerRows', label: 'Footer rows', value: String(t.footerRows || 0) },
+    { name: 'inset', label: 'Cell inset, inches (one, or top right bottom left)',
+      value: t.inset == null ? '' : [].concat(t.inset).join(' ') },
+    { name: 'valign', type: 'select', label: 'Vertical alignment', value: t.valign || '',
+      options: [{ value: '', label: 'the report’s own' }, { value: 'top', label: 'Top' },
+                { value: 'middle', label: 'Middle' }, { value: 'bottom', label: 'Bottom' }] },
+    { name: 'rowh', label: `Row ${ri + 1} height, inches (blank: fits its words)`, value: t.rowh && t.rowh[ri] != null ? String(t.rowh[ri]) : '' },
+    { name: 'stroke', label: 'Alternating row stroke: width in px and a colour (blank: none)',
+      value: t.bandStroke ? `${bs.w ?? 1} ${bs.color || '#C9D6CD'}` : '', placeholder: '1 #9AA8A0' },
+  ], { okLabel: 'Apply', validate: v => {
+    const n = t.rows.length;
+    const h = +v.headerRows || 0, f = +v.footerRows || 0;
+    if (h < 0 || f < 0 || h + f > n) return `header and footer rows together: at most ${n}`;
+    const ins = String(v.inset).trim().split(/\s+/).filter(Boolean);
+    if (ins.length && (![1, 4].includes(ins.length) || ins.some(x => !(+x >= 0 && +x <= 1)))) return 'an inset is 0 to 1 inch, one or four of them';
+    if (v.rowh && !(+v.rowh > 0 && +v.rowh <= 11)) return 'a row height is inches, above 0';
+    if (v.stroke && !/^\s*\d+(\.\d+)?\s+#[0-9a-f]{3,8}\s*$/i.test(v.stroke)) return 'a stroke is a width and a colour, like 1 #9AA8A0';
+    return '';
+  } });
+  if (got == null) return;
+  pushHistory();
+  const h = Math.round(+got.headerRows || 0), f = Math.round(+got.footerRows || 0);
+  if (h === 1) { t.header = true; delete t.headerRows; }
+  else if (h === 0) { delete t.header; delete t.headerRows; }
+  else { t.headerRows = h; }
+  if (f) t.footerRows = f; else delete t.footerRows;
+  const ins = String(got.inset).trim().split(/\s+/).filter(Boolean).map(Number);
+  if (ins.length) t.inset = ins.length === 1 ? ins[0] : ins; else delete t.inset;
+  if (got.valign) t.valign = got.valign; else delete t.valign;
+  const rh = t.rowh || Array(t.rows.length).fill(null);
+  rh[ri] = got.rowh ? +got.rowh : null;
+  if (rh.some(v => v != null)) t.rowh = rh; else delete t.rowh;
+  if (got.stroke) { const [w, color] = got.stroke.trim().split(/\s+/); t.bandStroke = { w: +w, color }; }
+  else delete t.bandStroke;
+  markDirty(); await render();
+}
+/** Text to table: a text box's lines become rows, split on tabs (or the
+ *  separator given — comma, |); the table takes the box's place. */
+function textToTable(boxId, sep) {
+  const b = boxOf(boxId);
+  if (!b) return { error: `no text box '${boxId}'` };
+  const lines = String(b.md || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const by = sep || (lines.some(l => l.includes('\t')) ? '\t' : lines.some(l => l.includes('|')) ? '|' : ',');
+  let rows = lines.map(l => l.replace(/^\||\|$/g, '').split(by).map(x => x.trim()));
+  rows = rows.filter(r => !r.every(x => /^:?-{2,}:?$/.test(x)));       // a markdown table's rule line
+  const n = Math.max(0, ...rows.map(r => r.length));
+  if (rows.length < 1 || n < 2) return { error: `nothing to split on "${by === '\t' ? 'tab' : by}" — a table needs two columns` };
+  rows = rows.map(r => r.concat(Array(n - r.length).fill('')));
+  const id = freeTableId();
+  tables().push({ id, page: b.page, x: b.x, y: b.y, w: b.w, z: b.z ?? 2, header: true, rows });
+  layout.boxes = boxes().filter(x => x !== b);
+  return { id: 'table.' + id, rows: rows.length, cols: n };
+}
 function tableInsertRow(t, at) {
-  reindexCells(t, 'row', at, 1); cellSelShift(t, 'row', at, 1);
+  reindexCells(t, 'row', at, 1); cellSelShift(t, 'row', at, 1); reindexMerges(t, 'row', at, 1);
   t.rows.splice(at, 0, Array(t.rows[0].length).fill(''));
 }
 function tableDeleteRow(t, at) {
   if (t.rows.length <= 1) return;
-  reindexCells(t, 'row', at, -1); cellSelShift(t, 'row', at, -1);
+  reindexCells(t, 'row', at, -1); cellSelShift(t, 'row', at, -1); reindexMerges(t, 'row', at, -1);
   t.rows.splice(at, 1);
 }
 function tableInsertCol(t, at) {
-  reindexCells(t, 'col', at, 1); cellSelShift(t, 'col', at, 1);
+  reindexCells(t, 'col', at, 1); cellSelShift(t, 'col', at, 1); reindexMerges(t, 'col', at, 1);
   t.rows.forEach(r => r.splice(at, 0, ''));
   if (t.colw) t.colw.splice(at, 0, t.colw.reduce((a, b) => a + b, 0) / t.colw.length);
   if (t.colAlign) t.colAlign.splice(at, 0, null);
 }
 function tableDeleteCol(t, at) {
   if (t.rows[0].length <= 1) return;
-  reindexCells(t, 'col', at, -1); cellSelShift(t, 'col', at, -1);
+  reindexCells(t, 'col', at, -1); cellSelShift(t, 'col', at, -1); reindexMerges(t, 'col', at, -1);
   t.rows.forEach(r => r.splice(at, 1));
   if (t.colw) t.colw.splice(at, 1);
   if (t.colAlign) { t.colAlign.splice(at, 1); if (!t.colAlign.some(Boolean)) delete t.colAlign; }
@@ -7780,12 +8134,15 @@ function tableMoveRow(t, at, delta) {
   const to = at + delta;
   if (to < 0 || to >= t.rows.length) return;
   [t.rows[at], t.rows[to]] = [t.rows[to], t.rows[at]];
+  dropMergesOn(t, 'row', [at, to]);
+  if (t.rowh) [t.rowh[at], t.rowh[to]] = [t.rowh[to], t.rowh[at]];
   swapCellLines(t, 'row', at, to); cellSelSwap(t, 'row', at, to);
 }
 function tableMoveCol(t, at, delta) {
   const to = at + delta;
   if (to < 0 || to >= t.rows[0].length) return;
   t.rows.forEach(r => { [r[at], r[to]] = [r[to], r[at]]; });
+  dropMergesOn(t, 'col', [at, to]);
   if (t.colw) [t.colw[at], t.colw[to]] = [t.colw[to], t.colw[at]];
   if (t.colAlign) [t.colAlign[at], t.colAlign[to]] = [t.colAlign[to], t.colAlign[at]];
   swapCellLines(t, 'col', at, to); cellSelSwap(t, 'col', at, to);
@@ -9464,6 +9821,7 @@ function editBox(d, el, at) {
     // worse than it not working in either.
     if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (indentListItem(d, e.shiftKey ? -1 : 1)) { e.preventDefault(); e.stopPropagation(); }
+      else tabKey(d, e, resolvedStyle(b.style));
     }
   });
   host.addEventListener('contextmenu', e => {
@@ -9642,7 +10000,11 @@ const setStyle = (k, patch) => {
 // rendered HTML — because that is what a replace has to write back. A word
 // split across a bold marker will not be found, which is the honest answer:
 // the thing on the page is not the thing in the file.
-let findState = { needle: '', repl: '', cased: false, whole: false, hits: [] };
+// grep: the needle is a regular expression and the change may say $1 (InDesign's
+// GREP tab). inStyle: only text wearing that named style (Find Format).
+// applyStyle: each change is wrapped in that character style (Change Format).
+let findState = { needle: '', repl: '', cased: false, whole: false, grep: false,
+                  inStyle: '', applyStyle: '', hits: [], bad: '' };
 
 /** Everything in the document that holds words, as addressable targets. */
 function findTargets() {
@@ -9654,35 +10016,50 @@ function findTargets() {
       const k = el.dataset.slot;
       if (!k || seen.has(k)) return;
       seen.add(k);
-      out.push({ kind: 'slot', key: k, label: k,
+      out.push({ kind: 'slot', key: k, label: k, use: () => ((layout.text || {})[k] || {}).use,
         read: () => readSlot(k), write: v => writeSlot(k, v) });
     });
   }
   (layout.boxes || []).forEach(b => out.push({
-    kind: 'box', key: b.id, label: b.id,
+    kind: 'box', key: b.id, label: b.id, use: () => (b.style || {}).use,
     read: () => b.md || '', write: v => { b.md = v; },
   }));
   (layout.tables || []).forEach(t => (t.rows || []).forEach((row, r) =>
     row.forEach((_cell, c) => out.push({
       kind: 'cell', key: `${t.id}[${r + 1},${c + 1}]`, label: `${t.id} r${r + 1}c${c + 1}`,
+      use: () => (t.style || {}).use,
       read: () => String(t.rows[r][c] ?? ''),
       write: v => { t.rows[r][c] = v; },
     }))));
   return out;
 }
 
-const findRe = (needle, { cased, whole }) => {
-  const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(whole ? `\\b${esc}\\b` : esc, cased ? 'g' : 'gi');
+const findRe = (needle, { cased, whole, grep }) => {
+  const esc = grep ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(whole ? `\\b(?:${esc})\\b` : esc, cased ? 'g' : 'gi');
 };
+/** What one hit changes to. Literal text in plain mode — a $ is a dollar
+ *  sign — and $1…$99, $& and $$ in GREP mode; wrapped in the character style
+ *  when Change Format names one (an empty change then keeps the words). */
+function findChangeOf(st, args) {
+  const m = args.slice(0, args.findIndex(a => typeof a === 'number'));
+  let out = st.grep
+    ? st.repl.replace(/\$(\$|&|\d{1,2})/g, (_, k) => k === '$' ? '$' : k === '&' ? m[0] : (m[+k] ?? ''))
+    : st.repl;
+  if (st.applyStyle) out = `[${out || m[0]}]{.${st.applyStyle}}`;
+  return out;
+}
 
 /** Every hit, with enough of its line around it to be recognised. */
 function findRun() {
   const { needle } = findState;
   findState.hits = [];
+  findState.bad = '';
   if (!needle) return;
-  const re = findRe(needle, findState);
-  findTargets().forEach(t => {
+  let re;
+  try { re = findRe(needle, findState); }
+  catch (e) { findState.bad = 'not a pattern: ' + e.message.replace(/^.*: /, ''); return; }
+  findTargets().filter(t => !findState.inStyle || t.use() === findState.inStyle).forEach(t => {
     const text = t.read();
     let m, n = 0;
     re.lastIndex = 0;
@@ -9737,7 +10114,7 @@ function renderFindPanel() {
   const opts = document.createElement('div');
   opts.className = 'tp-row';
   pop.appendChild(opts);
-  [['cased', 'Match case'], ['whole', 'Whole words']].forEach(([k, label]) => {
+  [['cased', 'Match case'], ['whole', 'Whole words'], ['grep', 'GREP']].forEach(([k, label]) => {
     const w = document.createElement('label');
     w.className = 'find-opt';
     const cb = document.createElement('input');
@@ -9749,6 +10126,25 @@ function renderFindPanel() {
     sp.textContent = label;
     w.append(cb, sp);
     opts.appendChild(w);
+  });
+
+  // Find Format / Change Format: by named style, InDesign's two format boxes.
+  const fmt = document.createElement('div');
+  fmt.className = 'tp-row';
+  pop.appendChild(fmt);
+  [['inStyle', 'In text styled', 'any style'], ['applyStyle', 'Change to style', 'no change']].forEach(([k, label, none]) => {
+    const w = document.createElement('label');
+    w.className = 'find-opt';
+    const sel = document.createElement('select');
+    sel.id = 'find-' + k;
+    sel.title = label;
+    [['', `${label}: ${none}`], ...styleNames().map(n => [n, `${label}: ${n}`])].forEach(([v, t]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o);
+    });
+    sel.value = findState[k];
+    sel.addEventListener('change', () => { findState[k] = sel.value; findRun(); paintFindList(); });
+    w.appendChild(sel);
+    fmt.appendChild(w);
   });
 
   const list = document.createElement('div');
@@ -9765,6 +10161,83 @@ function renderFindPanel() {
   go.addEventListener('click', findReplaceAll);
   row.appendChild(go);
   paintFindList();
+  renderFindFonts(pop);
+}
+
+// Find Font: every family the report sets, how many places use it, and a swap
+// for another — in the stylesheet, the slots, boxes and tables, and in
+// designed text that shows that family without setting it (the slot is given
+// its own font, the type strip's own rule).
+function fontsInUse() {
+  const by = new Map();
+  const add = (fam, where) => { if (!fam) return; const e = by.get(fam) || []; e.push(where); by.set(fam, e); };
+  Object.entries(textStyles()).forEach(([n, st]) => add(st.font, 'style ' + n));
+  styleHosts().forEach(h => add((h.get() || {}).font, h.key));
+  const d = $('out').contentDocument;
+  if (d) {
+    const seen = new Set();
+    d.querySelectorAll('[data-slot]').forEach(el => {
+      const k = el.dataset.slot;
+      if (seen.has(k) || ((layout.text || {})[k] || {}).font) return;
+      seen.add(k);
+      const raw = (d.defaultView.getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
+      add(raw, k);
+    });
+  }
+  return [...by.entries()].map(([family, uses]) => ({ family, uses }));
+}
+function replaceFont(from, to) {
+  let n = 0;
+  Object.values(textStyles()).forEach(st => { if (st.font === from) { st.font = to; n++; } });
+  styleHosts().forEach(h => { const st = h.get(); if (st && st.font === from) { st.font = to; n++; } });
+  const d = $('out').contentDocument;
+  if (d) {
+    const seen = new Set();
+    d.querySelectorAll('[data-slot]').forEach(el => {
+      const k = el.dataset.slot;
+      if (seen.has(k)) return;
+      seen.add(k);
+      layout.text = layout.text || {};
+      if ((layout.text[k] || {}).font) return;
+      const raw = (d.defaultView.getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
+      if (raw.toLowerCase() !== from.toLowerCase()) return;
+      layout.text[k] = { ...(layout.text[k] || {}), font: to };
+      n++;
+    });
+  }
+  return n;
+}
+function renderFindFonts(pop) {
+  const h = document.createElement('p');
+  h.className = 'ch-fieldlab'; h.textContent = 'Fonts in use';
+  pop.appendChild(h);
+  const box = document.createElement('div');
+  box.id = 'find-fonts';
+  pop.appendChild(box);
+  fontsInUse().forEach(({ family, uses }) => {
+    const row = document.createElement('div');
+    row.className = 'tp-row find-font';
+    const lab = document.createElement('span');
+    lab.className = 'find-opt';
+    lab.textContent = `${family} · ${uses.length}`;
+    lab.title = uses.join(', ');
+    lab.style.fontFamily = `'${family}'`;
+    const sel = document.createElement('select');
+    sel.title = `Replace ${family} with`;
+    [['', 'Replace with…'], ...Object.keys(fonts).filter(f => f !== family).sort().map(f => [f, f])].forEach(([v, t]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o);
+    });
+    sel.addEventListener('change', async () => {
+      if (!sel.value) return;
+      pushHistory();
+      const n = replaceFont(family, sel.value);
+      markDirty(); await render();
+      renderFindPanel();
+      $('stat').textContent = `${family} → ${sel.value} in ${n} place${n === 1 ? '' : 's'}`;
+    });
+    row.append(lab, sel);
+    box.appendChild(row);
+  });
 }
 
 /** Just the results, so typing in the field keeps its caret. */
@@ -9778,6 +10251,7 @@ function paintFindList() {
   const head = document.createElement('p');
   head.className = 'ch-eg';
   head.textContent = !findState.needle ? 'Type something to find.'
+    : findState.bad ? findState.bad
     : n ? `${n} ${n === 1 ? 'hit' : 'hits'}` : 'Nothing found.';
   list.appendChild(head);
   // Grouped by where they are, because "12 hits" is only useful if you can
@@ -9829,7 +10303,7 @@ async function findReplaceAll() {
     if (done.has(h.target.key)) return;             // a target is rewritten once
     done.add(h.target.key);
     h.target.write(h.target.read().replace(findRe(findState.needle, findState),
-      findState.repl));
+      (...args) => findChangeOf(findState, args)));
   });
   markDirty();
   await render();
@@ -10003,6 +10477,14 @@ function fillParaPop(key) {
   $('ty-fig').value = eff.figures || '';
   $('ty-smcp').value = eff.smallCaps || '';
   $('ty-liga').checked = eff.ligatures !== false;
+  $('ty-strike').checked = !!eff.strike;
+  $('ty-tabs').textContent = (eff.tabs || []).length ? eff.tabs.map(t => t.at + 'in').join(', ') : 'none';
+  $('ty-shift').value = eff.shift ?? '';
+  const feats = eff.features || [];
+  document.querySelectorAll('#ty-parapop [data-ot]').forEach(c => { c.checked = feats.includes(c.dataset.ot); });
+  if ($('ty-ss').options.length === 1)
+    for (let i = 1; i <= 20; i++) { const o = document.createElement('option'); o.value = `ss${String(i).padStart(2, '0')}`; o.textContent = `Set ${i}`; $('ty-ss').appendChild(o); }
+  $('ty-ss').value = feats.find(f => /^ss\d\d$/.test(f)) || '';
   $('ty-dcap').value = eff.dropCap ? String(eff.dropCap) : '';
   [['ty-sb', 'spaceBefore'], ['ty-sa', 'spaceAfter'], ['ty-ti', 'indent'],
    ['ty-hang', 'hang'], ['ty-il', 'indentLeft'], ['ty-ir', 'indentRight']]
@@ -10392,6 +10874,38 @@ function applyGrid(d) {
   }
   if (!w.__dsGrid) { try { w.eval(GRID_SRC); } catch (e) { return; } }
   try { w.__dsGrid(); } catch (e) { /* the next render aligns */ }
+}
+// layout.TABS_JS — tab stops (INDESIGN_PARITY.md 32), the published runtime.
+let TABS_SRC = null;
+function applyTabs(d) {
+  if (!d || !d.querySelector('[style*="--ds-tabs:"]')) return;
+  const w = d.defaultView;
+  if (!w.__dsTabs) {
+    if (TABS_SRC === null) {
+      try { TABS_SRC = py.runPython('from docsync.layout import TABS_JS\nTABS_JS'); }
+      catch (e) { TABS_SRC = ''; }
+    }
+    try { w.eval(TABS_SRC); } catch (e) { return; }
+  }
+  try { w.__dsTabs(); } catch (e) { /* the next render lays them out */ }
+}
+function parseTabStops(text) {
+  const tabs = [];
+  for (const line of String(text || '').split('\n').map(l => l.trim()).filter(Boolean)) {
+    const [at, align = 'left', leader = ''] = line.split(/\s+/);
+    if (!(+at > 0 && +at <= 20)) return { error: `"${line}": start with inches, above 0 and up to 20` };
+    if (!['left', 'right', 'center', 'decimal'].includes(align)) return { error: `"${line}": left, right, center or decimal` };
+    if (!['', '.', '-', '_', '·'].includes(leader)) return { error: `"${line}": a leader is . - _ or ·` };
+    tabs.push({ at: +at, ...(align !== 'left' ? { align } : {}), ...(leader ? { leader } : {}) });
+  }
+  return { tabs: tabs.sort((a, b) => a.at - b.at) };
+}
+/** Tab in text that has tab stops types a tab, as in InDesign; elsewhere it
+ *  keeps meaning what it always did. */
+function tabKey(d, e, st) {
+  if (e.shiftKey || !st || !st.tabs || !st.tabs.length) return;
+  e.preventDefault(); e.stopPropagation();
+  d.execCommand('insertText', false, '\t');
 }
 let THREAD_SRC = null;
 function pourThreads(d) {
@@ -11234,6 +11748,34 @@ function wireType() {
   paraSel('ty-wrap', 'wrap'); paraSel('ty-keep', 'keep'); paraSel('ty-fig', 'figures');
   paraSel('ty-smcp', 'smallCaps'); paraSel('ty-dcap', 'dropCap', true);
   $('ty-hyph').addEventListener('change', () => paraSet({ hyphenate: $('ty-hyph').checked || null }));
+  $('ty-strike').addEventListener('change', () => paraSet({ strike: $('ty-strike').checked || null }));
+  // Tab stops: one per line, "inches  align  leader" — "4.5 right ." is a
+  // right-aligned stop at 4.5in with a dot leader (InDesign's Tabs panel).
+  $('ty-tabs').addEventListener('click', async () => {
+    const cur = (resolvedStyle(styleOf(selected)).tabs || [])
+      .map(t => [t.at, t.align || 'left', t.leader || ''].join(' ').trim()).join('\n');
+    const got = await dsForm('Tab stops', [{ name: 'tabs', type: 'textarea', value: cur,
+      label: 'One stop per line: inches from the left, then left / right / center / decimal, then a leader (. - _ ·) if any',
+      placeholder: '4.5 right .' }], {
+      okLabel: 'Apply',
+      validate: v => parseTabStops(v.tabs).error || '',
+    });
+    if (got == null) return;
+    const tabs = parseTabStops(got.tabs).tabs;
+    paraSet({ tabs: tabs.length ? tabs : null });
+  });
+  $('ty-shift').addEventListener('change', () => {
+    const v = $('ty-shift').value;
+    paraSet({ shift: v === '' || !+v ? null : Math.max(-24, Math.min(24, +v)) });
+  });
+  // OpenType features are one list: the checkboxes and the set, together.
+  const otWrite = () => {
+    const f = [...document.querySelectorAll('#ty-parapop [data-ot]')].filter(c => c.checked).map(c => c.dataset.ot);
+    if ($('ty-ss').value) f.push($('ty-ss').value);
+    paraSet({ features: f.length ? f : null });
+  };
+  document.querySelectorAll('#ty-parapop [data-ot]').forEach(c => c.addEventListener('change', otWrite));
+  $('ty-ss').addEventListener('change', otWrite);
   // Inches, clamped to what the engine accepts (SPACE_RANGE); empty clears.
   [['ty-sb', 'spaceBefore'], ['ty-sa', 'spaceAfter'], ['ty-ti', 'indent'],
    ['ty-hang', 'hang'], ['ty-il', 'indentLeft'], ['ty-ir', 'indentRight']].forEach(([id, key]) =>
@@ -11918,6 +12460,7 @@ arField('ar-scale', (d, el, page, v) => {
 });
 arField('ar-rot', (d, el, page, v) => {
   const st = ensureStore(d, el);
+  if (v - (st.rot || 0)) lastXform = { kind: 'rot', deg: Math.round((v - (st.rot || 0)) * 10) / 10 };
   if (v) st.rot = v; else delete st.rot;
   paintRot(d, el);
 });
@@ -12286,11 +12829,13 @@ function copySel(d) {
   $('stat').textContent = `copied ${items.length} element${items.length > 1 ? 's' : ''} — ⌘V pastes onto the page in view`;
 }
 
-async function pasteClip(d) {
+async function pasteClip(d, inPlace = false) {
   if (!clip || !clip.items.length) return;
   pushHistory();
   const page = visiblePageId();
-  const off = 0.2 * (++clip.pastes);         // repeated pastes cascade
+  // Repeated pastes cascade; Paste in Place (⌥⇧⌘V) lands on the original's
+  // own x/y, on the page in view (InDesign's Edit > Paste in Place).
+  const off = inPlace ? 0 : 0.2 * (++clip.pastes);
   const copies = [];
   const idMap = new Map();                   // original box id -> its copy's
   // Pasting is how an object crosses pages, and an anchor cannot cross one:
@@ -12342,7 +12887,110 @@ async function pasteClip(d) {
   setSel(d, copies);
   markDirty();
   await render();
-  $('stat').textContent = `pasted ${copies.length} element${copies.length > 1 ? 's' : ''} onto page ${page}`;
+  $('stat').textContent = `pasted ${copies.length} element${copies.length > 1 ? 's' : ''}`
+    + `${inPlace ? ' in place' : ''} onto page ${page}`;
+}
+
+// ----------------------------------------------- step and repeat, again
+// Step and Repeat (InDesign ⌥⌘U): `count` copies of each selected shape, box
+// or table, each `dx`/`dy` inches on from the last. The copies keep the page
+// of what they copy; the whole run is one undo step. Designed elements have
+// one instance and are skipped, as Duplicate skips them.
+function stepRepeatIds(ids, count, dx, dy) {
+  const made = [];
+  ids.forEach(id => {
+    const sh = shapeOf(id), b = boxOf(id), t = tableOf(id);
+    for (let i = 1; i <= count; i++) {
+      const at = o => ({ x: +(o.x + dx * i).toFixed(3), y: +(o.y + dy * i).toFixed(3) });
+      if (sh) {
+        const nid = freeShapeId(sh.kind);
+        layout.shapes.push({ ...clone(sh), id: nid, ...at(sh) });
+        made.push(nid);
+      } else if (b) {
+        const nid = freeBoxId();
+        boxes().push({ ...standaloneCopy(b), id: nid, ...at(b) });
+        made.push('text.' + nid);
+      } else if (t && !t.flow) {
+        const nid = freeTableId();
+        tables().push({ ...clone(t), id: nid, ...at(t) });
+        made.push('table.' + nid);
+      }
+    }
+  });
+  return made;
+}
+async function stepRepeatDialog(d) {
+  const ids = [...selIds].filter(id => shapeOf(id) || boxOf(id) || (tableOf(id) && !tableOf(id).flow));
+  if (!ids.length) { $('stat').textContent = 'step and repeat works on shapes, text boxes and placed tables'; return; }
+  const got = await dsForm('Step and Repeat', [
+    { name: 'count', type: 'number', label: 'Count', value: 3 },
+    { name: 'dx', type: 'number', label: 'Horizontal offset, inches', value: 0.25 },
+    { name: 'dy', type: 'number', label: 'Vertical offset, inches', value: 0.25 },
+  ], { okLabel: 'Repeat' });
+  if (got == null) return;
+  const n = Math.max(1, Math.min(100, Math.round(+got.count) || 1));
+  pushHistory();
+  const made = stepRepeatIds(ids, n, +got.dx || 0, +got.dy || 0);
+  if (!made.length) { past.pop(); return; }
+  setSel(d, [...ids, ...made]);
+  markDirty();
+  await render();
+  $('stat').textContent = `made ${made.length} cop${made.length > 1 ? 'ies' : 'y'}`;
+}
+
+// Transform Again (⌥⌘3): the last move or rotation, done once more to what
+// is selected now. A move is recorded by the placer's commit (drag, nudge,
+// the X/Y fields, place()), a rotation by the rotate handle and field.
+let lastXform = null;
+async function transformAgain(d) {
+  if (!lastXform) { $('stat').textContent = 'nothing to repeat yet — move or rotate something first'; return; }
+  const els = outermost(selEls(d).filter(el => !isLocked(idOf(el))));
+  if (!els.length) return;
+  const x = lastXform;
+  pushHistory();
+  els.forEach(el => {
+    const page = el.closest('section.page') || d.querySelector('section.page');
+    if (x.kind === 'move') {
+      const P = placer(d, el, page);
+      P.commit(P.put(P.box.x + x.dx, P.box.y + x.dy, false));
+    } else {
+      const st = ensureStore(d, el);
+      let deg = (((st.rot || 0) + x.deg) % 360 + 360) % 360;
+      if (deg > 180) deg -= 360;
+      deg = Math.round(deg * 10) / 10;
+      if (deg) st.rot = deg; else delete st.rot;
+      paintRot(d, el);
+    }
+  });
+  lastXform = x;
+  markDirty();
+  await render();
+  $('stat').textContent = x.kind === 'move'
+    ? `moved again by ${x.dx.toFixed(2)}in, ${x.dy.toFixed(2)}in` : `rotated again by ${x.deg}°`;
+}
+
+// Select next object above / below (⌥] / ⌥[): steps through the page's
+// objects in stacking order, wrapping, from the one selected — or from the
+// top or bottom of the stack when nothing on the page is.
+function pageStack(d, pg) {
+  const els = [...pg.querySelectorAll('[data-el], [data-shape]')].filter(el =>
+    ownObject(el) || !(el.parentElement && el.parentElement.closest('[data-el]')));
+  return els.map((el, i) => ({ el, i, z: zOf(idOf(el)) }))
+    .sort((a, b) => a.z - b.z || a.i - b.i).map(o => o.el);
+}
+function selectNextObject(d, dir) {
+  const cur = selEls(d)[0];
+  const pg = (cur && cur.closest('section.page'))
+    || docSheets().find(s => String(s.id) === String(visiblePageId()))?.pg
+    || d.querySelector('section.page');
+  if (!pg) return;
+  const stack = pageStack(d, pg);
+  if (!stack.length) return;
+  const at = cur ? stack.indexOf(cur) : -1;
+  const next = at < 0 ? stack[dir > 0 ? 0 : stack.length - 1]
+    : stack[(at + dir + stack.length) % stack.length];
+  setSel(d, [idOf(next)]);
+  $('stat').textContent = `${idOf(next)} · layer ${zOf(idOf(next))}`;
 }
 
 // ------------------------------------------------------- format painter
@@ -12611,8 +13259,21 @@ function keysFor(d) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selIds.size) {
       e.preventDefault(); e.altKey ? copyStyle(d) : copySel(d); return;
     }
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.shiftKey && e.code === 'KeyV' && clip) {
+      e.preventDefault(); pasteClip(d, true); return;           // Paste in Place
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && (e.altKey ? styleClip : clip)) {
       e.preventDefault(); e.altKey ? pasteStyle(d) : pasteClip(d); return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyU' && selIds.size) {
+      e.preventDefault(); stepRepeatDialog(d); return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'Digit3') {
+      e.preventDefault(); transformAgain(d); return;
+    }
+    // ⌥] / ⌥[ walk the stack (⌘] / ⌘[ move in it). By code: ⌥] types a quote.
+    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
+      e.preventDefault(); selectNextObject(d, e.code === 'BracketRight' ? 1 : -1); return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
       e.preventDefault(); e.shiftKey ? ungroupSel(d) : groupSel(d); return;
@@ -14003,9 +14664,26 @@ function setGuides(x, y) {
 }
 
 function drawGuideLayer(d) {
-  d.querySelectorAll('.ds-rule, .ds-gd').forEach(n => n.remove());
+  d.querySelectorAll('.ds-rule, .ds-gd, .ds-mg, .ds-mgc').forEach(n => n.remove());
   if (!guidesOn) return;
+  const ids = new Map(docSheets().map(s => [s.pg, s.id]));
   d.querySelectorAll('section.page').forEach(pg => {
+    // Margins (magenta) and columns (violet), as InDesign draws them. Not
+    // handles: they move only through Margins and Columns.
+    const mg = marginGuides(ids.get(pg));
+    if (mg) {
+      const box = d.createElement('div');
+      box.className = 'ds-mg';
+      Object.assign(box.style, { left: mg.l + 'in', top: mg.t + 'in',
+        width: (mg.r - mg.l) + 'in', height: (mg.b - mg.t) + 'in' });
+      pg.appendChild(box);
+      mg.cols.forEach(x => {
+        const c = d.createElement('div');
+        c.className = 'ds-mgc';
+        Object.assign(c.style, { left: x + 'in', top: mg.t + 'in', height: (mg.b - mg.t) + 'in' });
+        pg.appendChild(c);
+      });
+    }
     ['t', 'l'].forEach(side => {
       const r = d.createElement('div');
       r.className = 'ds-rule ' + side;
@@ -14081,6 +14759,150 @@ function startGuideDrag(d, pg, axis, idx, e0) {
     drawGuideLayer(d);
   };
   dragListen(d, move, up);
+}
+
+// ------------------------------------------------- margins and columns
+// layout.margins — or a master's own, for the pages that use it — is
+// InDesign's Margins and Columns: {top, bottom, left, right, columns, gutter}
+// in inches. Like ruler guides it is the editor's alone (layout.py
+// _check_margins validates; the renderer never reads it), drawn with the
+// guides and snapped to.
+const MARGINS_DEFAULT = { top: 0.5, bottom: 0.5, left: 0.5, right: 0.5, columns: 1, gutter: 0.17 };
+function marginsFor(pid) {
+  const name = pid == null ? null : masterNameOf(pid);
+  const m = name && (layout.masters || {})[name];
+  return (m && m.margins) || layout.margins || null;
+}
+/** The guides a page's margins make, in page inches: the margin box's edges
+ *  and each gutter's two sides. Null when no margins are set. */
+function marginGuides(pid) {
+  const mg = marginsFor(pid);
+  if (!mg) return null;
+  const v = (k) => mg[k] ?? MARGINS_DEFAULT[k];
+  const l = v('left'), r = PAGE_W_IN - v('right'), t = v('top'), b = PAGE_H_IN - v('bottom');
+  const n = mg.columns || 1, g = v('gutter');
+  const cw = (r - l - (n - 1) * g) / n;
+  const cols = [];
+  for (let i = 1; i < n; i++) {
+    const x = l + i * cw + (i - 1) * g;
+    cols.push(+x.toFixed(3), +(x + g).toFixed(3));
+  }
+  return { l, r, t, b, cols };
+}
+function setMargins(mg, master = null) {
+  const clean = mg && Object.fromEntries(Object.entries(mg)
+    .filter(([k, v]) => k in MARGINS_DEFAULT && v !== '' && v != null && isFinite(+v))
+    .map(([k, v]) => [k, k === 'columns' ? Math.max(1, Math.min(12, Math.round(+v))) : +(+v).toFixed(3)]));
+  const host = master ? (layout.masters || {})[master] : layout;
+  if (!host) return;
+  if (clean && Object.keys(clean).length) host.margins = clean; else delete host.margins;
+  markDirty();
+}
+/** Create Guides: rows and columns of ruler guides, with a gutter, fitted to
+ *  the margins or to the page. Adds to the guides already there. */
+function createGuides({ rows = 0, columns = 0, gutter = 0, fit = 'margins', pid = null } = {}) {
+  const mg = fit === 'margins' ? marginGuides(pid) : null;
+  const box = mg || { l: 0, r: PAGE_W_IN, t: 0, b: PAGE_H_IN };
+  const cuts = (lo, hi, n) => {
+    const out = [];
+    if (n < 2) return out;
+    const size = (hi - lo - (n - 1) * gutter) / n;
+    for (let i = 1; i < n; i++) {
+      const at = lo + i * size + (i - 1) * gutter;
+      out.push(round2(at));
+      if (gutter) out.push(round2(at + gutter));
+    }
+    return out;
+  };
+  const x0 = guidesX().length, y0 = guidesY().length;
+  const xs = [...new Set([...guidesX(), ...cuts(box.l, box.r, columns)])];
+  const ys = [...new Set([...guidesY(), ...cuts(box.t, box.b, rows)])];
+  setGuides(xs, ys);
+  return { x: xs.length - x0, y: ys.length - y0 };
+}
+function showGuidesNow() {
+  if (guidesOn) return;
+  guidesOn = true;
+  try { localStorage.setItem('ds-guides', '1'); } catch (e) { /* file: */ }
+  $('guides').classList.add('on');
+}
+async function marginsDialog(pid) {
+  const name = masterNameOf(pid);
+  const cur = marginsFor(pid) || MARGINS_DEFAULT;
+  const val = k => String(cur[k] ?? MARGINS_DEFAULT[k]);
+  const fields = [
+    { name: 'top', label: 'Top, inches', value: val('top') },
+    { name: 'bottom', label: 'Bottom, inches', value: val('bottom') },
+    { name: 'left', label: 'Left, inches', value: val('left') },
+    { name: 'right', label: 'Right, inches', value: val('right') },
+    { name: 'columns', label: 'Columns', value: val('columns') },
+    { name: 'gutter', label: 'Gutter, inches', value: val('gutter') },
+  ];
+  if (name) fields.push({ name: 'scope', type: 'select', label: 'Apply to', value: 'master',
+    options: [{ value: 'master', label: `Pages using “${name}”` }, { value: 'all', label: 'The whole report' }] });
+  const got = await dsForm('Margins and columns', fields, { okLabel: 'Apply' });
+  if (got == null) return;
+  pushHistory();
+  const { scope, ...mg } = got;
+  setMargins(mg, name && scope === 'master' ? name : null);
+  showGuidesNow();
+  drawGuideLayer($('out').contentDocument);
+  $('stat').textContent = 'margins and columns set — objects snap to them while guides show';
+}
+// ---------------------------------------------------------- reading order
+// layout.readingOrder {page: [ids]}: the order a screen reader and the tagged
+// PDF take the page's objects in (layout.py ORDER_JS — aria-owns, so nothing
+// on the page moves). Listed first, in order; the rest follow as they stand.
+function readableObjects(pid) {
+  const sheet = docSheets().find(s => String(s.id) === String(pid));
+  if (!sheet) return [];
+  return [...sheet.pg.querySelectorAll('[data-el]')]
+    .filter(el => !(el.parentElement && el.parentElement.closest('[data-el]')) || ownObject(el))
+    .map(idOf).filter((v, i, a) => a.indexOf(v) === i);
+}
+function setReadingOrder(pid, ids) {
+  const ro = layout.readingOrder || {};
+  const clean = (ids || []).filter(Boolean);
+  // An id belongs to one page's list: listing it here takes it off any other.
+  Object.keys(ro).forEach(k => { if (k !== String(pid)) ro[k] = ro[k].filter(x => !clean.includes(x)); if (!ro[k].length) delete ro[k]; });
+  if (clean.length) ro[String(pid)] = clean; else delete ro[String(pid)];
+  if (Object.keys(ro).length) layout.readingOrder = ro; else delete layout.readingOrder;
+  markDirty();
+}
+async function readingOrderDialog(pid) {
+  const cur = (layout.readingOrder || {})[String(pid)];
+  const all = readableObjects(pid);
+  const got = await dsForm(`Reading order — page ${pageLabel(pid)}`, [{ name: 'ids', type: 'textarea',
+    label: 'One object per line, in the order it should be read. Anything left off follows in page order.',
+    value: (cur || all).join('\n') }], {
+    okLabel: 'Apply',
+    validate: v => {
+      const bad = v.ids.split('\n').map(x => x.trim()).filter(Boolean).filter(x => !all.includes(x));
+      return bad.length ? `not on this page: ${bad.join(', ')}` : '';
+    },
+  });
+  if (got == null) return;
+  pushHistory();
+  const ids = got.ids.split('\n').map(x => x.trim()).filter(Boolean);
+  setReadingOrder(pid, ids.join() === all.join() ? null : ids);
+  await render();
+  $('stat').textContent = ids.length ? `reading order set for page ${pageLabel(pid)}` : 'reading order cleared';
+}
+async function createGuidesDialog(pid) {
+  const got = await dsForm('Create guides', [
+    { name: 'rows', label: 'Rows', value: '2' },
+    { name: 'columns', label: 'Columns', value: '2' },
+    { name: 'gutter', label: 'Gutter, inches', value: '0.17' },
+    { name: 'fit', type: 'select', label: 'Fit guides to', value: marginsFor(pid) ? 'margins' : 'page',
+      options: [{ value: 'margins', label: 'Margins' }, { value: 'page', label: 'Page' }] },
+  ], { okLabel: 'Create' });
+  if (got == null) return;
+  pushHistory();
+  const n = createGuides({ rows: Math.round(+got.rows) || 0, columns: Math.round(+got.columns) || 0,
+                           gutter: Math.max(0, +got.gutter || 0), fit: got.fit, pid });
+  showGuidesNow();
+  drawGuideLayer($('out').contentDocument);
+  $('stat').textContent = `added ${n.x + n.y} guide${n.x + n.y === 1 ? '' : 's'}`;
 }
 
 // Refresh the window. Unsaved edits are the whole risk here — a reload throws
@@ -14378,6 +15200,115 @@ $('layers').addEventListener('click', () => {
   if (pop.hidden) { layersRender(); docLayersRender(); }
   togglePop(pop, $('layers'));
 });
+
+// ------------------------------------------------------------------- links
+// InDesign's Links panel: every picture the report places, by file — where
+// it is used, its pixel size, its effective resolution at the size it is
+// printed (under 150 ppi is flagged), and whether it is missing (the file did
+// not load). Relink swaps a file for another EVERYWHERE it is used: a
+// replaced image's src (layout.img), a box's markdown, a content slot's
+// markdown, and a designed picture (pinned into layout.img, as Replace image
+// does). An inline data: picture is part of the page, not a link.
+const LOW_PPI = 150;
+const imgSrcOf = img => img.dataset.dsSrc || img.getAttribute('src') || '';
+function linksList(d) {
+  const by = new Map();
+  docSheets().forEach(({ pg, id: pid }) => {
+    pg.querySelectorAll('img').forEach(img => {
+      const src = imgSrcOf(img);
+      if (!src || src.startsWith('data:')) return;
+      const host = img.closest('[data-el], [data-shape]');
+      const wIn = img.getBoundingClientRect().width / (DPI * zoomOf(pg));
+      const missing = img.complete && img.naturalWidth === 0;
+      const e = by.get(src) || { src, uses: [], missing: false, ppi: null, size: null };
+      e.uses.push({ page: pid, id: host ? idOf(host) : null });
+      e.missing = e.missing || missing;
+      if (!missing && img.naturalWidth) {
+        e.size = [img.naturalWidth, img.naturalHeight];
+        if (wIn > 0.05) e.ppi = Math.min(e.ppi ?? Infinity, Math.round(img.naturalWidth / wIn));
+      }
+      by.set(src, e);
+    });
+  });
+  return [...by.values()];
+}
+function relinkSource(d, oldSrc, newSrc) {
+  if (!oldSrc || !newSrc || oldSrc === newSrc) return 0;
+  let n = 0;
+  const re = new RegExp(`\\]\\(${rxEsc(oldSrc)}(?=[\\s)])`, 'g');
+  const swap = md => md.replace(re, `](${newSrc}`);
+  Object.values(layout.img || {}).forEach(g => { if (g.src === oldSrc) { g.src = newSrc; n++; } });
+  [...boxes(), ...Object.values(layout.masters || {}).flatMap(m => m.boxes || [])].forEach(b => {
+    if (typeof b.md === 'string' && swap(b.md) !== b.md) { b.md = swap(b.md); n++; }
+  });
+  [...source.matchAll(/^\[\[([A-Za-z0-9._-]+)\]\][ \t]*$/gm)].forEach(([, k]) => {
+    const v = readSlot(k);
+    if (swap(v) !== v) { writeSlot(k, swap(v)); n++; }
+  });
+  d.querySelectorAll('img').forEach(img => {
+    if (imgSrcOf(img) !== oldSrc || img.closest('[data-slot]')) return;
+    const host = img.closest('[data-el]');
+    if (!host || boxOf(idOf(host))) return;
+    layout.img = layout.img || {};
+    const g = layout.img[idOf(host)] || (layout.img[idOf(host)] = {});
+    if (g.src !== newSrc) { g.src = newSrc; n++; }
+  });
+  return n;
+}
+function linksRender() {
+  const d = $('out').contentDocument;
+  const list = $('links-list');
+  list.textContent = '';
+  if (!d) return;
+  const links = linksList(d);
+  if (!links.length) { list.textContent = 'No placed pictures.'; return; }
+  links.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'lk-row' + (e.missing ? ' missing' : e.ppi != null && e.ppi < LOW_PPI ? ' lowres' : '');
+    row.dataset.src = e.src;
+    const th = document.createElement('img');
+    th.alt = '';
+    if (!e.missing) th.src = localImages.get(e.src) || withBase(e.src);
+    const mid = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'lk-name'; name.textContent = e.src.split('/').pop(); name.title = e.src;
+    const meta = document.createElement('div');
+    meta.className = 'lk-meta';
+    const pages = [...new Set(e.uses.map(u => u.page))];
+    meta.textContent = (e.missing ? 'missing · ' : '')
+      + (e.size ? `${e.size[0]}×${e.size[1]}px · ` : '')
+      + (e.ppi != null ? `${e.ppi} ppi · ` : '')
+      + `${e.uses.length} use${e.uses.length > 1 ? 's' : ''}, page${pages.length > 1 ? 's' : ''} ${pages.join(', ')}`;
+    mid.append(name, meta);
+    const acts = document.createElement('div');
+    acts.className = 'lk-acts';
+    const go = document.createElement('button');
+    go.textContent = 'Go to';
+    go.addEventListener('click', () => {
+      const u = e.uses.find(x => x.id) || e.uses[0];
+      const sheet = docSheets().find(sh => String(sh.id) === String(u.page));
+      if (sheet) sheet.pg.scrollIntoView({ block: 'start' });
+      if (u.id) setSel(d, [u.id]);
+    });
+    const re = document.createElement('button');
+    re.textContent = 'Relink…';
+    re.addEventListener('click', () => uploadImageFile(d, async path => {
+      pushHistory();
+      const n = relinkSource($('out').contentDocument, e.src, path);
+      markDirty(); await render();
+      linksRender();
+      $('stat').textContent = `relinked ${e.src.split('/').pop()} → ${path.split('/').pop()} in ${n} place${n === 1 ? '' : 's'}`;
+    }));
+    acts.append(go, re);
+    row.append(th, mid, acts);
+    list.appendChild(row);
+  });
+}
+$('links').addEventListener('click', () => {
+  const pop = $('linkspop');
+  if (pop.hidden) linksRender();
+  togglePop(pop, $('links'));
+});
 $('ar-front').addEventListener('click', () => layerStep($('out').contentDocument, 1, true));
 $('ar-back').addEventListener('click', () => layerStep($('out').contentDocument, -1, true));
 
@@ -14609,6 +15540,43 @@ $('ar-alpha').addEventListener('click', () => {
   togglePop($('ar-alphapop'), $('ar-alpha'));
 });
 
+/** The effects past the drop shadow (INDESIGN_PARITY.md 39): a glow for
+ *  anything; inner shadow, inner glow and feather for a box (a drawn shape
+ *  takes the glow only — layout.py's _check_effects). Each is a toggle and a
+ *  size slider. */
+function fxExtras(body, owner, commit, isShape, rebuild) {
+  const head = document.createElement('p'); head.className = 'pop-h'; head.textContent = 'More effects';
+  body.appendChild(head);
+  const defs = { glow: { size: 0.12, color: '#F2C94C', alpha: 0.75 },
+                 innerShadow: { size: 0.08, alpha: 0.4 }, innerGlow: { size: 0.12, color: '#FFFFFF', alpha: 0.8 } };
+  const rows = isShape ? ['glow'] : ['glow', 'innerShadow', 'innerGlow'];
+  const label = { glow: 'Outer glow', innerShadow: 'Inner shadow', innerGlow: 'Inner glow' };
+  rows.forEach(k => {
+    const w = document.createElement('label'); w.className = 'ar-slide';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!owner[k];
+    const r = document.createElement('input'); r.type = 'range'; r.min = 0.02; r.max = 0.5; r.step = 0.01;
+    r.value = (owner[k] || defs[k]).size; r.disabled = !owner[k];
+    cb.addEventListener('change', async () => {
+      pushHistory();
+      if (cb.checked) owner[k] = { ...defs[k] }; else delete owner[k];
+      rebuild(); await commit();
+    });
+    r.addEventListener('pointerdown', () => pushHistory());
+    r.addEventListener('change', async () => { owner[k].size = +r.value; await commit(); });
+    w.append(cb, document.createTextNode(label[k]), r);
+    body.appendChild(w);
+  });
+  if (!isShape) {
+    const w = document.createElement('label'); w.className = 'ar-slide';
+    const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 0.6; r.step = 0.02;
+    r.value = owner.feather || 0;
+    r.addEventListener('pointerdown', () => pushHistory());
+    r.addEventListener('change', async () => { if (+r.value) owner.feather = +r.value; else delete owner.feather; await commit(); });
+    w.append(document.createTextNode('Feather'), r);
+    body.appendChild(w);
+  }
+}
+
 // Effects: a shadow, for now — add, tune, remove. Same store the right-click
 // menu writes (shape.shadow / box.shadow).
 $('ar-fxbtn').addEventListener('click', () => {
@@ -14635,6 +15603,7 @@ $('ar-fxbtn').addEventListener('click', () => {
         build(); await commit();
       });
       body.appendChild(add);
+      fxExtras(body, owner, commit, !!shapeOf(id), build);
       return;
     }
     const mk = (label, key, min, max, step) => {
@@ -14668,6 +15637,7 @@ $('ar-fxbtn').addEventListener('click', () => {
       build(); await commit();
     });
     body.appendChild(rm);
+    fxExtras(body, owner, commit, !!shapeOf(id), build);
   };
   build();
   togglePop($('ar-fxpop'), $('ar-fxbtn'));
@@ -15215,8 +16185,14 @@ function snapLines(d, page, moving) {
     xs.push(b.x, b.x + b.w / 2, b.x + b.w);
     ys.push(b.y, b.y + b.h / 2, b.y + b.h);
   });
-  // Your own ruler guides are snap targets too, when they are showing.
-  if (guidesOn) { xs.push(...guidesX()); ys.push(...guidesY()); }
+  // Your own ruler guides are snap targets too, when they are showing — and
+  // the page's margins and columns.
+  if (guidesOn) {
+    xs.push(...guidesX()); ys.push(...guidesY());
+    const sheet = docSheets().find(s => s.pg === page);
+    const mg = marginGuides(sheet ? sheet.id : null);
+    if (mg) { xs.push(mg.l, mg.r, ...mg.cols); ys.push(mg.t, mg.b); }
+  }
   return { xs, ys };
 }
 
@@ -15863,6 +16839,8 @@ function placer(d, el, page) {
   };
 
   const commit = ({ x, y }) => {
+    if (Math.abs(x - box.x) > 0.001 || Math.abs(y - box.y) > 0.001)
+      lastXform = { kind: 'move', dx: +(x - box.x).toFixed(3), dy: +(y - box.y).toFixed(3) };
     if (bx) { clearGuides(d); markDirty(); return; }   // already written above
     if (!shapeId) {
       const prev = layout.positions[id] || {};
@@ -16296,7 +17274,7 @@ const ptsAttr = pts => pts.map(p => p.map(v => +v.toFixed(4)).join(',')).join(' 
 // INDESIGN_PARITY.md 23. A `path`'s points are fractions of its box (so it
 // moves and resizes as any shape does); the twin of layout.path_d draws it
 // live while points are dragged. A `compound` is Pathfinder over parts.
-const PART_KINDS = ['rect', 'ellipse', 'triangle', 'arrow', 'path'];
+const PART_KINDS = ['rect', 'ellipse', 'triangle', 'arrow', 'path', 'polygon', 'star'];
 function pathD(points, closed, x, y, w, h) {
   const f = v => +(+v).toFixed(4);
   const P = (px, py) => `${f(x + px * w)} ${f(y + py * h)}`;
@@ -16360,6 +17338,8 @@ function _pathfinderApply(ids, op) {
   const parts = shs.map(x => {
     const p = { kind: x.kind, x: fr(x.x, X, W), y: fr(x.y, Y, H), w: +(x.w / (W || 1)).toFixed(4), h: +(x.h / (H || 1)).toFixed(4) };
     if (x.kind === 'path') { p.points = clone(x.points); p.closed = x.closed !== false; }
+    if (x.kind === 'polygon') p.sides = x.sides || 6;
+    if (x.kind === 'star') { p.points = x.points || 5; p.inner = x.inner ?? 0.5; }
     return p;
   });
   const id = freeShapeId('compound');
@@ -16380,6 +17360,8 @@ function _releaseApply(id) {
     const sh = { id: nid, page: c.page, kind: p.kind, x: +(c.x + p.x * c.w).toFixed(3), y: +(c.y + p.y * c.h).toFixed(3),
       w: +(p.w * c.w).toFixed(3), h: +(p.h * c.h).toFixed(3), fill: c.fill, stroke: c.stroke, sw: c.sw, z: (c.z ?? 2) + i };
     if (p.kind === 'path') { sh.points = clone(p.points); sh.closed = p.closed !== false; }
+    if (p.kind === 'polygon') sh.sides = p.sides || 6;
+    if (p.kind === 'star') { sh.points = p.points || 5; sh.inner = p.inner ?? 0.5; }   // a star's points is a count
     layout.shapes.push(sh);
     return nid;
   });
@@ -16515,7 +17497,7 @@ function paintShape(d, id) {
   const sh = shapeOf(id);
   const node = d.querySelector(`[data-shape="${id}"]`);
   if (!sh || !node) return;
-  if (sh.kind === 'rect' || sh.kind === 'icon') {
+  if (sh.kind === 'rect' || sh.kind === 'icon' || sh.kind === 'qr') {
     // An icon is a nested <svg> and reads the same box attributes a rect
     // does. It used to fall through to the line branch below, which set
     // x1/y1/x2/y2 — attributes a nested svg ignores — so a dragged icon
@@ -16526,7 +17508,8 @@ function paintShape(d, id) {
   } else if (sh.kind === 'ellipse') {
     node.setAttribute('cx', sh.x + sh.w / 2); node.setAttribute('cy', sh.y + sh.h / 2);
     node.setAttribute('rx', sh.w / 2); node.setAttribute('ry', sh.h / 2);
-  } else if (sh.kind === 'chart' || sh.kind === 'path' || sh.kind === 'compound') {
+  } else if (['chart', 'path', 'compound', 'polygon', 'star'].includes(sh.kind)
+             || (sh.kind === 'rect' && ['bevel', 'inset'].includes(sh.corner))) {
     // Same trap the icon branch above documents, one kind further on: a chart
     // is a <g> of many elements drawn at absolute inch coordinates, so there
     // is no x/y attribute to set — and falling through to the line branch set
@@ -16849,6 +17832,17 @@ document.addEventListener('keydown', e => {
   const d = $('out').contentDocument;
   if (d && d.__dsPenFinish) { e.preventDefault(); d.__dsPenFinish(e.key === 'Enter'); }
 }, true);
+$('shapepop').querySelector('[data-qr]').addEventListener('click', async () => {
+  $('shapepop').hidden = true;
+  const got = await dsForm('QR code', [{ name: 'data', type: 'text', label: 'The link it opens', value: 'https://' }],
+    { okLabel: 'Add', validate: v => !v.data.trim() || v.data.trim() === 'https://' ? 'what should it open?'
+      : new TextEncoder().encode(v.data.trim()).length > 213 ? 'that is longer than a QR code here carries (213 bytes)' : '' });
+  if (got == null) return;
+  pushHistory();
+  const r = _pilotApplyAddShape({ kind: 'qr', data: got.data.trim(), w: 1.2, h: 1.2 });
+  markDirty(); await render();
+  setSel($('out').contentDocument, [r.id]);
+});
 $('shapepop').querySelector('[data-pen]').addEventListener('click', () => {
   $('shapepop').hidden = true;
   pen = { pts: [], page: null, pid: null, drag: null };
@@ -16870,7 +17864,8 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
   // hidden behind the page's own (often translucent) panels or the last thing
   // placed, which read as "just an outline". Send it back from the layers
   // panel / right-click when it should sit behind content.
-  layout.shapes.push({ id, page, kind, x: placeX(2), y: 1, w: 2, h: kind === 'line' ? 0 : 1,
+  layout.shapes.push({ id, page, kind, x: placeX(2), y: 1, w: 2, h: kind === 'line' ? 0 : (kind === 'polygon' || kind === 'star' ? 2 : 1),
+                       ...(kind === 'polygon' ? { sides: 6 } : kind === 'star' ? { points: 5, inner: 0.5 } : {}),
                        fill: kind === 'line' ? 'none' : '#6B9E78',
                        stroke: kind === 'line' ? '#52796F' : 'none',
                        sw: 0.02, z: nextZ(2, page) });
@@ -20096,6 +21091,7 @@ function wire(roots) {
   applyZoom();
   fillVars(d);                 // page numbers and contents first: they change widths
   applyAuto(d);                // automatic formatting, before stories are poured
+  applyTabs(d);                // tab stops set widths the pour then measures
   applyGrid(d);                // baseline grid defined before the pour runs it per frame
   pourThreads(d);              // threaded stories fill their frames
   placeAnchors(d);             // anchored objects find their paragraphs FIRST,
@@ -20427,6 +21423,10 @@ function wire(roots) {
     .ds-gd.v { background:linear-gradient(#12B5A5,#12B5A5) 4px 0/1px 100% no-repeat; }
     .ds-gd.h { background:linear-gradient(#12B5A5,#12B5A5) 0 4px/100% 1px no-repeat; }
     .ds-gd:hover { background-color:rgba(18,181,165,.12); }
+    .ds-mg { position:absolute; z-index:9990; pointer-events:none; box-sizing:border-box;
+             border:1px solid rgba(214,51,132,.75); }
+    .ds-mgc { position:absolute; z-index:9990; pointer-events:none; width:0;
+              border-left:1px solid rgba(124,77,255,.75); }
     /* Presentation mode (body.ds-present in the PARENT document). One page,
        nothing else: the report's own chrome, the other pages and every editor
        overlay leave, and the shown page drops its paper shadow and margin so
@@ -20437,7 +21437,7 @@ function wire(roots) {
     .ds-present-doc section.page { display:none !important; }
     .ds-present-doc section.page.ds-present-on { display:block !important;
         margin:0 auto !important; box-shadow:none !important; }
-    .ds-present-doc .ds-cut, .ds-present-doc .ds-gd, .ds-present-doc .ds-sec-grip,
+    .ds-present-doc .ds-cut, .ds-present-doc .ds-gd, .ds-present-doc .ds-mg, .ds-present-doc .ds-mgc, .ds-present-doc .ds-sec-grip,
     .ds-present-doc .ds-handles, .ds-present-doc .ds-mini,
     .ds-present-doc .ds-selbox { display:none !important; }
     /* The print cut line, drawn where the PDF actually ends. */
@@ -21580,6 +22580,8 @@ function edit(d, key, clicked, at) {
     if (allowLists && e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (indentListItem(d, e.shiftKey ? -1 : 1)) { e.preventDefault(); e.stopPropagation(); }
     }
+    if (!e.defaultPrevented && e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)
+      tabKey(d, e, resolvedStyle(styleOf(key)));
   });
   // Right-click in the prose to drop an endnote at the caret — the intuitive
   // path, without hunting for the Cite button. (Inline single-line fields — a
@@ -26416,7 +27418,7 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
 }
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
-const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow'];
+const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'qr'];
 function _pilotValidateAddShape({ kind = 'rect' } = {}) {
   if (!PILOT_SHAPE_KINDS.includes(kind))
     return { ok: false,
@@ -26424,7 +27426,7 @@ function _pilotValidateAddShape({ kind = 'rect' } = {}) {
   return { ok: true };
 }
 function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
-                               stroke, sw, z, rx } = {}) {
+                               stroke, sw, z, rx, data } = {}) {
   const pid = page != null ? page : visiblePageId();
   const id = freeShapeId(kind);
   // Same defaults as the Shapes panel (solid, on top, sage) so an argless
@@ -26437,6 +27439,9 @@ function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
                sw: sw != null ? +sw : 0.02,
                z: z != null ? +z : nextZ(2, pid) };
   if (rx != null) sh.rx = +rx;
+  if (kind === 'qr') { sh.data = String(data || 'https://www.hiappleseed.org'); sh.fill = fill || '#000000'; sh.stroke = 'none'; if (h == null) sh.h = sh.w; }
+  if (kind === 'polygon') sh.sides = 6;
+  if (kind === 'star') { sh.points = 5; sh.inner = 0.5; }
   layout.shapes.push(sh);
   return { id, page: pid };
 }
@@ -26828,6 +27833,16 @@ function _pilotApplyAddSection(page, slug, md) {
 // helpers (addBlankPage, the engine's addEndnotesSection) that already do
 // their own pushHistory+render internally, so they cannot join a batch's
 // single history/render without their own refactor — call them singly.
+const TABLE_PATCH_KEYS = ['header', 'headerRows', 'footerRows', 'footerFill', 'inset', 'valign', 'rowh',
+  'bandStroke', 'band', 'fill', 'headerFill', 'headerColor', 'border', 'colw', 'colAlign', 'cells', 'merges', 'style'];
+/** One batch verb on its own, its result unwrapped onto the status. */
+async function _pilotOne(verb, args) {
+  const r = await docsync.api.batch([{ verb, args }]);
+  if (!r || !r.ok || !Array.isArray(r.results)) return r;
+  const { results, ...rest } = r;
+  const { verb: _v, ...out } = results[0] || {};
+  return { ...rest, ...out };
+}
 const PILOT_BATCH_VERBS = {
   setSlot: { validate: (d, m) => _pilotValidateSetSlot(d, m), apply: (d, m) => _pilotApplySetSlot(d, m) },
   place: { validate: id => _pilotValidatePlace(id), apply: (id, o) => _pilotApplyPlace(id, o) },
@@ -26835,6 +27850,73 @@ const PILOT_BATCH_VERBS = {
   setChart: { validate: (id, p) => _pilotValidateSetChart(id, p), apply: (id, p) => _pilotApplySetChart(id, p) },
   addTextBox: { validate: () => ({ ok: true }), apply: o => _pilotApplyAddTextBox(o) },
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
+  setMargins: { validate: (mg, master) => {
+      if (master && !(layout.masters || {})[master]) return { ok: false, error: `no shared layout called '${master}'` };
+      if (mg != null && (typeof mg !== 'object' || Object.keys(mg).some(k => !(k in MARGINS_DEFAULT))))
+        return { ok: false, error: 'setMargins({top, bottom, left, right, columns, gutter} | null, master?)' };
+      return { ok: true };
+    }, apply: (mg, master) => { setMargins(mg, master || null); return { margins: master ? layout.masters[master].margins || null : layout.margins || null }; } },
+  setReadingOrder: { validate: (pid, ids) => (ids == null || (Array.isArray(ids) && ids.every(x => typeof x === 'string')))
+      ? { ok: true } : { ok: false, error: 'setReadingOrder(page, [element ids] | null)' },
+    apply: (pid, ids) => { setReadingOrder(pid, ids); return { readingOrder: clone(layout.readingOrder || {}) }; } },
+  setTable: { validate: (id, patch) => {
+      if (!tableOfId(String(id || ''))) return { ok: false, error: `no table '${id}'` };
+      const bad = Object.keys(patch || {}).filter(k => !TABLE_PATCH_KEYS.includes(k));
+      return bad.length ? { ok: false, error: `setTable: not ${bad.join(', ')} — ${TABLE_PATCH_KEYS.join(', ')}` } : { ok: true };
+    }, apply: (id, patch) => {
+      const t = tableOfId(id);
+      Object.entries(patch).forEach(([k, v]) => { if (v == null) delete t[k]; else t[k] = clone(v); });
+      return { id: 'table.' + t.id };
+    } },
+  mergeCells: { validate: (id, r, c, rs, cs) => {
+      const t = tableOfId(String(id || ''));
+      if (!t) return { ok: false, error: `no table '${id}'` };
+      if (!(r >= 0 && c >= 0 && rs >= 1 && cs >= 1 && r + rs <= t.rows.length && c + cs <= t.rows[0].length))
+        return { ok: false, error: `mergeCells(id, row, col, rows, cols) inside a ${t.rows.length}x${t.rows[0].length} table` };
+      return { ok: true };
+    }, apply: (id, r, c, rs, cs) => {
+      const err = tableMerge(tableOfId(id), r, c, r + rs - 1, c + cs - 1);
+      if (err) throw new Error(err);
+      return { merges: clone(tableOfId(id).merges) };
+    } },
+  unmergeCells: { validate: (id, r, c) => {
+      const t = tableOfId(String(id || ''));
+      return t && mergeAt(t, r, c) ? { ok: true } : { ok: false, error: 'no merged cell there' };
+    }, apply: (id, r, c) => ({ unmerged: tableUnmerge(tableOfId(id), r, c) }) },
+  textToTable: { validate: (id, sep) => boxOf(String(id || '')) ? { ok: true } : { ok: false, error: `no text box '${id}'` },
+    apply: (id, sep) => { const r = textToTable(id, sep); if (r.error) throw new Error(r.error); return r; } },
+  findChange: { validate: o => {
+      if (!o || typeof o.find !== 'string' || !o.find) return { ok: false, error: 'findChange({find, change, grep, cased, whole, inStyle, applyStyle})' };
+      try { findRe(o.find, o); } catch (e) { return { ok: false, error: 'find: ' + e.message }; }
+      for (const k of ['inStyle', 'applyStyle']) if (o[k] && !textStyles()[o[k]]) return { ok: false, error: `${k}: no text style called '${o[k]}'` };
+      return { ok: true };
+    }, apply: o => {
+      const st = { needle: o.find, repl: o.change || '', cased: !!o.cased, whole: !!o.whole, grep: !!o.grep,
+                   inStyle: o.inStyle || '', applyStyle: o.applyStyle || '' };
+      let hits = 0, places = 0;
+      findTargets().filter(t => !st.inStyle || t.use() === st.inStyle).forEach(t => {
+        const was = t.read();
+        let k = 0;
+        const now = was.replace(findRe(st.needle, st), (...a) => { k++; return findChangeOf(st, a); });
+        if (k) { hits += k; places++; if (now !== was) t.write(now); }
+      });
+      return { hits, places };
+    } },
+  replaceFont: { validate: (a, b) => (a && b && fonts[b]) ? { ok: true }
+      : { ok: false, error: `replaceFont(from, to) — to is one of: ${Object.keys(fonts).sort().join(', ')}` },
+    apply: (a, b) => ({ replaced: replaceFont(a, b) }) },
+  relink: { validate: (a, b) => (typeof a === 'string' && typeof b === 'string' && a && b) ? { ok: true }
+      : { ok: false, error: 'relink(oldSrc, newSrc) — two image paths' },
+    apply: (a, b) => ({ relinked: relinkSource($('out').contentDocument, a, b) }) },
+  createGuides: { validate: o => (o && typeof o === 'object') ? { ok: true } : { ok: false, error: 'createGuides({rows, columns, gutter, fit: "margins"|"page"})' },
+    apply: o => ({ added: createGuides({ ...o, rows: Math.round(+o.rows) || 0, columns: Math.round(+o.columns) || 0, gutter: +o.gutter || 0 }), guides: clone(layout.guides || {}) }) },
+  stepRepeat: { validate: (ids, n) => {
+      const list = [].concat(ids || []);
+      const bad = list.find(id => !(shapeOf(id) || boxOf(id) || (tableOf(id) && !tableOf(id).flow)));
+      if (!list.length || bad) return { ok: false, error: `stepRepeat takes shapes, text boxes and placed tables${bad ? ` — '${bad}' is none of those` : ''}` };
+      if (!(+n >= 1 && +n <= 100)) return { ok: false, error: 'a count from 1 to 100' };
+      return { ok: true };
+    }, apply: (ids, n, dx, dy) => ({ copies: stepRepeatIds([].concat(ids), Math.round(+n), +dx || 0, +dy || 0) }) },
   addSource: { validate: (id, t, u) => _pilotValidateAddSource(id, t, u),
                apply: (id, t, u) => _pilotApplyAddSource(id, t, u) },
   addSection: { validate: (p, sl) => _pilotValidateAddSection(p, sl),
@@ -26849,6 +27931,14 @@ const PILOT_BATCH_VERBS = {
   describeImage: { validate: (h, w, s) => _pilotValidateDescribeImage(h, w, s),
                    apply: (h, w, s) => _pilotApplyDescribeImage(h, w, s) },
   rotate: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplyRotate(id, deg) },
+  setCondition: { validate: (n, on) => /^[A-Za-z0-9_-]{1,20}$/.test(n || '') ? { ok: true } : { ok: false, error: 'a condition name: letters, digits, - and _' },
+                  apply: (n, on) => { layout.conditions = layout.conditions || {}; if (on === false) layout.conditions[n] = false; else delete layout.conditions[n];
+                                      if (!Object.keys(layout.conditions).length) delete layout.conditions; return { condition: n, visible: on !== false }; } },
+  defineSwatch: { validate: (n, hx) => (/^[A-Za-z0-9 _-]{1,30}$/.test(n || '') && (hx == null || /^#[0-9a-f]{3,8}$/i.test(hx)))
+                    ? { ok: true } : { ok: false, error: 'defineSwatch(name, "#RRGGBB" | null) — a name of letters, digits, spaces, - and _' },
+                  apply: (n, hx) => { if (hx == null) { swatchUnlink(n); delete swatches()[n]; } else (layout.swatches = layout.swatches || {})[n] = hx.toUpperCase();
+                                      if (layout.swatches && !Object.keys(layout.swatches).length) delete layout.swatches;
+                                      return { swatch: n, hex: hx || null }; } },
   addPath: { validate: o => (o && Array.isArray(o.points) && o.points.length >= 2) ? { ok: true }
                : { ok: false, error: 'addPath({page, points: [{x, y, in?, out?}…] in page inches, closed})' },
              apply: o => _pilotApplyAddPath(o) },
@@ -27356,7 +28446,15 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           return { ok: false, error: `op ${i} (${op.verb}): ${v.error}` };
         }
       }
-      const r = { verb: op.verb, ...spec.apply(...args) };
+      let r;
+      try { r = { verb: op.verb, ...spec.apply(...args) }; }
+      catch (e) {
+        // A verb that finds, mid-apply, that it cannot (a merge across
+        // another's edge): the whole batch is undone, as a failed check is.
+        const rolled = JSON.parse(past.pop());
+        source = rolled.source; layout = rolled.layout;
+        return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
+      }
       if (op.as && r.id != null) named[String(op.as)] = r.id;
       applied.push(r);
     }
@@ -27496,6 +28594,45 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async pathfinder(ids, op) { return docsync.api.batch([{ verb: 'pathfinder', args: [ids, op] }]); },
   async release(id) { return docsync.api.batch([{ verb: 'release', args: [id] }]); },
   async masterOverride(id, on) { return docsync.api.batch([{ verb: 'masterOverride', args: [id, on] }]); },
+  /** Named swatches: defineSwatch(name, hex | null). Any colour may then be
+   *  '@Name' or '@Name 40%'; redefining the swatch recolours them all. */
+  /** Step and Repeat: stepRepeat(ids, count, dx, dy) — `count` copies of
+   *  each shape / text box / placed table, each dx, dy inches on from the last. */
+  /** Margins and columns: setMargins({top, bottom, left, right, columns,
+   *  gutter} | null, master?) — editor guides that objects snap to; the
+   *  published page is untouched. createGuides({rows, columns, gutter, fit})
+   *  adds a grid of ruler guides fitted to the margins or the page. */
+  /** Links: links() lists every placed picture by file (uses, pages, pixel
+   *  size, effective ppi, missing); relink(oldSrc, newSrc) swaps a file
+   *  everywhere it is used. */
+  /** Find/Change past plain text: findChange({find, change, grep, cased,
+   *  whole, inStyle, applyStyle}) — grep makes find a regular expression and
+   *  change may use $1; inStyle limits it to text wearing a named style;
+   *  applyStyle wraps each change in that character style. fontsInUse() and
+   *  replaceFont(from, to) are Find Font. */
+  /** Tables: setTable(id, {headerRows, footerRows, footerFill, inset, valign,
+   *  rowh, bandStroke, band, fill, border, …}) — null takes a key off;
+   *  mergeCells(id, row, col, rows, cols) / unmergeCells(id, row, col);
+   *  textToTable(boxId, sep?) turns a text box's lines into a table. */
+  /** Reading order: setReadingOrder(page, [ids] | null) — the order a screen
+   *  reader and the tagged PDF read the page's objects in. */
+  async setReadingOrder(pid, ids) { return _pilotOne('setReadingOrder', [pid, ids]); },
+  async setTable(id, patch) { return _pilotOne('setTable', [id, patch]); },
+  async mergeCells(id, r, c, rs, cs) { return _pilotOne('mergeCells', [id, r, c, rs, cs]); },
+  async unmergeCells(id, r, c) { return _pilotOne('unmergeCells', [id, r, c]); },
+  async textToTable(id, sep) { return _pilotOne('textToTable', [id, sep]); },
+  async findChange(o) { return _pilotOne('findChange', [o]); },
+  fontsInUse() { return fontsInUse(); },
+  async replaceFont(a, b) { return _pilotOne('replaceFont', [a, b]); },
+  links() { return linksList($('out').contentDocument).map(({ src, uses, missing, ppi, size }) => ({ src, uses, missing, ppi, size })); },
+  async relink(a, b) { return _pilotOne('relink', [a, b]); },
+  async setMargins(mg, master) { return _pilotOne('setMargins', [mg, master]); },
+  async createGuides(o) { return _pilotOne('createGuides', [o]); },
+  async stepRepeat(ids, count, dx = 0, dy = 0) { return _pilotOne('stepRepeat', [ids, count, dx, dy]); },
+  async defineSwatch(name, hex) { return docsync.api.batch([{ verb: 'defineSwatch', args: [name, hex] }]); },
+  /** Conditional text: setCondition(name, false) hides every [words]{?name}
+   *  in the document; true shows it again. print and web are automatic. */
+  async setCondition(name, on) { return docsync.api.batch([{ verb: 'setCondition', args: [name, on] }]); },
   async setGrid(g) { return docsync.api.batch([{ verb: 'setGrid', args: [g] }]); },
   async defineLayer(name, opts) { return docsync.api.batch([{ verb: 'defineLayer', args: [name, opts || {}] }]); },
   async toLayer(ids, name) { return docsync.api.batch([{ verb: 'toLayer', args: [ids, name] }]); },

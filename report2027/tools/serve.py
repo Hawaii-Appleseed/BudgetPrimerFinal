@@ -465,9 +465,13 @@ class _WarmChrome:
             self._wait(on("Emulation.virtualTimeBudgetExpired"), deadline)
             # Budget spent leaves time paused, and a paused page cannot print.
             self.call("Emulation.setVirtualTimePolicy", {"policy": "advance"}, s, deadline)
+            # Tagged (Chrome's default now; asked for so it stays so) and
+            # bookmarked from the headings (INDESIGN_PARITY.md 34).
             r = self.call("Page.printToPDF", {"printBackground": True,
                                               "preferCSSPageSize": True,
-                                              "displayHeaderFooter": False}, s, deadline)
+                                              "displayHeaderFooter": False,
+                                              "generateTaggedPDF": True,
+                                              "generateDocumentOutline": True}, s, deadline)
             return base64.b64decode(r["data"])
         finally:
             try:
@@ -2601,6 +2605,7 @@ class Handler(SimpleHTTPRequestHandler):
                 [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
                  "--no-first-run", f"--user-data-dir={prof}",
                  "--virtual-time-budget=12000", "--no-pdf-header-footer",
+                 "--export-tagged-pdf", "--generate-pdf-document-outline",
                  f"--print-to-pdf={pdf}", out_html.resolve().as_uri()],
                 pdf, deadline=50, settle=2.0):
                 raise RuntimeError("Chrome produced no PDF within the time limit.")

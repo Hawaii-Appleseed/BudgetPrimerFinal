@@ -792,31 +792,141 @@ questions as the rest of this file. Numbering continues from (27).
     collapsed — landed beside the paragraphs, where it serialized as a
     paragraph of its own. `insertNodeAt` now steps into the block beside it.
 
-32. **Tab stops with leaders** (the Tabs panel). Absent.
-33. **Table structure** (Table menu): merged and split cells — Cider has no
-    rowspan/colspan anywhere — header and footer rows, cell insets and
-    vertical alignment, row heights, alternating strokes, text to table.
-34. **Accessible PDF out**: bookmarks, tagged PDF, reading order (the
-    Articles panel). Chrome's print-to-PDF tags only what it infers.
-35. **Track changes** (accept / reject). The hub has comments and version
-    history, but no way to propose an edit for someone else to accept.
-36. **Margins, columns and guide grids** (Margins and Columns, Create
-    Guides). Ruler guides exist; a page grid to snap to does not.
-37. **Find/Change past plain text**: GREP, by formatting, Find/Replace Font.
+32. **Tab stops with leaders. — CLOSED 2026-10-19.** A text-style key,
+    `tabs: [{at, align, leader}]`: `at` in inches from the text's left edge,
+    `align` left, right, center or decimal, `leader` none or one of
+    `. - _ ·`. A tab typed in the words is a real tab character in the
+    markdown. `text_css` carries the stops as one custom property
+    (`--ds-tabs`, a word a stop), and `TABS_JS`, emitted once and only when
+    a style sets stops, turns each tab into an inline-block whose width runs
+    to the next stop — less the words after it for right, half of them for
+    center, up to their decimal point for decimal — and fills it with as
+    many leader characters as fit. Past the last stop the default stops
+    every half inch take over. The editor runs it after each render, before
+    the threads pour. Paragraph panel ▸ Tab stops (one stop a line,
+    "4.5 right ."); Tab types a tab in text that has stops, and still
+    indents a bullet. Not done: InDesign's ruler over the frame for dragging
+    stops; a right-aligned segment that itself wraps measures as its whole
+    width.
+33. **Table structure. — CLOSED 2026-10-19.** Keys on a placed table, all
+    optional, so a table without them keeps its markup:
+    - `merges: [[row, col, rows, cols]]` — a merged cell's top-left and its
+      span (rowspan/colspan), refused if smaller than two cells, off the
+      table, or overlapping another. Merging joins the words into the
+      top-left cell. Insert, delete and move row/column keep merges, row
+      heights and header/footer counts in step (a line inside a merge grows
+      or shrinks it; moving a line splits a merge across it).
+    - `headerRows` / `footerRows` — how many; `header: true` is still one.
+      Either key wraps the rows in `<thead>` / `<tbody>` / `<tfoot>` for a
+      reader and the tagged PDF. Footer rows are bold, `footerFill` their
+      fill.
+    - `inset` — cell padding in inches, one or `[top, right, bottom, left]`
+      (a cell may carry its own); `valign` top / middle / bottom (likewise).
+    - `rowh` — one minimum height a row, inches or null.
+    - `bandStroke: {w, color, style}` — a rule under every other body row,
+      the rows `band` tints.
+    Text to table: a text box's lines become rows, split on tabs (or `|`,
+    or commas), and the table takes the box's place. Right-click a cell ▸
+    Merge cells / Unmerge cells / Table options…; right-click a text box ▸
+    Convert text to table. Pilot: `setTable`, `mergeCells`,
+    `unmergeCells`, `textToTable`. Not done: splitting a cell into two
+    (merge, then add a row or column), diagonal lines, a table that breaks
+    across frames repeating its header.
+34. **Accessible PDF out. — CLOSED 2026-10-19.** Bookmarks: the PDF export
+    asks Chrome for a document outline built from the headings
+    (`generateDocumentOutline`, `--generate-pdf-document-outline` on the
+    one-shot path). Tagged PDF: Chrome already tags from the page's
+    accessibility tree, and the export now asks for it explicitly
+    (`generateTaggedPDF`, `--export-tagged-pdf`) so it stays on. Reading
+    order (the Articles panel): `layout.readingOrder: {page: [ids]}` — those
+    objects are read first, in that order, the rest of the page after. The
+    listed elements are stamped `data-ro`; `ORDER_JS`, emitted once and only
+    when an order is set, makes them the page's `aria-owns`, which changes
+    the accessibility tree and so the tag order — paint order and layout
+    are untouched. Checked in a printed PDF: an image listed first is the
+    first structure element. Right-click a page ▸ Reading order… (one id a
+    line), pilot `setReadingOrder(page, ids|null)`. Shapes are not in it:
+    they are decoration in one SVG a layer, and a reader skips them.
+35. **Track changes. — ALREADY THERE.** The hub's Suggesting mode is this:
+    an edit made while suggesting becomes a suggestion thread with the old
+    and new words, and Accept / Reject (and Accept all) apply or drop it.
+    What it lacks against InDesign is local mode — suggestions live in the
+    hub's store, so a report edited on disk only has history.
+36. **Margins, columns and guide grids. — CLOSED 2026-10-19.**
+    `layout.margins: {top, bottom, left, right, columns, gutter}` (inches;
+    1–12 columns), or a master's own `margins` for the pages using it. Like
+    ruler guides they are the editor's alone — validated at load
+    (`_check_margins`), never read by the renderer, so they change no
+    published byte. Drawn with the guides, the margin box magenta and the
+    column gutters violet, and snapped to while guides show. Create Guides
+    adds rows and columns of ruler guides with a gutter, fitted to the
+    margins or the page. Right-click a page ▸ Margins and columns… /
+    Create guides…; pilot `setMargins(m|null, master?)`,
+    `createGuides({rows, columns, gutter, fit})`. Not done: margins do not
+    push text; a text box is still placed by hand.
+37. **Find/Change past plain text. — CLOSED 2026-10-19.** The Find panel
+    has a GREP box: the needle is a regular expression and the change may
+    say `$1`, `$&`, `$$`. Plain mode now treats a `$` in the change as a
+    dollar sign (it was being read as a pattern). Find Format: "In text
+    styled" limits the search to slots, boxes and tables wearing a named
+    style. Change Format: "Change to style" wraps each change in that
+    character style (an empty change keeps the words). Find Font: the
+    panel lists every family the report sets or shows, with how many
+    places, and swaps one for another everywhere — the stylesheet, slots,
+    boxes, tables, and designed text showing that family without setting
+    it (the slot gets its own font). A bad pattern says so in the panel.
+    Pilot: `findChange({find, change, grep, cased, whole, inStyle,
+    applyStyle})`, `fontsInUse()`, `replaceFont(from, to)`.
 
 ### Smaller wins
 
-38. Paste in Place onto another page, Step and Repeat, Transform Again,
-    select next object above/below.
-39. Effects past drop shadow: inner shadow, glows, feathers.
-40. Named swatches with tints.
-41. Corner options beyond radius; polygons with N sides.
-42. Generate QR Code — cheap, and useful on a printed report.
-43. Live captions from image metadata.
-44. A Links panel: every image in the document, relink in one place.
-45. Conditional text — print and web versions of one report.
-46. Character controls: baseline shift, strikethrough, OpenType stylistic
-    sets and fractions.
+38. **Placement. — CLOSED 2026-10-19.** Paste in Place (⌥⇧⌘V, and the
+    right-click menu): the copy's own x/y, on the page in view. Step and
+    Repeat (⌥⌘U, right-click): count and offsets, one undo step; pilot
+    `stepRepeat(ids, count, dx, dy)`. Transform Again (⌥⌘3): the last move
+    — drag, nudge, X/Y field, `place()` — or rotation, done again to what is
+    selected now. Select next object above / below: ⌥] / ⌥[ (⌘] / ⌘[ move
+    in the stack; these walk it), and in the right-click menu.
+39. **Effects. — CLOSED 2026-10-19.** `glow` (outer glow), `innerShadow`,
+    `innerGlow` and `feather` on boxes, tables and placed elements; a
+    shape takes an outer glow (as an SVG drop-shadow filter). Merged with
+    the drop shadow into one box-shadow; feather is a mask of two edge
+    gradients. In the effects pop.
+40. **Named swatches with tints. — CLOSED 2026-10-19.**
+    `layout.swatches: {name: hex}`; any colour key may say `"@Name"` or
+    `"@Name 40%"`, resolved at load, so redefining a swatch recolours every
+    use. Dropping a swatch writes its colour into each use first. In every
+    colour picker; pilot `defineSwatch(name, hex|null)`.
+41. **Corner options and polygons. — CLOSED 2026-10-19.** Shape kinds
+    `polygon` (`sides` 3–12) and `star` (`points` 3–24, `inner` radius),
+    and `corner: bevel | inset` with `r` on a rectangle. They drag, resize,
+    and go into Pathfinder. Right-click ▸ Shape options….
+42. **QR codes. — CLOSED 2026-10-19.** Shape kind `qr` with `data` (up to
+    213 bytes): `docsync/qr.py`, a pure-Python encoder (byte mode, level M,
+    versions 1–10) so it runs in the browser through Pyodide too; drawn as
+    crisp SVG named "QR code: <link>" for a reader. Checked module for
+    module against an independent encoder, and decoded. Shapes panel ▸ QR
+    code; right-click ▸ QR code link….
+43. **Live captions. — CLOSED 2026-10-19.** `{caption:<id>}` in any words
+    is the picture's description: an inserted image's alt text, or a
+    designed image's `<id>.desc` slot — so editing the description edits
+    the caption. Right-click an image ▸ Add a caption.
+44. **Links panel. — CLOSED 2026-10-19.** A toolbar button: every picture
+    the report places, by file — where it is used, pixel size, effective
+    resolution at its printed size (under 150 ppi flagged), and missing
+    (did not load). Go to; Relink… swaps the file everywhere it is used:
+    a replaced image's source, box and slot markdown, and a designed
+    picture (pinned into `layout.img`, as Replace image does). Pilot
+    `links()`, `relink(old, new)`.
+45. **Conditional text. — CLOSED 2026-10-19.** `[words]{?name}` marks a
+    run; `print` and `web` are built in (shown only in the PDF, only on
+    screen), and `layout.conditions: {name: false}` hides any other. In the
+    editor a conditional run has a dashed underline. Right-click in the
+    words ▸ Show only in ▸; pilot `setCondition(name, on)`.
+46. **Character controls. — CLOSED 2026-10-19.** Text-style keys `strike`,
+    `shift` (baseline shift, points) and `features` (OpenType tags: frac,
+    ordn, sups, subs, salt, swsh, dlig, zero, case, onum, lnum, titl,
+    ss01–ss20). In the Paragraph panel, and allowed in a character style.
 
 ### Already listed, or not worth it
 

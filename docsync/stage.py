@@ -48,7 +48,7 @@ SERVICE_WORKER = EDITOR.parent / "sw.js"
 # this list is explicit, so a new shared module has to be added here too or the
 # draft build dies with ModuleNotFoundError while the published page is fine.
 PACKAGE = ("content.py", "normalise.py", "layout.py", "blocks.py", "okina.py",
-           "pagecopy.py")
+           "pagecopy.py", "qr.py")
 
 
 def rel(p: Path) -> str:

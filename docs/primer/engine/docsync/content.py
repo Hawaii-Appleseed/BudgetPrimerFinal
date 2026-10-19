@@ -171,6 +171,10 @@ def page_refs(text: str) -> set:
 CHAR_STYLE_RE = re.compile(r"\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}")
 
 
+COND_RE = re.compile(r"\[([^\]^][^\]]*)\]\{\?([A-Za-z0-9_-]{1,20})\}")
+CAPTION_RE = re.compile(r"\{caption:([A-Za-z0-9._@-]+)\}")
+
+
 def char_styles_used(text: str) -> set:
     return {m.group(2).strip() for m in CHAR_STYLE_RE.finditer(text or "")}
 
@@ -200,6 +204,17 @@ def md_inline(s: str) -> str:
     # Link text holds no `[`: otherwise "[the [GET](url) now]{.Pull}" — a link
     # inside a character-style run — started the link at the RUN's bracket.
     s = re.sub(r"\[([^\]^\[][^\]\[]*)\]\((https?://" + _DEST + r")\)", stash, s)
+    # Conditional text (INDESIGN_PARITY.md 45): `[words]{?print}` shows only
+    # in print, `{?web}` only on screen, `{?<name>}` unless layout.conditions
+    # hides that name. A span naming the condition; Layout emits the rules.
+    conds: list[str] = []
+
+    def stash_cond(m):
+        conds.append(m.group(2))
+        return f"\x04CD{len(conds) - 1}\x04{m.group(1)}\x05"
+
+    if "]{?" in s:
+        s = COND_RE.sub(stash_cond, s)
     cnames: list[str] = []
 
     def stash_cs(m):
@@ -222,6 +237,10 @@ def md_inline(s: str) -> str:
     s = re.sub(r"\x00IMG(\d+)\x00",
                lambda m: '<img class="inline-img" src="{}" alt="{}">'.format(*imgs[int(m.group(1))]),
                s)
+    if conds:
+        s = re.sub(r"\x04CD(\d+)\x04(.*?)\x05",
+                   lambda m: f'<span class="ds-cond" data-cond="{conds[int(m.group(1))]}">{m.group(2)}</span>',
+                   s, flags=re.S)
     if cnames:
         s = re.sub(r"\x02CS(\d+)\x02(.*?)\x03",
                    lambda m: '<span class="ds-cs" data-cs="{}">{}</span>'.format(
@@ -722,8 +741,14 @@ class Content:
                 f"{self.path.name}: missing '[[{key}]]'.\n"
                 f"  The Google Doc must keep every [[key]] marker intact.")
         self._used.add(key)
-        _served(key, self._raw[key])
-        return self._raw[key]
+        v = self._raw[key]
+        # Live captions (INDESIGN_PARITY.md 43): {caption:<image id>} is that
+        # image's own description, resolved now, so a caption follows the
+        # description it shows.
+        if "{caption:" in v and self._styles is not None:
+            v = self._styles.resolve_captions(v)
+        _served(key, v)
+        return v
 
     def __call__(self, key: str) -> str:
         """Prose block -> HTML paragraph text (footnote refs left for resolve())."""

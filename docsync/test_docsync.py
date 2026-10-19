@@ -4351,6 +4351,102 @@ check_eq("Pathfinder: union one path, exclude even-odd, subtract a mask, interse
 check_eq("Pathfinder needs two parts of drawable kinds",
          "two shapes" in _layout_error({"shapes": [dict(_cmp, op="union", parts=_cmp["parts"][:1])]}), True)
 
+# --- INDESIGN_PARITY.md 32–46: the gap list read from InDesign ---------------
+from docsync.layout import (tint_hex, polygon_points, star_points, OT_FEATURES,   # noqa: E402
+                            tabs_css, TABS_JS, ORDER_JS, table_merges)
+from docsync import qr as _qr                                                  # noqa: E402
+check_eq("46: strike, baseline shift and OpenType features are CSS",
+         [x in text_css({"strike": True, "underline": True, "shift": 3, "features": ["frac", "ss02"]})
+          for x in ("text-decoration:underline line-through", "vertical-align:3pt", "'frac' 1", "'ss02' 1")],
+         [True] * 4)
+check_eq("46: an unknown OpenType tag is refused",
+         "features" in _layout_error({"text": {"x": {"features": ["wxyz"]}}}), True)
+check_eq("40: a tint mixes toward white", tint_hex("#1E6194", 20), "#D2DFEA")
+_sw = _layout({"swatches": {"Blue": "#1E6194"}, "boxes": [_tf(id="s", md="x", fill="@Blue 20%",
+                                                            style={"color": "@Blue"})]})
+check_eq("40: a swatch reference resolves at load, tint and all",
+         (_sw.boxes[0]["fill"], _sw.boxes[0]["style"]["color"]), ("#D2DFEA", "#1E6194"))
+check_eq("40: a reference to no swatch is refused",
+         "swatch" in _layout_error({"boxes": [_tf(id="s", md="x", fill="@Nope")]}).lower(), True)
+check_eq("39: an outer glow is a box-shadow, a feather a mask",
+         [x in _layout({"boxes": [_tf(id="g", md="x", glow={"size": 0.1, "color": "#FFCC00"},
+                                      feather=0.2)]}).text_boxes(1)
+          for x in ("box-shadow:", "mask-image:")], [True, True])
+check_eq("41: a polygon and a star have their points",
+         (len(polygon_points(0, 0, 2, 2, 6)), len(star_points(0, 0, 2, 2, 5, 0.5))), (6, 10))
+check("41: a bevelled rectangle draws as a path",
+      _layout({"shapes": [{"id": "r", "page": 1, "kind": "rect", "x": 1, "y": 1, "w": 2, "h": 1,
+                           "corner": "bevel", "r": 0.2}]}).layer(1), "<path")
+check_eq("42: a QR code's size follows its version",
+         [len(_qr.matrix("x" * n)) for n in (10, 30, 120, 213)], [21, 29, 45, 57])
+try:
+    _qr.matrix("x" * 214)
+    check_eq("42: more than a QR code carries is refused", "accepted", "refused")
+except _qr.QRError:
+    pass
+check("42: a qr shape is a crisp nested svg with its link as its name",
+      _layout({"shapes": [{"id": "q", "page": 1, "kind": "qr", "x": 1, "y": 1, "w": 1, "h": 1,
+                           "data": "https://hiappleseed.org"}]}).layer(1),
+      'aria-label="QR code: https://hiappleseed.org"')
+_cap = _layout({"boxes": [_tf(id="im", md="![A chart of rents](assets/r.png)"),
+                          _tf(id="c", md="{caption:text.im}")]})
+check_eq("43: a caption is the picture's description", _cap.caption_of("text.im"), "A chart of rents")
+check("43: and a box saying {caption:…} shows it", _cap.text_boxes(1), "A chart of rents")
+check_eq("45: a conditional run is a span; a condition switched off hides it",
+         ['data-cond="print"' in md_inline("Only [in print]{?print}."),
+          "display:none" in _layout({"conditions": {"print": False},
+                                     "boxes": [_tf(id="c", md="a [b]{?print}")]}).layer(1)],
+         [True, True])
+check_eq("45: a condition is true or false",
+         "conditions" in _layout_error({"conditions": {"print": "yes"}}), True)
+check_eq("36: margins and columns load, and are checked",
+         (_layout({"margins": {"top": 0.75, "columns": 3, "gutter": 0.2}}).margins["columns"],
+          "margins.columns" in _layout_error({"margins": {"columns": 0}}),
+          "unknown key" in _layout_error({"margins": {"cols": 2}}),
+          "margins.gutter" in _layout_error({"masters": {"A": {"margins": {"gutter": 5}}}})),
+         (3, True, True, True))
+check_eq("32: tab stops are one custom property, sorted",
+         tabs_css([{"at": 4, "align": "right", "leader": "."}, {"at": 1}]), "1ln 4rd")
+check("32: a style with tab stops carries them", text_css({"tabs": [{"at": 2, "align": "decimal"}]}),
+      "--ds-tabs:2dn")
+check_eq("32: a stop past 20in, or an unknown alignment, is refused",
+         ["tabs" in _layout_error({"text": {"x": {"tabs": [{"at": 30}]}}}),
+          "align" in _layout_error({"text": {"x": {"tabs": [{"at": 1, "align": "justify"}]}}})],
+         [True, True])
+check_eq("32: the tab runtime goes out once, and only when a style has stops",
+         [_layout({"boxes": [_tf(id="t", md="a\tb", style={"tabs": [{"at": 2}]})]}).layer(1).count(TABS_JS),
+          TABS_JS in _layout({"boxes": [_tf(id="t", md="a\tb")]}).layer(1)],
+         [1, False])
+_tt = {"id": "t", "page": 1, "x": 1, "y": 1, "w": 4,
+       "rows": [["A", "B", "C"], ["1", "2", "3"], ["4", "5", "6"], ["T", "", "9"]]}
+_t33 = _layout({"tables": [dict(_tt, headerRows=1, footerRows=1, merges=[[1, 0, 2, 1], [3, 0, 1, 2]],
+                                inset=0.05, valign="bottom", rowh=[None, 0.5, None, None],
+                                bandStroke={"w": 2, "color": "#333333"})]}).tables_html(1)
+check_eq("33: merges span, cover, and header and footer rows get their sections",
+         ['rowspan="2"' in _t33, 'colspan="2"' in _t33, _t33.count("<td ") + _t33.count("<th "),
+          "<thead>" in _t33 and "<tfoot>" in _t33, "padding:0.05in" in _t33,
+          "vertical-align:bottom" in _t33, 'style="height:0.5in"' in _t33, "2px solid #333333" in _t33],
+         [True, True, 10, True, True, True, True, True])
+check_eq("33: a plain table's markup is as it was",
+         ["<thead>" in _layout({"tables": [dict(_tt, header=True)]}).tables_html(1),
+          "rowspan" in _layout({"tables": [dict(_tt, header=True)]}).tables_html(1)], [False, False])
+check_eq("33: a merge must span two cells, stay inside, and not overlap",
+         ["two cells" in _layout_error({"tables": [dict(_tt, merges=[[0, 0, 1, 1]])]}),
+          "runs off" in _layout_error({"tables": [dict(_tt, merges=[[3, 2, 2, 1]])]}),
+          "overlaps" in _layout_error({"tables": [dict(_tt, merges=[[0, 0, 2, 2], [1, 1, 2, 1]])]})],
+         [True, True, True])
+check_eq("33: table_merges maps each top-left to its span",
+         table_merges({"merges": [[0, 1, 1, 2]]}, 2, 3), {(0, 1): (1, 2)})
+_ro = _layout({"readingOrder": {"1": ["text.b", "text.a"]},
+               "boxes": [_tf(id="a", md="first in the file"), _tf(id="b", md="read first", y=4)]})
+check_eq("34: a reading order stamps its objects and sends its runtime once",
+         ['data-ro="0"' in _ro.text_boxes(1), 'data-ro="1"' in _ro.text_boxes(1),
+          _ro.layer(1).count(ORDER_JS)], [True, True, 1])
+check_eq("34: no reading order, no runtime; an id listed twice is refused",
+         [ORDER_JS in _layout({"boxes": [_tf(id="a", md="x")]}).layer(1),
+          "twice" in _layout_error({"readingOrder": {"1": ["text.a"], "2": ["text.a"]}})],
+         [False, True])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

@@ -33,8 +33,8 @@ from pathlib import Path
 # styler duck-typed), so there is no cycle. A text box is a markdown block that
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
-from .content import (Footnotes, block_html, char_styles_used, md_inline,
-                      paragraph, uses_breaks, uses_vars)
+from .content import (CAPTION_RE, COND_RE, Footnotes, block_html, char_styles_used,
+                      md_inline, paragraph, uses_breaks, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
 # different page passes its own size in — this is a default, not a law. It is
@@ -103,7 +103,47 @@ def _check_page(v, where: str):
                           f"{PAGE_MIN_IN}–{PAGE_MAX_IN}in")
     return (float(w), float(h))
 KINDS = ("rect", "ellipse", "line", "triangle", "arrow", "icon", "chart",
-         "path", "compound")
+         "path", "compound", "polygon", "star", "qr")
+# A `qr` shape (INDESIGN_PARITY.md 42) draws `data` — a link, usually — as a
+# QR code (docsync/qr.py: byte mode, level M, versions 1–10), dark modules in
+# its fill on a white quiet zone, square in its box.
+# Shape options (INDESIGN_PARITY.md 41): a `polygon` of `sides` (3–12), a
+# `star` of `points` (3–24) whose inner radius is `inner` of the outer
+# (0.2–0.9), and a rectangle's `corner` style past rounding — `bevel` (cut
+# straight) and `inset` (cut in as a quarter circle), `r` inches deep.
+CORNERS = ("round", "bevel", "inset")
+
+
+def polygon_points(x, y, w, h, sides):
+    import math as _m
+    n = int(sides)
+    return [(x + w / 2 + w / 2 * _m.sin(2 * _m.pi * i / n),
+             y + h / 2 - h / 2 * _m.cos(2 * _m.pi * i / n)) for i in range(n)]
+
+
+def star_points(x, y, w, h, points, inner):
+    import math as _m
+    n, k = int(points), float(inner)
+    out = []
+    for i in range(2 * n):
+        r = 1 if i % 2 == 0 else k
+        a = _m.pi * i / n
+        out.append((x + w / 2 + w / 2 * r * _m.sin(a), y + h / 2 - h / 2 * r * _m.cos(a)))
+    return out
+
+
+def corner_d(x, y, w, h, r, style) -> str:
+    """A rectangle with bevelled or inset corners, r inches deep, as path data."""
+    r = max(0.0, min(float(r), w / 2, h / 2))
+    f = lambda v: round(v, 4)
+    if style == "bevel":
+        pts = [(x + r, y), (x + w - r, y), (x + w, y + r), (x + w, y + h - r),
+               (x + w - r, y + h), (x + r, y + h), (x, y + h - r), (x, y + r)]
+        return "M" + "L".join(f"{f(a)} {f(b)}" for a, b in pts) + "Z"
+    return (f"M{f(x + r)} {f(y)}H{f(x + w - r)}A{f(r)} {f(r)} 0 0 0 {f(x + w)} {f(y + r)}"
+            f"V{f(y + h - r)}A{f(r)} {f(r)} 0 0 0 {f(x + w - r)} {f(y + h)}"
+            f"H{f(x + r)}A{f(r)} {f(r)} 0 0 0 {f(x)} {f(y + h - r)}"
+            f"V{f(y + r)}A{f(r)} {f(r)} 0 0 0 {f(x + r)} {f(y)}Z")
 # Drawing (INDESIGN_PARITY.md 23). A `path` is the pen tool's: `points`, each
 # {x, y, in?, out?} as FRACTIONS of the shape's own box (handles as offsets
 # from their point, also fractions), and `closed`. Fractions, so the box's
@@ -115,7 +155,7 @@ KINDS = ("rect", "ellipse", "line", "triangle", "arrow", "icon", "chart",
 # (nonzero), exclude the same path even-odd, subtract a mask that cuts the
 # front parts out of the back one, intersect a clip of the back by each front.
 PATHFINDER_OPS = ("union", "subtract", "intersect", "exclude")
-PART_KINDS = ("rect", "ellipse", "triangle", "arrow", "path")
+PART_KINDS = ("rect", "ellipse", "triangle", "arrow", "path", "polygon", "star")
 
 
 def _f(v):
@@ -158,8 +198,10 @@ def part_d(p: dict, X, Y, W, H) -> str:
         rx, ry, cy = w / 2, h / 2, y + h / 2
         return (f"M{_f(x)} {_f(cy)}A{_f(rx)} {_f(ry)} 0 1 0 {_f(x + w)} {_f(cy)}"
                 f"A{_f(rx)} {_f(ry)} 0 1 0 {_f(x)} {_f(cy)}Z")
-    if k in ("triangle", "arrow"):
-        pts = triangle_points(x, y, w, h) if k == "triangle" else arrow_points(x, y, w, h)
+    if k in ("triangle", "arrow", "polygon", "star"):
+        pts = (triangle_points(x, y, w, h) if k == "triangle" else arrow_points(x, y, w, h)
+               if k == "arrow" else polygon_points(x, y, w, h, p.get("sides", 6))
+               if k == "polygon" else star_points(x, y, w, h, p.get("points", 5), p.get("inner", 0.5)))
         return "M" + "L".join(f"{_f(a)} {_f(b)}" for a, b in pts) + "Z"
     return path_d(p.get("points"), p.get("closed", True), x, y, w, h)
 
@@ -184,6 +226,26 @@ def _check_points(pts, where: str) -> None:
 
 
 def _check_drawing(s: dict, where: str) -> None:
+    if s.get("kind") == "qr":
+        from .qr import MAX_BYTES
+        d = s.get("data")
+        if not isinstance(d, str) or not d.strip():
+            raise LayoutError(f"{where}.data: what the QR code says — a link")
+        if len(d.encode("utf-8")) > MAX_BYTES:
+            raise LayoutError(f"{where}.data: {len(d.encode('utf-8'))} bytes is more than a "
+                              f"QR code here carries ({MAX_BYTES})")
+    if s.get("kind") == "polygon" or s.get("sides") is not None:
+        v = s.get("sides", 6)
+        if not isinstance(v, int) or isinstance(v, bool) or not 3 <= v <= 12:
+            raise LayoutError(f"{where}.sides: a whole number, 3 to 12")
+    if s.get("kind") == "star" or s.get("points") is not None and s.get("kind") != "path":
+        v = s.get("points", 5)
+        if s.get("kind") == "star" and (not isinstance(v, int) or isinstance(v, bool) or not 3 <= v <= 24):
+            raise LayoutError(f"{where}.points: a star has 3 to 24 points")
+        if s.get("inner") is not None and not 0.2 <= _num(s["inner"], f"{where}.inner") <= 0.9:
+            raise LayoutError(f"{where}.inner is a fraction of the outer radius, 0.2 to 0.9")
+    if s.get("corner") is not None and s["corner"] not in CORNERS:
+        raise LayoutError(f"{where}.corner must be one of {', '.join(CORNERS)}")
     if s.get("kind") == "path":
         _check_points(s.get("points"), where)
         if s.get("closed") is not None and not isinstance(s["closed"], bool):
@@ -1209,12 +1271,31 @@ TYPE_CSS = (
 # face, a size, a colour and letterforms, but no alignment, line breaking,
 # leading, keep, drop cap or list of its own; those belong to the paragraph.
 CHAR_KEYS = ("font", "size", "weight", "italic", "underline", "color",
-             "tracking", "case", "effect", "figures", "smallCaps", "ligatures")
+             "tracking", "case", "effect", "figures", "smallCaps", "ligatures",
+             "strike", "shift", "features")
+# OpenType features a style may switch on (INDESIGN_PARITY.md 46) — the ones
+# InDesign's OpenType menu offers, by their four-letter tags.
+OT_FEATURES = ("frac", "ordn", "sups", "subs", "salt", "swsh", "dlig", "zero",
+               "case", "onum", "lnum", "titl") + tuple(f"ss{i:02d}" for i in range(1, 21))
 
 
 def char_css(st: dict) -> str:
     """A text style as a character style: text_css of only CHAR_KEYS."""
     return text_css({k: v for k, v in (st or {}).items() if k in CHAR_KEYS})
+
+
+# Tab stops (INDESIGN_PARITY.md 32): {at: inches from the text's left edge,
+# align, leader}. Carried to the page as one custom property, --ds-tabs, a
+# word per stop — "2.5rd" is 2.5in, right-aligned, dot leader — which TABS_JS
+# reads to set the width of every tab character in the paragraph.
+TAB_ALIGNS = {"left": "l", "right": "r", "center": "c", "decimal": "d"}
+TAB_LEADERS = {"": "n", ".": "d", "-": "h", "_": "u", "\u00b7": "m"}
+
+
+def tabs_css(tabs) -> str:
+    return " ".join(f'{float(t["at"]):g}{TAB_ALIGNS[t.get("align") or "left"]}'
+                    f'{TAB_LEADERS[t.get("leader") or ""]}'
+                    for t in sorted(tabs, key=lambda t: float(t["at"])))
 
 
 # The keys that need the text to be a BOX to mean anything — alignment, line
@@ -1258,8 +1339,9 @@ def text_css(st: dict) -> str:
         out.append(f'font-weight:{int(st["weight"])}')
     if st.get("italic"):
         out.append("font-style:italic")
-    if st.get("underline"):
-        out.append("text-decoration:underline")
+    deco = [d for k, d in (("underline", "underline"), ("strike", "line-through")) if st.get(k)]
+    if deco:
+        out.append("text-decoration:" + " ".join(deco))
     if st.get("color"):
         out.append(f'color:{st["color"]}')
     if st.get("tracking") is not None:
@@ -1292,6 +1374,10 @@ def text_css(st: dict) -> str:
         out.append(f'font-variant-caps:{SMALL_CAPS[st["smallCaps"]]}')
     if st.get("ligatures") is False:
         out.append("font-variant-ligatures:none")
+    if st.get("shift"):
+        out.append(f'vertical-align:{float(st["shift"]):g}pt')
+    if st.get("features"):
+        out.append("font-feature-settings:" + ",".join(f"'{f}' 1" for f in st["features"]))
     if st.get("dropCap"):
         out.append(f'--ds-cap:{int(st["dropCap"])}')
     lst = st.get("list") or {}
@@ -1318,6 +1404,8 @@ def text_css(st: dict) -> str:
         out.append(f"--ds-gs:{gs}")
     if st.get("grid"):
         out.append("--ds-grid:1")
+    if st.get("tabs"):
+        out.append(f"--ds-tabs:{tabs_css(st['tabs'])}")
     if any(st.get(k) for k in _BOX_KEYS):
         # text-align, text-wrap and ::first-letter do nothing to an inline
         # box, and the inline slots are spans. Give it a box — but only when
@@ -1475,8 +1563,31 @@ def _check_text(st: dict, where: str) -> None:
             _num(st[k], f"{where}.{k}")
     _check_para(st, where)
     _check_auto(st, where)
+    if st.get("strike") is not None and not isinstance(st["strike"], bool):
+        raise LayoutError(f"{where}.strike: true or false")
+    if st.get("shift") is not None and not -24 <= _num(st["shift"], f"{where}.shift") <= 24:
+        raise LayoutError(f"{where}.shift is points, -24 to 24")
+    f = st.get("features")
+    if f is not None:
+        if not isinstance(f, list) or any(x not in OT_FEATURES for x in f):
+            raise LayoutError(f"{where}.features: a list of OpenType tags — "
+                              f"{', '.join(OT_FEATURES[:12])}, ss01–ss20")
     if st.get("grid") is not None and not isinstance(st["grid"], bool):
         raise LayoutError(f"{where}.grid: true or false — sit on the baseline grid")
+    tb = st.get("tabs")
+    if tb is not None:
+        if not isinstance(tb, list) or len(tb) > 20:
+            raise LayoutError(f"{where}.tabs: a list of up to 20 stops, {{at, align, leader}}")
+        for i, t in enumerate(tb):
+            w = f"{where}.tabs[{i}]"
+            if not isinstance(t, dict) or set(t) - {"at", "align", "leader"}:
+                raise LayoutError(f"{w}: {{at, align, leader}}")
+            if not 0 < _num(t.get("at"), f"{w}.at") <= 20:
+                raise LayoutError(f"{w}.at: inches from the text's left edge, above 0 and up to 20")
+            if (t.get("align") or "left") not in TAB_ALIGNS:
+                raise LayoutError(f"{w}.align: {', '.join(TAB_ALIGNS)}")
+            if (t.get("leader") or "") not in TAB_LEADERS:
+                raise LayoutError(f"{w}.leader: none, or one of . - _ \u00b7")
     for k, (lo, hi) in SPACE_RANGE.items():
         if st.get(k) is not None:
             v = _num(st[k], f"{where}.{k}")
@@ -3672,6 +3783,66 @@ GRID_JS = (
     "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
 )
 
+# Tab stops (INDESIGN_PARITY.md 32). Every tab character in a paragraph that
+# carries --ds-tabs becomes an inline-block span (once; a rerun reuses them)
+# whose width runs from where it starts to the next stop past it: the stop
+# itself for a left stop, less the words after it for right, half of them for
+# center, and up to their decimal point for decimal. Past the last stop the
+# default ones every half inch take over. A leader fills the span with as
+# many of its character as fit. Widths are set left to right, so each tab is
+# measured after the ones before it have moved it.
+TABS_JS = (
+    "(function(){var LD={n:'',d:'.',h:'-',u:'_',m:'\u00b7'};"
+    "function stops(el){var v=getComputedStyle(el).getPropertyValue('--ds-tabs'),"
+    "re=/([\\d.]+)([lrcd])([nhdum])/g,m,o=[];while((m=re.exec(v)))o.push({at:+m[1]*96,al:m[2],ld:LD[m[3]]});return o;}"
+    "function paras(el){return el.matches('p,h1,h2,h3,h4,h5,h6,li,span,td,th')&&!el.querySelector('p,h1,h2,h3,h4,h5,h6,li')"
+    "?[el]:[].slice.call(el.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li'));}"
+    "function split(p){var w=document.createTreeWalker(p,NodeFilter.SHOW_TEXT),ns=[],n;"
+    "while((n=w.nextNode()))if(n.nodeValue.indexOf('\\t')>=0)ns.push(n);"
+    "ns.forEach(function(t){var f=document.createDocumentFragment();"
+    "t.nodeValue.split('\\t').forEach(function(s,i){if(i){var sp=document.createElement('span');"
+    "sp.className='ds-tab';sp.style.cssText='display:inline-block;white-space:nowrap;text-align:right;text-indent:0';"
+    "f.appendChild(sp);}if(s)f.appendChild(document.createTextNode(s));});t.parentNode.replaceChild(f,t);});}"
+    "function after(p,t,nx,dec){var r=document.createRange();r.setStartAfter(t);"
+    "if(nx)r.setEndBefore(nx);else r.setEnd(p,p.childNodes.length);"
+    "if(dec){var w=document.createTreeWalker(p,NodeFilter.SHOW_TEXT),n;while((n=w.nextNode())){"
+    "if(!r.intersectsNode(n))continue;var i=n.nodeValue.indexOf('.',n===r.startContainer?r.startOffset:0);"
+    "if(i>=0){r.setEnd(n,i);break;}}}return r.getBoundingClientRect().width;}"
+    "function lay(p){var tabs=p.querySelectorAll('.ds-tab');if(!tabs.length)return;var S=stops(p);"
+    "var sc=p.getBoundingClientRect().width/p.offsetWidth||1;"
+    "[].forEach.call(tabs,function(t){t.style.width='0px';t.textContent='';});"
+    "[].forEach.call(tabs,function(t,i){var cs=getComputedStyle(p),"
+    "L=p.getBoundingClientRect().left+(parseFloat(cs.paddingLeft)+parseFloat(cs.borderLeftWidth))*sc,"
+    "x=(t.getBoundingClientRect().left-L)/sc,st=null,need=0;"
+    "for(var k=0;k<S.length;k++){var a=S[k].al,seg=a==='l'?0:after(p,t,tabs[i+1],a==='d')/sc;"
+    "var q=a==='c'?seg/2:seg;if(S[k].at-q>x+0.5){st=S[k];need=q;break;}}"
+    "if(!st){st={at:(Math.floor(x/48)+1)*48,ld:''};need=0;}"
+    "var wd=Math.max(0,st.at-need-x);t.style.width=wd.toFixed(2)+'px';"
+    "if(st.ld){t.style.width='';t.textContent=st.ld+st.ld+st.ld+st.ld;"
+    "var cw=t.getBoundingClientRect().width/sc/4;t.textContent=cw>0?new Array(Math.floor(wd/cw)+1).join(st.ld):'';"
+    "t.style.width=wd.toFixed(2)+'px';}});}"
+    "function go(){[].forEach.call(document.querySelectorAll('[style*=\"--ds-tabs:\"]'),function(h){"
+    "paras(h).forEach(function(p){split(p);lay(p);});});}"
+    "window.__dsTabs=go;go();addEventListener('load',go);addEventListener('resize',go);"
+    "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
+)
+
+# Reading order (INDESIGN_PARITY.md 34). A page's listed elements (data-ro,
+# their place in the list) come first, then everything else on the page as it
+# stands — set as the page's aria-owns, which is the order a screen reader
+# reads and Chrome tags a PDF in. Nothing moves on the page: aria-owns changes
+# the accessibility tree only, so paint order and layout are untouched.
+ORDER_JS = (
+    "(function(){var N=0;function id(e){if(!e.id)e.id='ds-ro-'+(N++);return e.id;}"
+    "function go(){[].forEach.call(document.querySelectorAll('section.page'),function(pg){"
+    "var ro=[].slice.call(pg.querySelectorAll('[data-ro]'));if(!ro.length)return;"
+    "ro.sort(function(a,b){return a.getAttribute('data-ro')-b.getAttribute('data-ro');});"
+    "var ids=ro.map(id);[].forEach.call(pg.children,function(ch){"
+    "if(ro.indexOf(ch)<0&&!/^(SCRIPT|STYLE|TEMPLATE)$/.test(ch.tagName))ids.push(id(ch));});"
+    "pg.setAttribute('aria-owns',ids.join(' '));});}"
+    "window.__dsOrder=go;go();addEventListener('load',go);})();"
+)
+
 # Contour wrap (INDESIGN_PARITY.md 5): its own script, not ANCHOR_JS's, so a
 # report that anchors but wraps nothing to an outline keeps every byte. Runs
 # after the anchor runtime has floated the object (registered after it, so
@@ -3833,6 +4004,66 @@ def box_border_css(b: dict) -> str:
     return f'{prop}:{float(w):g}px {style} {b.get("color", "#C9D6CD")}'
 
 
+# Effects past the drop shadow (INDESIGN_PARITY.md 39): `glow` (outer glow),
+# `innerShadow`, `innerGlow` — each {color, size (in), alpha, offset?,
+# direction?} — and `feather` (soft edges, inches). On a box, a table or a
+# placed piece they are box-shadows (one declaration with the drop shadow:
+# a second would replace the first) and a mask that fades each edge; an SVG
+# shape takes the glow only, as a drop-shadow() filter beside its shadow,
+# because the inset effects there would need an SVG filter of their own.
+EFFECT_KEYS = ("glow", "innerShadow", "innerGlow", "feather")
+
+
+def effect_shadows(o: dict) -> list:
+    out = []
+    g = o.get("glow")
+    if g:
+        out.append(f'0 0 {float(g.get("size", 0.12)):g}in {_rgba(g.get("color", "#F2C94C"), g.get("alpha", 0.75))}')
+    i = o.get("innerShadow")
+    if i:
+        dx, dy = _xy(i.get("offset", 0.04), i.get("direction", 135))
+        out.append(f'inset {dx}in {dy}in {float(i.get("size", 0.08)):g}in '
+                   f'{_rgba(i.get("color", "#2F3E46"), i.get("alpha", 0.4))}')
+    ig = o.get("innerGlow")
+    if ig:
+        out.append(f'inset 0 0 {float(ig.get("size", 0.12)):g}in '
+                   f'{_rgba(ig.get("color", "#FFFFFF"), ig.get("alpha", 0.8))}')
+    return out
+
+
+def feather_css(o: dict) -> str:
+    f = o.get("feather")
+    if not f:
+        return ""
+    f = f"{float(f):g}in"
+    g1 = f"linear-gradient(to right,transparent,#000 {f},#000 calc(100% - {f}),transparent)"
+    g2 = f"linear-gradient(to bottom,transparent,#000 {f},#000 calc(100% - {f}),transparent)"
+    return (f";-webkit-mask-image:{g1},{g2};-webkit-mask-composite:source-in;"
+            f"mask-image:{g1},{g2};mask-composite:intersect")
+
+
+def _check_effects(o: dict, where: str, svg: bool = False) -> None:
+    for k in ("glow", "innerShadow", "innerGlow"):
+        e = o.get(k)
+        if e is None:
+            continue
+        if svg and k != "glow":
+            raise LayoutError(f"{where}.{k}: a drawn shape takes a glow, not {k}")
+        if not isinstance(e, dict):
+            raise LayoutError(f"{where}.{k}: expected {{color, size, alpha}}")
+        if e.get("color"):
+            _hex(e["color"], f"{where}.{k}.color")
+        if e.get("size") is not None and not 0 <= _num(e["size"], f"{where}.{k}.size") <= 1:
+            raise LayoutError(f"{where}.{k}.size is inches, 0 to 1")
+        if e.get("alpha") is not None:
+            _alpha(e["alpha"], f"{where}.{k}.alpha")
+    if o.get("feather") is not None:
+        if svg:
+            raise LayoutError(f"{where}.feather: a drawn shape cannot feather")
+        if not 0 < _num(o["feather"], f"{where}.feather") <= 1:
+            raise LayoutError(f"{where}.feather is inches, up to 1")
+
+
 def _check_shadow(sh, where: str) -> None:
     if not isinstance(sh, dict):
         raise LayoutError(f"{where}: expected a shadow object")
@@ -3894,6 +4125,37 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
         _check_text(t["style"], f"{where}.style")
     if t.get("header") is not None and not isinstance(t["header"], bool):
         raise LayoutError(f"{where}.header: expected true or false")
+    # Table structure (INDESIGN_PARITY.md 33). Every key optional; a table
+    # with none of them renders as it always did.
+    for k in ("headerRows", "footerRows"):
+        v = t.get(k)
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= nrows):
+            raise LayoutError(f"{where}.{k}: a whole number of rows, 0 to {nrows}")
+    if (t.get("headerRows") or 0) + (t.get("footerRows") or 0) > nrows:
+        raise LayoutError(f"{where}: header and footer rows are more than the table has")
+    if t.get("footerFill"):
+        _hex(t["footerFill"], f"{where}.footerFill")
+    _check_inset(t.get("inset"), f"{where}.inset")
+    if t.get("valign") is not None and t["valign"] not in TABLE_VALIGNS:
+        raise LayoutError(f"{where}.valign: {', '.join(TABLE_VALIGNS)}")
+    rh = t.get("rowh")
+    if rh is not None:
+        if not isinstance(rh, list) or len(rh) != nrows:
+            raise LayoutError(f"{where}.rowh: expected {nrows} heights, one per row (null for auto)")
+        for i, v in enumerate(rh):
+            if v is not None and not 0 < _num(v, f"{where}.rowh[{i}]") <= 11:
+                raise LayoutError(f"{where}.rowh[{i}]: inches, above 0")
+    bs = t.get("bandStroke")
+    if bs is not None:
+        if not isinstance(bs, dict) or set(bs) - {"w", "color", "style"}:
+            raise LayoutError(f"{where}.bandStroke: {{w, color, style}}")
+        if bs.get("w") is not None and not 0 <= _num(bs["w"], f"{where}.bandStroke.w") <= 10:
+            raise LayoutError(f"{where}.bandStroke.w: pixels, 0 to 10")
+        if bs.get("color"):
+            _hex(bs["color"], f"{where}.bandStroke.color")
+        if bs.get("style") is not None and bs["style"] not in TABLE_BORDER_STYLES:
+            raise LayoutError(f"{where}.bandStroke.style: {', '.join(TABLE_BORDER_STYLES)}")
+    table_merges(t, nrows, ncols, where)
     _check_blend(t.get("blend"), where)
     # band: tints every OTHER body row — the zebra half of a table style, as
     # one property rather than a fill override per cell, so it survives rows
@@ -3943,6 +4205,51 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
             for flag in ("bold", "italic"):
                 if ov.get(flag) is not None and not isinstance(ov[flag], bool):
                     raise LayoutError(f"{w2}.{flag}: expected true or false")
+            if ov.get("valign") is not None and ov["valign"] not in TABLE_VALIGNS:
+                raise LayoutError(f"{w2}.valign: {', '.join(TABLE_VALIGNS)}")
+            _check_inset(ov.get("inset"), f"{w2}.inset")
+
+
+TABLE_VALIGNS = ("top", "middle", "bottom")
+
+
+def _check_inset(v, where: str) -> None:
+    """A cell inset: inches, one for every side or [top, right, bottom, left]."""
+    if v is None:
+        return
+    vals = v if isinstance(v, list) else [v]
+    if len(vals) not in (1, 4):
+        raise LayoutError(f"{where}: inches, or [top, right, bottom, left]")
+    for x in vals:
+        if not 0 <= _num(x, where) <= 1:
+            raise LayoutError(f"{where}: inches, 0 to 1")
+
+
+def inset_css(v) -> str:
+    vals = v if isinstance(v, list) else [v]
+    return "padding:" + " ".join(f"{float(x):g}in" for x in vals)
+
+
+def table_merges(t: dict, nrows: int, ncols: int, where: str = "table") -> dict:
+    """{(r, c): (rowspan, colspan)} for each merged cell's top-left, checked:
+    inside the table, larger than one cell, and no cell in two merges."""
+    out, taken = {}, set()
+    for i, m in enumerate(t.get("merges") or []):
+        w = f"{where}.merges[{i}]"
+        if (not isinstance(m, list) or len(m) != 4
+                or not all(isinstance(x, int) and not isinstance(x, bool) for x in m)):
+            raise LayoutError(f"{w}: [row, col, rows, cols], whole numbers")
+        r, c, rs, cs = m
+        if rs < 1 or cs < 1 or rs * cs < 2:
+            raise LayoutError(f"{w}: a merge spans at least two cells")
+        if not (0 <= r and r + rs <= nrows and 0 <= c and c + cs <= ncols):
+            raise LayoutError(f"{w}: runs off a {nrows}x{ncols} table")
+        cells = {(a, b) for a in range(r, r + rs) for b in range(c, c + cs)}
+        if cells & taken:
+            raise LayoutError(f"{w}: overlaps another merge")
+        taken |= cells
+        out[(r, c)] = (rs, cs)
+    return out
 
 
 def table_border_css(b: dict, side: str) -> str:
@@ -3987,6 +4294,59 @@ def shape_shadow_css(sh: dict) -> str:
     return f'filter:drop-shadow({dx}px {dy}px {sh.get("blur", 0.04)}px {c})'
 
 
+# Named swatches (INDESIGN_PARITY.md 40). layout.swatches = {name: hex}; any
+# colour field may say "@Name" or "@Name 40%" (a tint: the colour mixed toward
+# white, InDesign's tint). Resolved ONCE, when the layout is read, before
+# anything validates or draws it — so every renderer, chart and runtime sees
+# plain hex, and redefining a swatch recolours everything that names it.
+SWATCH_RE = re.compile(r"^@([A-Za-z0-9 _-]{1,30}?)(?:\s+(\d{1,3})%)?$")
+COLOR_KEYS = {"fill", "stroke", "color", "shade", "headerFill", "headerColor", "footerFill",
+              "band", "bg"}
+
+
+def tint_hex(hx: str, pct: float) -> str:
+    """`hx` at pct% strength over white — InDesign's tint."""
+    h = hx.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    t = max(0.0, min(100.0, pct)) / 100
+    return "#" + "".join(f"{round(255 - (255 - c) * t):02X}" for c in rgb)
+
+
+def resolve_swatches(raw: dict) -> dict:
+    """A copy of raw with every swatch reference in a colour field made hex."""
+    sw = raw.get("swatches") or {}
+    if not isinstance(sw, dict):
+        raise LayoutError("swatches: expected an object of name: hex")
+    for n, v in sw.items():
+        if not re.fullmatch(r"[A-Za-z0-9 _-]{1,30}", str(n)):
+            raise LayoutError(f"swatch {n!r}: a name of letters, digits, spaces, - and _")
+        _hex(v, f"swatch '{n}'")
+    if not sw and "@" not in json.dumps(raw):
+        return raw
+
+    def one(v, where):
+        m = SWATCH_RE.match(v.strip())
+        if not m:
+            return v
+        name, pct = m.group(1).strip(), m.group(2)
+        if name not in sw:
+            known = ", ".join(sorted(sw)) or "none are defined"
+            raise LayoutError(f"{where}: no swatch called {name!r} — {known}")
+        return tint_hex(sw[name], float(pct)) if pct else sw[name]
+
+    def walk(o, where, key=None):
+        if isinstance(o, dict):
+            return {k: (one(v, f"{where}.{k}") if isinstance(v, str) and k in COLOR_KEYS
+                        else walk(v, f"{where}.{k}", k)) for k, v in o.items()}
+        if isinstance(o, list):
+            return [walk(v, f"{where}[{i}]", key) for i, v in enumerate(o)]
+        return o
+    out = {k: (v if k == "swatches" else walk(v, k)) for k, v in raw.items()}
+    return out
+
+
 class Layout:
     def __init__(self, path: Path, page: tuple[float, float] = (PAGE_W_IN, PAGE_H_IN)):
         self.path = path
@@ -4002,6 +4362,8 @@ class Layout:
                 raw = json.loads(path.read_text() or "{}")
             except json.JSONDecodeError as e:
                 raise LayoutError(f"{path.name}: not valid JSON — {e}")
+        raw = resolve_swatches(raw)
+        self.swatches = raw.get("swatches") or {}
         # The page this layout is drawn on. The constructor default is what the
         # report was BUILT at; layout.json may override it, which is what
         # File > Resize writes. Read before anything else, because every
@@ -4090,6 +4452,8 @@ class Layout:
         # the keys changed on that one page, keyed by the page instance's id
         # ("folio@3"); null removes a key the layout's item has.
         self.master_overrides = raw.get("masterOverrides") or {}
+        # Conditional text: {name: false} hides that condition's text.
+        self.conditions = raw.get("conditions") or {}
         # Every element some toggle button reveals, flattened: target may be
         # one id or a list, and boxes, shapes and tables all consult this to
         # stamp their publish-mode hook. Built once, here, so the three
@@ -4115,6 +4479,19 @@ class Layout:
         # like `locked`: the renderer never emits a guide, so it cannot move a
         # published byte — validated so a hand-edit cannot smuggle in junk.
         self.guides = raw.get("guides") or {}
+        # Margins and columns (INDESIGN_PARITY.md 36): the editor's guides,
+        # like ruler guides — drawn and snapped to there, never read by the
+        # renderer, so a report that sets them publishes the same bytes. A
+        # master may carry its own, for the pages that use it.
+        self.margins = raw.get("margins") or {}
+        # Reading order (INDESIGN_PARITY.md 34): {page: [element ids]} — the
+        # order a screen reader and a tagged PDF take a page's objects in,
+        # InDesign's Articles panel. Only the listed elements are stamped, so
+        # a layout without it keeps its bytes.
+        self.reading_order = raw.get("readingOrder") or {}
+        self._ro_index = {el: i for ids in (self.reading_order.values()
+                                            if isinstance(self.reading_order, dict) else [])
+                          if isinstance(ids, list) for i, el in enumerate(ids)}
         # Page identity vs order. Designed pages are IDS (their born ordinals);
         # "pages" reorders, hides (by omission) and interleaves blank pages.
         # Everything page-keyed — shapes, boxes, fills, layers — stays keyed by
@@ -4170,6 +4547,7 @@ class Layout:
             if p.get("rot") is not None:
                 _num(p["rot"], f"position '{el}'.rot")
             _check_skew(p, f"position '{el}'")
+            _check_effects(p, f"position '{el}'")
             if p.get("scale") is not None and _num(p["scale"], f"position '{el}'.scale") <= 0:
                 raise LayoutError(f"position '{el}': scale must be positive")
             if p.get("alpha") is not None:
@@ -4188,6 +4566,9 @@ class Layout:
             if not isinstance(m, dict):
                 raise LayoutError(f"master '{name}': expected an object with boxes/shapes")
             for k in m:
+                if k == "margins":
+                    self._check_margins(m[k], f"master '{name}'.margins")
+                    continue
                 if k not in ("boxes", "shapes", "tables"):
                     raise LayoutError(f"master '{name}': only 'boxes', 'shapes' and "
                                       f"'tables' — not {k!r}")
@@ -4282,6 +4663,10 @@ class Layout:
                 not isinstance(x, str) or not x for x in self.locked):
             raise LayoutError("locked: expected a list of element ids")
         self._check_layers()
+        if not isinstance(self.conditions, dict) or any(
+                not re.fullmatch(r"[A-Za-z0-9_-]{1,20}", str(k)) or not isinstance(v, bool)
+                for k, v in self.conditions.items()):
+            raise LayoutError("conditions: expected {name: true or false}")
         if self.grid is not None:
             g = self.grid
             if not isinstance(g, dict) or g.get("increment") is None:
@@ -4310,6 +4695,19 @@ class Layout:
                     raise LayoutError(f"groups: '{m}' is in two groups — an "
                                       f"element belongs to at most one")
                 _grouped.add(m)
+        if self.margins:
+            self._check_margins(self.margins, "margins")
+        if self.reading_order:
+            if not isinstance(self.reading_order, dict):
+                raise LayoutError("readingOrder: expected {page: [element ids]}")
+            seen_ro = set()
+            for pg, ids in self.reading_order.items():
+                if not isinstance(ids, list) or not all(isinstance(x, str) and x for x in ids):
+                    raise LayoutError(f"readingOrder['{pg}']: a list of element ids")
+                for x in ids:
+                    if x in seen_ro:
+                        raise LayoutError(f"readingOrder: '{x}' is listed twice")
+                    seen_ro.add(x)
         if self.guides:
             if not isinstance(self.guides, dict):
                 raise LayoutError("guides: expected {x:[…], y:[…]}")
@@ -4450,6 +4848,7 @@ class Layout:
             if t.get("rot") is not None:
                 _num(t["rot"], f"{where}.rot")
             _check_skew(t, where)
+            _check_effects(t, where)
             if t.get("anchor") is not None:
                 _check_anchor(t["anchor"], where)
             _check_object_use(t, "table", self.object_styles, where)
@@ -4556,6 +4955,9 @@ class Layout:
             s += f';transform:{" ".join(tf)}'
         if p.get("alpha") is not None:
             s += f';opacity:{p["alpha"]:g}'
+        if effect_shadows(p):
+            s += f';box-shadow:{",".join(effect_shadows(p))}'
+        s += feather_css(p)
         return s
 
     def tgl_arrow(self, box_id: str, edit: bool) -> str:
@@ -4594,6 +4996,15 @@ class Layout:
         self._wrapshape_sent = True
         return f"<script>{WRAPSHAPE_JS}</script>"
 
+    def _tabs_once(self) -> str:
+        """TABS_JS, once, when some text style sets tab stops."""
+        if getattr(self, "_tabs_sent", False):
+            return ""
+        if not any(st.get("tabs") for st in self.text_style_dicts()):
+            return ""
+        self._tabs_sent = True
+        return f"<script>{TABS_JS}</script>"
+
     def _anchor_once(self) -> str:
         """The anchor runtime, once per document and only when something is
         anchored — a layout with no anchors emits the bytes it always did."""
@@ -4613,6 +5024,53 @@ class Layout:
         for o in boxes + list(self.tables):
             raw.append(self.dressed(o).get("style"))
         return [self.styled_as(st) for st in raw if st]
+
+    def caption_of(self, ref: str) -> str:
+        """An image's description, for {caption:<id>}: an inserted image's alt
+        (from its box's markdown), or a designed figure's description slot
+        (<id>.desc). Empty when the image has none — never the file name."""
+        if ref.startswith("text."):
+            b = next((x for x in self.all_boxes() if x.get("id") == ref[5:]), None)
+            m = re.search(r"!\[([^\]]*)\]", str((b or {}).get("md", "")))
+            alt = m.group(1).strip() if m else ""
+            # A file name is not a caption (check.py's alt_is_filename; not
+            # imported — check.py is not staged into the editor's engine).
+            return "" if re.search(r"(?i)\.(png|jpe?g|gif|svg|webp|avif|bmp|tiff?|heic)$", alt) else alt
+        c = getattr(self, "_content", None)
+        raw = getattr(c, "_raw", {}) if c is not None else {}
+        return str(raw.get(f"{ref}.desc", "")).strip()
+
+    def resolve_captions(self, text: str) -> str:
+        return CAPTION_RE.sub(lambda m: self.caption_of(m.group(1)), text)
+
+    def conditions_used(self) -> set:
+        c = getattr(self, "_content", None)
+        words = [str(b.get("md", "")) for b in self.all_boxes()]
+        if c is not None:
+            words += [v for v in getattr(c, "_raw", {}).values() if isinstance(v, str)]
+        return {m.group(2) for w in words if "]{?" in w for m in COND_RE.finditer(w)}
+
+    def _cond_once(self) -> str:
+        """The conditional-text rules, once, when some text is conditional.
+        Published: print-only hides on screen, web-only in print, and a
+        condition layout.conditions turns off hides everywhere. Edit mode
+        shows every condition, marked, so it can still be edited."""
+        if getattr(self, "_cond_sent", False):
+            return ""
+        used = self.conditions_used()
+        if not used:
+            return ""
+        self._cond_sent = True
+        if os.environ.get("DOCSYNC_EDIT"):
+            return ("<style>.ds-cond{text-decoration:underline dashed #8E6BBF;"
+                    "text-underline-offset:3px;background:rgba(142,107,191,.08)}"
+                    ".ds-cond[data-cond=print]{text-decoration-color:#B3412F}"
+                    ".ds-cond[data-cond=web]{text-decoration-color:#1E6194}</style>")
+        off = [n for n, on in (self.conditions or {}).items() if on is False and n in used]
+        rules = ("@media print{.ds-cond[data-cond=web]{display:none}}"
+                 "@media screen{.ds-cond[data-cond=print]{display:none}}"
+                 + "".join(f'.ds-cond[data-cond="{n}"]{{display:none}}' for n in off))
+        return f"<style>{rules}</style>"
 
     def all_boxes(self) -> list:
         """Every text box the document can draw: the pages' own and the
@@ -4855,6 +5313,18 @@ class Layout:
         mark = ' data-frame="1"' if os.environ.get("DOCSYNC_EDIT") else ""
         return self.attr(el_id, both) + mark
 
+    def ro_attr(self, el_id: str) -> str:
+        """data-ro, its place in its page's reading order, when it has one."""
+        i = self._ro_index.get(el_id)
+        return f' data-ro="{i}"' if i is not None else ""
+
+    def _order_once(self) -> str:
+        """ORDER_JS, once, when some page sets a reading order."""
+        if getattr(self, "_order_sent", False) or not self._ro_index:
+            return ""
+        self._order_sent = True
+        return f"<script>{ORDER_JS}</script>"
+
     def attr(self, el_id: str, extra: str = "") -> str:
         """Attributes for an element with no style of its own.
 
@@ -4875,6 +5345,8 @@ class Layout:
         css = self._style(p) if p else ""
         if p:
             bits.append(PLACED.strip())
+        if el_id in self._ro_index:
+            bits.append(self.ro_attr(el_id).strip())
         # The hide css goes LAST: `extra` routinely carries its own display
         # (graphic() passes display:inline-block), and the later declaration
         # in an inline style is the one that wins. In edit mode a hidden
@@ -5049,6 +5521,7 @@ class Layout:
         if s.get("rot") is not None:
             _num(s["rot"], f"{where}.rot")
         _check_skew(s, where)
+        _check_effects(s, where, svg=True)
         if s.get("anim") is not None:
             # A chart is the one shape with parts of its own to animate.
             _anim_check(s["anim"], where,
@@ -5126,6 +5599,7 @@ class Layout:
         if b.get("rot") is not None:
             _num(b["rot"], f"{where}.rot")
         _check_skew(b, where)
+        _check_effects(b, where)
         if b.get("anchor") is not None:
             _check_anchor(b["anchor"], where)
         _check_wrap(b, where)
@@ -5284,6 +5758,25 @@ class Layout:
     def is_hidden(self, el_id: str) -> bool:
         """A designed element is hidden by name, or by a hidden layer."""
         return el_id in self.hidden or self.layer_hidden(self.positions.get(el_id))
+
+    def _check_margins(self, mg, where: str) -> None:
+        """{top, bottom, left, right} inches, {columns, gutter}: InDesign's
+        Margins and Columns. Each side within half the page; columns 1–12."""
+        if not isinstance(mg, dict):
+            raise LayoutError(f"{where}: expected {{top, bottom, left, right, columns, gutter}}")
+        bad = sorted(set(mg) - {"top", "bottom", "left", "right", "columns", "gutter"})
+        if bad:
+            raise LayoutError(f"{where}: unknown key(s) {', '.join(bad)} — "
+                              f"top, bottom, left, right, columns, gutter")
+        for k, span in (("top", self.page_h), ("bottom", self.page_h),
+                        ("left", self.page_w), ("right", self.page_w)):
+            if k in mg and not 0 <= _num(mg[k], f"{where}.{k}") <= span / 2:
+                raise LayoutError(f"{where}.{k}: {mg[k]} — from 0 to half the page ({span / 2}in)")
+        if "columns" in mg and (not isinstance(mg["columns"], int) or isinstance(mg["columns"], bool)
+                                or not 1 <= mg["columns"] <= 12):
+            raise LayoutError(f"{where}.columns: a whole number from 1 to 12")
+        if "gutter" in mg and not 0 <= _num(mg["gutter"], f"{where}.gutter") <= 2:
+            raise LayoutError(f"{where}.gutter: from 0 to 2 inches")
 
     @staticmethod
     def _check_master_item(it: dict, where: str) -> None:
@@ -5731,6 +6224,8 @@ class Layout:
             out.append(f"<style>{FIT_CSS}</style>")
         for b in mine:
             b = self.dressed(b)
+            if "{caption:" in str(b.get("md", "")):
+                b = dict(b, md=self.resolve_captions(str(b["md"])))
             act = b.get("act")
             an = anim_attrs(b.get("anim")) + anchor_attrs(b)
             # border-box, always: w and h are what the editor MEASURED — the
@@ -5775,8 +6270,10 @@ class Layout:
                 css += f';transform:skewX({float(b["skew"]):g}deg)'
             if b.get("alpha") is not None:
                 css += f';opacity:{b["alpha"]:g}'
-            if b.get("shadow"):
-                css += f';box-shadow:{shadow_css(b["shadow"])}'
+            sh = ([shadow_css(b["shadow"])] if b.get("shadow") else []) + effect_shadows(b)
+            if sh:
+                css += f';box-shadow:{",".join(sh)}'
+            css += feather_css(b)
             # The look keys object styles brought. Each is written AFTER the
             # fill's own padding/radius above, so the later declaration wins
             # — an explicit pad replaces the default breathing room, and a box
@@ -5807,6 +6304,7 @@ class Layout:
             # it MEANT to draw, flung it to the left margin.
             full = f'{style + ";" if style else ""}{css}'
             tag = f' data-el="text.{b["id"]}"' if edit else ""
+            tag += self.ro_attr(f'text.{b["id"]}')
             if edit and b.get("_master"):
                 tag += f' data-master="{b["_master"]}"'
             if act == "endnotes":
@@ -5969,11 +6467,26 @@ class Layout:
             css += f';opacity:{t["alpha"]:g}'
         if t.get("blend") and t["blend"] != "normal":
             css += f';mix-blend-mode:{t["blend"]}'
+        if effect_shadows(t):
+            css += f';box-shadow:{",".join(effect_shadows(t))}'
+        css += feather_css(t)
         style = text_css(self.styled_as(t.get("style")))
         tag = f' data-el="table.{t["id"]}"' if edit else ""
+        tag += self.ro_attr(f'table.{t["id"]}')
         header = bool(t.get("header"))
         rows = t.get("rows", [])
         ncols = len(rows[0]) if rows else 0
+        # Header and footer rows (INDESIGN_PARITY.md 33). `header: true` is
+        # one header row, as it always was; headerRows / footerRows name how
+        # many, and wrap them in <thead> / <tfoot> for a reader or a tagged PDF.
+        hn = t["headerRows"] if t.get("headerRows") is not None else (1 if header else 0)
+        fn = t.get("footerRows") or 0
+        sections = t.get("headerRows") is not None or t.get("footerRows") is not None
+        merges = table_merges(t, len(rows), ncols)
+        covered = {(a, b) for (r0, c0), (rs, cs) in merges.items()
+                   for a in range(r0, r0 + rs) for b in range(c0, c0 + cs)} - set(merges)
+        rowh = t.get("rowh") or []
+        bstroke = t.get("bandStroke")
         border = t.get("border")
         outer = table_border_css(border, "outer")
         inner = table_border_css(border, "inner")
@@ -5986,7 +6499,7 @@ class Layout:
             if al != "decimal":
                 continue
             ws = [decimal_tail(r[cj]) for ri2, r in enumerate(rows)
-                  if not (header and ri2 == 0) and cj < len(r)]
+                  if not ri2 < hn and cj < len(r)]
             ws = [w for w in ws if w is not None]
             tails[cj] = round(max((sum(1 if ch.isdigit() else 1.4 for ch in w)
                                    for w in ws), default=0), 2)
@@ -6000,12 +6513,21 @@ class Layout:
                 f'<col style="width:{w / total * 100:.4f}%">' for w in t["colw"]
             ) + "</colgroup>"
         body = ""
+        parts = {"head": "", "body": "", "foot": ""}
         for ri, row in enumerate(rows):
             cells = ""
+            foot = ri >= len(rows) - fn
             for ci, c in enumerate(row):
-                th = header and ri == 0
+                if (ri, ci) in covered:
+                    continue
+                th = ri < hn
+                rs, cspan = merges.get((ri, ci), (1, 1))
                 name = "th" if th else "td"
                 hook = f' data-cell="{ri},{ci}"' if edit else ""
+                if rs > 1:
+                    hook += f' rowspan="{rs}"'
+                if cspan > 1:
+                    hook += f' colspan="{cspan}"'
                 if flow and not th and header and ci < len(rows[0]):
                     # the column's header, so the phone layout can say what
                     # each stacked value is (the header row itself is hidden)
@@ -6022,18 +6544,22 @@ class Layout:
                 if border:
                     cs = (f'border-top:{outer if ri == 0 else inner};'
                           f'border-left:{outer if ci == 0 else inner};'
-                          f'border-right:{outer if ci == ncols - 1 else inner};'
-                          f'border-bottom:{outer if ri == len(rows) - 1 else inner}')
+                          f'border-right:{outer if ci + cspan - 1 == ncols - 1 else inner};'
+                          f'border-bottom:{outer if ri + rs - 1 == len(rows) - 1 else inner}')
                 ov = over.get(f"{ri},{ci}") or {}
                 # Zebra striping counts from the first BODY row, so a table
                 # stripes the same whether or not it has a header band.
                 band = None
-                if t.get("band") and not th:
-                    if (ri - (1 if header else 0)) % 2 == 1:
-                        band = t["band"]
+                banded = not th and not foot and (ri - hn) % 2 == 1
+                if t.get("band") and banded:
+                    band = t["band"]
                 bg = ov.get("fill") or (t.get("headerFill") if th else None) \
+                    or (t.get("footerFill") if foot else None) \
                     or band or t.get("fill")
                 bits = [cs] if cs else []
+                if bstroke and banded:
+                    bits.append(f'border-bottom:{bstroke.get("w", 1):g}px '
+                                f'{bstroke.get("style", "solid")} {bstroke.get("color", "#C9D6CD")}')
                 if bg:
                     bits.append(f"background:{bg}")
                 fg = ov.get("color") or (t.get("headerColor") if th else None)
@@ -6056,6 +6582,14 @@ class Layout:
                     bits.append(f'font-weight:{"700" if ov["bold"] else "400"}')
                 if ov.get("italic"):
                     bits.append("font-style:italic")
+                if foot and fn and ov.get("bold") is None:
+                    bits.append("font-weight:700")
+                va = ov.get("valign") or t.get("valign")
+                if va:
+                    bits.append(f"vertical-align:{va}")
+                ins = ov.get("inset") if ov.get("inset") is not None else t.get("inset")
+                if ins is not None:
+                    bits.append(inset_css(ins))
                 sty = f' style="{";".join(bits)}"' if bits else ""
                 # A cell is ONE string, so a newline in it can only be a
                 # break somebody typed (the cell editor's Shift-Enter).
@@ -6065,8 +6599,16 @@ class Layout:
                 body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
                           else md_inline(str(c)).replace("\n", "<br>"))
                 cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
-            hdr = ' class="ds-hdr"' if flow and header and ri == 0 else ""
-            body += f"<tr{hdr}>{cells}</tr>"
+            hdr = ' class="ds-hdr"' if flow and ri < hn and ri == 0 else ""
+            if ri < len(rowh) and rowh[ri] is not None:
+                hdr += f' style="height:{float(rowh[ri]):g}in"'
+            tr = f"<tr{hdr}>{cells}</tr>"
+            body += tr
+            parts["head" if ri < hn else "foot" if foot else "body"] += tr
+        if sections:
+            body = ((f"<thead>{parts['head']}</thead>" if parts["head"] else "")
+                    + f"<tbody>{parts['body']}</tbody>"
+                    + (f"<tfoot>{parts['foot']}</tfoot>" if parts["foot"] else ""))
         klass = "ds-table"
         extra = ""
         tglSty = ""
@@ -6329,7 +6871,8 @@ class Layout:
         head = (self._mobile_css_once() + self._page_style_once()
                 + self._chart_tip_once() + self._anchor_once() + self._type_once()
                 + self._vars_once() + self._breaks_once() + self._char_once()
-                + self._bleed_once() + self._grid_once() + self._wrapshape_once())
+                + self._bleed_once() + self._grid_once() + self._wrapshape_once()
+                + self._cond_once() + self._tabs_once() + self._order_once())
         # A blank page that is a COPY of a designed one draws that page's
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.
@@ -6411,6 +6954,15 @@ class Layout:
         sty = []
         if s.get("shadow"):
             sty.append(shape_shadow_css(s["shadow"]))
+        if s.get("glow"):
+            g = s["glow"]
+            # px = inches in the shape layer (see shape_shadow_css).
+            gl = (f'drop-shadow(0 0 {float(g.get("size", 0.12)):g}px '
+                  f'{_rgba(g.get("color", "#F2C94C"), g.get("alpha", 0.75))})')
+            if sty and sty[0].startswith("filter:"):
+                sty[0] += " " + gl
+            else:
+                sty.insert(0, "filter:" + gl)
         if s.get("blend") and s["blend"] != "normal":
             sty.append(f'mix-blend-mode:{s["blend"]}')
         if sty:
@@ -6448,6 +7000,20 @@ class Layout:
                     f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{bg}"'
                     f' pointer-events="all"/>'
                     f'{chart_svg(s.get("chart") or {}, x, y, w, h, s.get("anim"))}</g>')
+        if s["kind"] == "qr":
+            from .qr import svg_path
+            dpath, side = svg_path(s["data"])
+            ink = s.get("fill") if isinstance(s.get("fill"), str) and s.get("fill") != "none" else "#000000"
+            bits = [f'x="{x}"', f'y="{y}"', f'width="{w}"', f'height="{h}"',
+                    f'viewBox="0 0 {side} {side}"', f'data-shape="{s["id"]}"' + tgl,
+                    'shape-rendering="crispEdges"', 'role="img"',
+                    f'aria-label="QR code: {s["data"].replace(chr(34), "&quot;").replace("<", "&lt;")}"']
+            if s.get("rot") or s.get("skew"):
+                bits.append(svg_turn(s, x, y, w, h).strip())
+            if s.get("alpha") is not None:
+                bits.append(f'opacity="{s["alpha"]:g}"')
+            return (f'<svg {" ".join(bits)}><rect width="{side}" height="{side}" fill="#fff"/>'
+                    f'<path d="{dpath}" fill="{ink}"/></svg>')
         if s["kind"] == "icon":
             # A nested <svg> so the icon's own viewBox does the scaling: the
             # glyph fits the box in inches whatever grid it was drawn on.
@@ -6468,6 +7034,14 @@ class Layout:
             if s.get("alpha") is not None:
                 bits.append(f'opacity="{s["alpha"]:g}"')
             return f'<svg {" ".join(bits)}>{s.get("svg", "")}</svg>'
+        if s["kind"] in ("polygon", "star") or (s["kind"] == "rect" and s.get("corner") in ("bevel", "inset")):
+            # Stamped like a path, so the editor shows a drag as a transform.
+            o = f' data-ox="{x}" data-oy="{y}" data-ow="{w}" data-oh="{h}"'
+            if s["kind"] == "rect":
+                return f'<path d="{corner_d(x, y, w, h, s.get("r", 0.15) or 0.15, s["corner"])}"{o} {common}/>'
+            pts = (polygon_points(x, y, w, h, s.get("sides", 6)) if s["kind"] == "polygon"
+                   else star_points(x, y, w, h, s.get("points", 5), s.get("inner", 0.5)))
+            return f'<polygon points="{_pts(pts)}"{o} {common}/>'
         if s["kind"] in ("path", "compound"):
             # Stamped with the box it was drawn at, so the editor shows a drag
             # or resize as a transform until the next render redraws it — the
