@@ -2059,9 +2059,11 @@ check_page_raises("master: an item cannot be anchored — the page places it",
                       "boxes": [{"id": "b", "x": 1, "y": 1, "w": 2, "md": "x",
                                  "anchor": {"to": "a"}}]}}},
                   "a master item cannot carry 'anchor'")
-check_page_raises("master: only boxes and shapes",
-                  {"positions": {}, "shapes": [], "masters": {"M": {"tables": []}}},
-                  "only 'boxes' and 'shapes'")
+# Tables joined boxes and shapes on a shared layout (INDESIGN_PARITY.md 7's
+# follow-up); anything else is still refused.
+check_page_raises("master: only boxes, shapes and tables",
+                  {"positions": {}, "shapes": [], "masters": {"M": {"images": []}}},
+                  "only 'boxes', 'shapes' and 'tables'")
 check_page_raises("master: '@' is the instance marker, not part of an id",
                   {"positions": {}, "shapes": [], "boxes": [dict(_plain, id="a@1")]},
                   "an id cannot contain '@'")
@@ -4278,6 +4280,76 @@ check_eq("BREAK_CSS rides once when a column or frame break is used; a break nee
          ((_bk.layer(1) + _bk.layer(2)).count(BREAK_CSS), "__dsVars" in _bk.layer(1)), (1, False))
 check_eq("a line break alone needs no CSS",
          BREAK_CSS in _layout({"boxes": [_tf(id="a", md="x{break:line}y")]}).layer(1), False)
+
+# --- the older open items (INDESIGN_PARITY 5, 7, 8, 9, 11, 23) ---------------
+from docsync.layout import (BLEED_JS, GRID_JS, path_d, part_d,                # noqa: E402
+                            anchor_attrs)
+
+check_eq("contour wrap rides as data-wrap-shape; a box wrap says nothing new",
+         (anchor_attrs({"anchor": {"to": "k"}, "wrap": "left", "wrapShape": "contour"}),
+          anchor_attrs({"anchor": {"to": "k"}, "wrap": "left", "wrapShape": "box"})),
+         (' data-anc="k" data-anc-dy="0" data-wrap="left" data-wrap-shape="contour"',
+          ' data-anc="k" data-anc-dy="0" data-wrap="left"'))
+check_eq("an unknown wrap shape is refused",
+         "wrapShape" in _layout_error({"boxes": [_tf(id="a", md="x", anchor={"to": "k"}, wrap="left",
+                                                     wrapShape="star")]}), True)
+_os.environ["DOCSYNC_MARKS"] = "1"
+_bl = _layout({"boxes": [_tf(id="a", md="x")]})
+check_eq("a marks export carries the bleed sheet and its runtime, once",
+         ((_bl.layer(1) + _bl.layer(2)).count(BLEED_JS), "@page{size:8.75in 11.25in" in _bl.layer(1)
+          or "@page{size:8.75in 11.25in" in _layout({"boxes": []}).layer(1)), (1, True))
+del _os.environ["DOCSYNC_MARKS"]
+check_eq("a normal build carries no bleed", BLEED_JS in _layout({}).layer(1), False)
+check_eq("skew: a CSS skew on a box, a skewX in a shape's one transform",
+         ("transform:skewX(15deg)" in _layout({"boxes": [_tf(id="a", md="x", skew=15)]}).text_boxes(1),
+          "skewX(-20)" in _layout({"shapes": [{"id": "s", "page": 1, "kind": "rect", "x": 1, "y": 1,
+                                               "w": 1, "h": 1, "skew": -20}]}).layer(1)), (True, True))
+check_eq("skew past 60 degrees is refused",
+         "skew" in _layout_error({"boxes": [_tf(id="a", md="x", skew=70)]}), True)
+_ly = _layout({"layers": [{"name": "A"}, {"name": "B", "hidden": True}],
+               "boxes": [_tf(id="a", md="on A", layer="A"), _tf(id="b", md="on B", layer="B")]})
+_lyh = _ly.text_boxes(1)
+check_eq("a layer lifts its objects, and a hidden layer draws none of them",
+         ("z-index:102" in _lyh, "on B" in _lyh), (True, False))
+check_eq("an object on a layer that does not exist is refused",
+         "no layer called" in _layout_error({"boxes": [_tf(id="a", md="x", layer="Nope")]}), True)
+_gr = _layout({"grid": {"increment": 12, "start": 0.75}, "text": {"a.b": {"grid": True}}})
+check_eq("the grid runtime rides once with its numbers; no style on the grid, no runtime",
+         ("var G=12,S=0.75" in _gr.layer(1), GRID_JS[:20] in _layout({"grid": {"increment": 12}}).layer(1)),
+         (True, False))
+check_eq("a grid increment out of range is refused",
+         "grid.increment" in _layout_error({"grid": {"increment": 100}}), True)
+_mt = _layout({"masters": {"S": {"tables": [{"id": "k", "x": 1, "y": 9, "w": 3, "rows": [["a", "b"]]}]}},
+               "pageMasters": {"2": "S", "3": "S"}})
+check_eq("a shared layout's table is drawn on every page using it",
+         (_mt.tables_html(2).count("<table"), _mt.tables_html(3).count("<table")), (1, 1))
+_mo = _layout({"masters": {"S": {"boxes": [_tf(id="f", md="p. {page}", fill="#EEEEEE")]}},
+               "pageMasters": {"2": "S", "3": "S"},
+               "masterOverrides": {"f@3": {"x": 5, "fill": None}}})
+check_eq("an override changes only its page, only its keys; null removes a key",
+         ((_mo.master_items(2, "boxes")[0]["x"], _mo.master_items(3, "boxes")[0]["x"]),
+          "fill" in _mo.master_items(3, "boxes")[0], _mo.master_items(3, "boxes")[0]["md"]),
+         ((1, 5), False, "p. 3"))
+check_eq("an override naming no shared-layout item on that page is refused",
+         "no shared-layout item" in _layout_error({"masters": {"S": {"boxes": [_tf(id="f", md="x")]}},
+                                                   "pageMasters": {"2": "S"},
+                                                   "masterOverrides": {"f@9": {}}}), True)
+check_eq("a pen path: lines where there are no handles, a curve where there are",
+         path_d([{"x": 0, "y": 1}, {"x": 0.5, "y": 0, "out": [0.25, 0]}, {"x": 1, "y": 1}], True, 1, 1, 2, 1),
+         "M1.0 2.0L2.0 1.0C2.5 1.0 3.0 2.0 3.0 2.0L1.0 2.0Z")
+check_eq("a Pathfinder part is path data in its own box",
+         part_d({"kind": "rect", "x": 0.5, "y": 0, "w": 0.5, "h": 1}, 0, 0, 2, 2), "M1.0 0.0H2.0V2.0H1.0Z")
+_cmp = {"id": "c", "page": 1, "kind": "compound", "x": 1, "y": 1, "w": 2, "h": 2,
+        "parts": [{"kind": "rect", "x": 0, "y": 0, "w": 1, "h": 1},
+                  {"kind": "ellipse", "x": 0.5, "y": 0.5, "w": 0.5, "h": 0.5}]}
+check_eq("Pathfinder: union one path, exclude even-odd, subtract a mask, intersect a clip",
+         ['fill-rule="nonzero"' in _layout({"shapes": [dict(_cmp, op="union")]}).layer(1),
+          'fill-rule="evenodd"' in _layout({"shapes": [dict(_cmp, op="exclude")]}).layer(1),
+          "<mask" in _layout({"shapes": [dict(_cmp, op="subtract")]}).layer(1),
+          "<clipPath" in _layout({"shapes": [dict(_cmp, op="intersect")]}).layer(1)],
+         [True, True, True, True])
+check_eq("Pathfinder needs two parts of drawable kinds",
+         "two shapes" in _layout_error({"shapes": [dict(_cmp, op="union", parts=_cmp["parts"][:1])]}), True)
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))

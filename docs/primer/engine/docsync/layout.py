@@ -102,7 +102,106 @@ def _check_page(v, where: str):
         raise LayoutError(f"{where}: page height {h}in is outside "
                           f"{PAGE_MIN_IN}–{PAGE_MAX_IN}in")
     return (float(w), float(h))
-KINDS = ("rect", "ellipse", "line", "triangle", "arrow", "icon", "chart")
+KINDS = ("rect", "ellipse", "line", "triangle", "arrow", "icon", "chart",
+         "path", "compound")
+# Drawing (INDESIGN_PARITY.md 23). A `path` is the pen tool's: `points`, each
+# {x, y, in?, out?} as FRACTIONS of the shape's own box (handles as offsets
+# from their point, also fractions), and `closed`. Fractions, so the box's
+# x/y/w/h stay the one place a shape is moved and sized — a path drags,
+# resizes and snaps exactly as a rectangle does.
+# A `compound` is Pathfinder's: `op` over `parts` (the first is the BACK
+# object), each a rect/ellipse/triangle/arrow/path with its own box again in
+# fractions of the compound's box. SVG does the geometry: union is one path
+# (nonzero), exclude the same path even-odd, subtract a mask that cuts the
+# front parts out of the back one, intersect a clip of the back by each front.
+PATHFINDER_OPS = ("union", "subtract", "intersect", "exclude")
+PART_KINDS = ("rect", "ellipse", "triangle", "arrow", "path")
+
+
+def _f(v):
+    return round(float(v), 4)
+
+
+def path_d(points, closed, x, y, w, h) -> str:
+    """A pen path's points (fractions of its box) as SVG path data in inches.
+    A segment is a curve when either end has a handle, a line otherwise."""
+    P = lambda px, py: f"{_f(x + px * w)} {_f(y + py * h)}"
+    pts = list(points or [])
+    if not pts:
+        return ""
+    out = [f"M{P(pts[0]['x'], pts[0]['y'])}"]
+
+    def seg(a, b):
+        ao, bi = a.get("out"), b.get("in")
+        if ao or bi:
+            ao, bi = ao or [0, 0], bi or [0, 0]
+            out.append(f"C{P(a['x'] + ao[0], a['y'] + ao[1])} "
+                       f"{P(b['x'] + bi[0], b['y'] + bi[1])} {P(b['x'], b['y'])}")
+        else:
+            out.append(f"L{P(b['x'], b['y'])}")
+    for a, b in zip(pts, pts[1:]):
+        seg(a, b)
+    if closed:
+        if len(pts) > 2:
+            seg(pts[-1], pts[0])
+        out.append("Z")
+    return "".join(out)
+
+
+def part_d(p: dict, X, Y, W, H) -> str:
+    """One Pathfinder part as path data, its box in fractions of (X,Y,W,H)."""
+    x, y, w, h = X + p["x"] * W, Y + p["y"] * H, p["w"] * W, p["h"] * H
+    k = p["kind"]
+    if k == "rect":
+        return f"M{_f(x)} {_f(y)}H{_f(x + w)}V{_f(y + h)}H{_f(x)}Z"
+    if k == "ellipse":
+        rx, ry, cy = w / 2, h / 2, y + h / 2
+        return (f"M{_f(x)} {_f(cy)}A{_f(rx)} {_f(ry)} 0 1 0 {_f(x + w)} {_f(cy)}"
+                f"A{_f(rx)} {_f(ry)} 0 1 0 {_f(x)} {_f(cy)}Z")
+    if k in ("triangle", "arrow"):
+        pts = triangle_points(x, y, w, h) if k == "triangle" else arrow_points(x, y, w, h)
+        return "M" + "L".join(f"{_f(a)} {_f(b)}" for a, b in pts) + "Z"
+    return path_d(p.get("points"), p.get("closed", True), x, y, w, h)
+
+
+def _check_points(pts, where: str) -> None:
+    if not isinstance(pts, list) or len(pts) < 2:
+        raise LayoutError(f"{where}.points: a path needs at least two points")
+    for i, q in enumerate(pts):
+        w = f"{where}.points[{i}]"
+        if not isinstance(q, dict):
+            raise LayoutError(f"{w}: expected {{x, y, in?, out?}}")
+        for k in ("x", "y"):
+            v = _num(q.get(k), f"{w}.{k}")
+            if not -1 <= v <= 2:
+                raise LayoutError(f"{w}.{k}: a fraction of the shape's box — {v:g} is far outside it")
+        for k in ("in", "out"):
+            hdl = q.get(k)
+            if hdl is not None and (not isinstance(hdl, list) or len(hdl) != 2):
+                raise LayoutError(f"{w}.{k}: a handle is [dx, dy]")
+            for v in hdl or []:
+                _num(v, f"{w}.{k}")
+
+
+def _check_drawing(s: dict, where: str) -> None:
+    if s.get("kind") == "path":
+        _check_points(s.get("points"), where)
+        if s.get("closed") is not None and not isinstance(s["closed"], bool):
+            raise LayoutError(f"{where}.closed: true or false")
+    if s.get("kind") == "compound":
+        if s.get("op") not in PATHFINDER_OPS:
+            raise LayoutError(f"{where}.op must be one of {', '.join(PATHFINDER_OPS)}")
+        parts = s.get("parts")
+        if not isinstance(parts, list) or len(parts) < 2:
+            raise LayoutError(f"{where}.parts: Pathfinder needs at least two shapes")
+        for i, p in enumerate(parts):
+            w = f"{where}.parts[{i}]"
+            if not isinstance(p, dict) or p.get("kind") not in PART_KINDS:
+                raise LayoutError(f"{w}.kind must be one of {', '.join(PART_KINDS)}")
+            for k in ("x", "y", "w", "h"):
+                _num(p.get(k), f"{w}.{k}")
+            if p["kind"] == "path":
+                _check_points(p.get("points"), w)
 LINE_ENDS = ("none", "start", "end", "both")
 
 # --- charts ---------------------------------------------------------------
@@ -1217,6 +1316,8 @@ def text_css(st: dict) -> str:
     gs = _auto_payload(st)
     if gs:
         out.append(f"--ds-gs:{gs}")
+    if st.get("grid"):
+        out.append("--ds-grid:1")
     if any(st.get(k) for k in _BOX_KEYS):
         # text-align, text-wrap and ::first-letter do nothing to an inline
         # box, and the inline slots are spans. Give it a box — but only when
@@ -1374,6 +1475,8 @@ def _check_text(st: dict, where: str) -> None:
             _num(st[k], f"{where}.{k}")
     _check_para(st, where)
     _check_auto(st, where)
+    if st.get("grid") is not None and not isinstance(st["grid"], bool):
+        raise LayoutError(f"{where}.grid: true or false — sit on the baseline grid")
     for k, (lo, hi) in SPACE_RANGE.items():
         if st.get(k) is not None:
             v = _num(st[k], f"{where}.{k}")
@@ -3231,8 +3334,38 @@ def _check_box_look(b: dict, where: str) -> None:
     _check_blend(b.get("blend"), where)
 
 
+# Skew (InDesign's Shear, INDESIGN_PARITY.md 23): degrees along x, about the
+# object's own centre, after its rotation. Kept modest — past 60° an object
+# is a line.
+SKEW_MAX = 60
+
+
+def _check_skew(obj: dict, where: str) -> None:
+    if obj.get("skew") is not None:
+        v = _num(obj["skew"], f"{where}.skew")
+        if not -SKEW_MAX <= v <= SKEW_MAX:
+            raise LayoutError(f"{where}.skew: {v:g}° is outside ±{SKEW_MAX}°")
+
+
+def svg_turn(s: dict, x, y, w, h) -> str:
+    """A shape's rotate and skew as ONE SVG transform attribute (a second
+    would be dropped by the parser), both about the shape's centre."""
+    cx, cy = round(x + w / 2, 4), round(y + h / 2, 4)
+    parts = []
+    if s.get("rot"):
+        parts.append(f"rotate({s['rot']} {cx} {cy})")
+    if s.get("skew"):
+        parts.append(f"translate({cx} {cy}) skewX({float(s['skew']):g}) translate({-cx} {-cy})")
+    return f' transform="{" ".join(parts)}"' if parts else ""
+
+
 ANCHOR_EDGES = ("top", "bottom")
 WRAP_SIDES = ("left", "right")
+# What the text wraps around (INDESIGN_PARITY.md 5, the contour half): the
+# object's rectangle, the picture's own outline (CSS shape-outside read from
+# the image's transparency — a cut-out photo, a logo), or an ellipse in its
+# box (a round portrait).
+WRAP_SHAPES = ("box", "contour", "ellipse")
 
 
 def _check_wrap(obj: dict, where: str) -> None:
@@ -3248,6 +3381,9 @@ def _check_wrap(obj: dict, where: str) -> None:
                           f"the text flows around it in")
     if obj.get("wrapPad") is not None and not 0 <= _num(obj["wrapPad"], f"{where}.wrapPad") <= 1:
         raise LayoutError(f"{where}.wrapPad: {obj['wrapPad']} is outside 0–1in")
+    ws = obj.get("wrapShape")
+    if ws is not None and ws not in WRAP_SHAPES:
+        raise LayoutError(f"{where}.wrapShape: {ws!r} must be one of {', '.join(WRAP_SHAPES)}")
 
 
 def _check_anchor(a, where: str) -> None:
@@ -3285,6 +3421,8 @@ def anchor_attrs(obj: dict) -> str:
         out += f' data-wrap="{obj["wrap"]}"'
         if obj.get("wrapPad") is not None:
             out += f' data-wrap-pad="{float(obj["wrapPad"]):g}"'
+        if obj.get("wrapShape") and obj["wrapShape"] != "box":
+            out += f' data-wrap-shape="{obj["wrapShape"]}"'
     return out
 
 
@@ -3479,6 +3617,77 @@ VARS_JS = (
 # THREAD_JS's — the paragraph holding it starts the next frame.
 BREAK_CSS = (":is(p,h1,h2,h3,h4,h5,h6,li):has(.ds-brk[data-brk=column])"
              "{break-before:column}.ds-brk{display:none}")
+# Bleed and crop marks for ANY report (INDESIGN_PARITY.md 11). Only the export
+# chosen with "Bleed & crop marks" sets DOCSYNC_MARKS, so a normal build never
+# carries any of this. The engine cannot know a report's own page padding, so
+# instead of CSS it emits a script that reads it: each sheet grows 0.125in a
+# side, its padding by the same (so the words keep their place against the
+# trim), every PLACED thing and the drawing layer shift by 0.125in (they are
+# positioned from the sheet's corner, which padding does not move — anchored
+# ones are re-measured by the anchor runtime instead), the background bleeds
+# to the new edge, and eight hairline ticks mark the trim, INSIDE the sheet
+# because a print engine clips whatever sits in a page margin. A renderer
+# that does this itself (report2027 puts .ds-bleed on <body>) is left alone.
+BLEED_JS = (
+    "(function(){var done=0;function go(){if(done||document.body.classList.contains('ds-bleed'))return;"
+    "var P=document.querySelectorAll('section.page');if(!P.length)return;done=1;"
+    "[].forEach.call(P,function(p){var s=getComputedStyle(p);"
+    "p.style.width=(p.offsetWidth+24)+'px';p.style.height=(p.offsetHeight+24)+'px';"
+    "p.style.minHeight='0';p.style.maxWidth='none';p.style.margin='0';p.style.boxSizing='border-box';"
+    "['Top','Right','Bottom','Left'].forEach(function(k){p.style['padding'+k]=(parseFloat(s['padding'+k])+12)+'px';});"
+    "[].forEach.call(p.querySelectorAll(':scope>[data-placed]:not([data-anc]),:scope>.shape-layer,"
+    ":scope>.ds-textbox:not([data-anc]),:scope>.ds-table:not([data-anc])'),function(e){e.style.translate='12px 12px';});"
+    "var m=document.createElement('div');m.className='ds-crop';m.setAttribute('aria-hidden','true');"
+    "var g='linear-gradient(#111,#111) ';m.style.cssText='position:absolute;inset:0;pointer-events:none;z-index:99999;background:'"
+    "+[g+'left 0 top 12px/11.5px .5pt',g+'left 12px top 0/.5pt 11.5px',g+'right 0 top 12px/11.5px .5pt',"
+    "g+'right 12px top 0/.5pt 11.5px',g+'left 0 bottom 12px/11.5px .5pt',g+'left 12px bottom 0/.5pt 11.5px',"
+    "g+'right 0 bottom 12px/11.5px .5pt',g+'right 12px bottom 0/.5pt 11.5px'].map(function(x){return x+' no-repeat';}).join(',');"
+    "p.appendChild(m);});"
+    "if(window.__dsAnchor)window.__dsAnchor();if(window.__dsThread)window.__dsThread();}"
+    "if(document.readyState!=='loading')go();else document.addEventListener('DOMContentLoaded',go);"
+    "addEventListener('load',go);})();"
+)
+# The baseline grid (INDESIGN_PARITY.md 9). layout.grid = {increment (pt),
+# start (in, from the sheet's top)}; a text style says `grid: true` to sit on
+# it. CSS has no snap-to-baseline, so after layout — and after threads pour,
+# so each frame's text snaps where it landed — each such paragraph gets a
+# line-height that is a whole number of increments (enough for its type),
+# then its first baseline is measured with a zero-size probe and the
+# paragraph is padded down to the next grid line. Paragraphs are done in
+# reading order, each measured after the ones above it moved.
+GRID_JS = (
+    "(function(){var G=%(inc)s,S=%(start)s;"
+    "function paras(el){return el.matches('p,h1,h2,h3,h4,h5,h6,li,span')&&!el.querySelector('p,h1,h2,h3,h4,h5,h6,li')"
+    "?[el]:[].slice.call(el.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li'));}"
+    "function go(){[].forEach.call(document.querySelectorAll('section.page'),function(pg){"
+    "var R=pg.getBoundingClientRect();if(!R.width)return;var sc=R.width/pg.offsetWidth||1;"
+    "var inc=G*96/72*sc,st=S*96*sc;var ps=[];"
+    "[].forEach.call(pg.querySelectorAll('[style*=\"--ds-grid:\"]'),function(el){ps=ps.concat(paras(el));});"
+    "ps.forEach(function(p){p.style.paddingTop='';var fs=parseFloat(getComputedStyle(p).fontSize);"
+    "var k=Math.max(1,Math.ceil(fs*1.15/(G*96/72)));p.style.lineHeight=(k*G)+'pt';"
+    "var pr=document.createElement('span');pr.style.cssText='display:inline-block;width:0;height:0;vertical-align:baseline';"
+    "p.insertBefore(pr,p.firstChild);var y=pr.getBoundingClientRect().top-pg.getBoundingClientRect().top;pr.remove();"
+    "var n=Math.ceil((y-st)/inc-1e-3),d=(st+n*inc-y)/sc;if(d>0.05)p.style.paddingTop=d.toFixed(2)+'px';});});}"
+    "window.__dsGrid=go;go();addEventListener('load',go);"
+    "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
+)
+
+# Contour wrap (INDESIGN_PARITY.md 5): its own script, not ANCHOR_JS's, so a
+# report that anchors but wraps nothing to an outline keeps every byte. Runs
+# after the anchor runtime has floated the object (registered after it, so
+# on load, resize and fonts-ready it runs second): the lines follow the
+# picture's own outline (its alpha) or an ellipse in its box, shape-margin is
+# the gap, and a picture that cannot be read falls back to the rectangle.
+WRAPSHAPE_JS = (
+    "(function(){function go(){[].forEach.call(document.querySelectorAll('[data-wrap-shape]'),function(el){"
+    "var shp=el.getAttribute('data-wrap-shape'),pad=(el.getAttribute('data-wrap-pad')||'0.12')+'in';"
+    "var im=el.tagName==='IMG'?el:el.querySelector('img');"
+    "el.style.shapeOutside=shp==='ellipse'?'ellipse(50% 50%)':(im?'url(\"'+im.currentSrc+'\")':'none');"
+    "el.style.shapeImageThreshold='0.4';el.style.shapeMargin=pad;el.style.margin='0';});}"
+    "window.__dsWrapShape=go;go();addEventListener('load',go);addEventListener('resize',go);"
+    "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
+)
+
 THREAD_CSS = (
     ".ds-thread .ds-cont{text-indent:0!important;margin-top:0!important}"
     ".ds-thread>:first-child{margin-top:0}"
@@ -3529,7 +3738,7 @@ THREAD_JS = (
     "var mv=[],t=kids[k].querySelector('.ds-brk[data-brk=frame]')&&kids[k].getBoundingClientRect().bottom<=L+.5?null:split(kids[k],L);"
     "if(t===null)mv.push(kids[k]);else if(t)mv.push(t);"
     "for(j=k+1;j<kids.length;j++)mv.push(kids[j]);"
-    "for(j=0;j<mv.length;j++)nx.appendChild(mv[j]);}}"
+    "for(j=0;j<mv.length;j++)nx.appendChild(mv[j]);}if(window.__dsGrid)window.__dsGrid();}"
     "function go(){var g=groups();for(var k in g)pour(g[k].filter(Boolean));}"
     "window.__dsThread=go;"
     "window.__dsThreadGather=function(id){var g=groups()[id];if(g)gather(g.filter(Boolean));};"
@@ -3873,6 +4082,14 @@ class Layout:
         # regenerated on every build, so absence has to be an override here,
         # not an edit to the output.
         self.hidden = raw.get("hidden") or []
+        # Named layers (INDESIGN_PARITY.md 8): [{name, hidden?, locked?}], in
+        # stacking order — the first at the back. Anything may say `layer`.
+        self.layers = raw.get("layers") or []
+        self.grid = raw.get("grid")
+        # Per-item overrides on a shared layout (INDESIGN_PARITY.md 7): only
+        # the keys changed on that one page, keyed by the page instance's id
+        # ("folio@3"); null removes a key the layout's item has.
+        self.master_overrides = raw.get("masterOverrides") or {}
         # Every element some toggle button reveals, flattened: target may be
         # one id or a list, and boxes, shapes and tables all consult this to
         # stamp their publish-mode hook. Built once, here, so the three
@@ -3952,6 +4169,7 @@ class Layout:
                 _num(p[k], f"position '{el}'.{k}")
             if p.get("rot") is not None:
                 _num(p["rot"], f"position '{el}'.rot")
+            _check_skew(p, f"position '{el}'")
             if p.get("scale") is not None and _num(p["scale"], f"position '{el}'.scale") <= 0:
                 raise LayoutError(f"position '{el}': scale must be positive")
             if p.get("alpha") is not None:
@@ -3970,13 +4188,32 @@ class Layout:
             if not isinstance(m, dict):
                 raise LayoutError(f"master '{name}': expected an object with boxes/shapes")
             for k in m:
-                if k not in ("boxes", "shapes"):
-                    raise LayoutError(f"master '{name}': only 'boxes' and 'shapes' — "
-                                      f"not {k!r}")
+                if k not in ("boxes", "shapes", "tables"):
+                    raise LayoutError(f"master '{name}': only 'boxes', 'shapes' and "
+                                      f"'tables' — not {k!r}")
                 if not isinstance(m[k], list):
                     raise LayoutError(f"master '{name}'.{k}: expected a list")
         if not isinstance(self.page_masters, dict):
             raise LayoutError("pageMasters: expected an object keyed by page id")
+        if not isinstance(self.master_overrides, dict):
+            raise LayoutError("masterOverrides: expected an object keyed 'item@page'")
+        for key, ov in self.master_overrides.items():
+            w = f"masterOverrides['{key}']"
+            base, _, pg = str(key).rpartition("@")
+            name = self.page_masters.get(pg)
+            m = self.masters.get(name) if name else None
+            items = [] if not m else [x.get("id") for k in ("boxes", "shapes", "tables")
+                                      for x in (m.get(k) or [])]
+            if not base or base not in items:
+                raise LayoutError(f"{w}: page {pg} has no shared-layout item {base!r}")
+            if not isinstance(ov, dict):
+                raise LayoutError(f"{w}: expected the changed keys")
+            for k in ("id", "page"):
+                if k in ov:
+                    raise LayoutError(f"{w}: cannot change '{k}'")
+            for k in ("anchor", "wrap", "act", "next"):
+                if ov.get(k) is not None:
+                    raise LayoutError(f"{w}: a shared-layout item cannot carry '{k}'")
         for pid, name in self.page_masters.items():
             if name not in self.masters:
                 known = ", ".join(sorted(self.masters)) or "none are defined"
@@ -4044,6 +4281,19 @@ class Layout:
         if not isinstance(self.locked, list) or any(
                 not isinstance(x, str) or not x for x in self.locked):
             raise LayoutError("locked: expected a list of element ids")
+        self._check_layers()
+        if self.grid is not None:
+            g = self.grid
+            if not isinstance(g, dict) or g.get("increment") is None:
+                raise LayoutError("grid: expected {increment (pt), start (in)}")
+            inc = _num(g["increment"], "grid.increment")
+            if not 4 <= inc <= 72:
+                raise LayoutError(f"grid.increment is points, 4 to 72 — {inc:g} is not")
+            if g.get("start") is not None and not 0 <= _num(g["start"], "grid.start") <= 6:
+                raise LayoutError("grid.start is inches from the sheet's top, 0 to 6")
+            bad = [k for k in g if k not in ("increment", "start")]
+            if bad:
+                raise LayoutError(f"grid: unknown key(s) {', '.join(bad)}")
         if not isinstance(self.hidden, list) or any(
                 not isinstance(x, str) or not x for x in self.hidden):
             raise LayoutError("hidden: expected a list of element ids")
@@ -4154,8 +4404,19 @@ class Layout:
             for i, mb in enumerate(m.get("boxes") or []):
                 self._check_master_item(mb, f"master '{name}' box #{i + 1}")
                 self._check_box(dict(mb, page=0), f"master '{name}' box #{i + 1}", seen)
-        for i, t in enumerate(self.tables):
-            where = f"table #{i + 1}"
+        # A master's tables go through the same checks as a page's own (a
+        # page they never have is supplied), plus the master-item refusals and
+        # one more: a shared layout's table is placed, never in the flow.
+        mtabs = []
+        for name, m in self.masters.items():
+            for j, mt in enumerate(m.get("tables") or []):
+                w = f"master '{name}' table #{j + 1}"
+                self._check_master_item(mt, w)
+                if mt.get("flow"):
+                    raise LayoutError(f"{w}: a shared layout's table is placed — not 'flow'")
+                mtabs.append((w, dict(mt, page=0)))
+        for i, (where, t) in enumerate([(f"table #{k + 1}", t) for k, t in enumerate(self.tables)]
+                                       + mtabs):
             if t.get("anim") is not None:
                 _anim_check(t["anim"], where)
             tid = t.get("id")
@@ -4188,6 +4449,7 @@ class Layout:
                 raise LayoutError(f"{where}: z {t['z']!r} is not a layer number")
             if t.get("rot") is not None:
                 _num(t["rot"], f"{where}.rot")
+            _check_skew(t, where)
             if t.get("anchor") is not None:
                 _check_anchor(t["anchor"], where)
             _check_object_use(t, "table", self.object_styles, where)
@@ -4265,7 +4527,7 @@ class Layout:
         if p.get("h"):
             s += f';{"min-height" if p.get("hmin") else "height"}:{p["h"]}in'
         # z is an integer layer: below 0 sits under the text, above 0 over it.
-        s += f';z-index:{int(p.get("z", 1))}'
+        s += f';z-index:{int(p.get("z", 1)) + self.layer_lift(p)}'
         # Rotation on its OWN property, not inside `transform`. A designed
         # piece can wear a class transform — .lc-right's translateY(-50%) —
         # and one inline `transform` REPLACES it: rotating such a callout by a
@@ -4288,6 +4550,8 @@ class Layout:
         if p.get("flip"):
             f = p["flip"]
             tf.append(f'scale({-1 if "h" in f else 1},{-1 if "v" in f else 1})')
+        if p.get("skew"):
+            tf.append(f'skewX({float(p["skew"]):g}deg)')
         if tf:
             s += f';transform:{" ".join(tf)}'
         if p.get("alpha") is not None:
@@ -4318,6 +4582,17 @@ class Layout:
                 f'<path d="M3.5 6L8 10.5L12.5 6" fill="none" stroke="{ink}"'
                 f' stroke-width="2" stroke-linecap="round"'
                 f' stroke-linejoin="round"/></svg>')
+
+    def _wrapshape_once(self) -> str:
+        """WRAPSHAPE_JS, once, when something wraps to an outline or ellipse."""
+        if getattr(self, "_wrapshape_sent", False):
+            return ""
+        objs = list(self.boxes) + list(self.tables) + [p for p in self.positions.values()
+                                                       if isinstance(p, dict)]
+        if not any(o.get("wrap") and o.get("wrapShape") not in (None, "box") for o in objs):
+            return ""
+        self._wrapshape_sent = True
+        return f"<script>{WRAPSHAPE_JS}</script>"
 
     def _anchor_once(self) -> str:
         """The anchor runtime, once per document and only when something is
@@ -4397,6 +4672,17 @@ class Layout:
             return ""
         self._breaks_sent = True
         return f"<style>{BREAK_CSS}</style>"
+
+    def _grid_once(self) -> str:
+        """GRID_JS, once, when the layout has a grid AND some style sits on it."""
+        if getattr(self, "_grid_sent", False) or not self.grid:
+            return ""
+        if not any(st.get("grid") for st in self.text_style_dicts()):
+            return ""
+        self._grid_sent = True
+        g = self.grid
+        return "<script>" + GRID_JS % {"inc": f'{float(g["increment"]):g}',
+                                      "start": f'{float(g.get("start", 0)):g}'} + "</script>"
 
     def _vars_once(self) -> str:
         """VARS_JS and its CSS, once per document and only when some text box
@@ -4580,7 +4866,7 @@ class Layout:
         """
         bits = []
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
-        hid = el_id in self.hidden
+        hid = self.is_hidden(el_id)
         if edit:
             bits.append(f'data-el="{el_id}"')
             if hid:
@@ -4649,7 +4935,7 @@ class Layout:
         """
         # A hidden element gives its flow slot back: deleting something should
         # close the gap, in the editor exactly as on the published page.
-        if el_id in self.hidden:
+        if self.is_hidden(el_id):
             return ""
         p = self.positions.get(el_id)
         if not p or not p.get("reserve"):
@@ -4717,7 +5003,7 @@ class Layout:
         for the editor."""
         if not os.environ.get("DOCSYNC_EDIT"):
             return ""
-        extra = ' data-hidden="1"' if el_id in self.hidden else ""
+        extra = ' data-hidden="1"' if self.is_hidden(el_id) else ""
         return f' data-el="{el_id}"{extra}'
 
     def style(self, el_id: str, default: str = "") -> str:
@@ -4727,7 +5013,7 @@ class Layout:
         it beats whatever display the caller's own css set."""
         p = self.positions.get(el_id)
         css = self._style(p) if p else default
-        if el_id in self.hidden:
+        if self.is_hidden(el_id):
             css = ";".join(x for x in (css, "display:none") if x)
         return css
 
@@ -4750,6 +5036,7 @@ class Layout:
         if s.get("kind") not in KINDS:
             raise LayoutError(
                 f"{where}: kind {s.get('kind')!r} must be one of {', '.join(KINDS)}")
+        _check_drawing(s, where)
         if not isinstance(s.get("page"), (int, str)) or isinstance(s.get("page"), bool):
             raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
         for k in ("x", "y", "w", "h"):
@@ -4761,6 +5048,7 @@ class Layout:
         _check_shape_look(self.dressed(s), where)
         if s.get("rot") is not None:
             _num(s["rot"], f"{where}.rot")
+        _check_skew(s, where)
         if s.get("anim") is not None:
             # A chart is the one shape with parts of its own to animate.
             _anim_check(s["anim"], where,
@@ -4837,6 +5125,7 @@ class Layout:
             raise LayoutError(f"{where}: z {b['z']!r} is not a layer number")
         if b.get("rot") is not None:
             _num(b["rot"], f"{where}.rot")
+        _check_skew(b, where)
         if b.get("anchor") is not None:
             _check_anchor(b["anchor"], where)
         _check_wrap(b, where)
@@ -4940,6 +5229,62 @@ class Layout:
                 f".ds-thread{{height:auto!important}}}}</style>"
                 f"<script>{THREAD_JS}</script>")
 
+    # ---- named layers (INDESIGN_PARITY.md 8) -------------------------------
+    # A layer is a name the document's objects can belong to, in a stacking
+    # order, that can be hidden (it is not drawn — not in the editor, not on
+    # the page, not in the PDF, as in InDesign) or locked (the editor refuses
+    # to select or move what is on it). An object on no layer is exactly what
+    # it was, so a document without layers renders byte for byte as before.
+    LAYER_STEP = 100      # each layer lifts its objects this far up the stack
+
+    def _check_layers(self) -> None:
+        if not isinstance(self.layers, list):
+            raise LayoutError("layers: expected a list of {name, hidden, locked}")
+        seen = set()
+        for i, L in enumerate(self.layers):
+            w = f"layer #{i + 1}"
+            if not isinstance(L, dict) or not isinstance(L.get("name"), str) or not L["name"].strip():
+                raise LayoutError(f"{w}: needs a name")
+            if L["name"] in seen:
+                raise LayoutError(f"{w}: two layers called {L['name']!r}")
+            seen.add(L["name"])
+            for k in ("hidden", "locked"):
+                if L.get(k) is not None and not isinstance(L[k], bool):
+                    raise LayoutError(f"{w}.{k}: true or false")
+            bad = [k for k in L if k not in ("name", "hidden", "locked")]
+            if bad:
+                raise LayoutError(f"{w}: unknown key(s) {', '.join(bad)}")
+        objs = ([(f"shape '{x.get('id')}'", x) for x in self.shapes]
+                + [(f"box '{x.get('id')}'", x) for x in self.boxes]
+                + [(f"table '{x.get('id')}'", x) for x in self.tables]
+                + [(f"position '{k}'", v) for k, v in self.positions.items() if isinstance(v, dict)]
+                + [(f"master '{n}' item '{x.get('id')}'", x) for n, m in self.masters.items()
+                   for x in (m.get("boxes") or []) + (m.get("shapes") or [])])
+        for w, o in objs:
+            if o.get("layer") is not None and o["layer"] not in seen:
+                known = ", ".join(sorted(seen)) or "none are defined"
+                raise LayoutError(f"{w}.layer: no layer called {o['layer']!r} — {known}")
+
+    def _layer(self, obj) -> dict | None:
+        n = (obj or {}).get("layer")
+        return next((L for L in self.layers if L.get("name") == n), None) if n else None
+
+    def layer_hidden(self, obj) -> bool:
+        L = self._layer(obj)
+        return bool(L and L.get("hidden"))
+
+    def layer_lift(self, obj) -> int:
+        """How far up the stack the object's layer puts it (0 on no layer)."""
+        n = (obj or {}).get("layer")
+        for i, L in enumerate(self.layers):
+            if L.get("name") == n:
+                return (i + 1) * self.LAYER_STEP
+        return 0
+
+    def is_hidden(self, el_id: str) -> bool:
+        """A designed element is hidden by name, or by a hidden layer."""
+        return el_id in self.hidden or self.layer_hidden(self.positions.get(el_id))
+
     @staticmethod
     def _check_master_item(it: dict, where: str) -> None:
         """What a master item may not be: anchored (it is placed by the page,
@@ -4961,7 +5306,7 @@ class Layout:
         return str(page) if isinstance(page, int) and not isinstance(page, bool) else ""
 
     def master_items(self, page, kind: str) -> list:
-        """The boxes or shapes the master this page uses puts on it, as page
+        """The boxes, shapes or tables the master this page uses puts on it, as page
         instances: id `<item>@<page>`, this page, `{page}` in a box's words
         replaced by the page's number. Stamped `_master` so edit mode can say
         what they are. A page using no master gets an empty list — and so a
@@ -4972,7 +5317,11 @@ class Layout:
             return []
         out = []
         for it in m.get(kind) or []:
-            x = dict(it, id=f"{it['id']}@{page}", page=page, _master=name)
+            ov = self.master_overrides.get(f"{it['id']}@{page}") or {}
+            x = {k: v for k, v in {**it, **ov}.items() if v is not None}
+            x.update(id=f"{it['id']}@{page}", page=page, _master=name)
+            if ov:
+                x["_override"] = True
             if kind == "boxes":
                 x["md"] = str(x.get("md", "")).replace("{page}", self._page_label(page))
             out.append(x)
@@ -5269,8 +5618,9 @@ class Layout:
         editor) but never clips — if the words are taller than `h`, the box
         grows past it. A box with no `h` is auto-height, as before.
         """
-        mine = ([b for b in self.boxes if b.get("page") == page]
-                + self.master_items(page, "boxes"))
+        mine = [b for b in ([b for b in self.boxes if b.get("page") == page]
+                            + self.master_items(page, "boxes"))
+                if not self.layer_hidden(b)]
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
         # WHERE a new element may land, and under which number. Only the
         # Primer's own renderer stamps data-page on its sections; demo-report,
@@ -5392,7 +5742,7 @@ class Layout:
             # acting box, which has carried border-box from the start.
             css = (f'box-sizing:border-box;position:absolute;'
                    f'left:{b["x"]}in;top:{b["y"]}in;'
-                   f'width:{b["w"]}in;z-index:{int(b.get("z", 2))}')
+                   f'width:{b["w"]}in;z-index:{int(b.get("z", 2)) + self.layer_lift(b)}')
             thr = thread_of.get(b.get("id"))
             if b.get("fit"):
                 # A fitted image's frame is exactly its height; the picture
@@ -5421,6 +5771,8 @@ class Layout:
                 css += ';padding:.08in .12in;border-radius:8px'
             if b.get("rot"):
                 css += f';rotate:{b["rot"]}deg'      # own property — see _style
+            if b.get("skew"):
+                css += f';transform:skewX({float(b["skew"]):g}deg)'
             if b.get("alpha") is not None:
                 css += f';opacity:{b["alpha"]:g}'
             if b.get("shadow"):
@@ -5587,8 +5939,8 @@ class Layout:
         of cell markdown; `header` makes the first row a <th> band. Each cell
         carries a data-cell hook in edit mode so the editor can edit it in
         place."""
-        mine = [t for t in self.tables
-                if t.get("page") == page and not t.get("flow")]
+        mine = [t for t in (list(self.tables) + self.master_items(page, "tables"))
+                if t.get("page") == page and not t.get("flow") and not self.layer_hidden(t)]
         if not mine:
             return ""
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
@@ -5608,9 +5960,11 @@ class Layout:
         else:
             css = (f'box-sizing:border-box;position:absolute;'
                    f'left:{t["x"]}in;top:{t["y"]}in;'
-                   f'width:{t["w"]}in;z-index:{int(t.get("z", 2))}')
+                   f'width:{t["w"]}in;z-index:{int(t.get("z", 2)) + self.layer_lift(t)}')
         if t.get("rot"):
             css += f';rotate:{t["rot"]}deg'      # own property — see _style
+        if t.get("skew"):
+            css += f';transform:skewX({float(t["skew"]):g}deg)'
         if t.get("alpha") is not None:
             css += f';opacity:{t["alpha"]:g}'
         if t.get("blend") and t["blend"] != "normal":
@@ -5793,6 +6147,18 @@ class Layout:
                  else f"@page{{size:{w}in auto;margin:0}}")
         return f"<style>{box}{sheet}</style>"
 
+    def _bleed_once(self) -> str:
+        """The bleed sheet size and BLEED_JS — only in a marks export
+        (DOCSYNC_MARKS), only for sheets with a height, once."""
+        if (getattr(self, "_bleed_sent", False) or not os.environ.get("DOCSYNC_MARKS")
+                or os.environ.get("DOCSYNC_EDIT")
+                or (self.page and self.page[1] is None)):     # pageless: no sheet to bleed
+            return ""
+        self._bleed_sent = True
+        w, h = float(self.page_w) + 0.25, float(self.page_h) + 0.25
+        return (f"<style>@page{{size:{w:g}in {h:g}in;margin:0}}</style>"
+                f"<script>{BLEED_JS}</script>")
+
     def _page_style_once(self) -> str:
         """Rides out with the first layer() of a render.
 
@@ -5962,18 +6328,20 @@ class Layout:
         page that holds no shapes."""
         head = (self._mobile_css_once() + self._page_style_once()
                 + self._chart_tip_once() + self._anchor_once() + self._type_once()
-                + self._vars_once() + self._breaks_once() + self._char_once())
+                + self._vars_once() + self._breaks_once() + self._char_once()
+                + self._bleed_once() + self._grid_once() + self._wrapshape_once())
         # A blank page that is a COPY of a designed one draws that page's
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.
         head += self.copy_html(page)
-        mine = ([s for s in self.shapes if s.get("page") == page]
-                + self.master_items(page, "shapes"))
+        mine = [s for s in ([s for s in self.shapes if s.get("page") == page]
+                            + self.master_items(page, "shapes"))
+                if not self.layer_hidden(s)]
         if not mine:
             return head
         by_z: dict[int, list] = {}
         for s in mine:
-            by_z.setdefault(_z(s), []).append(s)
+            by_z.setdefault(_z(s) + self.layer_lift(s), []).append(s)
         return head + "".join(self._svg(by_z[z], z) for z in sorted(by_z))
 
     def _svg(self, shapes: list, z: int) -> str:
@@ -6035,9 +6403,7 @@ class Layout:
         # inches, so the pivot is plain geometry. Opacity and shadow ride the
         # same node — a wrapping <g> would put a second element between the
         # editor's data-shape lookups and the thing they mean.
-        if s.get("rot"):
-            common += (f' transform="rotate({s["rot"]} '
-                       f'{round(x + w / 2, 4)} {round(y + h / 2, 4)})"')
+        common += svg_turn(s, x, y, w, h)
         if s.get("alpha") is not None:
             common += f' opacity="{s["alpha"]:g}"'
         # ONE style attribute: a second on the same element is dropped by the
@@ -6059,9 +6425,8 @@ class Layout:
             # underneath is what gives it a grabbable surface — a chart is
             # mostly empty space, and without it a drag would only catch a bar.
             attrs = [f'data-shape="{s["id"]}"' + tgl]
-            if s.get("rot"):
-                attrs.append(f'transform="rotate({s["rot"]} '
-                             f'{round(x + w / 2, 4)} {round(y + h / 2, 4)})"')
+            if s.get("rot") or s.get("skew"):
+                attrs.append(svg_turn(s, x, y, w, h).strip())
             if s.get("alpha") is not None:
                 attrs.append(f'opacity="{s["alpha"]:g}"')
             if s.get("blend") and s["blend"] != "normal":
@@ -6098,12 +6463,37 @@ class Layout:
             if s.get("blend") and s["blend"] != "normal":
                 css.append(f'mix-blend-mode:{s["blend"]}')
             bits.append(f'style="{";".join(css)}"')
-            if s.get("rot"):
-                bits.append(f'transform="rotate({s["rot"]} '
-                            f'{round(x + w / 2, 4)} {round(y + h / 2, 4)})"')
+            if s.get("rot") or s.get("skew"):
+                bits.append(svg_turn(s, x, y, w, h).strip())
             if s.get("alpha") is not None:
                 bits.append(f'opacity="{s["alpha"]:g}"')
             return f'<svg {" ".join(bits)}>{s.get("svg", "")}</svg>'
+        if s["kind"] in ("path", "compound"):
+            # Stamped with the box it was drawn at, so the editor shows a drag
+            # or resize as a transform until the next render redraws it — the
+            # chart's arrangement (data-ox/oy/ow/oh).
+            o = f' data-ox="{x}" data-oy="{y}" data-ow="{w}" data-oh="{h}"'
+            if s["kind"] == "path":
+                return (f'<path d="{path_d(s["points"], s.get("closed"), x, y, w, h)}"'
+                        f'{o} {common}/>')
+            parts = s["parts"]
+            ds = [part_d(p, x, y, w, h) for p in parts]
+            op, sid = s["op"], s["id"]
+            if op in ("union", "exclude"):
+                rule = "nonzero" if op == "union" else "evenodd"
+                return f'<path d="{"".join(ds)}" fill-rule="{rule}"{o} {common}/>'
+            if op == "subtract":
+                return (f'<g{o} {common}><mask id="ds-m-{sid}" maskUnits="userSpaceOnUse" '
+                        f'x="{x}" y="{y}" width="{w}" height="{h}">'
+                        f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="#fff"/>'
+                        f'<path d="{"".join(ds[1:])}" fill="#000"/></mask>'
+                        f'<path d="{ds[0]}" mask="url(#ds-m-{sid})"/></g>')
+            clips = "".join(f'<clipPath id="ds-c-{sid}-{i}"><path d="{d}"/></clipPath>'
+                            for i, d in enumerate(ds[1:]))
+            inner = f'<path d="{ds[0]}"/>'
+            for i in range(len(ds) - 1):
+                inner = f'<g clip-path="url(#ds-c-{sid}-{i})">{inner}</g>'
+            return f'<g{o} {common}>{clips}{inner}</g>'
         if s["kind"] == "rect":
             r = s.get("r", 0)
             return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" {common}/>'

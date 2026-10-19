@@ -213,8 +213,15 @@ its *text* model, and the whole idea of a named, redefinable style.
    Box panel (text boxes), shown once the object is anchored; pilot
    `wrap(id, side)` / `wrap(id, null)`.
 
-   InDesign's contour-from-alpha wrap (`shape-outside` from the image) is not
-   here and is not what anyone here needs; the CSS exists if it ever is.
+   **Contour wrap — CLOSED 2026-10-19.** `wrapShape` on a wrapped object:
+   `box` (the rectangle, as before), `contour` (the picture's own outline,
+   CSS `shape-outside` read from its transparency — a cut-out photo, a
+   logo) or `ellipse` (a round portrait). Its own runtime, `WRAPSHAPE_JS`,
+   emitted only when something uses it, so the anchor runtime every
+   anchoring report ships kept its bytes; it runs after the anchors float the
+   object. A picture with no transparency, or from another origin, falls back
+   to the rectangle by itself. In the Position pop and the Box panel, an
+   Outline/Ellipse row under the wrap sides; pilot `wrap(id, side, shape)`.
 
 6. **Anchored objects. — CLOSED 2026-09-17**, for text boxes and designed
    elements. `anchor: {to: <slot>, dy, edge}` on a box or a `positions` entry:
@@ -279,19 +286,47 @@ its *text* model, and the whole idea of a named, redefinable style.
    Master shapes move too (2026-09-18): the thirty-odd shape lookups now go
    through one `shapeOf()`, which resolves `rule@3` to the master's one shape,
    so a drag on any page lands on every page — the same rule as its boxes.
-   Deliberately not: tables are not master items, and there is no per-page
-   override of one item short of detaching the whole master. The primer's
+   **Both follow-ups CLOSED 2026-10-19.** Tables are shared-layout items:
+   `masters.<name>.tables`, drawn on every page that uses the layout as
+   `table.<id>@<page>`, one table edited from any page; Share this page's
+   layout takes the page's placed tables, detaching copies them back, and a
+   flow table stays in its text. And **per-item overrides**:
+   `masterOverrides["<item>@<page>"]` holds only the keys changed on that
+   page (null removes one), so the rest still follows the layout. In the
+   editor, right-click a shared-layout item ▸ **Change on this page only**,
+   and an overridden instance is a Proxy that reads the page's keys first
+   and writes only to them — every existing edit path lands on that page
+   without knowing it. **Back to the shared layout** undoes it; pilot
+   `masterOverride(id, on)`. Tables also became ANCHORS, which needed a
+   bug fixed on the way: moving a placed table wrote a stray `positions{}`
+   entry nothing reads, so `place()` on a table did nothing at all. The
+   placer now treats a placed table like a text box (its own x/y), and
+   `anchorable` lets placed tables follow a paragraph. The primer's
    own designed pages are the renderer's, as before: a master dresses blank
    and template pages, which is where the copying was.
 
 ## Tier 3 — real, but not what is stopping anyone
 
-8. **Named layers. — The panel is back, 2026-09-18.** Per-page restacking of
-   the page's objects, master items included. Still not InDesign's named
-   layers with lock and hide across the document; nothing here needs those.
-9. **Baseline grid.** Nothing aligns type across columns or facing pages.
-   It waited on (4), and (4) is now whole — threaded frames side by side are
-   exactly where lines that do not line up show.
+8. **Named layers. — CLOSED 2026-10-19.** `layout.layers`, in stacking
+   order (first at the back): `{name, hidden?, locked?}`, and any shape,
+   box, table or placed piece may say `layer`. Each layer lifts its objects
+   100 up the stack, so a whole layer sits above the ones before it; a
+   hidden layer is not drawn at all (editor, page and PDF, as InDesign); a
+   locked one is refused by everything that reads `isLocked` — drag,
+   place, align, remove. Objects on no layer are exactly what they were. In
+   the Layers panel, a Document layers section: show/hide, lock, put the
+   selection on a layer, delete (its things stay, on no layer), + New layer.
+   Pilot `defineLayer(name, {hidden, locked, rename})`, `toLayer(ids,
+   name)`, `dropLayer(name)`.
+9. **Baseline grid. — CLOSED 2026-10-19.** `layout.grid = {increment (pt),
+   start (in)}`; a text style says `grid: true`. CSS has no snap-to-baseline,
+   so `GRID_JS` (emitted only when a grid exists and some style sits on it)
+   gives each such paragraph a line-height that is a whole number of
+   increments, measures its first baseline with a zero-size probe, and pads
+   it down to the next grid line — in reading order, after threads pour, so
+   each frame's text snaps where it landed. Paragraph panel: Align to grid,
+   the grid's increment and start, and Show the grid (an editor overlay).
+   Pilot `setGrid({increment, start})`.
 10. **Table headers that repeat across a break, and cell styles. —
     RECLASSIFIED 2026-09-17.** A placed table is pinned by inch to one page
     and never breaks, so a repeating `<thead>` has nothing to repeat across;
@@ -301,16 +336,18 @@ its *text* model, and the whole idea of a named, redefinable style.
     Nothing left here that stops anyone.
 11. **Print production — bleed, slug, spot colour, preflight, package.** The
     deliverable here is HTML plus a Chrome-printed PDF, so most of this is
-    genuinely out of scope. **Bleed is half here (corrected 2026-10-19):**
-    the Download menu's "Bleed & crop marks (PDF)" box sends `marks` to
-    `/__export`, which sets `DOCSYNC_MARKS=1` for that one render, and
-    report2027's renderer puts `.ds-bleed` on `<body>` so `primer.css` grows
-    the sheet 0.125in a side and draws the trim ticks. That is report2027
-    only, at a hard-coded 8.5 × 11: no other renderer reads `DOCSYNC_MARKS`,
-    so for every other project the box is offered and does nothing. The
-    missing half is moving the bleed CSS into the engine (sized from the
-    page, not 8.5 × 11), or hiding the box where the renderer cannot honour
-    it.
+    genuinely out of scope. **Bleed — CLOSED 2026-10-19, for every
+    report.** The "Bleed & crop marks (PDF)" box sends `marks` to
+    `/__export`, which sets `DOCSYNC_MARKS=1` for that one render. The
+    engine cannot know a report's own page padding, so it emits `BLEED_JS`
+    with an `@page` sized from the sheet (+0.25in): each sheet grows 0.125in
+    a side, its padding by the same so the words keep their place against
+    the trim, every placed thing and the drawing layer shift by 0.125in (a
+    placement is measured from the sheet's corner, which padding does not
+    move; anchored things are re-measured), and eight hairlines mark the
+    trim inside the sheet. A renderer that does this itself (report2027's
+    `.ds-bleed`) is left alone; a pageless report has no sheet to bleed. A
+    normal build carries none of it.
 12. **Blend modes. — CLOSED 2026-09-17**, on the way past (2): `blend` on a
     shape, box or table, in the transparency pop, which is what a blend is a
     generalisation of. `normal` is accepted so an object can undo the blend
@@ -559,17 +596,29 @@ same day — see Tier 1.
 
 ### Tier 3 — drawing and production, not what is stopping anyone
 
-23. **Drawing tools stop at preset shapes.** Shape kinds are rect,
-    ellipse, line, triangle, arrow, icon and chart. There is no pen or
-    freeform path, no polygon or star with N sides, no pathfinder
-    (combine or subtract), no corner options beyond radius, no skew, no
-    text on a path. The layer would need a `path` kind with a `d` string
-    and a node editor. Most report art is placed SVG, so this is the
-    least-felt item here. **L.**
+23. **Drawing tools. — Pen, Pathfinder and skew CLOSED 2026-10-19.**
+    A `path` shape: `points` `{x, y, in?, out?}` as fractions of its own
+    box, so it moves, resizes and snaps like any shape. The **Pen** in the
+    Shapes panel: click to place points, drag to pull a curve, Enter or the
+    first point closes it, Esc finishes it open. Double-click a path (or
+    right-click ▸ Edit points) to drag its points; Alt-click removes one.
+    **Pathfinder** (right-click with two or more simple shapes selected):
+    a `compound` of `parts` with `op` union / subtract / intersect /
+    exclude, drawn by SVG — one nonzero path, a mask cutting the front
+    shapes out of the back one, a clip of the back by each front, one
+    even-odd path. **Release compound** gives the parts back. **Skew**
+    (Shear): `skew` in degrees (±60) on shapes, boxes, tables and placed
+    pieces, folded into the same transform as rotation and flip; a ⧄ field
+    beside the rotation in the Position pop. Pilot `addPath`, `pathfinder`,
+    `release`, `skew`. Said here: a union or exclude with a stroke strokes
+    each part's outline (the geometry is SVG's fill rule, not a computed
+    outline); a part keeps its box but not a rotation, so rotated or skewed
+    shapes must be straightened before they combine; points edit only on an
+    unrotated path. Still not here: polygons and stars with N sides, corner
+    options past radius, text on a path.
 24. **No step and repeat or grid duplicate**, and no feather or outer
     glow. Duplicate exists, one at a time. **S** each.
-25. **No image fitting presets.** Crop exists. Fit content to frame, fill
-    proportionally and centre are not offered as commands. **S.**
+25. **Image fitting presets. — CLOSED 2026-10-19 by (30).**
 26. **No reusable object library.** Images reuse through the project's
     assets, and templates carry the house style. A saved callout, figure
     frame or stat card that can be dropped into any report is not offered.
@@ -582,10 +631,12 @@ same day — see Tier 1.
 
 ### Already on this list, still open
 
-The baseline grid (9), now unblocked by threading (4), named
-layers with lock and hide across the document (8), bleed outside report2027
-(11), tables as master items and anchors, per-item master overrides, and
-`shape-outside` contour wrap.
+All closed 2026-10-19: contour wrap (5), tables on shared layouts and as
+anchors and per-item overrides (7), named layers (8), the baseline grid (9),
+bleed for every report (11), and pen paths, Pathfinder and skew (23). Each
+kept every bound report's published bytes identical — checked by building
+all 15 outputs with the engine before and after; the one first attempt that
+did not (contour wrap inside the anchor runtime) was moved into its own.
 
 ### Not worth doing here
 

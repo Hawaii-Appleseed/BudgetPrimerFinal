@@ -1481,7 +1481,11 @@
   .pop.menu #open-all { margin-top:6px; padding-top:9px;
         border-top:1px solid #E8EEEA; border-radius:8px 8px 0 0; }
   /* the layers panel: this page's objects, top of the stack first */
-  #layerspop { min-width:230px; max-height:340px; overflow-y:auto; }
+  #layerspop { min-width:230px; max-height:420px; overflow-y:auto; }
+  .dl-row { display:flex; align-items:center; gap:4px; }
+  .dl-row .lrow-id { flex:1; }
+  .dl-btn { border:0; background:none; cursor:pointer; padding:1px 3px; font-size:12px; opacity:.55; }
+  .dl-btn.on, .dl-btn:hover { opacity:1; }
   .lrow { display:flex; align-items:center; gap:8px; padding:6px 8px; margin:2px 0;
         border:1px solid transparent; border-radius:7px; font:12.5px system-ui;
         color:var(--ink); cursor:grab; }
@@ -2152,6 +2156,8 @@
       stroke-width="1.3" stroke-linejoin="round"><path d="M7 1.8L12.6 4.6 7 7.4 1.4 4.6z"/>
       <path d="M1.4 7.2L7 10l5.6-2.8M1.4 9.8L7 12.6l5.6-2.8"/></svg></button>
   <div class="pop" id="layerspop" hidden>
+    <p class="pop-h">Document layers</p>
+    <div id="doclayers"></div>
     <p class="pop-h" id="layers-title">Layers</p>
     <div id="layers-list"></div>
   </div>
@@ -2236,6 +2242,9 @@
       <button class="shp" data-k="arrow"><span class="tile-art"><svg viewBox="0 0 15 15"
         fill="#CAD2C5" stroke="#52796F" stroke-width="1.2" stroke-linejoin="round"><path
         d="M1.5 5.8h6.5V3.2l5.5 4.3-5.5 4.3V9.2H1.5z"/></svg></span>Arrow</button>
+      <button class="shp" data-pen title="Click to place points, drag to pull a curve; Enter or the first point to close, Esc to finish open"><span class="tile-art"><svg viewBox="0 0 15 15"
+        fill="none" stroke="#52796F" stroke-width="1.3" stroke-linecap="round"><path
+        d="M2 12C4 3 9 13 13 3"/><circle cx="2" cy="12" r="1.2" fill="#52796F"/><circle cx="13" cy="3" r="1.2" fill="#52796F"/></svg></span>Pen</button>
     </div>
   </div>
   <div class="pop pop-wide" id="iconpop" hidden>
@@ -2417,6 +2426,10 @@
       <option value="left">left</option><option value="right">right</option></select></label>
     <label><span>…colour</span><select id="ty-pbc"></select></label>
     <label><span>Padding</span><input id="ty-pp" type="number" step="0.02" min="0" max="1" placeholder="in"></label>
+    <p class="pop-h">Baseline grid</p>
+    <label><span>Align to grid</span><input type="checkbox" id="ty-grid"></label>
+    <label><span>Grid every</span><input id="ty-ginc" type="number" step="0.5" min="4" max="72" placeholder="pt"><span style="width:auto">from</span><input id="ty-gst" type="number" step="0.05" min="0" max="6" placeholder="in"></label>
+    <label><span>Show the grid</span><input type="checkbox" id="ty-gshow"></label>
     <p class="pop-h">Automatic formatting</p>
     <div id="ty-auto"></div>
     <label><span>Style</span><select id="ty-auto-st"></select></label>
@@ -2521,6 +2534,11 @@
         <button data-w="" title="The text runs under it">None</button>
         <button data-w="left" title="Sits at the left; text flows on the right">Left</button>
         <button data-w="right" title="Sits at the right; text flows on the left">Right</button>
+      </div>
+      <div class="ar-dashrow" id="ar-wrapshape" title="What the lines follow">
+        <button data-ws="" title="The object's rectangle">Box</button>
+        <button data-ws="contour" title="The picture's own outline (where it is see-through)">Outline</button>
+        <button data-ws="ellipse" title="An ellipse in its box — a round portrait">Ellipse</button>
       </div></div>
     <div class="ar-posrows">
 <span class="ty-seg" title="Align horizontally (to the page; to the selection when several)">
@@ -2571,6 +2589,7 @@
   <label class="ar-pos" title="Height, inches" id="ar-hwrap">H<input id="ar-h" type="number" step="0.01" min="0.1"></label>
   <label class="ar-pos" title="Scale, percent" id="ar-swrap">⤢<input id="ar-scale" type="number" step="1" min="20" max="500"></label>
   <label class="ar-pos" title="Rotation, degrees">⟳<input id="ar-rot" type="number" step="1" min="-180" max="180"></label>
+  <label class="ar-pos" title="Skew (shear), degrees along the horizontal — ±60">⧄<input id="ar-skew" type="number" step="1" min="-60" max="60"></label>
   <span class="ar-lab" id="ar-hint"></span>
     </div>
   </div>
@@ -5483,8 +5502,18 @@ function layerMenu(d, el, e) {
     const mi = masterItemOf(id);
     const head = d.createElement('div');
     head.className = 'ds-menu-head';
-    head.textContent = `on shared layout “${mi.name}”`;
+    head.textContent = `on shared layout “${mi.name}”` + (mi.overridden ? ' — changed on this page' : '');
     m.appendChild(head);
+    // InDesign's override: change this one page's copy and leave the layout,
+    // and every other page, as they are. Undone by putting it back.
+    if (!mi.overridden) item('Change on this page only', async () => {
+      pushHistory(); masterOverride(id, true); markDirty(); await render();
+      $('stat').textContent = 'changes to this item now stay on this page';
+    });
+    else item('Back to the shared layout', async () => {
+      pushHistory(); masterOverride(id, false); markDirty(); await render();
+      $('stat').textContent = 'this page follows the shared layout again';
+    });
     item('Remove from shared layout', () => masterRemoveItem(id));
     item(`Detach shared layout to this page`, () => masterDetach(mi.page));
     const sep0 = d.createElement('div'); sep0.className = 'ds-menu-sep'; m.appendChild(sep0);
@@ -5881,6 +5910,34 @@ function layerMenu(d, el, e) {
         markDirty(); await render();
       });
     }
+  }
+  // Pathfinder: two or more simple shapes selected -> one compound.
+  {
+    const sel = [...selIds].filter(i => shapeOf(i));
+    if (sel.length >= 2 && sel.includes(id) && _pathfinderValidate(sel, 'union').ok) {
+      submenuRow(d, m, 'Pathfinder ▸', sub => {
+        [['union', 'Combine'], ['subtract', 'Subtract the front from the back'],
+         ['intersect', 'Keep where they overlap'], ['exclude', 'Exclude the overlap']].forEach(([op, label]) => {
+          const b = d.createElement('button');
+          b.textContent = label;
+          b.addEventListener('click', async () => {
+            closeMenu(d); pushHistory();
+            const r = _pathfinderApply(sel, op);
+            markDirty(); await render(); setSel($('out').contentDocument, [r.id]);
+          });
+          sub.appendChild(b);
+        });
+      });
+    }
+    const one = shapeOf(id);
+    if (one && one.kind === 'compound') item('Release compound', async () => {
+      pushHistory(); const r = _releaseApply(id); markDirty(); await render();
+      setSel($('out').contentDocument, r.released);
+    });
+    if (one && one.kind === 'path') item('Edit points', () => {
+      closeMenu(d);
+      pathPointEdit(d, one, d.querySelector(`[data-shape="${CSS.escape(id)}"]`));
+    });
   }
   if (fitKind(id)) {
     const cur = fitNow(id);
@@ -6375,6 +6432,8 @@ function ensureStore(d, el) {
   if (sh) return sh;
   const b = boxOf(id);
   if (b) return b;
+  const t = tableOf(id);
+  if (t && !t.flow) return t;
   if (!layout.positions[id]) {
     const page = el.closest('section.page') || d.querySelector('section.page');
     const P = placer(d, el, page);
@@ -6785,10 +6844,47 @@ function masterItemOf(id) {
   const name = masterNameOf(page);
   const m = name && (layout.masters || {})[name];
   if (!m) return null;
+  const bare = base.replace(/^table\./, '');
   const kind = (m.boxes || []).some(b => b.id === base) ? 'boxes'
-    : (m.shapes || []).some(x => x.id === base) ? 'shapes' : null;
+    : (m.shapes || []).some(x => x.id === base) ? 'shapes'
+    : (m.tables || []).some(x => x.id === bare) ? 'tables' : null;
   if (!kind) return null;
-  return { name, kind, item: m[kind].find(x => x.id === base), page };
+  const item = kind === 'tables' ? m.tables.find(x => x.id === bare) : m[kind].find(x => x.id === base);
+  const okey = `${kind === 'tables' ? bare : base}@${page}`;
+  const ov = (layout.masterOverrides || {})[okey];
+  // Changed on this page only: the page's instance is a view that reads the
+  // page's own keys first and the layout's otherwise, and writes ONLY to the
+  // page's keys — so every existing edit path (drag, restyle, retext) lands
+  // on this page and leaves the layout, and the other pages, alone.
+  return { name, kind, item: ov ? overrideView(item, ov) : item, page, overridden: !!ov, okey };
+}
+/** The page's override of a shared-layout item, seen as the item: reads fall
+ *  back to the layout's item, writes go to the override, and deleting a key
+ *  the layout's item has writes null (layout.py drops it on that page). */
+function overrideView(item, ov) {
+  return new Proxy(ov, {
+    get: (o, k) => (k in o ? (o[k] === null ? undefined : o[k]) : item[k]),
+    set: (o, k, v) => { if (k === 'id' || k === 'page') return true; o[k] = v; return true; },
+    has: (o, k) => (k in o ? o[k] !== null : k in item),
+    deleteProperty: (o, k) => { if (k in item) o[k] = null; else delete o[k]; return true; },
+    ownKeys: o => [...new Set([...Object.keys(item), ...Object.keys(o)])].filter(k => !(k in o && o[k] === null)),
+    getOwnPropertyDescriptor: (o, k) => {
+      const v = k in o ? o[k] : item[k];
+      return (k in o && o[k] === null) || !(k in o || k in item) ? undefined
+        : { value: v, writable: true, enumerable: true, configurable: true };
+    },
+  });
+}
+function masterOverride(id, on) {
+  const mi = masterItemOf(id);
+  if (!mi) return { ok: false, error: `'${id}' is not on a shared layout` };
+  const key = mi.okey;
+  if (on) { (layout.masterOverrides = layout.masterOverrides || {})[key] = (layout.masterOverrides || {})[key] || {}; }
+  else if (layout.masterOverrides) {
+    delete layout.masterOverrides[key];
+    if (!Object.keys(layout.masterOverrides).length) delete layout.masterOverrides;
+  }
+  return { ok: true, id, overridden: !!on };
 }
 /** A shape by id — a page's own, or a master's item on a page ('rule@3'),
  *  which is the master's ONE shape: every shape-pipeline site goes through
@@ -6804,7 +6900,14 @@ const boxOf = id => {
   return boxes().find(b => b.id === (id || '').replace(/^text\./, ''));
 };
 const tables = () => (layout.tables = layout.tables || []);
-const tableOf = id => tables().find(t => t.id === (id || '').replace(/^table\./, ''));
+const tableOf = id => {
+  // A shared layout's table on a page ('table.key@3') is the layout's ONE
+  // table — the same rule shapeOf and boxOf follow, so a restyle lands on
+  // every page that uses the layout.
+  const mi = masterItemOf(id);
+  if (mi) return mi.kind === 'tables' ? mi.item : undefined;
+  return tables().find(t => t.id === (id || '').replace(/^table\./, ''));
+};
 
 /** One popover open at a time, anchored under its button; any click that is
  *  not inside a popover (or on its trigger) closes them. */
@@ -9951,6 +10054,10 @@ function fillParaPop(key) {
   $('ty-rbo').value = rb.offset ?? ''; $('ty-rbl').value = rb.length ?? '';
   $('ty-pbs').value = pb.sides || 'all';
   $('ty-pp').value = eff.paraPad ?? '';
+  $('ty-grid').checked = !!eff.grid;
+  $('ty-ginc').value = layout.grid ? layout.grid.increment : '';
+  $('ty-gst').value = layout.grid ? (layout.grid.start ?? 0) : '';
+  $('ty-gshow').checked = gridShow;
   // Automatic formatting: the rules the RESOLVED style carries, each with a
   // remove button; the picker lists the text styles a run can wear.
   const host = $('ty-auto');
@@ -10185,8 +10292,8 @@ function renderStylePop() {
 // run its scripts — so there is one implementation, not two.
 //
 // Not for shapes: the shape layer is the page's own drawing, positioned in
-// its SVG viewBox, and `top` means nothing there. Not for tables yet either,
-// for the same reason the table drag is its own path.
+// its SVG viewBox, and `top` means nothing there. A PLACED table anchors
+// like a box (its store is the table itself); a flow table is in the text.
 let ANCHOR_SRC = null;
 function anchorSrc() {
   if (ANCHOR_SRC === null) {
@@ -10238,6 +10345,53 @@ function applyAuto(d) {
     try { w.eval(GREP_SRC); } catch (e) { return; }
   }
   try { w.__dsGrep(); } catch (e) { /* the next render applies */ }
+}
+// layout.GRID_JS: the baseline grid (INDESIGN_PARITY.md 9), evaluated here
+// like the other runtimes; recompiled when the grid's numbers change. The
+// overlay (gridShow) is editor-only: lines every increment from the start.
+// layout.WRAPSHAPE_JS — contour wrap, its own runtime (see layout.py).
+let WRAPSHAPE_SRC = null;
+function applyWrapShape(d) {
+  if (!d || !d.querySelector('[data-wrap-shape]')) return;
+  const w = d.defaultView;
+  if (!w.__dsWrapShape) {
+    if (WRAPSHAPE_SRC === null) {
+      try { WRAPSHAPE_SRC = py.runPython('from docsync.layout import WRAPSHAPE_JS\nWRAPSHAPE_JS'); }
+      catch (e) { WRAPSHAPE_SRC = ''; }
+    }
+    try { w.eval(WRAPSHAPE_SRC); } catch (e) { return; }
+  }
+  try { w.__dsWrapShape(); } catch (e) { /* the next render reshapes */ }
+}
+let GRID_SRC = null, GRID_KEY = '', gridShow = false;
+function applyGrid(d) {
+  if (!d) return;
+  d.querySelectorAll('.ds-gridlines').forEach(x => x.remove());
+  const g = layout.grid;
+  if (!g) return;
+  if (gridShow) {
+    d.querySelectorAll('section.page').forEach(pg => {
+      const o = d.createElement('div');
+      o.className = 'ds-gridlines';
+      const inc = +g.increment, st = +(g.start || 0);
+      o.style.cssText = `position:absolute;left:0;right:0;bottom:0;top:${st}in;pointer-events:none;z-index:99998;`
+        + `background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(${inc}pt - 1px),`
+        + `rgba(0,140,255,.35) calc(${inc}pt - 1px),rgba(0,140,255,.35) ${inc}pt)`;
+      pg.appendChild(o);
+    });
+  }
+  if (!d.querySelector('[style*="--ds-grid:"]')) return;
+  const key = `${g.increment}|${g.start || 0}`;
+  const w = d.defaultView;
+  if (GRID_KEY !== key) {
+    try {
+      GRID_SRC = py.runPython(`from docsync.layout import GRID_JS\nGRID_JS % {'inc': '${+g.increment}', 'start': '${+(g.start || 0)}'}`);
+      GRID_KEY = key;
+    } catch (e) { GRID_SRC = ''; }
+    w.__dsGrid = null;
+  }
+  if (!w.__dsGrid) { try { w.eval(GRID_SRC); } catch (e) { return; } }
+  try { w.__dsGrid(); } catch (e) { /* the next render aligns */ }
 }
 let THREAD_SRC = null;
 function pourThreads(d) {
@@ -10381,7 +10535,7 @@ function threadWire(d) {
   });
 }
 
-const anchorable = id => !!id && !id.startsWith('table.') && !!!shapeOf(id)
+const anchorable = id => !!id && !(id.startsWith('table.') && (!tableOf(id) || tableOf(id).flow)) && !!!shapeOf(id)
   && !!$('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"]`);
 /** The host slot's box, in page inches — the union of its paragraphs, so a
  *  slot of three paragraphs has one top and one bottom, like the runtime's. */
@@ -10549,6 +10703,20 @@ async function wrapSet(id, side) {
                                : `${id} sits on the text again`;
   return { ok: true, id, wrap: side || null };
 }
+/** What the lines follow (layout.WRAP_SHAPES): the box, the picture's own
+ *  outline, or an ellipse. Only meaningful once the object wraps. */
+async function wrapShapeSet(id, shape) {
+  const st = storeOf(id);
+  if (!st || !st.wrap) return { ok: false, error: `'${id}' does not wrap — wrap(id, side) first` };
+  if (shape && !['contour', 'ellipse', 'box'].includes(shape))
+    return { ok: false, error: `wrap shape '${shape}' — box, contour or ellipse` };
+  pushHistory();
+  if (shape && shape !== 'box') st.wrapShape = shape; else delete st.wrapShape;
+  markDirty(); await render();
+  paintSel($('out').contentDocument);
+  wrapRowsPaint();
+  return { ok: true, id, wrapShape: st.wrapShape || 'box' };
+}
 /** The two Wrap rows (Position pop, Box panel): shown for an anchored
  *  object, lit on its side. */
 function wrapRowsPaint() {
@@ -10556,10 +10724,17 @@ function wrapRowsPaint() {
   const arId = ids.length === 1 ? ids[0] : null;
   const arSt = arId ? storeOf(arId) : null;
   $('ar-wraprow').hidden = !(arSt && arSt.anchor);
-  [...$('ar-wraprow').querySelectorAll('button')].forEach(b =>
+  [...$('ar-wraprow').querySelectorAll('button[data-w]')].forEach(b =>
     b.classList.toggle('on', (arSt && arSt.wrap || '') === b.dataset.w));
+  $('ar-wrapshape').hidden = !(arSt && arSt.wrap);
+  [...$('ar-wrapshape').querySelectorAll('button')].forEach(b =>
+    b.classList.toggle('on', (arSt && arSt.wrapShape || '') === b.dataset.ws));
 }
-[...$('ar-wraprow').querySelectorAll('button')].forEach(b => b.addEventListener('click', () => {
+[...$('ar-wrapshape').querySelectorAll('button')].forEach(b => b.addEventListener('click', () => {
+  const ids = [...selIds];
+  if (ids.length === 1) wrapShapeSet(ids[0], b.dataset.ws || null);
+}));
+[...$('ar-wraprow').querySelectorAll('button[data-w]')].forEach(b => b.addEventListener('click', () => {
   const ids = [...selIds];
   if (ids.length === 1) wrapSet(ids[0], b.dataset.w || null);
 }));
@@ -10970,6 +11145,13 @@ function renderBoxPanel() {
       sides.appendChild(small(label, (bx.wrap || '') === v, () => wrapSet(selected, v || null), '')));
     sides.id = 'bx-wrap';
     wr.appendChild(sides);
+    if (bx.wrap) {
+      const shp = document.createElement('div');
+      shp.className = 'ar-dashrow'; shp.id = 'bx-wrapshape';
+      [['', 'Box'], ['contour', 'Outline'], ['ellipse', 'Ellipse']].forEach(([v, label]) =>
+        shp.appendChild(small(label, (bx.wrapShape || '') === v, () => wrapShapeSet(selected, v || null), '')));
+      wr.appendChild(shp);
+    }
   }
 }
 $('ty-box').addEventListener('click', () => {
@@ -11096,6 +11278,23 @@ function wireType() {
   $('ty-pbs').addEventListener('change', () => objSet('paraBorder', 'sides', $('ty-pbs').value));
   $('ty-pbc').addEventListener('change', () => objSet('paraBorder', 'color', $('ty-pbc').value));
   $('ty-shade').addEventListener('change', () => paraSet({ shade: $('ty-shade').value || null }));
+  // The grid itself is the document's (layout.grid); a paragraph opts in.
+  // Opting in with no grid yet makes one: 12pt from the top margin's usual
+  // 0.75in, which the two fields then adjust.
+  $('ty-grid').addEventListener('change', async () => {
+    if ($('ty-grid').checked && !layout.grid) layout.grid = { increment: 12, start: 0.75 };
+    paraSet({ grid: $('ty-grid').checked || null });
+  });
+  const gridField = async () => {
+    const inc = +$('ty-ginc').value, st = +$('ty-gst').value;
+    pushHistory();
+    if (!$('ty-ginc').value) delete layout.grid;
+    else layout.grid = { increment: Math.max(4, Math.min(72, inc)), start: Math.max(0, Math.min(6, st || 0)) };
+    markDirty(); await render(); fillParaPop(selected);
+  };
+  $('ty-ginc').addEventListener('change', gridField);
+  $('ty-gst').addEventListener('change', gridField);
+  $('ty-gshow').addEventListener('change', () => { gridShow = $('ty-gshow').checked; applyGrid($('out').contentDocument); });
   $('ty-auto-on').addEventListener('change', () => {
     $('ty-auto-patrow').hidden = $('ty-auto-on').value !== 'g:custom';
   });
@@ -11202,7 +11401,13 @@ const selEls = d => [...selIds].map(id =>
   d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`))
   .filter(Boolean);
 const lockedList = () => (layout.locked = layout.locked || []);
-const isLocked = id => (layout.locked || []).includes(id);
+// A thing is locked by itself, or by the named layer it is on (layout.layers,
+// INDESIGN_PARITY.md 8) — one test, so every refusal that reads isLocked
+// (drag, place, align, remove) honours a locked layer for free.
+const docLayers = () => (layout.layers = layout.layers || []);
+const layerOfId = id => ((typeof storeOf === 'function' && storeOf(id)) || layout.positions[id] || {}).layer || null;
+const layerLocked = id => { const n = layerOfId(id); return !!(n && (layout.layers || []).some(L => L.name === n && L.locked)); };
+const isLocked = id => (layout.locked || []).includes(id) || layerLocked(id);
 const hiddenList = () => (layout.hidden = layout.hidden || []);
 const isHidden = id => (layout.hidden || []).includes(id);
 
@@ -11666,6 +11871,7 @@ function arrangeBar(d) {
   $('ar-hwrap').hidden = !hasH;
   if (hasH) $('ar-h').value = (st.h ?? b.h).toFixed(2);
   $('ar-rot').value = st.rot ?? 0;
+  $('ar-skew').value = st.skew ?? 0;
 }
 
 /** Typed placement goes through the same placer a drag uses — one rule for
@@ -11714,6 +11920,13 @@ arField('ar-rot', (d, el, page, v) => {
   const st = ensureStore(d, el);
   if (v) st.rot = v; else delete st.rot;
   paintRot(d, el);
+});
+// Skew (Shear): along x, about the centre, after the rotation — the engine's
+// _check_skew bound, so a typed 80 lands as 60 rather than failing the draft.
+arField('ar-skew', (d, el, page, v) => {
+  const st = ensureStore(d, el);
+  const k = Math.max(-60, Math.min(60, +v || 0));
+  if (k) st.skew = k; else delete st.skew;
 });
 
 /** Members of the selection on one page — cross-page alignment has no
@@ -13031,7 +13244,8 @@ async function masterFromPage(pid, name) {
   if (!name) return { ok: false, error: 'a shared layout needs a name' };
   if (masters()[name]) return { ok: false, error: `there is already a master "${name}"` };
   const c = pageContents(pid);
-  if (!c.boxes.length && !c.shapes.length)
+  c.tables = c.tables.filter(t => !t.flow);           // a flow table stays in its text
+  if (!c.boxes.length && !c.shapes.length && !c.tables.length)
     return { ok: false, error: `nothing placed on page ${pageLabel(pid)} to share` };
   pushHistory();
   // A shared layout cannot thread; the page's frames leave their threads first.
@@ -13039,12 +13253,14 @@ async function masterFromPage(pid, name) {
   const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; delete y.next; return y; };
   // Re-read: unlinking may have handed a story to a frame on this page.
   masters()[name] = { boxes: pageContents(pid).boxes.map(strip), shapes: c.shapes.map(strip) };
+  if (c.tables.length) masters()[name].tables = c.tables.map(strip);
   layout.boxes = boxes().filter(b => String(b.page) !== String(pid));
   layout.shapes = layout.shapes.filter(s => String(s.page) !== String(pid));
+  layout.tables = tables().filter(t => t.flow || String(t.page) !== String(pid));
   pageMasters()[String(pid)] = name;
   markDirty(); await render();
   if (selPage != null) pageBar($('out').contentDocument);
-  const n = c.boxes.length + c.shapes.length;
+  const n = c.boxes.length + c.shapes.length + c.tables.length;
   $('stat').textContent = `"${name}" is a shared layout now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`;
   return { ok: true, master: name, items: n };
 }
@@ -13064,6 +13280,9 @@ async function masterDetach(pid) {
   });
   (m.shapes || []).forEach(sh => {
     const x = clone(sh); x.id = freeTId(); x.page = pid; layout.shapes.push(x); n++;
+  });
+  (m.tables || []).forEach(t => {
+    const x = clone(t); x.id = freeTableId(); x.page = pid; tables().push(x); n++;
   });
   delete pageMasters()[String(pid)];
   if (!Object.keys(pageMasters()).length) delete layout.pageMasters;
@@ -13919,6 +14138,99 @@ function kindOf(id, el) {
   return '▣';
 }
 
+// ------------------------------------------------------- named layers
+// Document-wide layers (InDesign's Layers panel): a name, a stacking place
+// (first = back), hidden (not drawn at all) and locked (not selectable or
+// movable). layout.py's Layout.layer_lift / layer_hidden are the rule.
+function _layerValidate(name) {
+  if (typeof name !== 'string' || !name.trim()) return { ok: false, error: 'a layer needs a name' };
+  return { ok: true };
+}
+function _defineLayer(name, opts = {}) {
+  let L = docLayers().find(x => x.name === name);
+  if (!L) { L = { name }; docLayers().push(L); }
+  for (const k of ['hidden', 'locked']) {
+    if (opts[k] === undefined) continue;
+    if (opts[k]) L[k] = true; else delete L[k];
+  }
+  if (opts.rename && opts.rename !== name) {
+    if (docLayers().some(x => x.name === opts.rename)) return { ok: false, error: `there is already a layer called '${opts.rename}'` };
+    _allLayered().forEach(o => { if (o.layer === name) o.layer = opts.rename; });
+    L.name = opts.rename;
+  }
+  return { ok: true, layer: { ...L } };
+}
+/** Every object that can say `layer`: shapes, boxes, tables, placed pieces. */
+function _allLayered() {
+  return [...(layout.shapes || []), ...boxes(), ...tables(),
+          ...Object.values(layout.positions || {}).filter(p => p && typeof p === 'object')];
+}
+function _toLayer(ids, name) {
+  const d = $('out').contentDocument;
+  const out = [];
+  (Array.isArray(ids) ? ids : [ids]).forEach(id => {
+    let st = storeOf(id) || layout.positions[id];
+    if (!st) {
+      const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+      if (!el) return;
+      st = ensureStore(d, el);             // a designed piece is pinned to carry it
+    }
+    if (name) st.layer = name; else delete st.layer;
+    out.push(id);
+  });
+  return out;
+}
+function _dropLayer(name) {
+  _allLayered().forEach(o => { if (o.layer === name) delete o.layer; });
+  layout.layers = docLayers().filter(x => x.name !== name);
+  if (!layout.layers.length) delete layout.layers;
+}
+async function layerWrite(fn) {
+  pushHistory(); fn(); markDirty(); await render();
+  docLayersRender(); if (!$('layerspop').hidden) layersRender();
+}
+function docLayersRender() {
+  const host = $('doclayers');
+  if (!host) return;
+  host.textContent = '';
+  const btn = (txt, title, fn, on) => {
+    const b = document.createElement('button');
+    b.className = 'dl-btn' + (on ? ' on' : ''); b.textContent = txt; b.title = title;
+    b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+    return b;
+  };
+  // Front first, the way a layers panel reads; stored back first.
+  [...docLayers()].reverse().forEach(L => {
+    const r = document.createElement('div');
+    r.className = 'lrow dl-row';
+    const n = document.createElement('span'); n.className = 'lrow-id'; n.textContent = L.name;
+    const count = _allLayered().filter(o => o.layer === L.name).length;
+    const c = document.createElement('span'); c.className = 'lrow-kind'; c.textContent = String(count);
+    r.append(
+      btn(L.hidden ? '◌' : '👁', L.hidden ? 'Show this layer' : 'Hide this layer — not drawn, not printed',
+        () => layerWrite(() => _defineLayer(L.name, { hidden: !L.hidden })), !L.hidden),
+      btn(L.locked ? '🔒' : '🔓', L.locked ? 'Unlock' : 'Lock — nothing on it can be selected or moved',
+        () => layerWrite(() => _defineLayer(L.name, { locked: !L.locked })), !!L.locked),
+      n, c,
+      btn('⇣', 'Put the selection on this layer', () => {
+        if (!selIds.size) { $('stat').textContent = 'select something first'; return; }
+        layerWrite(() => _toLayer([...selIds], L.name));
+      }),
+      btn('✕', 'Delete the layer (what is on it stays, on no layer)', () => layerWrite(() => _dropLayer(L.name))));
+    host.appendChild(r);
+  });
+  const add = document.createElement('button');
+  add.className = 'sw-default'; add.textContent = '+ New layer';
+  add.addEventListener('click', async () => {
+    const got = await dsForm('New layer', [{ name: 'name', type: 'text', label: 'Name', value: `Layer ${docLayers().length + 1}` }],
+      { okLabel: 'Add', validate: v => !v.name.trim() ? 'a layer needs a name'
+        : docLayers().some(x => x.name === v.name.trim()) ? 'there is already a layer called that' : '' });
+    if (got == null) return;
+    layerWrite(() => _defineLayer(got.name.trim()));
+  });
+  host.appendChild(add);
+}
+
 function layersRender() {
   const d = $('out').contentDocument;
   const host = $('layers-list');
@@ -14063,7 +14375,7 @@ async function layerStep(d, dir, extreme, els = null) {
 
 $('layers').addEventListener('click', () => {
   const pop = $('layerspop');
-  if (pop.hidden) layersRender();
+  if (pop.hidden) { layersRender(); docLayersRender(); }
   togglePop(pop, $('layers'));
 });
 $('ar-front').addEventListener('click', () => layerStep($('out').contentDocument, 1, true));
@@ -15239,7 +15551,12 @@ function flowExit(d, el, page, measured, delta, wPin, gridded, noMaxW, pinMargin
 function placer(d, el, page) {
   const shapeId = el.dataset.shape;
   const id = shapeId || el.dataset.el;
-  const bx = boxOf(id);              // a text box keeps its own x/y/w
+  // A text box keeps its own x/y/w, and so does a PLACED table — it used to
+  // fall through to positions{}, where nothing reads a table's place, so a
+  // table could not be moved by place() at all (INDESIGN_PARITY.md, tables
+  // as anchors). A flow table sits in the text and is not placed.
+  const tbl = tableOf(id);
+  const bx = boxOf(id) || (tbl && !tbl.flow ? tbl : null);
   // Measure the box, but trust a position we already recorded over a fresh
   // reading of it: rects carry rounding, and the lift's scale nudges them. Take
   // the measurement as truth and picking a box up without moving it walks it a
@@ -15975,6 +16292,225 @@ const ptsAttr = pts => pts.map(p => p.map(v => +v.toFixed(4)).join(',')).join(' 
 /** Live-paint a shape's full geometry without a re-render, so drags and
  *  resizes stay smooth. All of it, not just x/y: a resized rect that does not
  *  grow until the next render looks like a resize that did not take. */
+// ------------------------------------------------------- pen and Pathfinder
+// INDESIGN_PARITY.md 23. A `path`'s points are fractions of its box (so it
+// moves and resizes as any shape does); the twin of layout.path_d draws it
+// live while points are dragged. A `compound` is Pathfinder over parts.
+const PART_KINDS = ['rect', 'ellipse', 'triangle', 'arrow', 'path'];
+function pathD(points, closed, x, y, w, h) {
+  const f = v => +(+v).toFixed(4);
+  const P = (px, py) => `${f(x + px * w)} ${f(y + py * h)}`;
+  if (!points || !points.length) return '';
+  const out = [`M${P(points[0].x, points[0].y)}`];
+  const seg = (a, b) => {
+    if (a.out || b.in) {
+      const ao = a.out || [0, 0], bi = b.in || [0, 0];
+      out.push(`C${P(a.x + ao[0], a.y + ao[1])} ${P(b.x + bi[0], b.y + bi[1])} ${P(b.x, b.y)}`);
+    } else out.push(`L${P(b.x, b.y)}`);
+  };
+  for (let i = 0; i + 1 < points.length; i++) seg(points[i], points[i + 1]);
+  if (closed) { if (points.length > 2) seg(points[points.length - 1], points[0]); out.push('Z'); }
+  return out.join('');
+}
+/** Page-inch points (with handles in inches) -> a path shape's box and its
+ *  points as fractions of it. */
+function pathFromInches(pts, closed) {
+  const xs = pts.flatMap(p => [p.x]), ys = pts.flatMap(p => [p.y]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const w = Math.max(0.1, Math.max(...xs) - x0), h = Math.max(0.1, Math.max(...ys) - y0);
+  const fr = (v, o, n) => +((v - o) / n).toFixed(4);
+  return { x: +x0.toFixed(3), y: +y0.toFixed(3), w: +w.toFixed(3), h: +h.toFixed(3), closed: !!closed,
+    points: pts.map(p => {
+      const q = { x: fr(p.x, x0, w), y: fr(p.y, y0, h) };
+      if (p.out) q.out = [+(p.out[0] / w).toFixed(4), +(p.out[1] / h).toFixed(4)];
+      if (p.in) q.in = [+(p.in[0] / w).toFixed(4), +(p.in[1] / h).toFixed(4)];
+      return q;
+    }) };
+}
+function _pilotApplyAddPath({ page, points, closed, fill, stroke, sw, z } = {}) {
+  const pid = page != null ? page : visiblePageId();
+  const id = freeShapeId('path');
+  const geo = pathFromInches(points, closed);
+  layout.shapes.push({ id, page: pid, kind: 'path', ...geo,
+    fill: fill || (closed ? '#6B9E78' : 'none'), stroke: stroke || (closed ? 'none' : '#52796F'),
+    sw: sw != null ? +sw : 0.03, z: z != null ? +z : nextZ(2, pid) });
+  return { id, page: pid };
+}
+/** Pathfinder: the selected shapes become ONE compound. The back object
+ *  (lowest in the stack) is parts[0]; its look is the compound's. */
+function _pathfinderValidate(ids, op) {
+  if (!['union', 'subtract', 'intersect', 'exclude'].includes(op))
+    return { ok: false, error: `Pathfinder op '${op}' — union, subtract, intersect or exclude` };
+  const shs = (ids || []).map(i => shapeOf(i));
+  if (shs.length < 2 || shs.some(x => !x)) return { ok: false, error: 'Pathfinder needs two or more shapes' };
+  if (shs.some(x => !PART_KINDS.includes(x.kind)))
+    return { ok: false, error: 'only rectangles, ellipses, triangles, arrows and paths combine' };
+  if (shs.some(x => x.rot || x.skew)) return { ok: false, error: 'straighten rotated or skewed shapes first — a part keeps its box, not its turn' };
+  if (new Set(shs.map(x => String(x.page))).size > 1) return { ok: false, error: 'the shapes are on different pages' };
+  if (shs.some(x => masterItemOf(x.id))) return { ok: false, error: 'a shared-layout shape cannot be combined' };
+  return { ok: true };
+}
+function _pathfinderApply(ids, op) {
+  const order = layout.shapes.map(x => x.id);
+  const shs = ids.map(i => shapeOf(i)).sort((a, b) => (_zOf(a) - _zOf(b)) || (order.indexOf(a.id) - order.indexOf(b.id)));
+  const X = Math.min(...shs.map(x => x.x)), Y = Math.min(...shs.map(x => x.y));
+  const W = Math.max(...shs.map(x => x.x + x.w)) - X, H = Math.max(...shs.map(x => x.y + x.h)) - Y;
+  const fr = (v, o, n) => +((v - o) / (n || 1)).toFixed(4);
+  const back = shs[0];
+  const parts = shs.map(x => {
+    const p = { kind: x.kind, x: fr(x.x, X, W), y: fr(x.y, Y, H), w: +(x.w / (W || 1)).toFixed(4), h: +(x.h / (H || 1)).toFixed(4) };
+    if (x.kind === 'path') { p.points = clone(x.points); p.closed = x.closed !== false; }
+    return p;
+  });
+  const id = freeShapeId('compound');
+  const cmp = { id, page: back.page, kind: 'compound', op, parts, x: +X.toFixed(3), y: +Y.toFixed(3),
+    w: +W.toFixed(3), h: +H.toFixed(3), fill: back.fill || '#6B9E78', stroke: back.stroke || 'none',
+    sw: back.sw ?? 0.02, z: Math.max(...shs.map(_zOf)) };
+  for (const k of ['alpha', 'shadow', 'blend', 'dash', 'layer']) if (back[k] != null) cmp[k] = clone(back[k]);
+  layout.shapes = layout.shapes.filter(x => !ids.includes(x.id));
+  layout.shapes.push(cmp);
+  return { id, op, parts: parts.length };
+}
+const _zOf = x => (typeof x.z === 'number' ? x.z : x.z === 'front' ? 2 : -1);
+/** Release: a compound's parts become shapes again, in its look. */
+function _releaseApply(id) {
+  const c = shapeOf(id);
+  const out = c.parts.map((p, i) => {
+    const nid = freeShapeId(p.kind);
+    const sh = { id: nid, page: c.page, kind: p.kind, x: +(c.x + p.x * c.w).toFixed(3), y: +(c.y + p.y * c.h).toFixed(3),
+      w: +(p.w * c.w).toFixed(3), h: +(p.h * c.h).toFixed(3), fill: c.fill, stroke: c.stroke, sw: c.sw, z: (c.z ?? 2) + i };
+    if (p.kind === 'path') { sh.points = clone(p.points); sh.closed = p.closed !== false; }
+    layout.shapes.push(sh);
+    return nid;
+  });
+  layout.shapes = layout.shapes.filter(x => x.id !== id);
+  return { released: out };
+}
+
+// The pen: an armed click-sequence on the page. Points in page inches until
+// the path is finished, then pathFromInches stores it as fractions.
+let pen = null;
+function penWire(d) {
+  if (d.__dsPenWire) return;
+  d.__dsPenWire = true;
+  const at = (e, pg) => {
+    const r = pg.getBoundingClientRect(), ppi = r.width / PAGE_W_IN;
+    return { x: (e.clientX - r.left) / ppi, y: (e.clientY - r.top) / ppi };
+  };
+  const preview = () => {
+    d.querySelectorAll('.ds-penpreview').forEach(x => x.remove());
+    if (!pen || !pen.pts.length) return;
+    const svg = d.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ds-penpreview');
+    svg.setAttribute('viewBox', `0 0 ${PAGE_W_IN} ${PAGE_H_IN}`);
+    svg.style.cssText = `position:absolute;left:0;top:0;width:${PAGE_W_IN}in;height:${PAGE_H_IN}in;pointer-events:none;z-index:99999`;
+    const g = pathFromInches(pen.pts, false);
+    svg.innerHTML = `<path d="${pathD(g.points, false, g.x, g.y, g.w, g.h)}" fill="none" stroke="#2F80ED" stroke-width="0.02"/>`
+      + pen.pts.map((p, i) => `<circle cx="${p.x}" cy="${p.y}" r="${i === 0 ? 0.06 : 0.045}" fill="#fff" stroke="#2F80ED" stroke-width="0.015"/>`).join('');
+    pen.page.appendChild(svg);
+  };
+  const finish = async closed => {
+    const p = pen; pen = null;
+    d.querySelectorAll('.ds-penpreview').forEach(x => x.remove());
+    d.documentElement.classList.remove('ds-pen-arm');
+    if (!p || p.pts.length < 2) { $('stat').textContent = 'pen put away — a path needs two points'; return; }
+    pushHistory();
+    const r = _pilotApplyAddPath({ page: p.pid, points: p.pts, closed });
+    markDirty(); await render();
+    setSel($('out').contentDocument, [r.id]);
+    $('stat').textContent = `path drawn — ${p.pts.length} points; double-click it to move its points`;
+  };
+  // The page under the POINTER, not the click's target: an editor overlay
+  // (a selection ring, the stage band) can be the target and sits outside
+  // the sheet in the tree.
+  const pageAt = e => [...d.querySelectorAll('section.page')].find(p => {
+    const r = p.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  });
+  d.addEventListener('pointerdown', e => {
+    if (!pen) return;
+    const pg = pageAt(e);
+    if (!pg) return;
+    e.preventDefault(); e.stopPropagation();
+    if (pen.page && pg !== pen.page) return;
+    pen.page = pg;
+    const mount = pg.querySelector('[data-ds-mount]');
+    pen.pid = mount ? (/^\d+$/.test(mount.dataset.dsMount) ? +mount.dataset.dsMount : mount.dataset.dsMount) : visiblePageId();
+    const q = at(e, pg);
+    if (pen.pts.length > 2) {
+      const f = pen.pts[0];
+      if (Math.hypot(q.x - f.x, q.y - f.y) < 0.08) { finish(true); return; }
+    }
+    const pt = { x: q.x, y: q.y };
+    pen.pts.push(pt);
+    pen.drag = pt;
+    preview();
+  }, true);
+  d.addEventListener('pointermove', e => {
+    if (!pen || !pen.drag || !(e.buttons & 1)) return;
+    const q = at(e, pen.page);
+    const dx = q.x - pen.drag.x, dy = q.y - pen.drag.y;
+    if (Math.hypot(dx, dy) > 0.03) { pen.drag.out = [dx, dy]; pen.drag.in = [-dx, -dy]; preview(); }
+  }, true);
+  d.addEventListener('pointerup', () => { if (pen) pen.drag = null; }, true);
+  // The pen's clicks do not take focus (pointerdown is prevented), so Enter
+  // and Escape usually reach the editor's own window: it calls this.
+  d.__dsPenFinish = closed => finish(closed);
+  d.addEventListener('keydown', e => {
+    if (!pen) return;
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  }, true);
+  // Double-click a path: its points as handles to drag (Alt-click removes one).
+  d.addEventListener('dblclick', e => {
+    const n = e.target.closest && e.target.closest('[data-shape]');
+    const sh = n && shapeOf(n.dataset.shape);
+    if (!sh || sh.kind !== 'path') return;
+    e.preventDefault(); e.stopPropagation();
+    pathPointEdit(d, sh, n);
+  }, true);
+}
+function pathPointEdit(d, sh, node) {
+  if (sh.rot || sh.skew) { $('stat').textContent = 'straighten the path to move its points'; return; }
+  const pg = node.closest('section.page');
+  d.querySelectorAll('.ds-pathdot').forEach(x => x.remove());
+  const before = JSON.stringify(sh.points);
+  const done = async () => {
+    d.querySelectorAll('.ds-pathdot').forEach(x => x.remove());
+    d.removeEventListener('keydown', esc, true);
+    if (JSON.stringify(sh.points) !== before) { markDirty(); await render(); }
+  };
+  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
+  d.addEventListener('keydown', esc, true);
+  pushHistory();
+  sh.points.forEach((p, i) => {
+    const dot = d.createElement('div');
+    dot.className = 'ds-pathdot';
+    dot.title = 'Drag to move · Alt-click to remove · Esc when done';
+    dot.style.cssText = `position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;border:1.5px solid #2F80ED;`
+      + `background:#fff;border-radius:50%;z-index:99999;cursor:move;left:${sh.x + p.x * sh.w}in;top:${sh.y + p.y * sh.h}in`;
+    dot.addEventListener('pointerdown', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      if (ev.altKey) {
+        if (sh.points.length > 2) { sh.points.splice(i, 1); done(); }
+        return;
+      }
+      const r = pg.getBoundingClientRect(), ppi = r.width / PAGE_W_IN;
+      const move = mv => {
+        const x = (mv.clientX - r.left) / ppi, y = (mv.clientY - r.top) / ppi;
+        p.x = +((x - sh.x) / sh.w).toFixed(4); p.y = +((y - sh.y) / sh.h).toFixed(4);
+        dot.style.left = x + 'in'; dot.style.top = y + 'in';
+        node.setAttribute('d', pathD(sh.points, sh.closed, sh.x, sh.y, sh.w, sh.h));
+      };
+      const up = () => { d.removeEventListener('pointermove', move, true); d.removeEventListener('pointerup', up, true); };
+      d.addEventListener('pointermove', move, true);
+      d.addEventListener('pointerup', up, true);
+    });
+    pg.appendChild(dot);
+  });
+  $('stat').textContent = 'drag a point to move it — Alt-click removes one, Esc when done';
+}
+
 function paintShape(d, id) {
   const sh = shapeOf(id);
   const node = d.querySelector(`[data-shape="${id}"]`);
@@ -15990,7 +16526,7 @@ function paintShape(d, id) {
   } else if (sh.kind === 'ellipse') {
     node.setAttribute('cx', sh.x + sh.w / 2); node.setAttribute('cy', sh.y + sh.h / 2);
     node.setAttribute('rx', sh.w / 2); node.setAttribute('ry', sh.h / 2);
-  } else if (sh.kind === 'chart') {
+  } else if (sh.kind === 'chart' || sh.kind === 'path' || sh.kind === 'compound') {
     // Same trap the icon branch above documents, one kind further on: a chart
     // is a <g> of many elements drawn at absolute inch coordinates, so there
     // is no x/y attribute to set — and falling through to the line branch set
@@ -16308,7 +16844,18 @@ $('icon-q').addEventListener('input', iconDebounced);
 $('icon-set').addEventListener('change', () => iconSearch($('icon-q').value));
 
 $('shape').onclick = () => dockPanel('shape', 'Shapes');
-document.querySelectorAll('#shapepop .shp').forEach(b => b.addEventListener('click', async () => {
+document.addEventListener('keydown', e => {
+  if (!pen || (e.key !== 'Enter' && e.key !== 'Escape')) return;
+  const d = $('out').contentDocument;
+  if (d && d.__dsPenFinish) { e.preventDefault(); d.__dsPenFinish(e.key === 'Enter'); }
+}, true);
+$('shapepop').querySelector('[data-pen]').addEventListener('click', () => {
+  $('shapepop').hidden = true;
+  pen = { pts: [], page: null, pid: null, drag: null };
+  $('out').contentDocument.documentElement.classList.add('ds-pen-arm');
+  $('stat').textContent = 'pen: click to place points, drag to pull a curve — Enter or the first point closes, Esc finishes open';
+});
+document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListener('click', async () => {
   // The panel stays open: Canva lets you place a run of shapes without
   // re-opening the picker between each one.
   const kind = b.dataset.k;
@@ -19544,12 +20091,15 @@ function wire(roots) {
     wireMarkState(d);          // chrome B/I state tracks the edit selection
     anchorWire(d);             // the armed anchor click, once per document
     threadWire(d);             // the armed thread click, likewise
+    penWire(d);                // the pen and a path's point editing
   }
   applyZoom();
   fillVars(d);                 // page numbers and contents first: they change widths
   applyAuto(d);                // automatic formatting, before stories are poured
+  applyGrid(d);                // baseline grid defined before the pour runs it per frame
   pourThreads(d);              // threaded stories fill their frames
   placeAnchors(d);             // anchored objects find their paragraphs FIRST,
+  applyWrapShape(d);           // then a contour wrap reshapes what they float
   if (syncReserves(d)) placeAnchors(d);   // a strut re-sized moves what hangs below it
   reportFit(d);                // so every measurement below sees them there
   paintSel(d);                 // the selection is ids, so it survives a render
@@ -19733,6 +20283,7 @@ function wire(roots) {
        Setting either here would put the reflow straight back. */
     .ds-chip.ds-fnchip { color:#2F3E46; }
     .ds-thread-arm [data-el^="text."] { cursor:copy !important; }
+    .ds-pen-arm section.page, .ds-pen-arm section.page * { cursor:crosshair !important; }
     .ds-fitgrid { display:grid; grid-template-columns:repeat(3,18px); gap:3px; padding:4px 10px 8px; }
     .ds-fitgrid button { width:18px; height:18px; padding:0; border:1px solid #B9C9BE; border-radius:3px;
                background:#fff; cursor:pointer; }
@@ -26178,6 +26729,15 @@ function _pilotApplyRotate(id, deg) {
   return { id, rot: v };
 }
 
+function _pilotApplySkew(id, deg) {
+  const d = $('out').contentDocument;
+  const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
+  const st = _pilotStoreOf(id) || ensureStore(d, el);
+  const v = Math.max(-60, Math.min(60, +deg || 0));
+  if (v) st.skew = v; else delete st.skew;
+  return { id, skew: v };
+}
+
 function _pilotValidateAnchor(id, key) {
   const v = _pilotValidateExists(id);
   if (!v.ok) return v;
@@ -26289,6 +26849,24 @@ const PILOT_BATCH_VERBS = {
   describeImage: { validate: (h, w, s) => _pilotValidateDescribeImage(h, w, s),
                    apply: (h, w, s) => _pilotApplyDescribeImage(h, w, s) },
   rotate: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplyRotate(id, deg) },
+  addPath: { validate: o => (o && Array.isArray(o.points) && o.points.length >= 2) ? { ok: true }
+               : { ok: false, error: 'addPath({page, points: [{x, y, in?, out?}…] in page inches, closed})' },
+             apply: o => _pilotApplyAddPath(o) },
+  pathfinder: { validate: (ids, op) => _pathfinderValidate(ids, op), apply: (ids, op) => _pathfinderApply(ids, op) },
+  release: { validate: id => (shapeOf(id) || {}).kind === 'compound' ? { ok: true } : { ok: false, error: `'${id}' is not a compound` },
+             apply: id => _releaseApply(id) },
+  masterOverride: { validate: id => masterItemOf(id) ? { ok: true } : { ok: false, error: `'${id}' is not on a shared layout` },
+                    apply: (id, on) => masterOverride(id, on !== false) },
+  setGrid: { validate: g => (g === null || (g && +g.increment >= 4 && +g.increment <= 72)) ? { ok: true }
+               : { ok: false, error: 'grid: {increment: 4–72 pt, start: inches} or null' },
+             apply: g => { if (g === null) delete layout.grid; else layout.grid = { increment: +g.increment, start: +(g.start || 0) }; return { grid: layout.grid || null }; } },
+  defineLayer: { validate: n => _layerValidate(n), apply: (n, o) => _defineLayer(n, o || {}) },
+  toLayer: { validate: (ids, n) => (n == null || docLayers().some(x => x.name === n)) ? { ok: true }
+               : { ok: false, error: `no layer called '${n}' — defineLayer it first` },
+             apply: (ids, n) => ({ ids: _toLayer(ids, n), layer: n || null }) },
+  dropLayer: { validate: n => docLayers().some(x => x.name === n) ? { ok: true } : { ok: false, error: `no layer called '${n}'` },
+               apply: n => { _dropLayer(n); return { dropped: n }; } },
+  skew: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplySkew(id, deg) },
   // Existence only — place()'s validate also refuses LOCKED elements, which
   // here would make unlocking impossible.
   lock: { validate: id => _pilotValidateExists(id), apply: (id, on) => _pilotApplyLock(id, on) },
@@ -26595,13 +27173,17 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   /** wrap(id, 'left'|'right') floats an ANCHORED box or designed element
    *  beside its paragraph, whose lines flow around it; wrap(id, null) puts it
    *  back on top of the text at its anchor distance. */
-  async wrap(id, side) {
+  async wrap(id, side, shape) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateExists(String(id));
     if (!v.ok) return v;
     if (side != null && !['left', 'right'].includes(side))
       return { ok: false, error: `wrap side must be 'left', 'right' or null — not ${JSON.stringify(side)}` };
-    return wrapSet(String(id), side || null);
+    const r = await wrapSet(String(id), side || null);
+    // Third argument: what the lines follow — 'box', 'contour' (the
+    // picture's outline) or 'ellipse'. Only when it wraps.
+    if (r.ok && side && shape !== undefined) return wrapShapeSet(String(id), shape);
+    return r;
   },
 
   /** master(page, name) makes a page use a master (null: none). masterFrom(page,
@@ -26891,6 +27473,41 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (!v.ok) return v;
     pushHistory();
     const r = _pilotApplyDescribeImage(host, words, src);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
+  },
+
+  /** Named layers: defineLayer(name, {hidden, locked, rename}) creates or
+   *  changes one (stacking order is creation order, first at the back);
+   *  toLayer(ids, name|null) puts things on it; dropLayer(name) deletes it and
+   *  leaves its things on no layer. A hidden layer is not drawn at all; a
+   *  locked one refuses select, drag, place and remove. All batchable. */
+  /** The document's baseline grid: setGrid({increment: pt, start: in}) or
+   *  null. A text style sits on it with setStyle(key, {grid: true}). */
+  /** masterOverride('folio@3') — from now on, changes to that page's copy of
+   *  a shared-layout item stay on that page; masterOverride(id, false) puts
+   *  it back. Only the keys changed are kept, so the rest still follows. */
+  /** Drawing: addPath({page, points: [{x, y, in?, out?}] in PAGE inches,
+   *  closed}) — handles are offsets from their point; pathfinder(ids, op)
+   *  makes one compound (union / subtract / intersect / exclude; the back
+   *  shape is the lowest in the stack); release(id) splits a compound. */
+  async addPath(o) { return docsync.api.batch([{ verb: 'addPath', args: [o] }]); },
+  async pathfinder(ids, op) { return docsync.api.batch([{ verb: 'pathfinder', args: [ids, op] }]); },
+  async release(id) { return docsync.api.batch([{ verb: 'release', args: [id] }]); },
+  async masterOverride(id, on) { return docsync.api.batch([{ verb: 'masterOverride', args: [id, on] }]); },
+  async setGrid(g) { return docsync.api.batch([{ verb: 'setGrid', args: [g] }]); },
+  async defineLayer(name, opts) { return docsync.api.batch([{ verb: 'defineLayer', args: [name, opts || {}] }]); },
+  async toLayer(ids, name) { return docsync.api.batch([{ verb: 'toLayer', args: [ids, name] }]); },
+  async dropLayer(name) { return docsync.api.batch([{ verb: 'dropLayer', args: [name] }]); },
+
+  /** Skew (Shear) along x about the centre, degrees ±60; 0 clears. */
+  async skew(id, deg) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidatePlace(id);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplySkew(id, deg);
     markDirty();
     await render();
     return { ...docsync.api.status(), ...r };
