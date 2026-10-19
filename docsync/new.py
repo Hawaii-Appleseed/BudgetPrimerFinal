@@ -77,12 +77,7 @@ PAGES = L.page_order(DESIGNED_PAGES)
 # terminal output you will never see again. Empty for a blank project.
 NOTICES = {notes}
 
-body = "".join(
-    f'<section class="page" data-page="{{pid}}"{{L.fill_attr(f"page.{{pid}}")}}>'
-    f'{{L.layer(pid)}}{{L.text_boxes(pid)}}{{L.tables_html(pid)}}'
-    f'</section>'
-    for pid in PAGES
-)
+body = "".join(L.sheet(pid) for pid in PAGES)
 # Tell the editor's page strip which pages are designed, so it can draw a
 # thumbnail per page and reorder them. Without this the strip stays hidden.
 body += L.pagemeta(range(1, DESIGNED_PAGES + 1))

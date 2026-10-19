@@ -3736,10 +3736,16 @@ class Layout:
         re-base every field already moved inside it — the words would leap by
         exactly the container's offset (card() learned this for its tile).
         Once the container itself is moved, its placement's position wins.
+
+        While editing it also says it IS a container (data-frame), because the
+        editor treats one differently from any other movable: everything with
+        a handle inside it is its own object, and a press on its own surface
+        bands or selects before it ever drags (edit.html's isFrame).
         """
         frame = "" if el_id in self.positions else "position:relative"
         both = ";".join(x for x in (frame, extra) if x)
-        return self.attr(el_id, both)
+        mark = ' data-frame="1"' if os.environ.get("DOCSYNC_EDIT") else ""
+        return self.attr(el_id, both) + mark
 
     def attr(self, el_id: str, extra: str = "") -> str:
         """Attributes for an element with no style of its own.
@@ -4162,6 +4168,20 @@ class Layout:
                 raise LayoutError(f"pages.order: this report has pages "
                                   f"1–{designed}, not {pid}")
         return list(order)
+
+    def sheet(self, pid, inner: str = "") -> str:
+        """One <section class="page">: the renderer's markup for a designed
+        page (`inner`), empty for a blank page added in the editor.
+
+        data-page carries the page's IDENTITY, which stops matching its
+        position the moment the order can be changed. Shapes, text boxes and
+        tables go INSIDE the section: .page is the positioning context every
+        placed element is measured against, so as siblings they sat a box out
+        — a text box dropped at 6.18in drew at 5.76in on a 1280px window.
+        """
+        return (f'<section class="page" data-page="{pid}"{self.fill_attr(f"page.{pid}")}>'
+                f'{inner}{self.layer(pid)}{self.text_boxes(pid)}{self.tables_html(pid)}'
+                f'</section>')
 
     def blank_ids(self) -> list:
         return [b["id"] for b in (self.pages.get("blanks") or [])]

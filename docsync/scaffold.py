@@ -167,25 +167,8 @@ if EDIT:
 DESIGNED_PAGES = 1
 
 
-def sheet(pid):
-    """One <section class="page">: the imported markup for the designed page,
-    empty for a blank page added in the editor.
-
-    data-page is not decoration. The strip addresses sheets by it, and once the
-    order can differ from the DOM order — which is the whole point of
-    reordering — position alone stops identifying a page.
-    """
-    inner = BODY if pid == DESIGNED_PAGES else ""
-    return (f'<section class="page" data-page="{{pid}}"{{L.fill_attr(f"page.{{pid}}")}}>'
-            f'{{inner}}'
-            # INSIDE the section, not after it: .page is the positioning context
-            # every placed element is measured against, so emitting these as its
-            # siblings put every shape and text box a box out.
-            f'{{L.layer(pid)}}{{L.text_boxes(pid)}}{{L.tables_html(pid)}}'
-            f'</section>')
-
-
-SHEETS = ("".join(sheet(pid) for pid in L.page_order(DESIGNED_PAGES))
+SHEETS = ("".join(L.sheet(pid, BODY if pid == DESIGNED_PAGES else "")
+                  for pid in L.page_order(DESIGNED_PAGES))
           + L.pagemeta(range(1, DESIGNED_PAGES + 1)))
 
 html = f"""<!DOCTYPE html>

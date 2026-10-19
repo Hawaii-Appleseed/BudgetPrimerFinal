@@ -5914,8 +5914,21 @@ function paintRot(d, el) {
  *  rubber band agree about what is under them. */
 const holdsWords = el => el.matches('[data-slot],[data-fixed]')
   || !!el.querySelector('[data-slot],[data-fixed]');
+/** A SECTION: a container the renderer drew with L.frame (data-frame) — a
+ *  card, a band, a panel. It carries what is in it when it moves, but it is
+ *  a place things sit, not their owner: everything inside it that has a
+ *  handle of its own is its own object, words or not (a rule, a swatch, a
+ *  divider), so moving one never drags the section along. */
+const isFrame = el => !!el && el.nodeType === 1 && el.hasAttribute('data-frame');
+const inFrame = el => isFrame(el.parentElement && el.parentElement.closest('[data-el]'));
 const ownObject = el => isGraphic(el) || el.classList.contains('ds-textbox')
-  || el.classList.contains('ds-detachable') || holdsWords(el);
+  || el.classList.contains('ds-detachable') || holdsWords(el) || inFrame(el);
+/** A press on a section's OWN surface — its padding, its background, a row
+ *  wrapper with no handle — rather than on anything inside it that is an
+ *  object or words. That is the press that bands or selects (frameSurfacePress). */
+const onFrameSurface = (frame, t) => !!t && t.nodeType === 1
+  && t.closest('[data-el], [data-shape]') === frame
+  && !t.closest('[data-slot], [data-fixed]');
 
 const isGraphic = el => !el.dataset.shape && !el.matches('[data-slot]')
   && !el.querySelector('[data-slot]') && !el.classList.contains('ds-textbox')
@@ -11313,14 +11326,45 @@ function hitPlaced(d, pg, e) {
     if (!b.w && !b.h) return;
     if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) return;
     const z = zOf(idOf(el));
+    // A piece inside the current best is drawn ON it, whatever the numbers
+    // say: a moved section carries z 2 and everything still in place inside
+    // it z 1, so by z alone the section beat its own contents.
+    if (best && best.contains(el)) { best = el; bestZ = z; return; }
     if (z >= bestZ) { bestZ = z; best = el; }
   });
   return best;
 }
 
+/** A press on a section's own surface while the section is not in hand: a
+ *  click selects it, and a press that travels draws a rubber band from there
+ *  instead of dragging it — how frames behave in Figma or Keynote. Once the
+ *  section IS the selection, its surface drags it like any object.
+ *
+ *  Before this, every press on a section that missed the things in it picked
+ *  the section up. On a band that runs edge to edge (a report cover's colour
+ *  field) that is most presses: aim for a small caps label, land a few pixels
+ *  under it, and the whole section moved — "I can't move the top text boxes
+ *  without moving the entire section they're in." Shift keeps its meaning
+ *  (toggle the section in the selection), alt still duplicates, and a section
+ *  in a group still moves with its group. `surface` is for a caller that has
+ *  already worked out by geometry that the press is on the section itself
+ *  (the page-level hit test). Returns whether it took the press. */
+function frameSurfacePress(d, frame, e, surface = onFrameSurface(frame, e.target)) {
+  if (!isFrame(frame) || !surface || e.shiftKey || e.altKey) return false;
+  const id = idOf(frame);
+  if (selIds.has(id)) return false;
+  const g = groupOf(id);
+  if (g && g.length > 1) return false;
+  const pg = frame.closest('section.page') || d.querySelector('section.page');
+  marquee(d, pg, e, () => selectClick(d, id, e));
+  return true;
+}
+
 /** Rubber-band select: drag on empty page. A click that never travels is a
- *  click-away, which clears the selection — one gesture, both meanings. */
-function marquee(d, pg, e0) {
+ *  click-away, which clears the selection — one gesture, both meanings.
+ *  `onClick` replaces that for a band begun on a section's surface: a click
+ *  there means the section (frameSurfacePress). */
+function marquee(d, pg, e0, onClick = null) {
   const px = DPI * zoomOf(pg);
   const pr = pg.getBoundingClientRect();
   const ox = (e0.clientX - pr.left) / px, oy = (e0.clientY - pr.top) / px;
@@ -11341,14 +11385,23 @@ function marquee(d, pg, e0) {
     // page itself, and that selects the page (Canva's own behaviour). It used
     // to clear the selection and leave nothing in hand, so the page's own
     // colour was reachable only by right-clicking it.
-    if (!r || (r.w < 0.05 && r.h < 0.05)) { setSelPage(d, pageIdOf(pg)); return; }
+    if (!r || (r.w < 0.05 && r.h < 0.05)) {
+      if (onClick) { onClick(); return; }
+      setSelPage(d, pageIdOf(pg)); return;
+    }
     const hitEls = [];
     pg.querySelectorAll('[data-el], [data-shape]').forEach(el => {
       if (!ownObject(el) && el.parentElement && el.parentElement.closest('[data-el]')) return;
       const b = inchBox(el, pg);
-      if ((b.w || b.h) && b.x < r.x + r.w && b.x + b.w > r.x
-          && b.y < r.y + r.h && b.y + b.h > r.y)
-        hitEls.push(el);
+      if (!(b.w || b.h) || b.x >= r.x + r.w || b.x + b.w <= r.x
+          || b.y >= r.y + r.h || b.y + b.h <= r.y) return;
+      // A section comes only when the band takes ALL of it. Touching one
+      // took it, and with it (outermost, below) everything inside — so the
+      // things in a section could never be banded on their own, and a band
+      // begun on a section's surface would take the section it began on.
+      if (isFrame(el) && (b.x < r.x || b.y < r.y
+          || b.x + b.w > r.x + r.w || b.y + b.h > r.y + r.h)) return;
+      hitEls.push(el);
     });
     // A band round a card and its fields takes the CARD: its fields ride it,
     // and taking both would move a thing and the frame it is measured in.
@@ -13947,7 +14000,12 @@ function dragify(d, roots) {
       });
       return;
     }
-    if (!ownObject(el) && el.parentElement && el.parentElement.closest('[data-el]')) return;
+    // A glued piece says so, so the hover ring goes to the object a press on
+    // it really takes (the [data-el]:hover rule skips .ds-part).
+    if (!ownObject(el) && el.parentElement && el.parentElement.closest('[data-el]')) {
+      el.classList.add('ds-part');
+      return;
+    }
     // A locked element wears its state: a padlock and a muted ring, and the
     // grab cursor gives way. It still SELECTS (so it can be unlocked) but the
     // drag refuses.
@@ -13982,6 +14040,7 @@ function dragify(d, roots) {
       e.preventDefault();
       e.stopPropagation();
       const id = idOf(el);
+      if (frameSurfacePress(d, el, e)) return;
       // Was this element's whole group ALREADY the selection before this
       // click? If so a second, movement-free click drills into the piece
       // under the pointer (see startDrag's mouseup) — the only way to get
@@ -18297,6 +18356,9 @@ function wire(roots) {
       e.preventDefault();
       const hit = hitPlaced(d, pg, e);
       if (hit) {
+        // hitPlaced prefers anything inside a section, so a section it
+        // returns is one whose own surface is under the pointer.
+        if (frameSurfacePress(d, hit, e, true)) return;
         const selected = selectClick(d, idOf(hit), e);
         if (e.shiftKey || !selected) return;
         startDrag(d, hit, e);   // a lock is refused there, on the first travel
@@ -18421,7 +18483,14 @@ function wire(roots) {
        drawing are the exception: a click there selects the graphic and a
        double-click opens the label, so they grab with the rest of it. */
     [data-el], [data-shape] { cursor:grab; }
-    [data-el]:hover { outline:1px dashed #95B7A2; outline-offset:3px; }
+    /* The dashed hover ring goes on ONE object: the one a press there takes,
+       which is the innermost movable under the pointer (a glued piece,
+       .ds-part, rings with its owner). :hover also matches every ANCESTOR of
+       the pointer, so a plain [data-el]:hover ringed a whole section whenever
+       you pointed at words inside it, and the section read as the thing in
+       hand. */
+    [data-el]:not(.ds-part):not(:has(.ds-edit)):hover:not(:has([data-el]:not(.ds-part):hover)) {
+      outline:1px dashed #95B7A2; outline-offset:3px; }
     [data-slot] { cursor:text; }
     [data-el] svg [data-slot] { cursor:grab; }
     /* ONE ring per object. A movable element's ring (hover dashed, selected

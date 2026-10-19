@@ -429,6 +429,62 @@ class Footnotes:
         Endnotes page back to its own [[sources]] line."""
         return [(sid, *self.sources[sid]) for sid in self.order]
 
+    def linkify(self, html: str, pop: bool = False) -> str:
+        """Turn every <sup>N</sup> marker into a link to its endnote. Without
+        this the markers render as bare numerals pointing at nothing.
+
+        Splits multi-note markers (<sup>4&thinsp;5</sup>, what resolve() makes
+        of adjacent refs) back apart so each number links its own anchor; a
+        number past the last endnote is left inert. `pop` adds data-fn for a
+        page whose JS pops the note in place — the href still reaches the
+        endnote without JS and in print.
+        """
+        count = len(self.order)
+        fn = ' data-fn="{n}"' if pop else ""
+
+        def repl(m):
+            nums = re.findall(r"\d+", m.group(1))
+            if not nums:
+                return m.group(0)
+            out = [f'<a class="fn" href="#en{n}"{fn.format(n=n)}>{n}</a>'
+                   if 1 <= int(n) <= count else n for n in nums]
+            return "<sup>" + "&thinsp;".join(out) + "</sup>"
+        return re.sub(r"<sup>(.*?)</sup>", repl, html, flags=re.S)
+
+    def endnotes_run(self, layout) -> str:
+        """The sources as one run of entries, middot-separated — the compact
+        form for a printed page with no room for a list.
+
+        Each entry is keyed by source id, not by n: the number is whatever the
+        current order says, but the identity the editor routes an edit back
+        through has to stay put. data-el also makes the entry draggable to
+        reorder. The citation TEXT is the link, not a spelled-out URL beside
+        it — every route a printed page reaches a reader by carries the href.
+        """
+        out = []
+        for n, (sid, txt, url) in enumerate(self.endnotes_with_ids(), 1):
+            sep = "" if n == 1 else '<span class="ensep"> · </span>'
+            out.append(f'{sep}<span id="en{n}" class="en"{layout.attr(f"endnote.{sid}")}>'
+                       f'<span class="enn">{n}</span> <a href="{url}">{txt}</a></span>')
+        return "".join(out)
+
+    def endnote_items(self, layout, new_tab: bool = False) -> str:
+        """The sources as <li> entries, for a renderer that styles its own <ol>
+        (endnotes_html() is the zero-stylesheet one, for a placed section).
+
+        Dragging an entry REORDERS the list (Layout.endnote_order and the
+        editor's reorderEndnote) rather than parking it somewhere absolute, so
+        no spacer is needed. A source need not have a link — a book, an
+        interview — and an empty url would draw <a href="">, a link back to
+        this page.
+        """
+        target = ' target="_blank"' if new_tab else ""
+        out = []
+        for n, (sid, txt, url) in enumerate(self.endnotes_with_ids(), 1):
+            link = f' <a href="{url}"{target}>{url}</a>' if url else ""
+            out.append(f'<li id="en{n}"{layout.attr(f"endnote.{sid}")}>{txt}{link}</li>')
+        return "".join(out)
+
     def endnotes_html(self, layout=None) -> str:
         """The numbered <ol> for an endnotes section the EDITOR placed.
 
@@ -756,6 +812,12 @@ class Content:
         if key in self._new:
             return [NEW_SLOT.format(key=key)]
         return bullets(raw)
+
+    def list_items(self, key: str) -> str:
+        """list() as <li>s, for a <ul> the caller builds itself (with
+        ul_attr). Interpolating list() straight into an f-string prints its
+        Python repr — brackets and quotes — onto the page."""
+        return "".join(f"<li>{item}</li>" for item in self.list(key))
 
     def ul_attr(self, key: str) -> str:
         """data-slot + style for a <ul> the caller builds itself."""

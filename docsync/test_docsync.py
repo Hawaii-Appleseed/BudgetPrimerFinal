@@ -3939,8 +3939,13 @@ check_eq("check: movable, charted, the shape layer, or a glyph in a control are 
 from docsync.blocks import field_plan as _fplan                             # noqa: E402
 os.environ["DOCSYNC_EDIT"] = "1"
 _fl = _layout({})
-check_eq("L.frame: movable, and positioned from birth so a field moved in it keeps its place",
-         _fl.frame("card.a"), ' data-el="card.a" style="position:relative"')
+check_eq("L.frame: movable, positioned from birth so a field moved in it keeps its place, "
+         "and marked a section for the editor",
+         _fl.frame("card.a"), ' data-el="card.a" style="position:relative" data-frame="1"')
+del os.environ["DOCSYNC_EDIT"]
+check_eq("L.frame: the section mark is editing scaffolding, never published",
+         _layout({}).frame("card.a"), ' style="position:relative"')
+os.environ["DOCSYNC_EDIT"] = "1"
 _fm = _layout({"positions": {"card.a": {"x": 1, "y": 2}}})
 check_eq("L.frame: once the card itself is moved, its placement's position wins",
          "position:relative" in _fm.frame("card.a"), False)
