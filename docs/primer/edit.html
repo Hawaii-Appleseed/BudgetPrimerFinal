@@ -1208,6 +1208,9 @@
   #ty-style.ty-style-over::after { content:'+'; }
   #ty-style-more { font-weight:700; letter-spacing:1px; }
   #ty-stylepop { width:280px; }
+  .ty-auto-row { display:flex; gap:6px; align-items:center; font:12px system-ui; margin:4px 0; }
+  .ty-auto-row span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ty-auto-row button { border:0; background:none; cursor:pointer; color:#8a3a2f; }
   /* Find & Change. The hits are the panel's whole point, so they get the
      height: a list that shows four and says "12 hits" is a count, not a
      result you can act on. */
@@ -2414,6 +2417,23 @@
       <option value="left">left</option><option value="right">right</option></select></label>
     <label><span>…colour</span><select id="ty-pbc"></select></label>
     <label><span>Padding</span><input id="ty-pp" type="number" step="0.02" min="0" max="1" placeholder="in"></label>
+    <p class="pop-h">Automatic formatting</p>
+    <div id="ty-auto"></div>
+    <label><span>Style</span><select id="ty-auto-st"></select></label>
+    <label><span>On</span><select id="ty-auto-on">
+      <option value="g:\$?[\d][\d,]*(\.\d+)?( ?(million|billion|thousand))?">numbers and amounts</option>
+      <option value="g:[\d.,]+ ?(%|percent)">percentages</option>
+      <option value="g:“[^”]+”|&quot;[^&quot;]+&quot;">words in quotes</option>
+      <option value="g:^(Source|Sources|Note|Notes):">"Source:" / "Note:"</option>
+      <option value="g:\b(Act|HB|SB) ?\d+\b">bill and Act numbers</option>
+      <option value="n::">start, through the first colon</option>
+      <option value="n:—">start, through the first dash</option>
+      <option value="n:sentence">the first sentence</option>
+      <option value="n:words:3">the first three words</option>
+      <option value="g:custom">a pattern of my own…</option></select></label>
+    <label id="ty-auto-patrow" hidden><span>Pattern</span><input id="ty-auto-pat" type="text"
+      spellcheck="false" placeholder="e.g. \bGET\b"></label>
+    <button class="sw-default" id="ty-auto-add">Add this rule</button>
   </div>
   <div class="pop" id="ty-spacepop" hidden>
     <p class="pop-h">Spacing</p>
@@ -3525,6 +3545,9 @@ function nodeToMdInline(node, br = ' ') {
     // run would end the run's brackets early, so such a run keeps its words
     // and loses the style rather than the other way round (a link inside is
     // fine: content.py stashes links before it reads runs).
+    // A run automatic formatting made (GREP_JS) is the style's, not the
+    // document's: its words go back as words.
+    if (n.classList && n.classList.contains('ds-auto')) { out += nodeToMdInline(n, br); return; }
     if (n.classList && n.classList.contains('ds-cs')) {
       const inner = nodeToMdInline(n, br);
       const bare = inner.replace(new RegExp(`\\[[^\\]]*\\]\\(${DEST}\\)`, 'g'), '');
@@ -9757,6 +9780,37 @@ function fillParaPop(key) {
   $('ty-rbo').value = rb.offset ?? ''; $('ty-rbl').value = rb.length ?? '';
   $('ty-pbs').value = pb.sides || 'all';
   $('ty-pp').value = eff.paraPad ?? '';
+  // Automatic formatting: the rules the RESOLVED style carries, each with a
+  // remove button; the picker lists the text styles a run can wear.
+  const host = $('ty-auto');
+  host.textContent = '';
+  const own = styleOf(key);
+  [...(eff.nested || []).map((r, i) => ['nested', i, `${r.style}: start of paragraph through ${r.through || ':'}`]),
+   ...(eff.grep || []).map((r, i) => ['grep', i, `${r.style}: /${r.pattern}/${r.case === false ? 'i' : ''}`])]
+    .forEach(([kind, i, label]) => {
+      const row = document.createElement('div');
+      row.className = 'ty-auto-row';
+      const t = document.createElement('span'); t.textContent = label;
+      const x = document.createElement('button'); x.textContent = '✕';
+      x.title = own[kind] ? 'Remove this rule' : 'Comes from the named style — redefine it there';
+      x.disabled = !own[kind];
+      x.addEventListener('click', async () => {
+        // Its own write path: this list is rebuilt here, outside the panel's
+        // wiring, where paraSet is not in scope.
+        const list = (styleOf(selected)[kind] || []).filter((_, j) => j !== i);
+        setStyle(selected, { [kind]: list.length ? list : null });
+        markDirty(); await render(); showType(selected); fillParaPop(selected);
+      });
+      row.append(t, x);
+      host.appendChild(row);
+    });
+  const sts = $('ty-auto-st');
+  sts.textContent = '';
+  Object.keys(layout.textStyles || {}).sort().forEach(n => {
+    const o = document.createElement('option'); o.value = o.textContent = n; sts.appendChild(o);
+  });
+  $('ty-auto-add').disabled = !sts.options.length;
+  $('ty-auto-add').title = sts.options.length ? '' : 'Save a text style first — a rule puts one on the words it finds';
 }
 
 function showType(key) {
@@ -9999,6 +10053,21 @@ function fillVars(d) {
 // layout.THREAD_JS pours each thread's story through its frames after layout
 // (INDESIGN_PARITY.md 4). Evaluated here after each render, like the anchors
 // and the variables, because an imported page node never runs its scripts.
+// layout.GREP_JS: automatic formatting (INDESIGN_PARITY.md 29), evaluated
+// here after each render like the other runtimes.
+let GREP_SRC = null;
+function applyAuto(d) {
+  if (!d || !d.querySelector('[style*="--ds-gs:"]')) return;
+  const w = d.defaultView;
+  if (!w.__dsGrep) {
+    if (GREP_SRC === null) {
+      try { GREP_SRC = py.runPython('from docsync.layout import GREP_JS\nGREP_JS'); }
+      catch (e) { GREP_SRC = ''; }
+    }
+    try { w.eval(GREP_SRC); } catch (e) { return; }
+  }
+  try { w.__dsGrep(); } catch (e) { /* the next render applies */ }
+}
 let THREAD_SRC = null;
 function pourThreads(d) {
   if (!d || !d.querySelector('[data-thread]')) return;
@@ -10856,6 +10925,27 @@ function wireType() {
   $('ty-pbs').addEventListener('change', () => objSet('paraBorder', 'sides', $('ty-pbs').value));
   $('ty-pbc').addEventListener('change', () => objSet('paraBorder', 'color', $('ty-pbc').value));
   $('ty-shade').addEventListener('change', () => paraSet({ shade: $('ty-shade').value || null }));
+  $('ty-auto-on').addEventListener('change', () => {
+    $('ty-auto-patrow').hidden = $('ty-auto-on').value !== 'g:custom';
+  });
+  $('ty-auto-add').addEventListener('click', () => {
+    const st = $('ty-auto-st').value;
+    if (!st) return;
+    const v = $('ty-auto-on').value, kind = v[0] === 'g' ? 'grep' : 'nested';
+    let rule;
+    if (kind === 'grep') {
+      const pattern = v === 'g:custom' ? $('ty-auto-pat').value : v.slice(2);
+      try { new RegExp(pattern); } catch (e) { $('stat').textContent = `not a pattern: ${e.message}`; return; }
+      if (!pattern || new RegExp(`^(?:${pattern})$`).test('')) {
+        $('stat').textContent = 'that pattern matches nothing at all'; return;
+      }
+      rule = { pattern, style: st };
+    } else {
+      rule = { style: st, through: v.slice(2) };
+    }
+    const list = [...(styleOf(selected)[kind] || []), rule];
+    paraSet({ [kind]: list });
+  });
   $('ty-pp').addEventListener('change', () => {
     const v = num('ty-pp');
     paraSet({ paraPad: v === '' || Number.isNaN(v) ? null : Math.max(0, Math.min(1, v)) });
@@ -19286,6 +19376,7 @@ function wire(roots) {
   }
   applyZoom();
   fillVars(d);                 // page numbers and contents first: they change widths
+  applyAuto(d);                // automatic formatting, before stories are poured
   pourThreads(d);              // threaded stories fill their frames
   placeAnchors(d);             // anchored objects find their paragraphs FIRST,
   if (syncReserves(d)) placeAnchors(d);   // a strut re-sized moves what hangs below it

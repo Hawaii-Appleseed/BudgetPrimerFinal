@@ -640,9 +640,47 @@ questions as the rest of this file. Numbering continues from (27).
     with `li::before`, and a rule there would replace them. A report whose
     own stylesheet put `::before`/`::after` on a PARAGRAPH would lose that
     decoration to a rule; checked, none bound today does.
-29. **Nested and GREP styles** (Drop Caps and Nested Styles, GREP Styles).
-    "Bold every figure", "italicise 'Source:'" — formatting a style applies
-    by pattern, rather than by hand after each edit.
+29. **Nested and GREP styles. — CLOSED 2026-10-19.** Two text-style keys,
+    both naming a character style (17), so a redefine still moves every
+    run they make:
+    - `grep: [{pattern, style, case?}]` — that style on every match of the
+      pattern in the text wearing this style (`case: false` ignores case).
+    - `nested: [{style, through}]` — styles from the start of each
+      paragraph, in order, each running through a delimiter (":", "—",
+      any short string), `"sentence"`, or `"words:N"`.
+
+    Matching words is a fact about the text, and the slot, box and table
+    renderers each make their text differently, so `text_css` carries the
+    rules as one custom property (`--ds-gs`, base64 JSON) and
+    `layout.GREP_JS`, emitted once and only when a rule exists, wraps each
+    match after render in the span a hand-made run uses (`span.ds-cs`) plus
+    `ds-auto`. That class is what keeps the markdown clean: the editor never
+    writes an automatic run back (`nodeToMdInline`), and the text editor
+    opens from the markdown, so while typing the words are plain and the
+    formatting returns when the edit commits. Each paragraph is matched once
+    (`data-ds-g`), within its own text, inside footnote chips, variables
+    and decimal cells never; a match across a bold run is wrapped piece by
+    piece so no markup is restructured. Threads call it on the gathered
+    story before pouring (`THREAD_JS`), so a run crossing a frame break is
+    carried with its words. The editor runs it after each render, before
+    the threads (`applyAuto`).
+
+    Refused at load: a rule naming no text style, a pattern that does not
+    compile, one that matches the empty string (it would style empty
+    space), a construct Python's `re` has and the page's `RegExp` does not
+    (`(?P`, `(?#`, `\A`, `\Z`, inline flags), a `through` that is not a
+    short delimiter, "sentence" or "words:N", unknown keys, and more than
+    12 rules a style.
+
+    In the Paragraph panel under "Automatic formatting": pick a style, pick
+    what it goes on — numbers and amounts, percentages, words in quotes,
+    "Source:"/"Note:", bill and Act numbers, the start of a paragraph through
+    a colon or dash, the first sentence, the first three words, or a
+    pattern of your own — and Add. Each rule is listed with ✕ to remove it;
+    a rule that comes from a named style says to redefine it there. Without
+    a script (a feed reader) the words are simply unformatted; the PDF runs
+    it.
+
 30. **Frame fitting for images** (Fit Content Proportionally, Fill Frame
     Proportionally, Center Content, Frame Fitting Options, Auto-Fit). Cider
     has crop only, so every resize of an image box is a re-crop by hand.

@@ -4214,6 +4214,33 @@ _pr = _layout({"text": {"a.b": {"ruleBelow": {"weight": 1}}}})
 check_eq("PARA_CSS rides out once when a style rules a paragraph, alone",
          ((_pr.layer(1) + _pr.layer(2)).count(PARA_CSS), SPACE_CSS in _pr.layer(1)), (1, False))
 
+# --- automatic formatting: GREP and nested styles (INDESIGN_PARITY 29) ------
+import base64 as _b64                                                        # noqa: E402
+from docsync.layout import GREP_JS                                           # noqa: E402
+
+_gs = text_css({"grep": [{"pattern": r"\d+%", "style": "Fig", "case": False}],
+                "nested": [{"style": "Lead", "through": ":"}]})
+check_eq("rules ride as one base64 JSON custom property",
+         json.loads(_b64.b64decode(_gs.split("--ds-gs:")[1])),
+         {"g": [[r"\d+%", "i", "Fig"]], "n": [["Lead", ":"]]})
+_ats = {"Fig": {"color": "#C0392B"}}
+_ok = _layout({"textStyles": _ats, "boxes": [_tf(id="a", md="12%", style={"grep": [{"pattern": r"\d+%", "style": "Fig"}]})]})
+_okh = _ok.layer(1) + _ok.text_boxes(1)
+check_eq("GREP_JS rides once, with a character rule for the style it names",
+         (_okh.count(GREP_JS), '.ds-cs[data-cs="Fig"]{color:#C0392B}' in _okh), (1, True))
+check_eq("no rule, no runtime",
+         GREP_JS in _layout({"boxes": [_tf(id="a", md="x")]}).layer(1), False)
+check_eq("a rule naming no text style is refused at load",
+         "'Nobody'" in _layout_error({"textStyles": _ats, "boxes": [_tf(id="a", md="x",
+             style={"grep": [{"pattern": "x", "style": "Nobody"}]})]}), True)
+for _bad, _says in (({"grep": [{"pattern": "(", "style": "Fig"}]}, "not a pattern"),
+                    ({"grep": [{"pattern": "a?", "style": "Fig"}]}, "matches nothing"),
+                    ({"grep": [{"pattern": "(?P<n>a)", "style": "Fig"}]}, "construct"),
+                    ({"nested": [{"style": "Fig", "through": "words:two"}]}, "through"),
+                    ({"grep": [{"pattern": "a", "style": "Fig", "flags": "i"}]}, "unknown key")):
+    check_eq(f"an automatic rule is refused: {_says}",
+             _says in _layout_error({"textStyles": _ats, "text": {"a.b": _bad}}), True)
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

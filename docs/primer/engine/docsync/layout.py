@@ -941,6 +941,115 @@ def _check_para(st: dict, where: str) -> None:
                               f"{', '.join(PARA_BORDER_SIDES)}")
 
 
+# Automatic formatting (INDESIGN_PARITY.md 29): InDesign's GREP and nested
+# styles. A text style may say
+#   grep:   [{pattern, style, case?}]   — that character style (17) on every
+#           match of the pattern ("bold every figure"); case: false ignores case
+#   nested: [{style, through}]          — styles from the start of each
+#           paragraph, in order, each running through a delimiter (":", "—",
+#           any short string), "sentence", or "words:N"
+# so the formatting a writer applied by hand after every edit is the style's.
+# Matching words is a fact about the TEXT, which the slot, box and table
+# renderers each produce differently — so text_css carries the rules as one
+# custom property (--ds-gs, base64 JSON) and GREP_JS applies them after
+# render, wrapping each match in the same span a hand-made run uses
+# (`span.ds-cs`, plus `ds-auto` so it is never mistaken for one and written
+# back into the markdown). One runtime, three render paths.
+AUTO_MAX = 12            # rules per style: a style is a look, not a program
+
+
+def _auto_payload(st: dict) -> str | None:
+    g = [[r["pattern"], "" if r.get("case", True) else "i", r["style"]]
+         for r in (st.get("grep") or [])]
+    n = [[r["style"], str(r.get("through", ":"))] for r in (st.get("nested") or [])]
+    if not g and not n:
+        return None
+    import base64
+    raw = json.dumps({"g": g, "n": n}, separators=(",", ":"), ensure_ascii=False)
+    return base64.b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def auto_style_names(st: dict) -> set:
+    return ({r.get("style") for r in (st.get("grep") or [])}
+            | {r.get("style") for r in (st.get("nested") or [])}) - {None}
+
+
+def _check_auto(st: dict, where: str) -> None:
+    g, n = st.get("grep"), st.get("nested")
+    for key, rules, need in (("grep", g, ("pattern", "style")), ("nested", n, ("style",))):
+        if rules is None:
+            continue
+        if not isinstance(rules, list) or len(rules) > AUTO_MAX:
+            raise LayoutError(f"{where}.{key}: expected a list of at most {AUTO_MAX} rules")
+        for i, r in enumerate(rules):
+            w = f"{where}.{key}[{i}]"
+            if not isinstance(r, dict) or any(not isinstance(r.get(k), str) or not r.get(k)
+                                              for k in need):
+                raise LayoutError(f"{w}: needs {' and '.join(need)}")
+            extra = [k for k in r if k not in need + (("case",) if key == "grep" else ("through",))]
+            if extra:
+                raise LayoutError(f"{w}: unknown key(s) {', '.join(extra)}")
+            if key == "grep":
+                pat = r["pattern"]
+                if len(pat) > 200:
+                    raise LayoutError(f"{w}.pattern: longer than 200 characters")
+                # Python's re and the browser's RegExp agree on everything a
+                # writer reaches for; the constructs only Python has are refused
+                # so a pattern cannot pass here and break on the page.
+                if re.search(r"\(\?P|\(\?#|\\A|\\Z|\(\?[aiLmsux]+\)", pat):
+                    raise LayoutError(f"{w}.pattern: uses a construct the page's "
+                                      f"matcher does not have (?P, (?#, \\A, \\Z, inline flags)")
+                try:
+                    re.compile(pat)
+                except re.error as e:
+                    raise LayoutError(f"{w}.pattern: not a pattern — {e}")
+                if re.fullmatch(pat, ""):
+                    raise LayoutError(f"{w}.pattern: matches nothing at all, which "
+                                      f"would style empty space")
+                if r.get("case") is not None and not isinstance(r["case"], bool):
+                    raise LayoutError(f"{w}.case: true or false")
+            else:
+                t = r.get("through", ":")
+                if not isinstance(t, str) or not t or len(t) > 12 or (
+                        t.startswith("words:") and not t[6:].isdigit()):
+                    raise LayoutError(f"{w}.through: a short delimiter (\":\", \"—\"), "
+                                      f"\"sentence\" or \"words:N\"")
+
+
+GREP_JS = (
+    "(function(){"
+    "function dec(s){try{return JSON.parse(decodeURIComponent(escape(atob(s))));}catch(e){return null;}}"
+    "var B='p,h1,h2,h3,h4,h5,h6,li,td,th';"
+    "function blocks(el){if(el.matches(B+',span')&&!el.querySelector(B))return[el];"
+    "return[].slice.call(el.querySelectorAll(B)).filter(function(b){return!b.querySelector(B);});}"
+    "function texts(b){var w=document.createTreeWalker(b,NodeFilter.SHOW_TEXT,{acceptNode:"
+    "function(n){return n.parentNode.closest('.ds-chip,.ds-var,.ds-dec')?2:1;}}),a=[],n,o=0;"
+    "while((n=w.nextNode())){a.push([n,o]);o+=n.nodeValue.length;}return a;}"
+    "function wrap(b,s,e,name){var ts=texts(b);for(var i=ts.length-1;i>=0;i--){"
+    "var n=ts[i][0],o=ts[i][1],L=n.nodeValue.length,x=Math.max(s,o),z=Math.min(e,o+L);"
+    "if(x>=z||n.parentNode.closest('.ds-auto'))continue;var r=document.createRange();"
+    "r.setStart(n,x-o);r.setEnd(n,z-o);var sp=document.createElement('span');"
+    "sp.className='ds-cs ds-auto';sp.setAttribute('data-cs',name);r.surroundContents(sp);}}"
+    "function nestEnd(t,p,th){if(th==='sentence'){var m=/[.!?](\\s|$)/.exec(t.slice(p));"
+    "return m?p+m.index+1:t.length;}if(th.indexOf('words:')===0){var k=+th.slice(6),re=/\\S+/g,m2,c=0,end=p;"
+    "re.lastIndex=p;while(c<k&&(m2=re.exec(t))){end=m2.index+m2[0].length;c++;}return end;}"
+    "var i=t.indexOf(th,p);return i<0?t.length:i+th.length;}"
+    "function apply(b,R){if(b.hasAttribute('data-ds-g'))return;b.setAttribute('data-ds-g','');"
+    "var t=texts(b).map(function(x){return x[0].nodeValue;}).join(''),runs=[],p=0;"
+    "(R.n||[]).forEach(function(r){if(p>=t.length)return;var e=nestEnd(t,p,r[1]);"
+    "if(e>p)runs.push([p,e,r[0]]);p=e;});"
+    "(R.g||[]).forEach(function(r){var re;try{re=new RegExp(r[0],'g'+r[1]);}catch(x){return;}"
+    "var m;while((m=re.exec(t))){if(!m[0].length){re.lastIndex++;continue;}"
+    "runs.push([m.index,m.index+m[0].length,r[2]]);}});"
+    "runs.sort(function(a,b){return b[0]-a[0];});runs.forEach(function(r){wrap(b,r[0],r[1],r[2]);});}"
+    "function go(root){[].forEach.call((root||document).querySelectorAll('[style*=\"--ds-gs:\"]'),"
+    "function(el){var R=dec((el.style.getPropertyValue('--ds-gs')||'').trim());"
+    "if(R)blocks(el).forEach(function(b){apply(b,R);});});"
+    "if(root&&root.matches&&root.matches('[style*=\"--ds-gs:\"]')){var R2=dec((root.style.getPropertyValue('--ds-gs')||'').trim());"
+    "if(R2)blocks(root).forEach(function(b){apply(b,R2);});}}"
+    "window.__dsGrep=go;go();addEventListener('load',function(){go();});})();"
+)
+
 SPACE_CSS = (
     _space_rule("--ds-sb", "margin-top") + _space_rule("--ds-sa", "margin-bottom")
     + _space_rule("--ds-il", "margin-left") + _space_rule("--ds-ir", "margin-right")
@@ -1074,6 +1183,9 @@ def text_css(st: dict) -> str:
     if st.get("indent") is not None or hang:
         out.append(f'--ds-ti:{float(st.get("indent") or 0) - hang:g}in')
     out += _para_css(st)
+    gs = _auto_payload(st)
+    if gs:
+        out.append(f"--ds-gs:{gs}")
     if any(st.get(k) for k in _BOX_KEYS):
         # text-align, text-wrap and ::first-letter do nothing to an inline
         # box, and the inline slots are spans. Give it a box — but only when
@@ -1230,6 +1342,7 @@ def _check_text(st: dict, where: str) -> None:
         if st.get(k) is not None:
             _num(st[k], f"{where}.{k}")
     _check_para(st, where)
+    _check_auto(st, where)
     for k, (lo, hi) in SPACE_RANGE.items():
         if st.get(k) is not None:
             v = _num(st[k], f"{where}.{k}")
@@ -3367,7 +3480,10 @@ THREAD_JS = (
     "function gather(fs){var h=fs[0];if(h.__dsStory===undefined)h.__dsStory=h.innerHTML;"
     "h.innerHTML=h.__dsStory;for(var i=0;i<fs.length;i++){if(i)fs[i].innerHTML='';"
     "fs[i].removeAttribute('data-overset');}}"
-    "function pour(fs){gather(fs);if(getComputedStyle(fs[0]).position==='static')return;"
+    # Automatic formatting (GREP_JS) runs on the gathered story before it is
+    # poured, so a run that crosses a frame break is carried with its words.
+    "function pour(fs){gather(fs);if(window.__dsGrep)window.__dsGrep(fs[0]);"
+    "if(getComputedStyle(fs[0]).position==='static')return;"
     "for(var i=0;i<fs.length;i++){var f=fs[i],nx=fs[i+1],L=lim(f),kids=[].slice.call(f.children),k=-1;"
     "for(var j=0;j<kids.length;j++)if(kids[j].getBoundingClientRect().bottom>L+.5){k=j;break;}"
     "if(k<0)continue;if(!nx){f.setAttribute('data-overset','');break;}"
@@ -3982,6 +4098,12 @@ class Layout:
         self._check_threads()
         for i, b in enumerate(self.boxes):
             self._check_box(b, f"box #{i + 1}", seen)
+        for st in self.text_style_dicts():
+            for nm in auto_style_names(st):
+                if nm not in self.text_styles:
+                    known = ", ".join(sorted(self.text_styles)) or "none are defined"
+                    raise LayoutError(f"automatic formatting names no text style "
+                                      f"{nm!r} — {known}")
         for name, m in self.masters.items():
             for i, mb in enumerate(m.get("boxes") or []):
                 self._check_master_item(mb, f"master '{name}' box #{i + 1}")
@@ -4188,6 +4310,9 @@ class Layout:
         for w in words:
             if "]{." in w:
                 out |= char_styles_used(w)
+        # The styles automatic formatting puts on runs need their rules too.
+        for st in self.text_style_dicts():
+            out |= auto_style_names(st)
         return out
 
     def char_rules(self, names) -> str:
@@ -4238,11 +4363,13 @@ class Layout:
         typ = any(st.get("dropCap") or st.get("list") for st in dicts)
         spc = any(any(st.get(k) is not None for k in SPACE_KEYS) for st in dicts)
         par = any(any(st.get(k) is not None for k in PARA_KEYS) for st in dicts)
-        if not (typ or spc or par):
+        aut = any(st.get("grep") or st.get("nested") for st in dicts)
+        if not (typ or spc or par or aut):
             return ""
         self._type_sent = True
         return (f"<style>{TYPE_CSS if typ else ''}{SPACE_CSS if spc else ''}"
-                f"{PARA_CSS if par else ''}</style>")
+                f"{PARA_CSS if par else ''}</style>"
+                + (f"<script>{GREP_JS}</script>" if aut else ""))
 
     def _anim_block(self) -> str:
         """Keyframes for every animated element, and — published only — the
