@@ -4447,6 +4447,40 @@ check_eq("34: no reading order, no runtime; an id listed twice is refused",
           "twice" in _layout_error({"readingOrder": {"1": ["text.a"], "2": ["text.a"]}})],
          [False, True])
 
+# --- INDESIGN_PARITY.md 49, 54, 56, 60 ------------------------------------------
+from docsync.layout import page_label, vars_js, VARS_JS, box_frame_css   # noqa: E402
+_secs = [{"from": 1, "style": "lower-roman"}, {"from": 3}, {"from": 10, "style": "upper-alpha", "prefix": "A-"}]
+check_eq("54: sections number pages — roman front matter, the body from 1, an appendix",
+         [page_label(n, _secs) for n in (1, 2, 3, 9, 10, 11)], ["i", "ii", "1", "7", "A-A", "A-B"])
+check_eq("54: without sections the variables runtime is the same string; with them it labels",
+         [vars_js(None) is VARS_JS, "t=n?L(n):''" in vars_js(_secs)], [True, True])
+check_eq("54: a master's {page} follows the sections",
+         _layout({"pages": {"sections": _secs},
+                  "masters": {"S": {"boxes": [_tf(id="f", md="p. {page}")]}},
+                  "pageMasters": {"2": "S"}}).master_items(2, "boxes")[0]["md"], "p. ii")
+check_eq("54: a section must start on a sheet, in a known style",
+         ["from" in _layout_error({"pages": {"sections": [{"from": 0}]}}),
+          "style" in _layout_error({"pages": {"sections": [{"from": 1, "style": "greek"}]}})], [True, True])
+_vr = _layout({"variables": {"bill": "HB 1234"},
+               "boxes": [_tf(id="v", md="See {var:bill}; {var:nope} stays.")]})
+check("60: a variable is written into a box's words", _vr.text_boxes(1), "See HB 1234; {var:nope} stays.")
+check_eq("60: a variable is a name and one line of text",
+         ["variables" in _layout_error({"variables": {"a b": "x"}}),
+          "one line" in _layout_error({"variables": {"a": "x\ny"}}),
+          "cannot hold" in _layout_error({"variables": {"a": "{var:b}"}})], [True, True, True])
+check_eq("49: vertical alignment and first baseline are frame CSS",
+         [box_frame_css({"vAlign": "bottom"}), box_frame_css({"vAlign": "justify", "firstBaseline": "x"})],
+         ["align-content:end",
+          "display:flex;flex-direction:column;justify-content:space-between;text-box:trim-start ex alphabetic"])
+check("49: and a box carries them", _layout({"boxes": [_tf(id="m", md="x", vAlign="middle")]}).text_boxes(1),
+      "align-content:center")
+check_eq("49: an unknown alignment is refused",
+         "vAlign" in _layout_error({"boxes": [_tf(id="m", md="x", vAlign="center")]}), True)
+check_eq("56: widows, orphans and word spacing are CSS, and checked",
+         [text_css({"widows": 2, "orphans": 3, "wordSpacing": 0.1}),
+          "widows" in _layout_error({"text": {"x": {"widows": 12}}})],
+         ["widows:2;orphans:3;word-spacing:0.1em", True])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

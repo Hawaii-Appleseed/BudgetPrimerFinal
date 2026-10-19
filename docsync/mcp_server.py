@@ -288,7 +288,7 @@ TOOLS = [
     {"name": "pilot", "fn": t_pilot,
      "description": "CHANGE a report: run one window.docsync.api verb in the open "
                     "editor. Verbs: inventory, status, audit, styles, getSlot, "
-                    "setSlot, setStyle, setBoxText, describeImage, thread, unthread, fit, fitFrame, skew, defineLayer, toLayer, dropLayer, setGrid, masterOverride, addPath, pathfinder, release, defineSwatch, setCondition, stepRepeat, setReadingOrder, setTable, mergeCells, unmergeCells, textToTable, findChange, fontsInUse, replaceFont, relink, links, setMargins, createGuides, setChart, place, recolor, rotate, lock, "
+                    "setSlot, setStyle, setBoxText, describeImage, thread, unthread, fit, fitFrame, skew, defineLayer, toLayer, dropLayer, setGrid, masterOverride, addPath, pathfinder, release, defineSwatch, setCondition, stepRepeat, setVariable, setPageSection, setReadingOrder, setTable, mergeCells, unmergeCells, textToTable, findChange, fontsInUse, replaceFont, relink, links, setMargins, createGuides, setChart, place, recolor, rotate, lock, "
                     "group, ungroup, remove, duplicate, addTextBox, addShape, "
                     "addPage, duplicatePage, addSource, addEndnotesSection, applyScheme, anchor, "
                     "wrap, master, masterFrom, detachMaster, defineStyle, dress, "

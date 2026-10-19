@@ -614,16 +614,16 @@ same day — see Tier 1.
     each part's outline (the geometry is SVG's fill rule, not a computed
     outline); a part keeps its box but not a rotation, so rotated or skewed
     shapes must be straightened before they combine; points edit only on an
-    unrotated path. Still not here: polygons and stars with N sides, corner
-    options past radius, text on a path.
-24. **No step and repeat or grid duplicate**, and no feather or outer
-    glow. Duplicate exists, one at a time. **S** each.
+    unrotated path. Polygons, stars and corner options closed by (41); text
+    on a path is (74).
+24. **Step and repeat, feather and glow. — CLOSED 2026-10-19 by (38) and
+    (39).**
 25. **Image fitting presets. — CLOSED 2026-10-19 by (30).**
-26. **No reusable object library.** Images reuse through the project's
+26. **No reusable object library.** Now (50). Images reuse through the project's
     assets, and templates carry the house style. A saved callout, figure
     frame or stat card that can be dropped into any report is not offered.
     `style_guide()`'s ready dicts are most of it. **M.**
-27. **Preflight is split up.** `docsync.check` is already a good preflight
+27. **Preflight is split up.** Now (47). `docsync.check` is already a good preflight
     (legibility floor, citations, bounds, dead text), but it runs from the
     shell and the editor shows parts of it in separate chips. One panel
     listing it all, with (13) and (16) added and a low-resolution image
@@ -934,6 +934,185 @@ Already above: pen and path tools, Pathfinder (23), named layers (8),
 baseline grid (9), contour wrap. Not worth doing here, for the reasons under
 "Not worth doing here": Book and Index, Data Merge, separations, trapping
 and colour profiles, InCopy, EPUB, interactive forms and buttons, and the
-generative-AI commands. Two unverified: spell check while typing is the
-browser's own, untested inside Cider; and Flex Layout (auto layout for
-groups) has no counterpart — a design question of its own, not a patch.
+generative-AI commands. Spell check and Flex Layout: see "After the gap
+list" below.
+
+## After the gap list — scoped 2026-10-19
+
+With 1–46 closed, a fourth pass: InDesign's menus and panels read again
+(the same 3,488 actions), each candidate checked against Cider's code
+rather than memory. Of forty candidates, six turned out to be here already,
+nineteen partly, fifteen not at all. Ranked by the same two questions, with
+the same sizes as Tier 3 (**S** a day or less, **M** a few, **L** a week or
+more). Numbering continues from (46).
+
+Already here, and now said: spell check while typing is the browser's own
+and is on in every text editor (`spellcheck="false"` only on inputs like
+the hex field and the GREP box); links in the exported PDF are clickable,
+endnote markers included; object styles cover shapes, boxes and tables;
+Present mode, the source .zip and the PNG-per-page .zip downloads, and the
+Google Doc import exist, and were never listed here.
+
+### Worth building — these land on the reports made here
+
+47. **One Preflight panel** (folds in 27). `audit()` already finds print
+    overflow, off-sheet, overlap, overset, text that cannot move and
+    uncited sources; the Links panel finds missing and low-resolution
+    pictures; `docsync.check` finds the legibility floor and dead text. A
+    person sees none of it in one place. A panel with every problem, a
+    count on the toolbar, click to go — plus three checks nothing makes
+    yet: text-to-background **contrast** (WCAG ratio, measured on the
+    rendered colours), images with **no alt text**, and fonts that did not
+    load. **M.**
+48. **Footnotes at the foot of the page.** Cider makes endnotes only
+    (`Footnotes` in content.py). A brief or testimony often wants the note
+    on the page it supports. Same markers and sources, a per-report switch
+    (`notes: "foot" | "end"`), notes set in a reserved band at the bottom
+    of the page they are cited on, overflow carried to the next page; and
+    the switch is the conversion both ways. The hard part is measuring the
+    band after layout — a runtime like THREAD_JS. **L.**
+49. **Text frame options. — CLOSED 2026-10-19.** Two keys on a text box
+    (and in a box object style): `vAlign` top / middle / bottom / justify
+    places the words in a box taller than they are — `align-content` on
+    the box, so the paragraphs lay out exactly as before; only justify
+    (spread the paragraphs over the height) uses a flex column.
+    `firstBaseline` leading / ascent / cap / x sets where the first line
+    sits against the top: the browser's own half-leading, or trimmed to the
+    ascender, cap height or x-height with `text-box`. A box's `h` is still
+    a minimum, so these need a box with room to spare. In the box's style
+    pop. Not done: a fixed first-baseline offset in inches.
+50. **A library of reusable pieces** (was 26). Select a callout, stat card
+    or figure frame ▸ Save to library; drop it into any report from the
+    library panel, with its text styles and swatches brought along. Lives
+    beside the templates (a library project the editor reads), so the hub
+    and local mode share it. **M.**
+51. **Quick Apply.** One box (⌘↩) that finds any text style, character
+    style, swatch, command or pilot verb by typing a few letters and applies
+    it to the selection — InDesign's fastest path, and the editor's menus
+    are deep. **M.**
+52. **Hyperlinks panel.** Every link in the report — text, buttons, the
+    sources list — with where it is, edit-in-place, and a **broken-link
+    check** (the local server fetches each URL; the hub its own worker).
+    "Convert URLs to links" for bare addresses pasted into text. Sources
+    rot; a report full of dead links is a credibility problem. **M.**
+53. **What tables still lack** after (33): split a merged cell back into a
+    grid of N (today: unmerge, then add a row), **header columns**,
+    alternating **column** fills and strokes, **even row heights**,
+    **table to text**, **named cell styles** (a redefinable look for a
+    total row or a highlighted cell, like text styles), and a **picture in
+    a cell** (untested — the cell is markdown, so `![]()` may already
+    work). **M.**
+54. **Page numbering sections. — CLOSED 2026-10-19.** `pages.sections:
+    [{from, start, style, prefix}]`: from the `from`th sheet in reading
+    order, pages count from `start` in decimal, lower- or upper-roman, or
+    lower- or upper-alpha, with `prefix` before the number. Sheets before
+    the first section keep their plain place. `{page}`, `{pageof}`, the
+    contents list, a shared layout's `{page}` and the page strip all follow;
+    `{pages}` stays the number of sheets. The variables runtime is compiled
+    with the sections only when there are some (`vars_js`), so a report
+    without them keeps VARS_JS byte for byte; `page_label` is the engine's
+    twin of the runtime's. Reordering pages keeps the sections. Right-click
+    a page ▸ Numbering and section…; pilot `setPageSection(sheet,
+    {start, style, prefix} | null)`. A section is pinned to a sheet number,
+    not to a page, so moving the page it starts on does not move it.
+55. **Numbered lists past one paragraph block.** Restart or continue
+    numbering, a list continuing across boxes that are not threaded, and
+    multi-level numbering (1, 1.1, a.) — recommendations lists in policy
+    reports are numbered and often split by a chart. `list.marker` already
+    has decimal, alpha and roman. **M.**
+56. **Widows, orphans and word spacing. — CLOSED 2026-10-19.** Text-style
+    keys `widows` and `orphans` (1–9 lines; CSS honours them across columns,
+    threaded frames and PDF pages) and `wordSpacing` (em added between
+    words, −0.5 to 2), all inherited, so set on a slot or box they reach
+    every paragraph in it. In the Paragraph panel. Not done, and said so:
+    InDesign's minimum / desired / maximum spacing for justified text —
+    CSS has one word-spacing value, not a range.
+57. **Smarter arranging.** Align to a **key object** (the last one
+    clicked stays still), distribute with an **exact gap**, and smart
+    guides that show **equal spacing** while dragging. `alignSel` and
+    `distributeSel` do the rest already. **S–M.**
+58. **Paste Into — a picture inside a shape.** An image framed by an
+    ellipse, polygon, star or path: the shape becomes the mask (SVG
+    `clipPath`, which Pathfinder already writes). Headshots in circles are
+    drawn by CSS radius today, and nothing else is possible. **M.**
+59. **Linked text.** One block placed in two places and kept in step — a
+    key figure in the summary and again in the body. A token,
+    `{text:<slot>}`, that shows another slot's words (the variables
+    runtime, 18–19), editable at the source with a "linked" badge where it
+    is repeated. InDesign's Place and Link, without its out-of-date state.
+    **S–M.**
+60. **Text variables of your own. — CLOSED 2026-10-19.**
+    `layout.variables: {name: text}` (a name of letters, digits, - and _;
+    one line of text, up to 200 characters, no variable inside another) and
+    `{var:name}` in any slot, box or table cell: written into the words at
+    render, as a caption is, so the page carries plain text. One nobody
+    defined is left as typed, so it shows. In the text editor it is a chip
+    showing its text. Right-click in the words ▸ Insert variable ▸ (and
+    Define variables…, one per line, "name = text"); pilot
+    `setVariable(name, text | null)`. Not done: `{file}` and `{modified}` —
+    the engine runs in the browser too, where a file's date means nothing.
+61. **Editorial notes in the text.** content.md already drops HTML
+    comments before rendering, and writers use them — but the editor hides
+    them completely. Show each as a note chip in the words (InDesign's
+    Notes), editable, never published, listed in a Notes panel. The hub's
+    comments stay the conversation; notes are what the writer leaves in
+    the file. **S–M.**
+62. **Track changes in local mode.** Suggesting (35) needs the hub's store.
+    Locally: a change recorded as `{++inserted++}` / `{--deleted--}` marks
+    in content.md (CriticMarkup), drawn as insert and strike, Accept and
+    Reject per change and for all, and refused at build so a marked draft
+    cannot publish by accident. **L.**
+63. **Story editor.** Every slot and box of a report as one plain column of
+    markdown in reading order (34), edited fast without the page — for the
+    rewrite pass where layout is a distraction. Writes back through
+    `writeSlot` and box `md`. **M.**
+
+### Smaller wins
+
+64. Named **gradient swatches**, and a gradient feather (a fade to clear,
+    not just the edge feather of 39). Gradients exist; naming them does not.
+65. **Eyedropper for looks.** The colour eyedropper picks colour only, and
+    the format painter misses some keys (a shape's blend and glow, a box's
+    padding, radius and border) and never works on a run of text.
+66. **Change case** that rewrites the words (UPPERCASE, lowercase, Title,
+    Sentence — the `case` key only changes how they look), **Fill with
+    placeholder text**, and **Paste without formatting** (⇧⌘V; paste
+    always keeps bold, italic and links today).
+67. A **Glyphs panel**: every character in a font, searchable, with the
+    recent ones kept — for arrows, fractions, ʻokina and kahakō letters.
+68. **Rotate 90° / 180°** commands, and **flip** for shapes and boxes (it
+    is images only).
+69. An **undo history** list to jump back through, beside the version
+    history.
+70. **Show hidden characters** as a toggle, and **text threads** drawn as
+    lines between frames (today a thread shows only while linking).
+71. **Export** JPEG as well as PNG, export only the selection, and a
+    package .zip that includes the fonts and the rendered pages.
+72. A **measure readout**: the distance to the next object while dragging
+    or hovering with ⌥, as Figma shows it.
+73. **Spell check for Hawaiian.** The browser checks spelling but flags
+    every Hawaiian word; the browser takes no custom dictionary from a page,
+    so this would be a project word list checked by the engine and drawn
+    as a quiet underline. Worth it only if the false flags get in the way.
+74. **Text on a path** (from 23): SVG `textPath` along a path shape. Rare
+    in reports.
+
+### Not worth doing here, and why
+
+Different page sizes in one document and facing-page spreads (one sheet
+size is what the PDF and the phone layout both assume; a fold-out is a
+separate document); even/odd page breaks (sheets are fixed, and blank pages
+are already placed by hand in the page strip); Flex Layout (still a design
+question — the renderers' own grids space cards today); clipping paths and
+background removal (an image tool's job, done before the picture comes
+in); maths typesetting (no report here has needed an equation — revisit if
+one does, with KaTeX); custom keyboard shortcuts and saved workspaces;
+Liquid Layout and alternate layouts (the mobile reflow is the alternate
+layout).
+
+### The order
+
+(49), (54), (56) and (60) closed first, 2026-10-19 — each kept every
+bound report's published bytes identical. Next (47) and (52), the two that catch mistakes before they
+publish. Then (59), (61) and (53). (48) and (62) are the large ones, worth
+it when a report asks for footnotes or a local review round.

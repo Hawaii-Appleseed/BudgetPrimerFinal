@@ -1406,6 +1406,15 @@ def text_css(st: dict) -> str:
         out.append("--ds-grid:1")
     if st.get("tabs"):
         out.append(f"--ds-tabs:{tabs_css(st['tabs'])}")
+    # Widows, orphans and word spacing (INDESIGN_PARITY.md 56): inherited
+    # properties, so set on a slot or box they reach every paragraph in it;
+    # columns, threaded frames and the PDF honour the line counts.
+    if st.get("widows") is not None:
+        out.append(f'widows:{int(st["widows"])}')
+    if st.get("orphans") is not None:
+        out.append(f'orphans:{int(st["orphans"])}')
+    if st.get("wordSpacing") is not None:
+        out.append(f'word-spacing:{float(st["wordSpacing"]):g}em')
     if any(st.get(k) for k in _BOX_KEYS):
         # text-align, text-wrap and ::first-letter do nothing to an inline
         # box, and the inline slots are spans. Give it a box — but only when
@@ -1434,7 +1443,7 @@ OBJECT_STYLE_KEYS = {
     "shape": ("fill", "stroke", "sw", "dash", "r", "ends", "alpha", "shadow",
               "blend"),
     "box": ("fill", "pad", "radius", "border", "alpha", "shadow", "style",
-            "blend", "cols", "gap"),
+            "blend", "cols", "gap", "vAlign", "firstBaseline"),
     "table": ("border", "fill", "band", "headerFill", "headerColor", "header",
               "alpha", "style", "blend"),
 }
@@ -1574,6 +1583,12 @@ def _check_text(st: dict, where: str) -> None:
                               f"{', '.join(OT_FEATURES[:12])}, ss01–ss20")
     if st.get("grid") is not None and not isinstance(st["grid"], bool):
         raise LayoutError(f"{where}.grid: true or false — sit on the baseline grid")
+    for k in ("widows", "orphans"):
+        v = st.get(k)
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= 9):
+            raise LayoutError(f"{where}.{k}: a whole number of lines, 1 to 9")
+    if st.get("wordSpacing") is not None and not -0.5 <= _num(st["wordSpacing"], f"{where}.wordSpacing") <= 2:
+        raise LayoutError(f"{where}.wordSpacing is em added between words, -0.5 to 2")
     tb = st.get("tabs")
     if tb is not None:
         if not isinstance(tb, list) or len(tb) > 20:
@@ -3407,6 +3422,30 @@ def _check_shape_look(s: dict, where: str) -> None:
     _check_blend(s.get("blend"), where)
 
 
+# Text frame options (INDESIGN_PARITY.md 49). vAlign places the words in a
+# box taller than they are — align-content on the box itself, which a block
+# container takes, so nothing about how the paragraphs lay out changes; only
+# "justify" (spread the paragraphs over the height) needs a flex column.
+# firstBaseline is where the first line sits against the top: "leading" is
+# the browser's own (half the leading above the letters), the others trim
+# down to the ascender, the cap height or the x-height with text-box.
+BOX_VALIGNS = ("top", "middle", "bottom", "justify")
+FIRST_BASELINES = {"leading": "", "ascent": "text", "cap": "cap", "x": "ex"}
+
+
+def box_frame_css(b: dict) -> str:
+    out = []
+    va = b.get("vAlign")
+    if va == "justify":
+        out.append("display:flex;flex-direction:column;justify-content:space-between")
+    elif va:
+        out.append("align-content:" + {"top": "start", "middle": "center", "bottom": "end"}[va])
+    fb = FIRST_BASELINES.get(b.get("firstBaseline") or "")
+    if fb:
+        out.append(f"text-box:trim-start {fb} alphabetic")
+    return ";".join(out)
+
+
 def _check_box_look(b: dict, where: str) -> None:
     """The presentation half of a text box. `pad`, `radius`, `border`, `cols`
     and `gap` are new with object styles, because a pull-quote style with no
@@ -3442,6 +3481,10 @@ def _check_box_look(b: dict, where: str) -> None:
                               f"columns, 1 to 4")
     if b.get("gap") is not None and not 0 <= _num(b["gap"], f"{where}.gap") <= 2:
         raise LayoutError(f"{where}.gap: {b['gap']} is outside 0–2in")
+    if b.get("vAlign") is not None and b["vAlign"] not in BOX_VALIGNS:
+        raise LayoutError(f"{where}.vAlign: {', '.join(BOX_VALIGNS)}")
+    if b.get("firstBaseline") is not None and b["firstBaseline"] not in FIRST_BASELINES:
+        raise LayoutError(f"{where}.firstBaseline: {', '.join(FIRST_BASELINES)}")
     _check_blend(b.get("blend"), where)
 
 
@@ -3706,6 +3749,105 @@ VARS_JS = (
     "window.__dsVars=go;go();addEventListener('load',go);addEventListener('resize',go);"
     "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
 )
+
+# Page numbering sections (INDESIGN_PARITY.md 54): pages.sections is
+# [{from, start, style, prefix}] — from the `from`th sheet in reading order,
+# pages count from `start` in `style` with `prefix` before the number. Front
+# matter in roman numerals, the body restarting at 1, an appendix as A-1.
+# Sheets before the first section keep their plain place. {page}, {pageof}
+# and the contents list all follow; {pages} stays the number of sheets.
+PAGE_STYLES = ("decimal", "lower-roman", "upper-roman", "lower-alpha", "upper-alpha")
+VARNAME_RE = re.compile(r"[A-Za-z0-9_-]{1,30}")
+USERVAR_RE = re.compile(r"\{var:([A-Za-z0-9_-]{1,30})\}")
+
+
+def check_page_sections(secs) -> None:
+    if not isinstance(secs, list) or len(secs) > 20:
+        raise LayoutError("pages.sections: a list of up to 20 {from, start, style, prefix}")
+    seen = set()
+    for i, sc in enumerate(secs):
+        w = f"pages.sections[{i}]"
+        if not isinstance(sc, dict) or set(sc) - {"from", "start", "style", "prefix"}:
+            raise LayoutError(f"{w}: {{from, start, style, prefix}}")
+        f = sc.get("from")
+        if not isinstance(f, int) or isinstance(f, bool) or f < 1:
+            raise LayoutError(f"{w}.from: the sheet it starts on, counting from 1")
+        if f in seen:
+            raise LayoutError(f"{w}.from: two sections start on sheet {f}")
+        seen.add(f)
+        st = sc.get("start", 1)
+        if not isinstance(st, int) or isinstance(st, bool) or not 1 <= st <= 9999:
+            raise LayoutError(f"{w}.start: a whole number from 1")
+        if sc.get("style", "decimal") not in PAGE_STYLES:
+            raise LayoutError(f"{w}.style: {', '.join(PAGE_STYLES)}")
+        pre = sc.get("prefix", "")
+        if not isinstance(pre, str) or len(pre) > 12 or any(c in pre for c in "<>&{}\"'\\"):
+            raise LayoutError(f"{w}.prefix: up to 12 characters of plain text")
+
+
+def _roman(n: int) -> str:
+    out = ""
+    for v, r in ((1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"),
+                 (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")):
+        while n >= v:
+            out += r
+            n -= v
+    return out
+
+
+def _letters(n: int) -> str:
+    out = ""
+    while n > 0:
+        n -= 1
+        out = chr(97 + n % 26) + out
+        n //= 26
+    return out
+
+
+def page_label(n: int, sections) -> str:
+    """Sheet n's folio under the numbering sections. PAGE_JS's L() twin."""
+    cur = None
+    for sc in sorted(sections or [], key=lambda x: x["from"]):
+        if sc["from"] <= n:
+            cur = sc
+    if not cur:
+        return str(n)
+    k = cur.get("start", 1) + n - cur["from"]
+    style = cur.get("style", "decimal")
+    t = (_roman(k) if style.endswith("roman") else _letters(k) if style.endswith("alpha") else str(k))
+    return cur.get("prefix", "") + (t.upper() if style.startswith("upper") else t)
+
+
+PAGE_JS = (
+    "var S=%(s)s;"
+    "function R(n){var v=[[1000,'m'],[900,'cm'],[500,'d'],[400,'cd'],[100,'c'],[90,'xc'],[50,'l'],"
+    "[40,'xl'],[10,'x'],[9,'ix'],[5,'v'],[4,'iv'],[1,'i']],o='';"
+    "v.forEach(function(p){while(n>=p[0]){o+=p[1];n-=p[0];}});return o;}"
+    "function A(n){var o='';while(n>0){n--;o=String.fromCharCode(97+n%%26)+o;n=Math.floor(n/26);}return o;}"
+    "function L(n){var c=null;for(var i=0;i<S.length;i++)if(S[i].from<=n)c=S[i];if(!c)return String(n);"
+    "var k=(c.start||1)+n-c.from,y=c.style||'decimal';"
+    "var t=/roman$/.test(y)?R(k):/alpha$/.test(y)?A(k):String(k);"
+    "return (c.prefix||'')+(/^upper/.test(y)?t.toUpperCase():t);}"
+)
+
+
+def vars_js(sections=None) -> str:
+    """VARS_JS as it always was, or — when pages are numbered in sections —
+    the same runtime with every page number passed through L(). A document
+    without sections gets the original string, byte for byte."""
+    if not sections:
+        return VARS_JS
+    out = VARS_JS.replace("(function(){function go(){",
+                          "(function(){" + PAGE_JS % {"s": json.dumps(
+                              sorted(sections, key=lambda x: x["from"]), separators=(",", ":"))}
+                          + "function go(){", 1)
+    for a, b in (("t=n?String(n):''", "t=n?L(n):''"),
+                 ("t=h&&pn(h)?String(pn(h)):'?'", "t=h&&pn(h)?L(pn(h)):'?'"),
+                 ("s3.textContent=r[3]", "s3.textContent=L(r[3])")):
+        assert out.count(a) == 1, a
+        out = out.replace(a, b)
+    return out
+
 
 # Threaded frames (Layout.threads). After layout, each thread's story is put
 # back in its first frame and poured forward: in each frame, the first block
@@ -4489,6 +4631,9 @@ class Layout:
         # InDesign's Articles panel. Only the listed elements are stamped, so
         # a layout without it keeps its bytes.
         self.reading_order = raw.get("readingOrder") or {}
+        # Text variables of your own (INDESIGN_PARITY.md 60): {var:name} in
+        # any words is this text, written in at render like a caption.
+        self.variables = raw.get("variables") or {}
         self._ro_index = {el: i for ids in (self.reading_order.values()
                                             if isinstance(self.reading_order, dict) else [])
                           if isinstance(ids, list) for i, el in enumerate(ids)}
@@ -4697,6 +4842,18 @@ class Layout:
                 _grouped.add(m)
         if self.margins:
             self._check_margins(self.margins, "margins")
+        if self.variables:
+            if not isinstance(self.variables, dict):
+                raise LayoutError("variables: expected {name: text}")
+            for k, v in self.variables.items():
+                if not VARNAME_RE.fullmatch(str(k)):
+                    raise LayoutError(f"variables: {k!r} — a name is letters, digits, - and _")
+                if not isinstance(v, str) or "\n" in v or len(v) > 200:
+                    raise LayoutError(f"variables.{k}: one line of text, up to 200 characters")
+                if "{var:" in v:
+                    raise LayoutError(f"variables.{k}: a variable cannot hold another")
+        if self.pages and self.pages.get("sections") is not None:
+            check_page_sections(self.pages["sections"])
         if self.reading_order:
             if not isinstance(self.reading_order, dict):
                 raise LayoutError("readingOrder: expected {page: [element ids]}")
@@ -5043,6 +5200,15 @@ class Layout:
     def resolve_captions(self, text: str) -> str:
         return CAPTION_RE.sub(lambda m: self.caption_of(m.group(1)), text)
 
+    def resolve_text(self, text: str) -> str:
+        """Captions and variables written into words before they render. A
+        variable nobody defined is left as typed, so it shows on the page."""
+        if "{caption:" in text:
+            text = self.resolve_captions(text)
+        if "{var:" in text:
+            text = USERVAR_RE.sub(lambda m: self.variables.get(m.group(1), m.group(0)), text)
+        return text
+
     def conditions_used(self) -> set:
         c = getattr(self, "_content", None)
         words = [str(b.get("md", "")) for b in self.all_boxes()]
@@ -5154,7 +5320,7 @@ class Layout:
         if not any(uses_vars(w) for w in words):
             return ""
         self._vars_sent = True
-        return f"<style>{VARS_CSS}</style><script>{VARS_JS}</script>"
+        return f"<style>{VARS_CSS}</style><script>{vars_js(self.pages.get('sections'))}</script>"
 
     def _type_once(self) -> str:
         """TYPE_CSS, once per document and only when some style asks for a
@@ -5792,11 +5958,17 @@ class Layout:
 
     def _page_label(self, page) -> str:
         """The number a folio shows for this page: its place in the final
-        order when one is set, otherwise the designed number itself."""
+        order when one is set, otherwise the designed number itself — in its
+        numbering section's style when there are sections (54)."""
         order = self.pages.get("order") or []
+        sections = self.pages.get("sections")
         if page in order:
-            return str(order.index(page) + 1)
-        return str(page) if isinstance(page, int) and not isinstance(page, bool) else ""
+            n = order.index(page) + 1
+        elif isinstance(page, int) and not isinstance(page, bool):
+            n = page
+        else:
+            return ""
+        return page_label(n, sections) if sections else str(n)
 
     def master_items(self, page, kind: str) -> list:
         """The boxes, shapes or tables the master this page uses puts on it, as page
@@ -6224,8 +6396,8 @@ class Layout:
             out.append(f"<style>{FIT_CSS}</style>")
         for b in mine:
             b = self.dressed(b)
-            if "{caption:" in str(b.get("md", "")):
-                b = dict(b, md=self.resolve_captions(str(b["md"])))
+            if "{caption:" in str(b.get("md", "")) or "{var:" in str(b.get("md", "")):
+                b = dict(b, md=self.resolve_text(str(b["md"])))
             act = b.get("act")
             an = anim_attrs(b.get("anim")) + anchor_attrs(b)
             # border-box, always: w and h are what the editor MEASURED — the
@@ -6295,6 +6467,8 @@ class Layout:
                     css += f';column-gap:{float(b["gap"]):g}in'
             if b.get("blend") and b["blend"] != "normal":
                 css += f';mix-blend-mode:{b["blend"]}'
+            if b.get("vAlign") or b.get("firstBaseline"):
+                css += ";" + box_frame_css(b)
             style = text_css(self.styled_as(b.get("style")))
             # Style FIRST, geometry second — the geometry must win their one
             # collision: align's inline-slot compensation appends width:100%
@@ -6597,7 +6771,8 @@ class Layout:
                 # eighty columns, which is why md_inline itself leaves a
                 # newline alone and paragraphs() closes it up to a space.
                 body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
-                          else md_inline(str(c)).replace("\n", "<br>"))
+                          else md_inline(self.resolve_text(str(c)) if "{var:" in str(c) else str(c))
+                          .replace("\n", "<br>"))
                 cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
             hdr = ' class="ds-hdr"' if flow and ri < hn and ri == 0 else ""
             if ri < len(rowh) and rowh[ri] is not None:

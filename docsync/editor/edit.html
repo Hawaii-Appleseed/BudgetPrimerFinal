@@ -2433,6 +2433,9 @@
       <label title="Discretionary ligatures"><input type="checkbox" data-ot="dlig">dlig</label>
       <label title="Slashed zero"><input type="checkbox" data-ot="zero">0̸</label></span></label>
     <label><span>Stylistic set</span><select id="ty-ss"><option value="">none</option></select></label>
+    <label><span>Widows</span><input id="ty-widows" type="number" step="1" min="1" max="9" placeholder="lines"></label>
+    <label><span>Orphans</span><input id="ty-orphans" type="number" step="1" min="1" max="9" placeholder="lines"></label>
+    <label><span>Word spacing</span><input id="ty-wsp" type="number" step="0.02" min="-0.5" max="2" placeholder="em"></label>
     <label><span>Tab stops</span><button type="button" id="ty-tabs" title="Where a tab in this text lands — with a leader if you like">none</button></label>
     <p class="pop-h">Drop cap and lists</p>
     <label><span>Drop cap</span><select id="ty-dcap">
@@ -3270,7 +3273,7 @@ const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|caption:[A-Za-z0-9._@-]+)\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30})\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
@@ -3296,7 +3299,14 @@ const varChipHtml = (name, ref) =>
   `<span class="ds-chip ds-varchip" contenteditable="false" data-var="${escAttr(name)}"`
   + (ref ? ` data-ref="${escAttr(ref)}"` : '') + ` title="${escAttr(varToken(name, ref))}">`
   + `${escAttr(name.startsWith('caption:') ? 'caption of ' + name.slice(8)
+             : name.startsWith('var:') ? userVarLabel(name.slice(4))
              : VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
+// A variable of your own (INDESIGN_PARITY.md 60) shows its text, so the chip
+// reads as the words it stands for; one nobody defined says so.
+function userVarLabel(n) {
+  const v = (layout.variables || {})[n];
+  return v == null ? `${n} (not defined)` : v.length > 28 ? v.slice(0, 27) + '…' : v;
+}
 function makeVarChip(d, name, ref) {
   const t = d.createElement('template');
   t.innerHTML = varChipHtml(name, ref);
@@ -4412,6 +4422,7 @@ function textMenu(d, host, e) {
   sep();
   buildVarRows(d, m, host, range);
   buildSpecialRows(d, m, host, range);
+  buildVariableRows(d, m, host, range);
   submenuRow(d, m, 'Show only in ▸', sub => {
     const add = (label, name) => {
       const b = d.createElement('button'); b.textContent = label;
@@ -4481,6 +4492,56 @@ function buildVarRows(d, m, host, range) {
       });
     });
   }
+}
+
+/** Insert variable ▸ — the report's own variables, and where to define them. */
+function buildVariableRows(d, m, host, range) {
+  submenuRow(d, m, 'Insert variable ▸', sub => {
+    Object.keys(layout.variables || {}).sort().forEach(n => {
+      const b = d.createElement('button');
+      b.textContent = `${n} — ${userVarLabel(n)}`;
+      b.addEventListener('click', async () => { closeMenu(d); await insertNodeAt(d, host, range, makeVarChip(d, 'var:' + n)); });
+      sub.appendChild(b);
+    });
+    if (Object.keys(layout.variables || {}).length) {
+      const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; sub.appendChild(sep);
+    }
+    const b = d.createElement('button');
+    b.textContent = 'Define variables…';
+    b.addEventListener('click', () => { closeMenu(d); variablesDialog(); });
+    sub.appendChild(b);
+  });
+}
+function setVariable(name, text) {
+  const vs = { ...(layout.variables || {}) };
+  if (text == null || text === '') delete vs[name]; else vs[name] = String(text);
+  if (Object.keys(vs).length) layout.variables = vs; else delete layout.variables;
+  markDirty();
+}
+/** Variables: one per line, "name = text". {var:name} in any words shows
+ *  the text, so a bill number used forty times changes in one place. */
+async function variablesDialog() {
+  const cur = Object.entries(layout.variables || {}).map(([k, v]) => `${k} = ${v}`).join('\n');
+  const parse = t => {
+    const out = {};
+    for (const line of String(t).split('\n').map(l => l.trim()).filter(Boolean)) {
+      const i = line.indexOf('=');
+      const k = (i < 0 ? '' : line.slice(0, i)).trim(), v = line.slice(i + 1).trim();
+      if (!/^[A-Za-z0-9_-]{1,30}$/.test(k)) return { error: `"${line}": name = text, the name letters, digits, - and _` };
+      if (!v || v.length > 200 || v.includes('{var:')) return { error: `"${line}": one line of text, up to 200 characters` };
+      out[k] = v;
+    }
+    return { vars: out };
+  };
+  const got = await dsForm('Text variables', [{ name: 'vars', type: 'textarea', value: cur,
+    label: 'One per line: name = text. Use {var:name} in any words.', placeholder: 'bill = HB 1234' }],
+    { okLabel: 'Apply', validate: v => parse(v.vars).error || '' });
+  if (got == null) return;
+  pushHistory();
+  const vars = parse(got.vars).vars;
+  if (Object.keys(vars).length) layout.variables = vars; else delete layout.variables;
+  markDirty();
+  await render();
 }
 
 /** Insert special ▸ — white space, hyphens and breaks (INDESIGN_PARITY.md
@@ -5430,6 +5491,7 @@ function pageMenu(d, pg, e) {
   item('Margins and columns…', () => marginsDialog(pid));
   item('Create guides…', () => createGuidesDialog(pid));
   item('Reading order…', () => readingOrderDialog(pid));
+  item('Numbering and section…', () => pageSectionDialog(pid));
   if (masterNameOf(pid)) {
     item(`Detach shared layout “${masterNameOf(pid)}” to this page`, () => masterDetach(pid));
   }
@@ -10478,6 +10540,9 @@ function fillParaPop(key) {
   $('ty-smcp').value = eff.smallCaps || '';
   $('ty-liga').checked = eff.ligatures !== false;
   $('ty-strike').checked = !!eff.strike;
+  $('ty-widows').value = eff.widows ?? '';
+  $('ty-orphans').value = eff.orphans ?? '';
+  $('ty-wsp').value = eff.wordSpacing ?? '';
   $('ty-tabs').textContent = (eff.tabs || []).length ? eff.tabs.map(t => t.at + 'in').join(', ') : 'none';
   $('ty-shift').value = eff.shift ?? '';
   const feats = eff.features || [];
@@ -10796,13 +10861,19 @@ function placeAnchors(d) {
 // The text-variables runtime (layout.VARS_JS) — {page}, {section},
 // {pageof:…}, {contents} — evaluated here after each render for the same
 // reason as the anchors: an imported page node never runs its scripts.
-let VARS_SRC = null;
+let VARS_SRC = null, VARS_KEY = '';
 function fillVars(d) {
   if (!d || !d.querySelector('.ds-var')) return;
   const w = d.defaultView;
+  // Numbering sections (54) compile into the runtime: a change recompiles it.
+  const key = JSON.stringify(pageSections());
+  if (key !== VARS_KEY) { VARS_SRC = null; VARS_KEY = key; w.__dsVars = null; }
   if (!w.__dsVars) {
     if (VARS_SRC === null) {
-      try { VARS_SRC = py.runPython('from docsync.layout import VARS_JS\nVARS_JS'); }
+      try {
+        py.globals.set('SECTIONS_JSON', key);
+        VARS_SRC = py.runPython('import json\nfrom docsync.layout import vars_js\nvars_js(json.loads(SECTIONS_JSON))');
+      }
       catch (e) { VARS_SRC = ''; }
     }
     try { w.eval(VARS_SRC); } catch (e) { return; }
@@ -11316,7 +11387,7 @@ function objStyleKeys(kind) {
       // An engine staged before object styles existed: these are the keys its
       // page can draw, and its validator ignores a `use`, so nothing breaks.
       OBJ_KEYS = { shape: ['fill', 'stroke', 'sw', 'dash', 'r', 'ends', 'alpha', 'shadow', 'blend'],
-                   box: ['fill', 'pad', 'radius', 'border', 'alpha', 'shadow', 'style', 'blend', 'cols', 'gap'],
+                   box: ['fill', 'pad', 'radius', 'border', 'alpha', 'shadow', 'style', 'blend', 'cols', 'gap', 'vAlign', 'firstBaseline'],
                    table: ['border', 'fill', 'band', 'headerFill', 'headerColor', 'header', 'alpha', 'style', 'blend'] };
     }
   }
@@ -11623,6 +11694,23 @@ function renderBoxPanel() {
 
   // Columns inside this one box — CSS flows the words between them, which
   // is the two-column page without any text-threading machinery.
+  // Text frame options (49): where the words sit in a box taller than they
+  // are, and where the first line sits against the top.
+  [['Vertical align', 'vAlign', [['', 'top (default)'], ['middle', 'middle'], ['bottom', 'bottom'], ['justify', 'spread paragraphs']]],
+   ['First baseline', 'firstBaseline', [['', 'leading (default)'], ['ascent', 'ascent'], ['cap', 'cap height'], ['x', 'x-height']]]]
+    .forEach(([label, key, opts]) => {
+      const r = row(label);
+      const sel = document.createElement('select');
+      sel.id = 'bx-' + key;
+      opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+      sel.value = eff[key] && eff[key] !== 'top' && eff[key] !== 'leading' ? eff[key] : '';
+      sel.addEventListener('change', async () => {
+        pushHistory();
+        if (sel.value) bx[key] = sel.value; else delete bx[key];
+        await commit();
+      });
+      r.appendChild(sel);
+    });
   const cl = row('Columns');
   const csel = document.createElement('select');
   csel.id = 'bx-cols';
@@ -11749,6 +11837,12 @@ function wireType() {
   paraSel('ty-smcp', 'smallCaps'); paraSel('ty-dcap', 'dropCap', true);
   $('ty-hyph').addEventListener('change', () => paraSet({ hyphenate: $('ty-hyph').checked || null }));
   $('ty-strike').addEventListener('change', () => paraSet({ strike: $('ty-strike').checked || null }));
+  // Widows, orphans (1–9 lines) and word spacing (em) — 56.
+  [['ty-widows', 'widows', 1, 9, true], ['ty-orphans', 'orphans', 1, 9, true], ['ty-wsp', 'wordSpacing', -0.5, 2, false]]
+    .forEach(([id, key, lo, hi, whole]) => $(id).addEventListener('change', () => {
+      const v = $(id).value;
+      paraSet({ [key]: v === '' ? null : Math.max(lo, Math.min(hi, whole ? Math.round(+v) : +v)) });
+    }));
   // Tab stops: one per line, "inches  align  leader" — "4.5 right ." is a
   // right-aligned stop at 4.5in with a dot leader (InDesign's Tabs panel).
   $('ty-tabs').addEventListener('click', async () => {
@@ -12011,7 +12105,7 @@ function pageBar(d) {
  *  page strip shows, rather than the internal id ('p3'). */
 function pageLabel(pid) {
   const i = pageOrder().findIndex(x => String(x) === String(pid));
-  return i >= 0 ? String(i + 1) : String(pid);
+  return i >= 0 ? (pageSections().length ? sectionLabel(i + 1) : String(i + 1)) : String(pid);
 }
 
 /** A placed shape's box in page inches. Measuring the DOM is right for the
@@ -13344,13 +13438,67 @@ function writeOrder(order, blanks) {
   const dflt = designedPages.map(p => p.id);
   const isDefault = !blanks.length
     && order.length === dflt.length && order.every((v, i) => v === dflt[i]);
+  const sections = layout.pages && layout.pages.sections;   // numbering (54) stays
   if (isDefault) {                        // no override = byte-identical build
     if (layout.pages) delete layout.pages;
   } else {
     layout.pages = { order };
     if (blanks.length) layout.pages.blanks = blanks;
   }
+  if (sections) (layout.pages = layout.pages || {}).sections = sections;
   markDirty();
+}
+
+// ---------------------------------------------- page numbering sections
+// layout.pages.sections [{from, start, style, prefix}] (INDESIGN_PARITY.md
+// 54): from the `from`th sheet, pages count from `start` in `style`. The
+// engine's page_label() and PAGE_JS's L() say the same; this is the strip's.
+const pageSections = () => (layout.pages && layout.pages.sections) || [];
+function sectionLabel(n) {
+  let c = null;
+  pageSections().slice().sort((a, b) => a.from - b.from).forEach(x => { if (x.from <= n) c = x; });
+  if (!c) return String(n);
+  let k = (c.start || 1) + n - c.from;
+  const y = c.style || 'decimal';
+  const roman = v => [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'],
+    [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']].reduce((o, [n2, r]) => {
+      while (v >= n2) { o += r; v -= n2; } return o; }, '');
+  const alpha = v => { let o = ''; while (v > 0) { v--; o = String.fromCharCode(97 + v % 26) + o; v = Math.floor(v / 26); } return o; };
+  const t = /roman$/.test(y) ? roman(k) : /alpha$/.test(y) ? alpha(k) : String(k);
+  return (c.prefix || '') + (/^upper/.test(y) ? t.toUpperCase() : t);
+}
+function setPageSection(from, sec) {
+  const list = pageSections().filter(x => x.from !== from);
+  if (sec) list.push({ from, ...(sec.start && sec.start !== 1 ? { start: Math.round(sec.start) } : {}),
+                       ...(sec.style && sec.style !== 'decimal' ? { style: sec.style } : {}),
+                       ...(sec.prefix ? { prefix: String(sec.prefix) } : {}) });
+  list.sort((a, b) => a.from - b.from);
+  if (list.length) (layout.pages = layout.pages || {}).sections = list;
+  else if (layout.pages) { delete layout.pages.sections; if (!Object.keys(layout.pages).length) delete layout.pages; }
+  markDirty();
+}
+async function pageSectionDialog(pid) {
+  const n = pageOrder().findIndex(x => String(x) === String(pid)) + 1;
+  if (n < 1) return;
+  const cur = pageSections().find(x => x.from === n);
+  const fields = [
+    { name: 'style', type: 'select', label: 'Style', value: (cur && cur.style) || 'decimal',
+      options: [['decimal', '1, 2, 3'], ['lower-roman', 'i, ii, iii'], ['upper-roman', 'I, II, III'],
+                ['lower-alpha', 'a, b, c'], ['upper-alpha', 'A, B, C']].map(([value, label]) => ({ value, label })) },
+    { name: 'start', label: 'Start at', value: String((cur && cur.start) || 1) },
+    { name: 'prefix', label: 'Prefix (e.g. A-)', value: (cur && cur.prefix) || '' },
+  ];
+  if (cur) fields.push({ name: 'remove', type: 'select', label: 'This section', value: 'keep',
+    options: [{ value: 'keep', label: 'Keep it' }, { value: 'remove', label: 'Remove it — continue the numbering before' }] });
+  const got = await dsForm(`Start a numbering section on page ${pageLabel(pid)}`, fields, {
+    okLabel: 'Apply',
+    validate: v => (+v.start >= 1 && +v.start <= 9999 && Number.isInteger(+v.start)) ? (/[<>&{}"'\\]/.test(v.prefix) || v.prefix.length > 12 ? 'a prefix is up to 12 plain characters' : '') : 'start at a whole number from 1',
+  });
+  if (got == null) return;
+  pushHistory();
+  setPageSection(n, got.remove === 'remove' ? null : { start: +got.start, style: got.style, prefix: got.prefix });
+  await render();
+  railRender();
 }
 
 function railRender() {
@@ -27856,6 +28004,15 @@ const PILOT_BATCH_VERBS = {
         return { ok: false, error: 'setMargins({top, bottom, left, right, columns, gutter} | null, master?)' };
       return { ok: true };
     }, apply: (mg, master) => { setMargins(mg, master || null); return { margins: master ? layout.masters[master].margins || null : layout.margins || null }; } },
+  setVariable: { validate: (n, t) => (/^[A-Za-z0-9_-]{1,30}$/.test(n || '') && (t == null || (typeof t === 'string' && !t.includes('\n') && t.length <= 200 && !t.includes('{var:'))))
+      ? { ok: true } : { ok: false, error: 'setVariable(name, text | null) — a name of letters, digits, - and _; one line of text' },
+    apply: (n, t) => { setVariable(n, t); return { variables: clone(layout.variables || {}) }; } },
+  setPageSection: { validate: (from, sec) => {
+      if (!Number.isInteger(from) || from < 1) return { ok: false, error: 'setPageSection(sheet, {start, style, prefix} | null) — sheet counts from 1 in reading order' };
+      if (sec && sec.style && !['decimal', 'lower-roman', 'upper-roman', 'lower-alpha', 'upper-alpha'].includes(sec.style))
+        return { ok: false, error: 'style: decimal, lower-roman, upper-roman, lower-alpha, upper-alpha' };
+      return { ok: true };
+    }, apply: (from, sec) => { setPageSection(from, sec); return { sections: clone(pageSections()) }; } },
   setReadingOrder: { validate: (pid, ids) => (ids == null || (Array.isArray(ids) && ids.every(x => typeof x === 'string')))
       ? { ok: true } : { ok: false, error: 'setReadingOrder(page, [element ids] | null)' },
     apply: (pid, ids) => { setReadingOrder(pid, ids); return { readingOrder: clone(layout.readingOrder || {}) }; } },
@@ -28616,6 +28773,12 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  textToTable(boxId, sep?) turns a text box's lines into a table. */
   /** Reading order: setReadingOrder(page, [ids] | null) — the order a screen
    *  reader and the tagged PDF read the page's objects in. */
+  /** Text variables: setVariable(name, text | null); {var:name} in words. */
+  async setVariable(n, t) { return _pilotOne('setVariable', [n, t]); },
+  /** Page numbering: setPageSection(sheet, {start, style, prefix} | null) —
+   *  from that sheet (1 = first in reading order) pages count from `start`
+   *  in decimal / lower-roman / upper-roman / lower-alpha / upper-alpha. */
+  async setPageSection(from, sec) { return _pilotOne('setPageSection', [from, sec]); },
   async setReadingOrder(pid, ids) { return _pilotOne('setReadingOrder', [pid, ids]); },
   async setTable(id, patch) { return _pilotOne('setTable', [id, patch]); },
   async mergeCells(id, r, c, rs, cs) { return _pilotOne('mergeCells', [id, r, c, rs, cs]); },

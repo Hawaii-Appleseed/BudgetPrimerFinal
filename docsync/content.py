@@ -745,8 +745,8 @@ class Content:
         # Live captions (INDESIGN_PARITY.md 43): {caption:<image id>} is that
         # image's own description, resolved now, so a caption follows the
         # description it shows.
-        if "{caption:" in v and self._styles is not None:
-            v = self._styles.resolve_captions(v)
+        if ("{caption:" in v or "{var:" in v) and self._styles is not None:
+            v = self._styles.resolve_text(v)
         _served(key, v)
         return v
 
