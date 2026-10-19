@@ -4087,6 +4087,39 @@ _csh = _cs.layer(1)
 check_eq("one rule per style a run wears, and none for a name with no style",
          ('.ds-cs[data-cs="Accent"]{color:#C0392B}' in _csh, "Nobody" in _csh), (True, False))
 
+# --- paragraph spacing and column alignment (INDESIGN_PARITY 14-15) ---------
+from docsync.layout import SPACE_CSS, decimal_tail, decimal_cell             # noqa: E402
+
+check_eq("spacing rides as custom properties; hang folds into the indents",
+         text_css({"spaceBefore": 0.2, "spaceAfter": 0.1, "indent": 0.3,
+                   "hang": 0.25, "indentLeft": 0.5, "indentRight": 0.1}),
+         "--ds-sb:0.2in;--ds-sa:0.1in;--ds-il:0.75in;--ds-ir:0.1in;--ds-ti:0.05in")
+for _bad in ({"spaceBefore": -0.1}, {"indent": 4}, {"hang": "x"}):
+    check_eq(f"spacing {_bad} is refused at load",
+             "no error raised" != _layout_error({"text": {"a.b": _bad}}), True)
+_sp = _layout({"text": {"a.b": {"spaceAfter": 0.1}}})
+check_eq("SPACE_CSS rides out once when a style spaces paragraphs, without TYPE_CSS",
+         ((_sp.layer(1) + _sp.layer(2)).count(SPACE_CSS), TYPE_CSS in _sp.layer(1)), (1, False))
+check_eq("a decimal tail is the point, its digits and any suffix",
+         [decimal_tail(x) for x in ("$1,234.56", "12", "-3.5%", "n/a", "**4.2**", "—")],
+         [".56", "", ".5%", None, None, None])
+check_eq("a decimal cell is the whole part and a fixed-width box for the rest",
+         decimal_cell("$1,234.5", 3),
+         '$1,234<span class="ds-dec" style="display:inline-block;min-width:3ch;'
+         'text-align:left">.5</span>')
+_tb = {"id": "t", "page": 1, "x": 1, "y": 1, "w": 3, "header": True,
+       "rows": [["A", "B"], ["x", "1.5"], ["y", "22"]]}
+check_eq("colAlign needs one entry per column",
+         "colAlign" in _layout_error({"tables": [dict(_tb, colAlign=["right"])]}), True)
+check_eq("colAlign refuses an alignment it does not know",
+         "colAlign[1]" in _layout_error({"tables": [dict(_tb, colAlign=[None, "middle"])]}), True)
+_dh = _layout({"tables": [dict(_tb, colAlign=[None, "decimal"])]}).tables_html(1)
+check_eq("a decimal column splits its figures and leaves its header whole",
+         (_dh.count('class="ds-dec"'), "<th" in _dh and ">B</th>" in _dh), (2, True))
+check_eq("a table nobody aligned renders as it did",
+         "ds-dec" in _layout({"tables": [_tb]}).tables_html(1)
+         or "text-align" in _layout({"tables": [_tb]}).tables_html(1), False)
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

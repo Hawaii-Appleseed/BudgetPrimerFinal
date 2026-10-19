@@ -2369,6 +2369,13 @@
     <label><span>In print</span><select id="ty-keep">
       <option value="">may break anywhere</option><option value="together">keep lines together</option>
       <option value="next">keep with what follows</option></select></label>
+    <p class="pop-h">Spacing and indents (inches)</p>
+    <label><span>Space before</span><input id="ty-sb" type="number" step="0.02" min="0" max="3"></label>
+    <label><span>Space after</span><input id="ty-sa" type="number" step="0.02" min="0" max="3"></label>
+    <label><span>First line</span><input id="ty-ti" type="number" step="0.05" min="0" max="3"></label>
+    <label><span>Hanging</span><input id="ty-hang" type="number" step="0.05" min="0" max="3"></label>
+    <label><span>Left indent</span><input id="ty-il" type="number" step="0.05" min="0" max="3"></label>
+    <label><span>Right indent</span><input id="ty-ir" type="number" step="0.05" min="0" max="3"></label>
     <p class="pop-h">Figures and letters</p>
     <label><span>Figures</span><select id="ty-fig">
       <option value="">font's own</option><option value="tabular">tabular (columns line up)</option>
@@ -7265,6 +7272,8 @@ const TMI = {
   up: '<path d="M3 8.5L7 4.5l4 4"/>',
   right: '<path d="M5.5 3l4 4-4 4"/>',
   left: '<path d="M8.5 3l-4 4 4 4"/>',
+  alcol: '<path d="M2 3h10M2 6h7M2 9h10M2 12h7"/>',
+  aldec: '<path d="M2 3.5h5M2 7h5M2 10.5h5M9.5 3.5h2.5M9.5 7h2.5M9.5 10.5h2.5"/><circle cx="8" cy="10.5" r=".6" fill="currentColor"/>',
   sliders: '<path d="M2 4h10M2 10h10"/><circle cx="5" cy="4" r="1.6"/><circle cx="9.5" cy="10" r="1.6"/>',
 };
 
@@ -7330,6 +7339,15 @@ function tableMenu(d, td, e) {
   // so the pair here is the two that mean something for this schema.
   item('fit', 'Fit columns to content', '', () => tableFitColumns(t, tableEl));
   item('fit', 'Even column widths', '', () => { delete t.colw; }, !!t.colw);
+  sep();
+  // --- column alignment (INDESIGN_PARITY.md 15) ------------------------------
+  // The whole column, which a cell's own alignment still beats. Decimal lines
+  // figures up on the point; choosing the one already set clears it.
+  const curA = (t.colAlign || [])[ci] || null;
+  [['left', 'Align column left'], ['center', 'Centre column'], ['right', 'Align column right'],
+   ['decimal', 'Align column on the decimal point']].forEach(([a2, label]) =>
+    item(a2 === 'decimal' ? 'aldec' : 'alcol', (curA === a2 ? '✓ ' : '') + label, '',
+      () => setColAlign(t, ci, curA === a2 ? null : a2)));
   sep();
   // --- reorder -------------------------------------------------------------
   item('up', 'Move row up', '', () => tableMoveRow(t, ri, -1), ri > 0);
@@ -7400,12 +7418,14 @@ function tableInsertCol(t, at) {
   reindexCells(t, 'col', at, 1); cellSelShift(t, 'col', at, 1);
   t.rows.forEach(r => r.splice(at, 0, ''));
   if (t.colw) t.colw.splice(at, 0, t.colw.reduce((a, b) => a + b, 0) / t.colw.length);
+  if (t.colAlign) t.colAlign.splice(at, 0, null);
 }
 function tableDeleteCol(t, at) {
   if (t.rows[0].length <= 1) return;
   reindexCells(t, 'col', at, -1); cellSelShift(t, 'col', at, -1);
   t.rows.forEach(r => r.splice(at, 1));
   if (t.colw) t.colw.splice(at, 1);
+  if (t.colAlign) { t.colAlign.splice(at, 1); if (!t.colAlign.some(Boolean)) delete t.colAlign; }
 }
 /** Reordering swaps two whole lines, so their overrides swap with them. */
 function swapCellLines(t, kind, a, b) {
@@ -7431,7 +7451,17 @@ function tableMoveCol(t, at, delta) {
   if (to < 0 || to >= t.rows[0].length) return;
   t.rows.forEach(r => { [r[at], r[to]] = [r[to], r[at]]; });
   if (t.colw) [t.colw[at], t.colw[to]] = [t.colw[to], t.colw[at]];
+  if (t.colAlign) [t.colAlign[at], t.colAlign[to]] = [t.colAlign[to], t.colAlign[at]];
   swapCellLines(t, 'col', at, to); cellSelSwap(t, 'col', at, to);
+}
+/** One column's alignment; null gives it back to the table. The list is one
+ *  entry per column (the engine refuses any other length) and goes away when
+ *  every entry is null, so a table nobody aligned keeps its bytes. */
+function setColAlign(t, ci, a) {
+  const n = t.rows[0].length;
+  const ca = (t.colAlign && t.colAlign.length === n) ? t.colAlign.slice() : Array(n).fill(null);
+  ca[ci] = a || null;
+  if (ca.some(Boolean)) t.colAlign = ca; else delete t.colAlign;
 }
 /** Column widths from what is actually in the cells. Measured off the live
  *  DOM — the renderer already laid the text out, so the widest cell's
@@ -9624,6 +9654,9 @@ function fillParaPop(key) {
   $('ty-smcp').value = eff.smallCaps || '';
   $('ty-liga').checked = eff.ligatures !== false;
   $('ty-dcap').value = eff.dropCap ? String(eff.dropCap) : '';
+  [['ty-sb', 'spaceBefore'], ['ty-sa', 'spaceAfter'], ['ty-ti', 'indent'],
+   ['ty-hang', 'hang'], ['ty-il', 'indentLeft'], ['ty-ir', 'indentRight']]
+    .forEach(([id, key]) => { $(id).value = eff[key] ?? ''; });
   const lst = eff.list || {};
   $('ty-lmark').value = lst.marker || '';
   const col = $('ty-lcol');
@@ -10548,6 +10581,13 @@ function wireType() {
   paraSel('ty-wrap', 'wrap'); paraSel('ty-keep', 'keep'); paraSel('ty-fig', 'figures');
   paraSel('ty-smcp', 'smallCaps'); paraSel('ty-dcap', 'dropCap', true);
   $('ty-hyph').addEventListener('change', () => paraSet({ hyphenate: $('ty-hyph').checked || null }));
+  // Inches, clamped to what the engine accepts (SPACE_RANGE); empty clears.
+  [['ty-sb', 'spaceBefore'], ['ty-sa', 'spaceAfter'], ['ty-ti', 'indent'],
+   ['ty-hang', 'hang'], ['ty-il', 'indentLeft'], ['ty-ir', 'indentRight']].forEach(([id, key]) =>
+    $(id).addEventListener('change', () => {
+      const v = $(id).value;
+      paraSet({ [key]: v === '' || !Number.isFinite(+v) ? null : Math.max(0, Math.min(3, +v)) });
+    }));
   // Ligatures are ON unless a style turns them off, so unchecking writes
   // false and checking clears the key rather than writing a redundant true.
   $('ty-liga').addEventListener('change', () => paraSet({ ligatures: $('ty-liga').checked ? null : false }));

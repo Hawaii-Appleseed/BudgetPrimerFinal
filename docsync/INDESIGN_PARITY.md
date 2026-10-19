@@ -372,19 +372,42 @@ bleed and crop marks for report2027 (see (11)).
     edge that clips. What it does not do is tell you a box grew into the
     thing under it, which is an overlap and not an overset, and would cry
     wolf on every deliberate overlay.
-14. **Text styles cannot space paragraphs.** `style_css()` knows font,
-    size, weight, italic, underline, colour, tracking, leading, case,
-    effect and align. It has no space before or after, no first-line,
-    left, right or hanging indent. So a stylesheet can make Body the right
-    face and still not the right paragraph, and the spacing is fixed by
-    hand in each renderer or each box, every time. New opt-in keys on the
-    same resolver (`spaceBefore`, `spaceAfter`, `indent`, `hang`),
-    validated in inches like `pad`. **S.**
-15. **Numbers in tables do not line up.** No tabular or lining figures
-    (`font-variant-numeric`) and no decimal or right alignment per column.
-    These are budget and tax reports, so this lands on most of the tables
-    they print. A `figures: "tabular"` text-style key, plus an `align` per
-    column on a placed table. **S.**
+14. **Paragraph spacing and indents. — CLOSED 2026-10-19.** Text-style
+    keys in inches: `spaceBefore`, `spaceAfter`, `indent` (first line),
+    `hang` (a hanging indent: the first line starts `hang` left of the
+    rest), `indentLeft`, `indentRight`, each 0 to 3. They act on
+    PARAGRAPHS — the slot when it is one (C.html's `<p>`), the paragraphs
+    inside it when it is a wrapper (a text box, a card), and a heading's
+    inline span made a block. Never the wrapper itself: a text box's style
+    sits on the absolutely placed box, and a margin there would move it. So
+    they ride as custom properties (`--ds-sb`, `--ds-sa`, `--ds-il`,
+    `--ds-ir`, `--ds-ti`), and `SPACE_CSS` applies them, emitted once and only
+    when a style asks. Its rules are `!important`, the strength an inline
+    style has: the person asked for this paragraph's spacing, and a report's
+    own `.page p.lead{margin}` would otherwise out-rank an attribute
+    selector and quietly win. In the Paragraph panel under "Spacing and
+    indents"; a pilot sets them with `setStyle` or `defineStyle`. InDesign
+    drops space-before at the top of a frame; this does not, which is the
+    one visible difference.
+15. **Numbers in tables line up. — CLOSED 2026-10-19.** The figures half
+    came with (22): `figures: "tabular"` on a table's style. The column
+    half: `colAlign` on a placed table, one entry per column, each `left`,
+    `center`, `right`, `decimal` or null, and a cell's own `align` still
+    beats it. `decimal` is InDesign's decimal tab. CSS has no
+    `text-align:"."` that any browser implements, so `decimal_cell()` splits
+    a plain figure at the point: the whole part right-aligned against a
+    fixed-width box (`min-width` in `ch`, sized to the column's widest tail)
+    holding the point, its digits and any suffix. Every point in the column
+    then sits at the same x whatever the font, and a figure with no point
+    lines its units up with the rest. A cell of words, markdown or a dash is
+    left whole and right-aligned, and so is the header. Decimal cells get
+    tabular figures. In the editor it is on the cell's right-click menu
+    (Align column left / Centre / right / on the decimal point; choosing the
+    current one clears it). Insert, delete and move column keep `colAlign`
+    in step, the way they keep `colw`. There is no pilot table verb, so a
+    pilot writes `colAlign` through announce-then-edit, like the rest of a
+    table's look.
+
 16. **An image's alt text. — CLOSED 2026-10-19.** Insert image writes
     `![<file name>](path)` because the file name is all it knows, and a
     designed figure's `data-desc` was already editable (right-click ▸
@@ -489,10 +512,8 @@ and only when something asks for it (`_type_once`, `_vars_once`,
     settings, and writes through `setStyle` like every other type control;
     a pilot sets the same keys with `setStyle` or `defineStyle`.
 
-(15) is half done by (22): figures line up once a table's style says
-`figures: "tabular"`. Its other half — right or decimal alignment per column
-of a placed table — and (14), paragraph spacing and indents, are Tier 1 and
-still open.
+(15)'s figures half came with (22); its column half and (14) closed the
+same day — see Tier 1.
 
 ### Tier 3 — drawing and production, not what is stopping anyone
 
@@ -535,7 +556,8 @@ feature.
 
 ### The order
 
-Done: (16) alt text; (17)–(22), all of Tier 2; (13) turned out not to be a
-gap. Next: (14) paragraph spacing and indents, and (15)'s other half,
-column alignment in a placed table — both opt-in keys on the resolvers that
-already exist. Then Tier 3, which is drawing and production.
+Done: all of Tier 1 — (14), (15), (16) — and all of Tier 2, (17)–(22); (13)
+turned out not to be a gap. Every one kept every existing render
+byte-identical, checked by building all 15 bound outputs with the engine
+before and after. What is left is Tier 3, drawing and production, and the
+standing follow-ups listed under "Already on this list".

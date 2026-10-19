@@ -805,6 +805,37 @@ LIST_MARKERS = {"disc": "disc", "circle": "circle", "square": "square",
                 "lower-roman": "lower-roman", "upper-roman": "upper-roman",
                 "none": "none"}
 LIST_KEYS = ("marker", "color", "indent")
+# Paragraph spacing and indents (INDESIGN_PARITY.md 14), in inches. They act
+# on PARAGRAPHS: the slot when it is one (C.html's <p>), the paragraphs inside
+# it when it is a wrapper (a text box, a card), a heading's span made a block.
+# Never the wrapper itself — a text box's style sits on the absolutely placed
+# box, and a margin there would move the box. So they ride as custom
+# properties and SPACE_CSS applies them. `hang` is a hanging indent: the
+# first line starts `hang` left of the rest, which is what a numbered or
+# labelled paragraph wants.
+SPACE_KEYS = ("spaceBefore", "spaceAfter", "indent", "hang", "indentLeft", "indentRight")
+SPACE_RANGE = {"spaceBefore": (0, 3), "spaceAfter": (0, 3), "indent": (0, 3),
+               "hang": (0, 3), "indentLeft": (0, 3), "indentRight": (0, 3)}
+_PARA = ":is(p,h1,h2,h3,h4,h5,h6,li)"
+
+
+def _space_rule(var: str, prop: str) -> str:
+    # !important because the person asked for THIS paragraph's spacing, the
+    # same strength an inline style has; a report's own `.page p.lead{margin}`
+    # would otherwise out-rank an attribute selector and silently win.
+    return (f"{_PARA}[style*='{var}:'],[style*='{var}:'] {_PARA},"
+            f"span[style*='{var}:']{{{prop}:var({var})!important}}")
+
+
+SPACE_CSS = (
+    _space_rule("--ds-sb", "margin-top") + _space_rule("--ds-sa", "margin-bottom")
+    + _space_rule("--ds-il", "margin-left") + _space_rule("--ds-ir", "margin-right")
+    + _space_rule("--ds-ti", "text-indent")
+    # A heading's inline span has no vertical margin and no first line of its
+    # own until it is a block.
+    + "span[style*='--ds-sb:'],span[style*='--ds-sa:'],span[style*='--ds-il:'],"
+      "span[style*='--ds-ir:'],span[style*='--ds-ti:']{display:block}"
+)
 # The rules the inline custom properties need. One string, emitted once per
 # document and only when some style asks for a drop cap or a list look
 # (Layout._type_once), so a report that uses neither keeps its bytes.
@@ -917,6 +948,17 @@ def text_css(st: dict) -> str:
         out.append(f'--ds-mk:{lst["color"]}')
     if lst.get("indent") is not None:
         out.append(f'--ds-li:{float(lst["indent"]):g}in')
+    if st.get("spaceBefore") is not None:
+        out.append(f'--ds-sb:{float(st["spaceBefore"]):g}in')
+    if st.get("spaceAfter") is not None:
+        out.append(f'--ds-sa:{float(st["spaceAfter"]):g}in')
+    hang = float(st.get("hang") or 0)
+    if st.get("indentLeft") is not None or hang:
+        out.append(f'--ds-il:{float(st.get("indentLeft") or 0) + hang:g}in')
+    if st.get("indentRight") is not None:
+        out.append(f'--ds-ir:{float(st["indentRight"]):g}in')
+    if st.get("indent") is not None or hang:
+        out.append(f'--ds-ti:{float(st.get("indent") or 0) - hang:g}in')
     if any(st.get(k) for k in _BOX_KEYS):
         # text-align, text-wrap and ::first-letter do nothing to an inline
         # box, and the inline slots are spans. Give it a box — but only when
@@ -1072,6 +1114,11 @@ def _check_text(st: dict, where: str) -> None:
     for k in ("size", "tracking", "leading"):
         if st.get(k) is not None:
             _num(st[k], f"{where}.{k}")
+    for k, (lo, hi) in SPACE_RANGE.items():
+        if st.get(k) is not None:
+            v = _num(st[k], f"{where}.{k}")
+            if not lo <= v <= hi:
+                raise LayoutError(f"{where}.{k} is inches, {lo} to {hi} — {v:g} is not")
     # Refused, not clamped. A style is authored by a person — through the
     # editor's stepper or a pilot verb — and silently enlarging what they
     # asked for teaches them nothing, while silently HONOURING it ships type
@@ -3252,6 +3299,34 @@ def _check_shadow(sh, where: str) -> None:
 
 TABLE_BORDER_STYLES = ("solid", "dashed", "dotted", "none")
 TABLE_ALIGNS = ("left", "center", "right")
+# A column's alignment (INDESIGN_PARITY.md 15). "decimal" lines a column of
+# figures up on the decimal point — InDesign's decimal tab. CSS has no
+# text-align:"." anywhere a browser implements, so decimal_cell() splits a
+# plain figure at the point: the whole part right-aligned against a box of
+# fixed width holding the point and what follows it, so every point in the
+# column sits at the same x whatever the font, and a figure with no point
+# lines its units up with everyone else's.
+COL_ALIGNS = TABLE_ALIGNS + ("decimal",)
+_DEC_RE = re.compile(r"^(\s*[^\d.\-*_\[`]*-?[\d,]*)(\.\d+)?([^\d*_\[`]*?)\s*$")
+
+
+def decimal_tail(text: str) -> str | None:
+    """What sits right of the decimal point in a plain figure cell: the point
+    and its digits, plus any suffix ("%", " pts"). None for a cell that is not
+    one plain figure (words, markdown), which is left right-aligned."""
+    m = _DEC_RE.match(str(text))
+    if not m or not re.search(r"\d", m.group(1) + (m.group(2) or "")):
+        return None
+    return (m.group(2) or "") + m.group(3)
+
+
+def decimal_cell(text: str, tail_ch: float) -> str:
+    """One cell of a decimal column, split at the point (see COL_ALIGNS)."""
+    m = _DEC_RE.match(str(text))
+    whole, tail = m.group(1), (m.group(2) or "") + m.group(3)
+    esc = lambda x: x.replace("&", "&amp;").replace("<", "&lt;")
+    return (f'{esc(whole)}<span class="ds-dec" style="display:inline-block;'
+            f'min-width:{tail_ch:g}ch;text-align:left">{esc(tail)}</span>')
 # Which edges the border is drawn on. "all" is every edge, "outer" the frame
 # only, "inner" the gridlines only, "none" nothing — Canva's own four.
 TABLE_BORDER_SIDES = ("all", "outer", "inner", "none")
@@ -3287,6 +3362,15 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
             n = _num(v, f"{where}.colw[{j}]")
             if n <= 0:
                 raise LayoutError(f"{where}.colw[{j}]: a width must be positive")
+    ca = t.get("colAlign")
+    if ca is not None:
+        if not isinstance(ca, list) or len(ca) != ncols:
+            raise LayoutError(f"{where}.colAlign: expected {ncols} alignments, "
+                              f"one per column (null for the table's own)")
+        for j, v in enumerate(ca):
+            if v is not None and v not in COL_ALIGNS:
+                raise LayoutError(f"{where}.colAlign[{j}] {v!r} must be one of "
+                                  f"{', '.join(COL_ALIGNS)} or null")
     cells = t.get("cells")
     if cells is not None:
         if not isinstance(cells, dict):
@@ -3958,11 +4042,13 @@ class Layout:
         always did."""
         if self._type_sent:
             return ""
-        if not any(st.get("dropCap") or st.get("list")
-                   for st in self.text_style_dicts()):
+        dicts = self.text_style_dicts()
+        typ = any(st.get("dropCap") or st.get("list") for st in dicts)
+        spc = any(any(st.get(k) is not None for k in SPACE_KEYS) for st in dicts)
+        if not (typ or spc):
             return ""
         self._type_sent = True
-        return f"<style>{TYPE_CSS}</style>"
+        return f"<style>{TYPE_CSS if typ else ''}{SPACE_CSS if spc else ''}</style>"
 
     def _anim_block(self) -> str:
         """Keyframes for every animated element, and — published only — the
@@ -5012,6 +5098,18 @@ class Layout:
             outer = table_border_css(border, "outer")
             inner = table_border_css(border, "inner")
             over = t.get("cells") or {}
+            col_align = t.get("colAlign") or []
+            # Per decimal column, the widest tail in it — in ch, the width of
+            # a "0", with a little over for a "%" being wider than a digit.
+            tails = {}
+            for cj, al in enumerate(col_align):
+                if al != "decimal":
+                    continue
+                ws = [decimal_tail(r[cj]) for ri2, r in enumerate(rows)
+                      if not (header and ri2 == 0) and cj < len(r)]
+                ws = [w for w in ws if w is not None]
+                tails[cj] = round(max((sum(1 if ch.isdigit() else 1.4 for ch in w)
+                                       for w in ws), default=0), 2)
             # Column widths as a <colgroup>: percentages of the table's own
             # width, so dragging a column divider never changes the table's
             # placement on the page.
@@ -5055,8 +5153,19 @@ class Layout:
                     fg = ov.get("color") or (t.get("headerColor") if th else None)
                     if fg:
                         bits.append(f"color:{fg}")
+                    ca_j = col_align[ci] if ci < len(col_align) else None
+                    dec = (ca_j == "decimal" and not th
+                           and decimal_tail(c) is not None)
                     if ov.get("align"):
                         bits.append(f'text-align:{ov["align"]}')
+                    elif ca_j:
+                        # A decimal column is right-aligned: the split below
+                        # gives every figure the same right-hand box, so its
+                        # point lands where everyone else's does. Its header,
+                        # and a cell of words, simply sit right.
+                        bits.append("text-align:" + ("right" if ca_j == "decimal" else ca_j))
+                    if dec:
+                        bits.append("font-variant-numeric:tabular-nums")
                     if ov.get("bold") is not None:
                         bits.append(f'font-weight:{"700" if ov["bold"] else "400"}')
                     if ov.get("italic"):
@@ -5067,7 +5176,8 @@ class Layout:
                     # Prose is the opposite — content.md soft-wraps at about
                     # eighty columns, which is why md_inline itself leaves a
                     # newline alone and paragraphs() closes it up to a space.
-                    body_c = md_inline(str(c)).replace("\n", "<br>")
+                    body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
+                              else md_inline(str(c)).replace("\n", "<br>"))
                     cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
                 body += f"<tr>{cells}</tr>"
             klass = "ds-table"
