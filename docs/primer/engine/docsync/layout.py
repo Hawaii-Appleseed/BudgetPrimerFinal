@@ -26,6 +26,7 @@ import json
 import math
 import os
 import re
+from html import escape as _html_escape
 from pathlib import Path
 
 # One direction only: content.py imports nothing from this package (it takes its
@@ -3198,6 +3199,73 @@ VARS_JS = (
     "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
 )
 
+# Threaded frames (Layout.threads). After layout, each thread's story is put
+# back in its first frame and poured forward: in each frame, the first block
+# whose bottom passes the frame's content edge is split at the first LINE
+# that does not fit — a paragraph by Range, so its inline markup (a link, a
+# bold run) is carried across intact; a list by whole items, an <ol> keeping
+# its numbering with `start` — and everything after it moves to the next
+# frame. A continuation carries `ds-cont` (no first-line indent, no space
+# before), the mark InDesign's own text has none of but needs. A last frame
+# that still overflows gets `data-overset` and keeps its words visible.
+#
+# On a phone the sheet's pins are released (mobile_css) and every frame is in
+# the flow, so the story simply stays in its first frame. Without a script at
+# all the same is true: the first frame holds every word. It runs at parse,
+# load, when fonts arrive and on resize, from the story it saved, so a reflow
+# never compounds; window.__dsThreadGather(head) puts a story back in its
+# first frame for the editor to open it as one piece.
+THREAD_CSS = (
+    ".ds-thread .ds-cont{text-indent:0!important;margin-top:0!important}"
+    ".ds-thread>:first-child{margin-top:0}"
+)
+THREAD_EDIT_CSS = (
+    ".ds-thread[data-overset]{outline:1.5px solid #C0392B;outline-offset:2px}"
+    ".ds-thread[data-overset]::after{content:'+';position:absolute;right:-9px;"
+    "bottom:-9px;width:14px;height:14px;line-height:13px;text-align:center;"
+    "font:700 12px/13px system-ui;color:#fff;background:#C0392B;border-radius:2px}"
+)
+THREAD_JS = (
+    "(function(){"
+    "function lim(f){var r=f.getBoundingClientRect(),s=getComputedStyle(f);"
+    "return r.bottom-parseFloat(s.borderBottomWidth||0)-parseFloat(s.paddingBottom||0);}"
+    "function split(el,L){"
+    "if(el.tagName==='UL'||el.tagName==='OL'){var li=[].slice.call(el.children),k=-1;"
+    "for(var i=0;i<li.length;i++)if(li[i].getBoundingClientRect().bottom>L+.5){k=i;break;}"
+    "if(k<=0)return null;var t=el.cloneNode(false);t.classList.add('ds-cont');"
+    "if(el.tagName==='OL')t.setAttribute('start',String(+(el.getAttribute('start')||1)+k));"
+    "for(var j=k;j<li.length;j++)t.appendChild(li[j]);return t;}"
+    "var w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),P=[],n;"
+    "while((n=w.nextNode())){var v=n.nodeValue,re=/\\S+/g,m;while((m=re.exec(v)))P.push([n,m.index]);}"
+    "if(!P.length)return null;"
+    "function bot(p){var r=document.createRange();r.setStart(p[0],p[1]);"
+    "r.setEnd(p[0],Math.min(p[1]+1,p[0].nodeValue.length));var q=r.getClientRects();"
+    "return q.length?q[q.length-1].bottom:0;}"
+    "var lo=0,hi=P.length;while(lo<hi){var mid=(lo+hi)>>1;if(bot(P[mid])>L+.5)hi=mid;else lo=mid+1;}"
+    "if(lo===0)return null;if(lo>=P.length)return false;"
+    "var r=document.createRange();r.setStart(P[lo][0],P[lo][1]);r.setEnd(el,el.childNodes.length);"
+    "var t=el.cloneNode(false);t.removeAttribute('id');t.classList.add('ds-cont');"
+    "t.appendChild(r.extractContents());return t;}"
+    "function groups(){var g={};[].forEach.call(document.querySelectorAll('[data-thread]'),function(f){"
+    "var k=f.getAttribute('data-thread');(g[k]=g[k]||[])[+f.getAttribute('data-thread-i')]=f;});"
+    "return g;}"
+    "function gather(fs){var h=fs[0];if(h.__dsStory===undefined)h.__dsStory=h.innerHTML;"
+    "h.innerHTML=h.__dsStory;for(var i=0;i<fs.length;i++){if(i)fs[i].innerHTML='';"
+    "fs[i].removeAttribute('data-overset');}}"
+    "function pour(fs){gather(fs);if(getComputedStyle(fs[0]).position==='static')return;"
+    "for(var i=0;i<fs.length;i++){var f=fs[i],nx=fs[i+1],L=lim(f),kids=[].slice.call(f.children),k=-1;"
+    "for(var j=0;j<kids.length;j++)if(kids[j].getBoundingClientRect().bottom>L+.5){k=j;break;}"
+    "if(k<0)continue;if(!nx){f.setAttribute('data-overset','');break;}"
+    "var mv=[],t=split(kids[k],L);if(t===null)mv.push(kids[k]);else if(t)mv.push(t);"
+    "for(j=k+1;j<kids.length;j++)mv.push(kids[j]);"
+    "for(j=0;j<mv.length;j++)nx.appendChild(mv[j]);}}"
+    "function go(){var g=groups();for(var k in g)pour(g[k].filter(Boolean));}"
+    "window.__dsThread=go;"
+    "window.__dsThreadGather=function(id){var g=groups()[id];if(g)gather(g.filter(Boolean));};"
+    "go();addEventListener('load',go);addEventListener('resize',go);"
+    "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
+)
+
 ANCHOR_JS = (
     "(function(){var W=%(w)s;function go(){"
     # Struts first: an element that reserves flow space and whose page holds
@@ -3498,6 +3566,8 @@ class Layout:
         self.object_styles = raw.get("objectStyles") or {}
         self.boxes = raw.get("boxes") or []
         self.tables = raw.get("tables") or []
+        # flow tables a renderer drew from its own default (not in layout.json)
+        self.unseeded_tables: dict = {}
         # The slots some object follows. content.py stamps these with
         # data-anc-host in BOTH modes, which is the one hook the published page
         # has for the anchor runtime to measure against (data-slot is edit-only).
@@ -3510,6 +3580,7 @@ class Layout:
         self._type_sent = False
         self._vars_sent = False
         self._char_sent = False
+        self._thread_sent = False
         # Ids whose vacated flow slot is held. The runtime materialises the
         # strut for any of these whose renderer never called spacer() — see
         # attr() and ANCHOR_JS — so it ships whenever one exists.
@@ -3790,6 +3861,10 @@ class Layout:
                 for k in ("imgW", "dx", "dy"):
                     if _num(c[k], f"{where}.crop.{k}") < 0:
                         raise LayoutError(f"{where}.crop.{k} cannot be negative")
+        # Threads first: a frame's words may be empty only because a thread
+        # says so, and a broken `next` should be named as itself rather than
+        # surface as the "has no text" it causes downstream.
+        self._check_threads()
         for i, b in enumerate(self.boxes):
             self._check_box(b, f"box #{i + 1}", seen)
         for name, m in self.masters.items():
@@ -3806,10 +3881,12 @@ class Layout:
             if tid in seen:
                 raise LayoutError(f"{where}: duplicate id '{tid}' — already a shape or box")
             seen.add(tid)
-            if not isinstance(t.get("page"), (int, str)) or isinstance(t.get("page"), bool):
-                raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
-            for k in ("x", "y", "w"):
-                _num(t.get(k), f"{where}.{k}")
+            # A flow table sits in its page's flow, so it has no page/x/y/w.
+            if not t.get("flow"):
+                if not isinstance(t.get("page"), (int, str)) or isinstance(t.get("page"), bool):
+                    raise LayoutError(f"{where}: 'page' must be a page number or blank-page id")
+                for k in ("x", "y", "w"):
+                    _num(t.get(k), f"{where}.{k}")
             rows = t.get("rows")
             if not isinstance(rows, list) or not rows:
                 raise LayoutError(f"{where}: 'rows' must be a non-empty grid")
@@ -4419,7 +4496,7 @@ class Layout:
             _anim_check(b["anim"], where)
         if b.get("h") is not None:      # optional min-height (never clips)
             _num(b["h"], f"{where}.h")
-        if not str(b.get("md", "")).strip():
+        if not str(b.get("md", "")).strip() and not self.in_thread(bid):
             raise LayoutError(f"{where}: has no text — 'md' is empty")
         # A box may ACT: 'pdf' (a Download-PDF button) or 'toggle' (an
         # expandable section — the button shows/hides another box). An
@@ -4463,6 +4540,95 @@ class Layout:
         _check_object_use(b, "box", self.object_styles, where)
         _check_box_look(self.dressed(b), where)
 
+    # ---- threaded frames (INDESIGN_PARITY.md 4) -----------------------------
+    # A box says `next: "<box id>"` and its words continue there when they
+    # run out of room, InDesign's threaded frames. The FIRST frame of a
+    # thread holds the whole story's markdown; the frames after it hold none.
+    # Where a frame ends is a fact about the laid-out page, so THREAD_JS
+    # works it out after layout and moves the overflow on — the same
+    # measure-then-write pattern ANCHOR_JS uses. Every frame has a fixed
+    # height (`h`), because a frame that grows never runs out of room.
+
+    def _box_ids(self) -> dict:
+        return {b.get("id"): b for b in self.boxes}
+
+    def thread_prev(self) -> dict:
+        """follower id -> the frame before it."""
+        return {b["next"]: b.get("id") for b in self.boxes if b.get("next")}
+
+    def in_thread(self, bid) -> bool:
+        b = self._box_ids().get(bid)
+        return bool(b and (b.get("next") or bid in self.thread_prev()))
+
+    def threads(self) -> list:
+        """Every thread as its frames in order, first frame first."""
+        prev, ids = self.thread_prev(), self._box_ids()
+        out = []
+        for b in self.boxes:
+            if b.get("next") and b.get("id") not in prev:
+                chain, seen, cur = [], set(), b
+                while cur is not None and cur.get("id") not in seen:
+                    seen.add(cur.get("id"))
+                    chain.append(cur)
+                    cur = ids.get(cur.get("next")) if cur.get("next") else None
+                out.append(chain)
+        return out
+
+    def _check_threads(self) -> None:
+        ids, nexts = self._box_ids(), {}
+        for b in self.boxes:
+            n = b.get("next")
+            if n is None:
+                continue
+            where = f"box '{b.get('id')}'"
+            if not isinstance(n, str) or n not in ids:
+                raise LayoutError(f"{where}: next {n!r} is not a text box on this layout")
+            if n == b.get("id"):
+                raise LayoutError(f"{where}: a frame cannot continue into itself")
+            if n in nexts:
+                raise LayoutError(f"{where}: '{n}' already continues '{nexts[n]}' — "
+                                  f"a frame has one frame before it")
+            nexts[n] = b.get("id")
+        for b in self.boxes:                     # a loop has no first frame
+            if b.get("next"):
+                seen, cur = set(), b
+                while cur is not None and cur.get("next"):
+                    if cur.get("id") in seen:
+                        raise LayoutError(f"box '{b.get('id')}': the thread loops "
+                                          f"back on itself")
+                    seen.add(cur.get("id"))
+                    cur = ids.get(cur["next"])
+        for chain in self.threads():
+            for i, b in enumerate(chain):
+                where = f"box '{b.get('id')}' (frame {i + 1} of a thread)"
+                if b.get("h") is None:
+                    raise LayoutError(f"{where}: a threaded frame needs a height "
+                                      f"'h' — a frame that grows never runs out of room")
+                for k in ("anchor", "wrap", "act"):
+                    if b.get(k) is not None:
+                        raise LayoutError(f"{where}: a threaded frame cannot carry '{k}'")
+                if b.get("cols") and int(b["cols"]) > 1:
+                    raise LayoutError(f"{where}: a threaded frame cannot also set "
+                                      f"columns — thread more frames instead")
+                if i and str(b.get("md", "")).strip():
+                    raise LayoutError(f"{where}: only the first frame holds the "
+                                      f"words — this one's would be lost")
+            if not str(chain[0].get("md", "")).strip():
+                raise LayoutError(f"box '{chain[0].get('id')}': the first frame of a "
+                                  f"thread has no text")
+
+    def _thread_once(self) -> str:
+        """THREAD_CSS and THREAD_JS, once per document and only when something
+        is threaded — a layout without threads keeps its bytes."""
+        if self._thread_sent or not any(b.get("next") for b in self.boxes):
+            return ""
+        self._thread_sent = True
+        edit = os.environ.get("DOCSYNC_EDIT")
+        return (f"<style>{THREAD_CSS}{THREAD_EDIT_CSS if edit else ''}"
+                f"@media screen and (max-width:{float(self.page_w):g}in){{"
+                f".ds-thread{{height:auto!important}}}}</style>"
+                f"<script>{THREAD_JS}</script>")
+
     @staticmethod
     def _check_master_item(it: dict, where: str) -> None:
         """What a master item may not be: anchored (it is placed by the page,
@@ -4471,7 +4637,7 @@ class Layout:
         if "@" in str(it.get("id", "")):
             raise LayoutError(f"{where}: an id cannot contain '@' — that marks a "
                               f"master item on a page")
-        for k in ("anchor", "wrap", "act"):
+        for k in ("anchor", "wrap", "act", "next"):
             if it.get(k) is not None:
                 raise LayoutError(f"{where}: a master item cannot carry '{k}'")
 
@@ -4883,6 +5049,12 @@ class Layout:
                     "btn.classList.toggle('ds-tgl-on',open);"
                     "btn.setAttribute('aria-expanded',String(open))}"
                     '</script>')
+        thread_of = {}
+        for chain in self.threads():
+            for i, fb in enumerate(chain):
+                thread_of[fb.get("id")] = (chain[0].get("id"), i)
+        if any(b.get("id") in thread_of for b in mine):
+            out.append(self._thread_once())
         for b in mine:
             b = self.dressed(b)
             act = b.get("act")
@@ -4897,7 +5069,14 @@ class Layout:
             css = (f'box-sizing:border-box;position:absolute;'
                    f'left:{b["x"]}in;top:{b["y"]}in;'
                    f'width:{b["w"]}in;z-index:{int(b.get("z", 2))}')
-            if b.get("h"):
+            thr = thread_of.get(b.get("id"))
+            if thr is not None:
+                # A frame is exactly its height: the overflow is the next
+                # frame's, which is the whole idea. Nothing is ever hidden —
+                # a last frame that still overflows spills visibly, and the
+                # editor marks it overset.
+                css += f';height:{b["h"]}in'
+            elif b.get("h"):
                 css += f';min-height:{b["h"]}in'
             if b.get("fill"):
                 # A background needs breathing room or the words sit on its
@@ -5029,6 +5208,10 @@ class Layout:
             # to recolour it. Shut-side (pointing down), because that is the
             # state a reader meets the button in.
             arrow = self.tgl_arrow(b["id"], edit) if act == "toggle" else ""
+            thr = thread_of.get(b.get("id"))
+            if thr is not None:
+                klass += " ds-thread"
+                extra += f' data-thread="{thr[0]}" data-thread-i="{thr[1]}"'
             out.append(f'<div class="{klass}"{extra}{tag}{an}{PLACED} '
                        f'style="{tglFull}">'
                        f'{block_html(b["md"])}{arrow}</div>')
@@ -5073,125 +5256,187 @@ class Layout:
         of cell markdown; `header` makes the first row a <th> band. Each cell
         carries a data-cell hook in edit mode so the editor can edit it in
         place."""
-        mine = [t for t in self.tables if t.get("page") == page]
+        mine = [t for t in self.tables
+                if t.get("page") == page and not t.get("flow")]
         if not mine:
             return ""
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
         out = []
         for t in mine:
-            t = self.dressed(t)
+            out.append(self._table_el(t, edit))
+        return "".join(out)
+
+    def _table_el(self, t: dict, edit: bool, flow: bool = False) -> str:
+        """One table object as a real <table>. `flow` puts it in the page's
+        own flow (static, full width, moved only by a positions[] offset)
+        instead of absolutely at x/y in inches — same cells, same hooks, same
+        editor panel, so a renderer's table is as editable as a placed one."""
+        t = self.dressed(t)
+        if flow:
+            css = 'box-sizing:border-box;width:100%'
+        else:
             css = (f'box-sizing:border-box;position:absolute;'
                    f'left:{t["x"]}in;top:{t["y"]}in;'
                    f'width:{t["w"]}in;z-index:{int(t.get("z", 2))}')
-            if t.get("rot"):
-                css += f';rotate:{t["rot"]}deg'      # own property — see _style
-            if t.get("alpha") is not None:
-                css += f';opacity:{t["alpha"]:g}'
-            if t.get("blend") and t["blend"] != "normal":
-                css += f';mix-blend-mode:{t["blend"]}'
-            style = text_css(self.styled_as(t.get("style")))
-            tag = f' data-el="table.{t["id"]}"' if edit else ""
-            header = bool(t.get("header"))
-            rows = t.get("rows", [])
-            ncols = len(rows[0]) if rows else 0
-            border = t.get("border")
-            outer = table_border_css(border, "outer")
-            inner = table_border_css(border, "inner")
-            over = t.get("cells") or {}
-            col_align = t.get("colAlign") or []
-            # Per decimal column, the widest tail in it — in ch, the width of
-            # a "0", with a little over for a "%" being wider than a digit.
-            tails = {}
-            for cj, al in enumerate(col_align):
-                if al != "decimal":
-                    continue
-                ws = [decimal_tail(r[cj]) for ri2, r in enumerate(rows)
-                      if not (header and ri2 == 0) and cj < len(r)]
-                ws = [w for w in ws if w is not None]
-                tails[cj] = round(max((sum(1 if ch.isdigit() else 1.4 for ch in w)
-                                       for w in ws), default=0), 2)
-            # Column widths as a <colgroup>: percentages of the table's own
-            # width, so dragging a column divider never changes the table's
-            # placement on the page.
-            colgroup = ""
-            if t.get("colw") and ncols:
-                total = sum(t["colw"]) or 1
-                colgroup = "<colgroup>" + "".join(
-                    f'<col style="width:{w / total * 100:.4f}%">' for w in t["colw"]
-                ) + "</colgroup>"
-            body = ""
-            for ri, row in enumerate(rows):
-                cells = ""
-                for ci, c in enumerate(row):
-                    th = header and ri == 0
-                    name = "th" if th else "td"
-                    hook = f' data-cell="{ri},{ci}"' if edit else ""
-                    # Each edge picks the outer rule on the grid's rim and the
-                    # inner rule between cells, so "outer only" and "inner
-                    # only" both fall out of the same per-cell emit. Emitted
-                    # ONLY when the table carries a border spec: without one,
-                    # nothing is written and the report's own stylesheet keeps
-                    # styling the grid exactly as it always did.
-                    cs = ""
-                    if border:
-                        cs = (f'border-top:{outer if ri == 0 else inner};'
-                              f'border-left:{outer if ci == 0 else inner};'
-                              f'border-right:{outer if ci == ncols - 1 else inner};'
-                              f'border-bottom:{outer if ri == len(rows) - 1 else inner}')
-                    ov = over.get(f"{ri},{ci}") or {}
-                    # Zebra striping counts from the first BODY row, so a table
-                    # stripes the same whether or not it has a header band.
-                    band = None
-                    if t.get("band") and not th:
-                        if (ri - (1 if header else 0)) % 2 == 1:
-                            band = t["band"]
-                    bg = ov.get("fill") or (t.get("headerFill") if th else None) \
-                        or band or t.get("fill")
-                    bits = [cs] if cs else []
-                    if bg:
-                        bits.append(f"background:{bg}")
-                    fg = ov.get("color") or (t.get("headerColor") if th else None)
-                    if fg:
-                        bits.append(f"color:{fg}")
-                    ca_j = col_align[ci] if ci < len(col_align) else None
-                    dec = (ca_j == "decimal" and not th
-                           and decimal_tail(c) is not None)
-                    if ov.get("align"):
-                        bits.append(f'text-align:{ov["align"]}')
-                    elif ca_j:
-                        # A decimal column is right-aligned: the split below
-                        # gives every figure the same right-hand box, so its
-                        # point lands where everyone else's does. Its header,
-                        # and a cell of words, simply sit right.
-                        bits.append("text-align:" + ("right" if ca_j == "decimal" else ca_j))
-                    if dec:
-                        bits.append("font-variant-numeric:tabular-nums")
-                    if ov.get("bold") is not None:
-                        bits.append(f'font-weight:{"700" if ov["bold"] else "400"}')
-                    if ov.get("italic"):
-                        bits.append("font-style:italic")
-                    sty = f' style="{";".join(bits)}"' if bits else ""
-                    # A cell is ONE string, so a newline in it can only be a
-                    # break somebody typed (the cell editor's Shift-Enter).
-                    # Prose is the opposite — content.md soft-wraps at about
-                    # eighty columns, which is why md_inline itself leaves a
-                    # newline alone and paragraphs() closes it up to a space.
-                    body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
-                              else md_inline(str(c)).replace("\n", "<br>"))
-                    cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
-                body += f"<tr>{cells}</tr>"
-            klass = "ds-table"
-            extra = ""
-            tglSty = ""
-            if not edit and t["id"] in self.toggle_targets:
-                klass += " ds-tglable"
-                extra = f' id="ds-x-{t["id"]}"'
-                tglSty = f';--ds-tgl-d:{self.toggle_speed.get(t["id"], 0.3):g}s'
-            out.append(f'<table class="{klass}"{extra}{tag}{PLACED}'
-                       f'{anim_attrs(t.get("anim"))}{anchor_attrs(t)} '
-                       f'style="{css}{";" + style if style else ""}{tglSty}">'
-                       f'{colgroup}{body}</table>')
-        return "".join(out)
+        if t.get("rot"):
+            css += f';rotate:{t["rot"]}deg'      # own property — see _style
+        if t.get("alpha") is not None:
+            css += f';opacity:{t["alpha"]:g}'
+        if t.get("blend") and t["blend"] != "normal":
+            css += f';mix-blend-mode:{t["blend"]}'
+        style = text_css(self.styled_as(t.get("style")))
+        tag = f' data-el="table.{t["id"]}"' if edit else ""
+        header = bool(t.get("header"))
+        rows = t.get("rows", [])
+        ncols = len(rows[0]) if rows else 0
+        border = t.get("border")
+        outer = table_border_css(border, "outer")
+        inner = table_border_css(border, "inner")
+        over = t.get("cells") or {}
+        col_align = t.get("colAlign") or []
+        # Per decimal column, the widest tail in it — in ch, the width of
+        # a "0", with a little over for a "%" being wider than a digit.
+        tails = {}
+        for cj, al in enumerate(col_align):
+            if al != "decimal":
+                continue
+            ws = [decimal_tail(r[cj]) for ri2, r in enumerate(rows)
+                  if not (header and ri2 == 0) and cj < len(r)]
+            ws = [w for w in ws if w is not None]
+            tails[cj] = round(max((sum(1 if ch.isdigit() else 1.4 for ch in w)
+                                   for w in ws), default=0), 2)
+        # Column widths as a <colgroup>: percentages of the table's own
+        # width, so dragging a column divider never changes the table's
+        # placement on the page.
+        colgroup = ""
+        if t.get("colw") and ncols:
+            total = sum(t["colw"]) or 1
+            colgroup = "<colgroup>" + "".join(
+                f'<col style="width:{w / total * 100:.4f}%">' for w in t["colw"]
+            ) + "</colgroup>"
+        body = ""
+        for ri, row in enumerate(rows):
+            cells = ""
+            for ci, c in enumerate(row):
+                th = header and ri == 0
+                name = "th" if th else "td"
+                hook = f' data-cell="{ri},{ci}"' if edit else ""
+                if flow and not th and header and ci < len(rows[0]):
+                    # the column's header, so the phone layout can say what
+                    # each stacked value is (the header row itself is hidden)
+                    hook += ' data-label="%s"' % _html_escape(
+                        re.sub(r"[*_`]", "", str(rows[0][ci]).replace("\n", " ")).strip(),
+                        quote=True)
+                # Each edge picks the outer rule on the grid's rim and the
+                # inner rule between cells, so "outer only" and "inner
+                # only" both fall out of the same per-cell emit. Emitted
+                # ONLY when the table carries a border spec: without one,
+                # nothing is written and the report's own stylesheet keeps
+                # styling the grid exactly as it always did.
+                cs = ""
+                if border:
+                    cs = (f'border-top:{outer if ri == 0 else inner};'
+                          f'border-left:{outer if ci == 0 else inner};'
+                          f'border-right:{outer if ci == ncols - 1 else inner};'
+                          f'border-bottom:{outer if ri == len(rows) - 1 else inner}')
+                ov = over.get(f"{ri},{ci}") or {}
+                # Zebra striping counts from the first BODY row, so a table
+                # stripes the same whether or not it has a header band.
+                band = None
+                if t.get("band") and not th:
+                    if (ri - (1 if header else 0)) % 2 == 1:
+                        band = t["band"]
+                bg = ov.get("fill") or (t.get("headerFill") if th else None) \
+                    or band or t.get("fill")
+                bits = [cs] if cs else []
+                if bg:
+                    bits.append(f"background:{bg}")
+                fg = ov.get("color") or (t.get("headerColor") if th else None)
+                if fg:
+                    bits.append(f"color:{fg}")
+                ca_j = col_align[ci] if ci < len(col_align) else None
+                dec = (ca_j == "decimal" and not th
+                       and decimal_tail(c) is not None)
+                if ov.get("align"):
+                    bits.append(f'text-align:{ov["align"]}')
+                elif ca_j:
+                    # A decimal column is right-aligned: the split below
+                    # gives every figure the same right-hand box, so its
+                    # point lands where everyone else's does. Its header,
+                    # and a cell of words, simply sit right.
+                    bits.append("text-align:" + ("right" if ca_j == "decimal" else ca_j))
+                if dec:
+                    bits.append("font-variant-numeric:tabular-nums")
+                if ov.get("bold") is not None:
+                    bits.append(f'font-weight:{"700" if ov["bold"] else "400"}')
+                if ov.get("italic"):
+                    bits.append("font-style:italic")
+                sty = f' style="{";".join(bits)}"' if bits else ""
+                # A cell is ONE string, so a newline in it can only be a
+                # break somebody typed (the cell editor's Shift-Enter).
+                # Prose is the opposite — content.md soft-wraps at about
+                # eighty columns, which is why md_inline itself leaves a
+                # newline alone and paragraphs() closes it up to a space.
+                body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
+                          else md_inline(str(c)).replace("\n", "<br>"))
+                cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
+            hdr = ' class="ds-hdr"' if flow and header and ri == 0 else ""
+            body += f"<tr{hdr}>{cells}</tr>"
+        klass = "ds-table"
+        extra = ""
+        tglSty = ""
+        if not edit and t["id"] in self.toggle_targets:
+            klass += " ds-tglable"
+            extra = f' id="ds-x-{t["id"]}"'
+            tglSty = f';--ds-tgl-d:{self.toggle_speed.get(t["id"], 0.3):g}s'
+        if flow:
+            # attr() stamps data-el (edit mode only) and applies a moved
+            # table's positions[] offset, merged with this table's own style.
+            attrs = self.attr(f'table.{t["id"]}',
+                              css + (";" + style if style else "") + tglSty)
+            if t.get("_unseeded") and edit:
+                attrs += f' data-unseeded="{t["id"]}"'
+            return (f'<table class="{klass} ds-flow"{extra}{attrs}>'
+                    f'{colgroup}{body}</table>')
+        return (f'<table class="{klass}"{extra}{tag}{PLACED}'
+                f'{anim_attrs(t.get("anim"))}{anchor_attrs(t)} '
+                f'style="{css}{";" + style if style else ""}{tglSty}">'
+                f'{colgroup}{body}</table>')
+
+    FLOW_TABLE_CSS = (
+        "<style>table.ds-flow{border-collapse:collapse;table-layout:fixed}"
+        "table.ds-flow td,table.ds-flow th{text-align:left;vertical-align:middle;"
+        "padding:5px 8px}"
+        "@media (max-width:640px){"
+        "table.ds-flow,table.ds-flow tbody,table.ds-flow tr,"
+        "table.ds-flow td{display:block;width:100%;box-sizing:border-box}"
+        "table.ds-flow colgroup,table.ds-flow tr.ds-hdr{display:none}"
+        "table.ds-flow td[data-label]:not(:first-child)::before{"
+        'content:attr(data-label) ": ";font-weight:700;opacity:.7}}'
+        "</style>")
+
+    def flow_table(self, table_id: str, default: dict | None = None) -> str:
+        """A table that sits IN the page's flow, as a real <table> the editor
+        can add rows/columns to, retype and restyle (the same object as a
+        placed table, so the same Table panel). The data lives in layout.json
+        `tables` with `"flow": true`; a renderer calls this where the table
+        belongs and never builds the grid from <div>s.
+
+        `default` is a table dict ({"rows": [...], "header": true, ...}) drawn
+        only while layout.json has no such table, so a fresh renderer still
+        shows its table. It is NOT editable until seeded: the editor works on
+        layout.json, so docsync.check reports any flow table drawn from its
+        default, with the JSON to paste."""
+        edit = bool(os.environ.get("DOCSYNC_EDIT"))
+        t = self.table(table_id)
+        if t is None:
+            if default is None:
+                return ""
+            t = {"id": table_id, "flow": True, "_unseeded": True, **default}
+            self.unseeded_tables[table_id] = t
+        css = "" if getattr(self, "_flowtable_sent", False) else self.FLOW_TABLE_CSS
+        self._flowtable_sent = True
+        return css + self._table_el(t, edit, flow=True)
 
     def table(self, table_id: str) -> dict | None:
         return next((t for t in self.tables if t.get("id") == table_id), None)

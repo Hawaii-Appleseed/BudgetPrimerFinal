@@ -4119,6 +4119,83 @@ check_eq("a decimal column splits its figures and leaves its header whole",
 check_eq("a table nobody aligned renders as it did",
          "ds-dec" in _layout({"tables": [_tb]}).tables_html(1)
          or "text-align" in _layout({"tables": [_tb]}).tables_html(1), False)
+# A flow table is a REAL <table> in the page's own flow: static, full width,
+# with the same cell hooks the editor edits, and the header row marked so the
+# phone layout can hide it and label each stacked value from it.
+_ft = {"tables": [{"id": "ft", "flow": True, "header": True,
+                   "rows": [["The change", "Fix"], ["a **b**", "c"]]}]}
+_ftp = _layout(_ft)
+check_eq("a flow table is not drawn at an absolute page position",
+         _ftp.tables_html(1), "")
+_fth = _ftp.flow_table("ft")
+check("a flow table is a real <table> in flow", _fth, '<table class="ds-table ds-flow"')
+check_eq("a flow table never positions itself absolutely",
+         "position:absolute" in _fth, False)
+check("each stacked value carries its column's header for phones",
+      _fth, 'data-label="The change"')
+check("the phone layout hides the header row", _fth, "tr.ds-hdr{display:none}")
+check_eq("a flow table needs no page, x, y or w", _layout_error(
+    {"tables": [{"id": "z", "flow": True, "rows": [["a"], ["b"]]}]}), "no error raised")
+check("but a placed table still does", _layout_error(
+    {"tables": [{"id": "z", "rows": [["a"]]}]}), "page")
+_fte = _layout(_ft)
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _fted = _fte.flow_table("ft")
+    _ftu = _layout({}).flow_table("nope", {"header": True, "rows": [["h"], ["v"]]})
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+check("editing a flow table: the editor selects it and edits its cells",
+      _fted, 'data-el="table.ft"')
+check("editing a flow table: each cell has its hook", _fted, 'data-cell="1,0"')
+check("a flow table drawn from a renderer default is flagged unseeded",
+      _ftu, 'data-unseeded="nope"')
+
+# docsync.check: a table drawn as sibling grid <div>s is not a real table.
+from docsync.check import check_fake_tables
+_fake = ("<style>.row{display:grid;grid-template-columns:2in 1fr}</style>"
+         "<div class=\"rows\">" + "".join(
+             "<div class=\"row\"><div>a</div><div>b</div></div>" for _ in range(4))
+         + "</div>")
+check_eq("div+grid rows are reported as a fake table",
+         [p.check for p in check_fake_tables(_fake)], ["fake-table"])
+check_eq("and the exact line editability_ok accepts silences it",
+         check_fake_tables(_fake, accepted={".row x4 in .rows"}), [])
+check_eq("a real <table> is not a fake table",
+         check_fake_tables("<table><tr><td>a</td><td>b</td></tr></table>"), [])
+_two = _fake.replace('<div class="row"><div>a</div><div>b</div></div>' * 4,
+                     '<div class="row"><div>a</div><div>b</div></div>' * 2)
+check_eq("two grid blocks (cards, not rows) are not a table",
+         check_fake_tables(_two), [])
+
+# --- threaded frames (INDESIGN_PARITY 4) ------------------------------------
+from docsync.layout import THREAD_JS                                         # noqa: E402
+
+_tf = lambda **k: dict({"page": 1, "x": 1, "y": 1, "w": 3, "h": 2}, **k)
+_th = _layout({"boxes": [_tf(id="a", md="one\n\ntwo", next="b"), _tf(id="b", page=2, md="")]})
+_t1, _t2 = _th.text_boxes(1), _th.text_boxes(2)
+check_eq("a frame is exactly its height, and says which thread and place it is",
+         ('data-thread="a" data-thread-i="0"' in _t1, "height:2in" in _t1,
+          "min-height" in _t1, 'data-thread="a" data-thread-i="1"' in _t2), (True, True, False, True))
+check_eq("the runtime rides out once for a document, on the first threaded page",
+         (_t1 + _t2).count(THREAD_JS), 1)
+check_eq("the story sits in the first frame; the next frame is empty until poured",
+         ("two" in _t1, "two" in _t2), (True, False))
+check_eq("a layout with no thread emits none of it",
+         THREAD_JS in _layout({"boxes": [_tf(id="a", md="x")]}).text_boxes(1), False)
+for _bad, _says in (
+        ([_tf(id="a", md="x", next="b"), _tf(id="b", page=2, md="words")], "only the first frame"),
+        ([_tf(id="a", md="x", next="b"), dict(_tf(id="b", page=2, md=""), h=None)], "needs a height"),
+        ([_tf(id="a", md="x", next="zz")], "not a text box"),
+        ([_tf(id="a", md="x", next="a")], "itself"),
+        ([_tf(id="a", md="x", next="c"), _tf(id="b", md="y", next="c"), _tf(id="c", md="")], "already continues"),
+        ([_tf(id="a", md="x", next="b"), _tf(id="b", md="", next="a")], "loops"),
+        ([_tf(id="a", md="x", next="b", cols=2), _tf(id="b", md="")], "columns"),
+        ([_tf(id="a", md="x", next="b", anchor={"to": "k", "dy": 0}), _tf(id="b", md="")], "anchor")):
+    check_eq(f"a thread is refused: {_says}", _says in _layout_error({"boxes": _bad}), True)
+check_eq("a master box cannot thread",
+         "next" in _layout_error({"masters": {"M": {"boxes": [_tf(id="f", md="x", next="g")]}},
+                                  "boxes": [_tf(id="g", md="y")]}), True)
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))

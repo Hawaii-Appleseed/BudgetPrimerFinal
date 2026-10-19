@@ -152,11 +152,51 @@ its *text* model, and the whole idea of a named, redefinable style.
    machinery at all; it lives in the Box panel with the rest of the box's
    look, and an object style can carry it.
 
-   The other half — threading between frames — is still the most *InDesign*
-   thing on the list and the most work: it needs a measured text layout, which
-   the engine deliberately does not have (it hands text to the browser and
-   lets CSS set it). Scoped separately, and honestly, as a large piece; see
-   "Not coming".
+   **The other half, threading between frames — CLOSED 2026-10-19.** It was
+   filed under "Not coming" on the belief that it needed a measured text
+   engine. It does not: it needs the browser's layout to be READ after it
+   happens, which is what ANCHOR_JS already does. A box says
+   `next: "<box id>"`; the FIRST frame of a thread holds the whole story's
+   markdown and the frames after it hold none (refused at load if they do,
+   since their words would be lost). Every frame is exactly its `h` —
+   `height`, not the `min-height` a lone box gets — because a frame that
+   grows never runs out of room; threading a box without one gives it its
+   current rendered height, so nothing moves.
+
+   `layout.THREAD_JS`, emitted once and only when something is threaded,
+   puts each story back in its first frame and pours it forward: in each
+   frame, the first block whose bottom passes the frame's content edge is
+   split at the first LINE that does not fit (a binary search over word
+   starts, measured with Ranges), and that block's rest and everything after
+   it move on. A paragraph splits by `Range.extractContents`, so a link or
+   bold run across the break is carried intact on both sides; a list moves
+   whole items and an `<ol>` keeps counting with `start`. A continuation is
+   `ds-cont`: no first-line indent, no space before. A last frame that still
+   overflows gets `data-overset`, which the editor draws as InDesign's red
+   `+` and `audit()` reports as `overset`; the words are NOT hidden — they
+   spill past the frame, and the fit check still catches anything that runs
+   off the sheet. No script, or a phone (where mobile_css puts every frame
+   back in the flow): the story stays in its first frame, which grows.
+
+   Editing: a click in ANY frame opens the whole story in the first frame,
+   growing while it is open (`__dsThreadGather`), and it pours back through
+   the frames when the edit commits — InDesign edits in place, this edits
+   the story, which is the one real difference. Right-click a box: **Thread
+   text into…** arms the next click (Esc cancels; the clicked box's own
+   words join the end of the story, as InDesign merges stories), and **Break
+   thread after this frame** cuts the chain (the empty frames after it go;
+   what no longer fits is overset). Deleting, duplicating, copying and
+   pasting a frame keep the thread whole (`unlinkFrame`, `standaloneCopy`);
+   dragging a frame's edge to nothing leaves it at the smallest height
+   rather than turning it back into a growing box. Pilot: `thread(a, b)`,
+   `unthread(id)`, both batchable; `setBoxText` on the first frame retexts
+   the whole story.
+
+   Refused at load, each with its reason: a `next` naming no box, a frame
+   continuing into itself, two frames continuing into one, a loop, a frame
+   with no `h`, a threaded frame that also anchors, wraps, acts or sets
+   columns (thread more frames instead), and any master box (a shared
+   layout cannot thread). Every existing render stays byte-identical.
 
 5. **Text wrap around an object. — CLOSED 2026-09-17**, the rectangular
    case, which is the case. `wrap: "left" | "right"` (and `wrapPad`, inches)
@@ -250,7 +290,8 @@ its *text* model, and the whole idea of a named, redefinable style.
    the page's objects, master items included. Still not InDesign's named
    layers with lock and hide across the document; nothing here needs those.
 9. **Baseline grid.** Nothing aligns type across columns or facing pages.
-   Matters once (4) exists; before that there is nothing to align to.
+   It waited on (4), and (4) is now whole — threaded frames side by side are
+   exactly where lines that do not line up show.
 10. **Table headers that repeat across a break, and cell styles. —
     RECLASSIFIED 2026-09-17.** A placed table is pinned by inch to one page
     and never breaks, so a repeating `<thead>` has nothing to repeat across;
@@ -281,6 +322,8 @@ its *text* model, and the whole idea of a named, redefinable style.
   browser sets the type and the same markup serves the preview, the published
   page, the phone and the PDF. A second text engine would have to agree with
   CSS exactly or the preview would stop being the thing.
+  (Threading, once filed here as needing one, turned out not to — see (4).
+  The browser still sets every line; THREAD_JS only reads where they fell.)
 - **Anything that only makes sense on paper** — printer's marks, colour
   separation, ink limits. These documents are read on a screen first.
 
@@ -295,8 +338,7 @@ string shared by the page and the editor rather than two that could drift.
 
 What is left is Tier 3: (9) a baseline grid, which waits on threading; (11)
 bleed beyond report2027, only if another report goes to a printer. (8) is
-back. Threading between
-frames stays in "Not coming". The next real work on this editor is not a gap
+back. Threading between frames is done (4). The next real work on this editor is not a gap
 in this list — it is the follow-ups each closed item named: tables as master
 items and as anchors, per-item master overrides, `shape-outside` if a wrapped
 image ever needs a contour.
@@ -540,7 +582,7 @@ same day — see Tier 1.
 
 ### Already on this list, still open
 
-Threading between frames ("Not coming"), the baseline grid (9), named
+The baseline grid (9), now unblocked by threading (4), named
 layers with lock and hide across the document (8), bleed outside report2027
 (11), tables as master items and anchors, per-item master overrides, and
 `shape-outside` contour wrap.

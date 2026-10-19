@@ -484,6 +484,107 @@ CHECKS = (check_citations, check_markdown, check_svg_bounds,
           check_text_size, check_attributes, check_alt_text)
 
 
+
+# --- fake tables --------------------------------------------------------------
+# Tabular data must be a real <table> the editor can add rows and columns to
+# (L.flow_table). A table drawn from sibling <div>s with a CSS grid on each row
+# looks the same and can only be edited cell by cell, never as a table: a
+# column cannot be deleted, a row cannot be added (UHERO TRC Table 1, 2026-10).
+
+_STYLE_BLOCK = re.compile(r"(?is)<style\b[^>]*>(.*?)</style\s*>")
+_CSS_RULE = re.compile(r"([^{}@]+)\{([^{}]*)\}")
+_VOID = {"br", "img", "hr", "input", "meta", "link", "source", "wbr", "col"}
+
+
+def _grid_tracks(decl: str) -> int:
+    """How many columns a grid-template-columns value declares (0 = none)."""
+    m = re.search(r"grid-template-columns\s*:\s*([^;}]+)", decl)
+    if not m:
+        return 0
+    v = m.group(1).strip()
+    rep = re.match(r"repeat\(\s*(\d+)\s*,", v)
+    if rep:
+        return int(rep.group(1))
+    v = re.sub(r"\([^)]*\)", "x", v)
+    return len(v.split())
+
+
+def check_fake_tables(html: str, level: str = "warn",
+                      accepted: set | None = None) -> list[Problem]:
+    """Rows of a table built from <div>s: 3+ sibling elements that are each a
+    multi-column grid with 2+ child cells, in a document that has no real
+    table doing the job. Reports one line per group, e.g. `.swrow x6 in
+    .swaps`, which is the exact string editability_ok accepts."""
+    from html.parser import HTMLParser
+    accepted = accepted or set()
+    grid_classes = set()
+    for blk in _STYLE_BLOCK.findall(html):
+        for sel, body in _CSS_RULE.findall(blk):
+            if _grid_tracks(body) >= 2:
+                for one in sel.split(","):
+                    one = one.strip()
+                    if re.fullmatch(r"\.[A-Za-z_][\w-]*", one):
+                        grid_classes.add(one[1:])
+
+    class Node:
+        __slots__ = ("key", "kids", "parent", "cls")
+
+        def __init__(self, key, parent, cls):
+            self.key, self.kids, self.parent, self.cls = key, 0, parent, cls
+
+    groups: dict = {}
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack = [Node(None, None, "")]
+
+        def handle_starttag(self, tag, attrs):
+            if tag in _VOID:
+                if self.stack:
+                    self.stack[-1].kids += 1
+                return
+            d = dict(attrs)
+            classes = (d.get("class") or "").split()
+            key = None
+            for c in classes:
+                if c in grid_classes:
+                    key = "." + c
+            if key is None and _grid_tracks(d.get("style") or "") >= 2:
+                key = "inline-grid"
+            parent = self.stack[-1]
+            parent.kids += 1
+            n = Node(key, parent, " ".join(classes))
+            self.stack.append(n)
+
+        def handle_endtag(self, tag):
+            if tag in _VOID or len(self.stack) < 2:
+                return
+            n = self.stack.pop()
+            if n.key and n.kids >= 2:
+                g = groups.setdefault(id(n.parent), [n.parent, {}])
+                g[1][n.key] = g[1].get(n.key, 0) + 1
+
+    P().feed(html)
+    out = []
+    for parent, counts in groups.values():
+        for key, n in counts.items():
+            if n >= 3:
+                where = ("." + parent.cls.split()[0]) if parent.cls else "a block"
+                label = f"{key} x{n} in {where}"
+                if label not in accepted:
+                    out.append(label)
+    if not out:
+        return []
+    return [Problem(
+        "fake-table",
+        f"{len(out)} table(s) built from <div> rows, not a real table: "
+        f"{_samples(out)}. Tabular data goes through L.flow_table(id, default) "
+        f"with the table in layout.json (\"flow\": true), so the editor can "
+        f"add and remove rows and columns; or list the line in "
+        f"editability_ok if it is not really a table",
+        level)]
+
 # --- editability coverage ----------------------------------------------------
 # Why this exists: the rxkids-fiscal one-pager passed every check above and the
 # editor's own audit, yet a reader of the page in the editor found "so many
@@ -1261,6 +1362,16 @@ def check_editability(binding) -> list[Problem]:
     foreign = [t for t in foreign if t not in accepted]
     pub_only = ([t for t in check_publish_only(html, pub_html)
                  if t not in accepted] if pub_html is not None else [])
+    problems.extend(check_fake_tables(html, level, accepted))
+    unseeded = sorted(set(re.findall(r'data-unseeded="([^"]+)"', html)))
+    if unseeded:
+        problems.append(Problem(
+            "fake-table",
+            f"flow table(s) drawn from the renderer's default, not from "
+            f"layout.json, so the editor cannot edit them: "
+            f"{', '.join(unseeded)}. Add each to layout.json `tables` with "
+            f"\"flow\": true, \"header\": true and its \"rows\"",
+            level))
     immovable = [k for k in (cov.immovable_paged if cov.saw_page
                              else cov.immovable_all) if k not in accepted]
     hint = ("Wire them (C.html / C.slot_attr / L.attr), declare derived "

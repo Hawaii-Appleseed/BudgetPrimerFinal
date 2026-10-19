@@ -5745,10 +5745,32 @@ function layerMenu(d, el, e) {
       markDirty(); await render();
     });
   }
+  if (boxOf(id) && !masterItemOf(id)) {
+    const tb = boxOf(id);
+    const sep0 = d.createElement('div'); sep0.className = 'ds-menu-sep'; m.appendChild(sep0);
+    if (!tb.next) {
+      item('Thread text into…', () => {
+        closeMenu(d);
+        threadArm = id;
+        d.documentElement.classList.add('ds-thread-arm');
+        $('stat').textContent = 'click the box the words should continue in — Esc to cancel';
+      });
+    } else {
+      item('Break thread after this frame', async () => {
+        pushHistory();
+        const r = _unthreadApply(id);
+        markDirty(); await render();
+        $('stat').textContent = r.removed
+          ? `thread broken — ${r.removed} empty frame${r.removed === 1 ? '' : 's'} after it removed`
+          : 'thread broken';
+      });
+    }
+  }
   if (boxOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Delete text box', async () => {
       pushHistory();
+      unlinkFrame(id);
       layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, ''));
       markDirty(); await render();
     });
@@ -6104,6 +6126,9 @@ function startResize(d, el, e0, dir) {
         // it back to nothing clears it (auto height again).
         if (dir.includes('s') || dir.includes('n')) {
           if (size.h > MIN_IN + 0.01) bx2.h = +size.h.toFixed(2);
+          // A threaded frame is exactly its height — it cannot go back to
+          // growing, or it would never pass words on. It keeps the smallest.
+          else if (inThread(bx2)) bx2.h = +MIN_IN.toFixed(2);
           else delete bx2.h;
         }
         markDirty();
@@ -9010,8 +9035,21 @@ function tpSwatches(host, current, onPick, opts = {}) {
  *  markdown, and the same blur-commits rule. */
 function editBox(d, el, at) {
   if (editing) return;
-  const b = boxOf(el.dataset.el);
+  let b = boxOf(el.dataset.el);
   if (!b) return;
+  // A thread is ONE story: whichever frame was clicked, it opens in the first
+  // frame with every word in it, growing to fit while it is open, and pours
+  // back through the frames when the edit commits and renders. A click's
+  // caret point means nothing once the words have moved, so it is dropped.
+  if (inThread(b)) {
+    const head = threadHead(b);
+    const w = d.defaultView;
+    if (w.__dsThreadGather) w.__dsThreadGather(head.id);
+    const hel = d.querySelector(`[data-el="text.${CSS.escape(head.id)}"]`);
+    if (hel && hel !== el) at = undefined;
+    if (hel) el = hel;
+    b = head;
+  }
   editing = true;
   pushHistory();
   // The editor opens WHERE THE BOX IS. A bare host is static, and static
@@ -9037,6 +9075,7 @@ function editBox(d, el, at) {
   // move grip rides it, and a resize or a move lands on the box's inches.
   wrap.dataset.el = el.dataset.el;
   wrap.style.cssText = el.style.cssText;
+  if (inThread(b)) { wrap.style.height = 'auto'; wrap.style.minHeight = `${b.h}in`; }
   // A press on the box's own padding — a filled box, an expand button — is a
   // press on the box being typed in, not a click away from it. Taking focus
   // there closed the words the instant they opened: a click opens them now,
@@ -9910,6 +9949,152 @@ function fillVars(d) {
   }
   try { w.__dsVars(); } catch (e) { /* a half-built document; the next render fills */ }
 }
+// ------------------------------------------------------ threaded frames
+// layout.THREAD_JS pours each thread's story through its frames after layout
+// (INDESIGN_PARITY.md 4). Evaluated here after each render, like the anchors
+// and the variables, because an imported page node never runs its scripts.
+let THREAD_SRC = null;
+function pourThreads(d) {
+  if (!d || !d.querySelector('[data-thread]')) return;
+  const w = d.defaultView;
+  if (!w.__dsThread) {
+    if (THREAD_SRC === null) {
+      try { THREAD_SRC = py.runPython('from docsync.layout import THREAD_JS\nTHREAD_JS'); }
+      catch (e) { THREAD_SRC = ''; }
+    }
+    try { w.eval(THREAD_SRC); } catch (e) { return; }
+  }
+  try { w.__dsThread(); } catch (e) { /* a half-built document; the next render pours */ }
+}
+const threadPrev = () => {
+  const m = {};
+  boxes().forEach(b => { if (b.next) m[b.next] = b.id; });
+  return m;
+};
+/** The first frame of the thread a box is in, or the box itself. */
+function threadHead(b) {
+  const prev = threadPrev(), seen = new Set();
+  let cur = b;
+  while (cur && prev[cur.id] && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    cur = boxes().find(x => x.id === prev[cur.id]);
+  }
+  return cur || b;
+}
+function threadChain(head) {
+  const out = [], seen = new Set();
+  for (let cur = head; cur && !seen.has(cur.id); cur = cur.next ? boxes().find(x => x.id === cur.next) : null) {
+    seen.add(cur.id); out.push(cur);
+  }
+  return out;
+}
+const inThread = b => !!(b && (b.next || threadPrev()[b.id]));
+/** The rendered height of a box, in inches — what a frame threaded without an
+ *  `h` is given, so threading it does not change what is on the page. */
+function boxHeightIn(id) {
+  const d = $('out').contentDocument;
+  const el = d.querySelector(`[data-el="text.${CSS.escape(id)}"]`);
+  const pg = el && el.closest('section.page');
+  return el && pg ? +inchBox(el, pg).h.toFixed(2) : 1;
+}
+function _threadValidate(fromId, toId) {
+  const a = boxOf(fromId), b = boxOf(toId);
+  if (!a || !b) return { ok: false, error: `no text box '${!a ? fromId : toId}' — check inventory()` };
+  if (a.id === b.id) return { ok: false, error: 'a frame cannot continue into itself' };
+  if (masterItemOf('text.' + a.id) || masterItemOf('text.' + b.id))
+    return { ok: false, error: 'a shared-layout box cannot be threaded — detach it first' };
+  if (a.next) return { ok: false, error: `'${a.id}' already continues into '${a.next}' — break that first` };
+  if (threadPrev()[b.id]) return { ok: false, error: `'${b.id}' already continues another frame` };
+  if (threadChain(b).some(x => x.id === threadHead(a).id))
+    return { ok: false, error: 'that would make the thread loop back on itself' };
+  for (const x of [a, b]) {
+    for (const k of ['anchor', 'wrap', 'act'])
+      if (x[k] != null) return { ok: false, error: `'${x.id}' carries '${k}', which a threaded frame cannot` };
+    if ((x.cols | 0) > 1) return { ok: false, error: `'${x.id}' sets columns — a threaded frame cannot` };
+  }
+  return { ok: true };
+}
+/** a's story continues in b. b's own words, if it had any, join the end of
+ *  the story (InDesign merges the two), and every frame gets a fixed height
+ *  — its current one — because a frame that grows never runs out of room. */
+function _threadApply(fromId, toId) {
+  const a = boxOf(fromId), b = boxOf(toId);
+  const head = threadHead(a);
+  const tail = (b.md || '').trim();
+  if (tail) head.md = `${(head.md || '').trim()}\n\n${tail}`;
+  b.md = '';
+  a.next = b.id;
+  threadChain(head).forEach(x => { if (x.h == null) x.h = boxHeightIn(x.id); });
+  return { from: a.id, to: b.id, head: head.id, frames: threadChain(head).map(x => 'text.' + x.id) };
+}
+/** Break the thread after `id`. The story stays in the frames before the
+ *  break (any that no longer fits is overset there, marked); the frames after
+ *  it are empty, so they are removed — an empty box is not a thing a page
+ *  can carry — and the count is said. */
+function _unthreadApply(id) {
+  const a = boxOf(id);
+  if (!a || !a.next) return { removed: 0 };
+  const after = threadChain(boxOf(a.next)).map(x => x.id);
+  delete a.next;
+  layout.boxes = boxes().filter(x => !after.includes(x.id));
+  return { removed: after.length, ids: after.map(x => 'text.' + x) };
+}
+
+/** A copy of a box that stands on its own. A threaded frame's copy joins no
+ *  thread (two frames cannot continue into the same one) and carries the
+ *  whole story, since a frame after the first holds no words of its own. */
+function standaloneCopy(b) {
+  const c = clone(b);
+  delete c.next;
+  if (inThread(b)) c.md = threadHead(b).md;
+  return c;
+}
+
+/** Take a frame out of its thread before the frame itself goes: the frame
+ *  before it now continues into the one after, and a first frame hands the
+ *  story to the frame after it. Every place a box is removed calls this, or
+ *  a `next` would point at nothing and the document would not build. */
+function unlinkFrame(id) {
+  const b = boxOf(id);
+  if (!b || !inThread(b)) return;
+  const prevId = threadPrev()[b.id];
+  const nxt = b.next ? boxOf(b.next) : null;
+  if (prevId) {
+    const p2 = boxOf(prevId);
+    if (b.next) p2.next = b.next; else delete p2.next;
+  } else if (nxt) {
+    nxt.md = b.md;
+  }
+  delete b.next;
+}
+
+// The armed click: "Thread text into…" waits for the next click on a box.
+let threadArm = null;
+function threadWire(d) {
+  if (d.__dsThreadWire) return;
+  d.__dsThreadWire = true;
+  d.addEventListener('mousedown', async e => {
+    if (!threadArm) return;
+    const hit = e.target.closest && e.target.closest('[data-el^="text."]');
+    e.preventDefault(); e.stopPropagation();
+    const from = threadArm; threadArm = null;
+    d.documentElement.classList.remove('ds-thread-arm');
+    if (!hit) { $('stat').textContent = 'threading cancelled'; return; }
+    const v = _threadValidate(from, hit.dataset.el);
+    if (!v.ok) { $('stat').textContent = v.error; return; }
+    pushHistory();
+    const r = _threadApply(from, hit.dataset.el);
+    markDirty(); await render();
+    $('stat').textContent = `text now flows through ${r.frames.length} frames`;
+  }, true);
+  d.addEventListener('keydown', e => {
+    if (threadArm && e.key === 'Escape') {
+      threadArm = null; d.documentElement.classList.remove('ds-thread-arm');
+      $('stat').textContent = 'threading cancelled';
+    }
+  });
+}
+
 const anchorable = id => !!id && !id.startsWith('table.') && !!!shapeOf(id)
   && !!$('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"]`);
 /** The host slot's box, in page inches — the union of its paragraphs, so a
@@ -11338,6 +11523,7 @@ async function deleteSel(d) {
     if (!!shapeOf(id)) {
       layout.shapes = layout.shapes.filter(s => s.id !== id); touched = true; gone.push(id);
     } else if (boxOf(id)) {
+      unlinkFrame(id);
       layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, '')); touched = true; gone.push(id);
     } else if (tableOf(id)) {
       layout.tables = tables().filter(t => t.id !== id.replace(/^table\./, '')); touched = true; gone.push(id);
@@ -11494,7 +11680,7 @@ async function duplicateSel(d) {
       copies.push(nid);
     } else if (b) {
       const nid = freeBoxId();
-      boxes().push({ ...b, id: nid,
+      boxes().push({ ...standaloneCopy(b), id: nid,
         x: Math.min(b.x + 0.2, PAGE_W_IN - Math.min(b.w, PAGE_W_IN)),
         y: Math.min(b.y + 0.2, PAGE_H_IN - 0.4) });
       copies.push('text.' + nid);
@@ -11541,7 +11727,7 @@ function copySel(d) {
     const sh = shapeOf(id);
     const b = boxOf(id);
     if (sh) items.push({ kind: 'shape', data: clone(sh) });
-    else if (b) items.push({ kind: 'box', data: clone(b) });
+    else if (b) items.push({ kind: 'box', data: standaloneCopy(b) });
   });
   if (!items.length) {
     $('stat').textContent = "nothing to copy — a designed element can't be copied; try Copy style";
@@ -12342,6 +12528,7 @@ function chip(pid, pos, label, isHidden) {
       layout.shapes = layout.shapes.filter(s => {
         if (s.page !== pid) return true; gone.push(s.id); return false;
       });
+      boxes().filter(b => b.page === pid).forEach(b => unlinkFrame(b.id));
       layout.boxes = boxes().filter(b => {
         if (b.page !== pid) return true; gone.push('text.' + b.id); return false;
       });
@@ -12513,8 +12700,11 @@ async function masterFromPage(pid, name) {
   if (!c.boxes.length && !c.shapes.length)
     return { ok: false, error: `nothing placed on page ${pageLabel(pid)} to share` };
   pushHistory();
-  const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; return y; };
-  masters()[name] = { boxes: c.boxes.map(strip), shapes: c.shapes.map(strip) };
+  // A shared layout cannot thread; the page's frames leave their threads first.
+  c.boxes.forEach(b => unlinkFrame(b.id));
+  const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; delete y.next; return y; };
+  // Re-read: unlinking may have handed a story to a frame on this page.
+  masters()[name] = { boxes: pageContents(pid).boxes.map(strip), shapes: c.shapes.map(strip) };
   layout.boxes = boxes().filter(b => String(b.page) !== String(pid));
   layout.shapes = layout.shapes.filter(s => String(s.page) !== String(pid));
   pageMasters()[String(pid)] = name;
@@ -19019,9 +19209,11 @@ function wire(roots) {
     keysFor(d);
     wireMarkState(d);          // chrome B/I state tracks the edit selection
     anchorWire(d);             // the armed anchor click, once per document
+    threadWire(d);             // the armed thread click, likewise
   }
   applyZoom();
   fillVars(d);                 // page numbers and contents first: they change widths
+  pourThreads(d);              // threaded stories fill their frames
   placeAnchors(d);             // anchored objects find their paragraphs FIRST,
   if (syncReserves(d)) placeAnchors(d);   // a strut re-sized moves what hangs below it
   reportFit(d);                // so every measurement below sees them there
@@ -19205,6 +19397,7 @@ function wire(roots) {
        that keeps a cited line the same height being edited as it is rendered.
        Setting either here would put the reflow straight back. */
     .ds-chip.ds-fnchip { color:#2F3E46; }
+    .ds-thread-arm [data-el^="text."] { cursor:copy !important; }
     .ds-chip.ds-varchip { color:#2F3E46; font-size:.82em; font-style:normal; white-space:nowrap; }
     .ds-endnote-edit { display:block; padding:2px 0; }
     .ds-endnote-edit input { display:block; width:100%; box-sizing:border-box; font:inherit;
@@ -25748,6 +25941,10 @@ const PILOT_BATCH_VERBS = {
                 apply: (p, sl, md) => _pilotApplyAddSection(p, sl, md) },
   setStyle: { validate: (k, p) => _pilotValidateSetStyle(k, p), apply: (k, p) => _pilotApplySetStyle(k, p) },
   setBoxText: { validate: (id, m) => _pilotValidateSetBoxText(id, m), apply: (id, m) => _pilotApplySetBoxText(id, m) },
+  thread: { validate: (a, b) => _threadValidate(a, b), apply: (a, b) => _threadApply(a, b) },
+  unthread: { validate: id => (boxOf(id) && boxOf(id).next) ? { ok: true }
+                : { ok: false, error: `'${id}' does not continue into another frame` },
+              apply: id => _unthreadApply(id) },
   describeImage: { validate: (h, w, s) => _pilotValidateDescribeImage(h, w, s),
                    apply: (h, w, s) => _pilotApplyDescribeImage(h, w, s) },
   rotate: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplyRotate(id, deg) },
@@ -26286,6 +26483,35 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     return { ...docsync.api.status(), id, box: _pilotMeasure(id) };
   },
 
+  /** Thread a's words on into b (InDesign's threaded frames). b's own words
+   *  join the end of the story; every frame keeps its current height. The
+   *  first frame holds the story — setBoxText on it retexts the whole thread.
+   *  Refuses a frame that already continues, one already continued, a loop,
+   *  a shared-layout box, or one carrying anchor/wrap/act/columns. */
+  async thread(fromId, toId) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _threadValidate(fromId, toId);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _threadApply(fromId, toId);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
+  },
+
+  /** Break the thread after this frame. The frames after it are empty, so
+   *  they are removed; what no longer fits is overset (audit() says so). */
+  async unthread(id) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    if (!(boxOf(id) && boxOf(id).next))
+      return { ok: false, error: `'${id}' does not continue into another frame` };
+    pushHistory();
+    const r = _unthreadApply(id);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), id, ...r };
+  },
+
   /** An image's alt text, written into the markdown that holds it: a text
    *  box (Insert image's) or a slot. src picks one when the host carries
    *  several; '' marks the image as decoration. audit() lists every image
@@ -26607,6 +26833,15 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           issues.push({ kind: 'alt-is-filename', ids: [km[1]],
             note: `image described as "${mm[1]}", its file name — describeImage('${km[1]}', words)` });
       });
+    });
+    // A thread whose last frame still overflows: InDesign's red +. The words
+    // are not lost (they spill past the frame) but they are not where the
+    // design put them. Fix by enlarging a frame or threading another.
+    d.querySelectorAll('[data-thread][data-overset]').forEach(f => {
+      const pg = f.closest('section[data-page]');
+      issues.push({ kind: 'overset', page: pg ? pg.dataset.page : undefined,
+        ids: [f.dataset.el || ('text.' + f.dataset.thread)],
+        note: 'the thread runs out of frames — enlarge one, or thread(this, another box)' });
     });
     stuckBy.forEach((keys, page) => issues.push({ kind: 'immovable-text', page, ids: keys,
       note: `${keys.length} text field${keys.length === 1 ? '' : 's'} can be typed into but `
