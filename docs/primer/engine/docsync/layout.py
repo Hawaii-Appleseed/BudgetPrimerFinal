@@ -2871,6 +2871,60 @@ def _reserve_margin(p: dict) -> list[float] | None:
     return vals if any(vals) else None
 
 
+_GRID_AREA = re.compile(r"^[A-Za-z0-9_\- /]{1,80}$")
+
+
+def _reserve_w(p: dict):
+    """The width a strut holds: what the element measured in the flow
+    (reserveW, recorded when it differs from the pinned w, which is rounded UP
+    so the element's words never wrap) — or the pinned w, as it always was."""
+    v = p.get("reserveW")
+    try:
+        return float(v) if v is not None and float(v) > 0 else p.get("w")
+    except (TypeError, ValueError):
+        return p.get("w")
+
+
+def _reserve_grid(p: dict) -> str | None:
+    """The grid cell the flow element a strut stands in for was put in by its
+    own css (grid-area shorthand: row-start / column-start / row-end /
+    column-end), as the editor read it when it first moved — or None. Only
+    names, numbers, `span` and slashes: it lands inside a style attribute."""
+    g = p.get("reserveGrid")
+    if not isinstance(g, str) or not _GRID_AREA.match(g.strip()):
+        return None
+    return g.strip()
+
+
+_VALIGN = re.compile(r"^(?:[a-z-]+|-?\d+(?:\.\d+)?(?:px|%|em|in))$")
+
+
+def _reserve_inline(p: dict) -> str | None:
+    """How a strut for an element that sat IN a line aligns: 'top' (a text
+    field — hung from the line's top, it neither lifts nor deepens the line)
+    or, for a picture or other replaced element, its own vertical-align
+    (an image sits on the baseline with the descender gap under it, and a
+    top-aligned strut lost that gap: everything below rose by it)."""
+    v = p.get("reserveInline")
+    if not v:
+        return None
+    if isinstance(v, str) and _VALIGN.match(v.strip()):
+        return v.strip()
+    return "top"
+
+
+def _reserve_base(p: dict) -> float | None:
+    """Where the first baseline of a flex or grid item that aligned by its
+    baseline sat, inches below its top — or None. An empty strut has no
+    baseline, so the row made one up from its bottom edge and grew by the
+    difference (a footer's page number, moved, pushed its row 0.05in taller)."""
+    try:
+        b = float(p.get("reserveBase"))
+    except (TypeError, ValueError):
+        return None
+    return b if 0 < b < 40 else None
+
+
 def strut_extra(p: dict) -> str:
     """What a strut wears beyond its width and height (a leading ';' when
     anything): the moved element's own MARGINS, since the room it took in the
@@ -2882,8 +2936,19 @@ def strut_extra(p: dict) -> str:
     emits the bytes it always did. edit.html's strutExtra is the twin."""
     mg = _reserve_margin(p)
     out = (";margin:" + " ".join(f"{v:g}in" for v in mg)) if mg else ""
-    if p.get("reserveInline"):
-        out += ";display:inline-block;vertical-align:top"
+    va = _reserve_inline(p)
+    if va:
+        out += f";display:inline-block;vertical-align:{va}"
+    # A baseline where the element had one: its own line, empty, that far down.
+    rb = _reserve_base(p)
+    if rb:
+        out += f";padding-top:{rb:g}in;box-sizing:border-box;font-size:0;line-height:0"
+    # And the grid cell it held, when its css put it in one: a strut left to
+    # auto-placement took the next free cell instead, and every auto-placed
+    # neighbour after it moved over by one.
+    gr = _reserve_grid(p)
+    if gr:
+        out += f";grid-area:{gr}"
     return out
 
 
@@ -2920,10 +2985,15 @@ ANCHOR_JS = (
     "sp.setAttribute('data-spacer-for',rid);sp.setAttribute('data-anc-host','spacer:'+rid);"
     "sp.setAttribute('aria-hidden','true');var rw=e.getAttribute('data-reserve-w');"
     # The strut's margins and display, as spacer() writes them (strut_extra).
-    "var rm=e.getAttribute('data-reserve-m');"
+    "var rm=e.getAttribute('data-reserve-m'),rg=e.getAttribute('data-reserve-g'),"
+    "rb=e.getAttribute('data-reserve-b');"
     "sp.style.cssText=(rw?'width:'+rw+'in;':'')+'height:'+e.getAttribute('data-reserve')+'in;flex:0 0 auto'"
     "+(rm?';margin:'+rm.split(' ').join('in ')+'in':'')"
-    "+(e.hasAttribute('data-reserve-inline')?';display:inline-block;vertical-align:top':'');"
+    "+(e.hasAttribute('data-reserve-inline')?';display:inline-block;vertical-align:'"
+    "+(e.getAttribute('data-reserve-inline')||'top'):'')"
+    "+(rb?';padding-top:'+rb+'in;box-sizing:border-box;font-size:0;line-height:0':'')"
+    "+(rg?';grid-area:'+rg:'');"
+    "if(rb){var ln=document.createElement('span');ln.style.display='inline-block';sp.appendChild(ln);}"
     "e.parentNode.insertBefore(sp,e);}"
     "var els=document.querySelectorAll('[data-anc]');"
     "for(var i=0;i<els.length;i++){var el=els[i],pg=el.closest('.page');"
@@ -3525,7 +3595,23 @@ class Layout:
         # It comes first so a deliberate margin passed through attr()'s `extra`
         # still wins: attr() joins css then extra, and the later declaration in
         # an inline style is the one that applies.
-        s = f'margin:0;position:absolute;left:{p["x"]}in;top:{p["y"]}in'
+        # bottom:auto, because a placement is left, top and width: a designed
+        # piece whose own css pins it by `bottom` (retitc's footer, at
+        # bottom:0.42in) kept that once it had a `top` too, and with no height
+        # an absolute box with both stretches between them — the footer was
+        # drawn ten inches tall the moment it was moved.
+        s = f'margin:0;position:absolute;left:{p["x"]}in;top:{p["y"]}in;bottom:auto'
+        # Its css said !important about a margin (an imported page often
+        # does), which beats this inline margin:0 — the editor recorded it
+        # (pinMargin) — so this one says !important too.
+        if p.get("pinMargin"):
+            s = "margin:0!important" + s[len("margin:0"):]
+        # Out of the grid cell its css put it in (reserveGrid, which its strut
+        # now holds): an absolute child of a grid with a cell of its own is
+        # placed against THAT cell, not the grid's box, and every inch stored
+        # here is measured against the grid's box.
+        if _reserve_grid(p):
+            s += ";grid-area:auto"
         if p.get("w") or p.get("h"):
             # Same reason as the margin above, and the same compounding: the
             # inch a drag stored is the MEASURED rect, padding and border
@@ -3535,6 +3621,11 @@ class Layout:
             s += ";box-sizing:border-box"
         if p.get("w"):
             s += f';width:{p["w"]}in'
+            # The width it had, whatever its css max-width says: that was
+            # written for its own box-sizing, and this pins the border box
+            # (the editor records noMaxW when the element had one).
+            if p.get("noMaxW"):
+                s += ";max-width:none"
         # Height is opt-in. A text box with a fixed height either clips its
         # words or leaves a hole when the prose changes, so only things whose
         # size is their content — images, shapes — should carry one.
@@ -3790,12 +3881,19 @@ class Layout:
         # found and left alone, so a renderer that does call it changes
         # nothing. Hidden gives the slot back, so it reserves nothing.
         if p and p.get("reserve") and not hid:
-            rw = f' data-reserve-w="{p["w"]}"' if p.get("w") else ""
+            sw = _reserve_w(p)
+            rw = f' data-reserve-w="{sw}"' if sw else ""
             # And the margins and display that strut wears (strut_extra), so
             # the runtime's copy is the same box as spacer()'s.
             mg = _reserve_margin(p)
             rm = (' data-reserve-m="' + " ".join(f"{v:g}" for v in mg) + '"') if mg else ""
-            ri = " data-reserve-inline" if p.get("reserveInline") else ""
+            va = _reserve_inline(p)
+            ri = ((f' data-reserve-inline="{va}"' if va != "top" else " data-reserve-inline")
+                  if va else "")
+            gr = _reserve_grid(p)
+            ri += f' data-reserve-g="{gr}"' if gr else ""
+            rb = _reserve_base(p)
+            ri += f' data-reserve-b="{rb:g}"' if rb else ""
             bits.append(f'data-reserve-for="{el_id}" data-reserve="{p["reserve"]}"{rw}{rm}{ri}')
         return (" " + " ".join(bits)) if bits else ""
 
@@ -3825,7 +3923,8 @@ class Layout:
         p = self.positions.get(el_id)
         if not p or not p.get("reserve"):
             return ""
-        wid = f'width:{p["w"]}in;' if p.get("w") else ""
+        sw = _reserve_w(p)
+        wid = f'width:{sw}in;' if sw else ""
         extra = strut_extra(p)
         # Named twice: `data-spacer-for` so the editor can find the strut and
         # re-measure it against the element it stands in for, and as an anchor
@@ -3834,9 +3933,11 @@ class Layout:
         # prose above grew, the strut moved and the heading stayed, over
         # whatever had flowed under it. Anchored to its own vacated slot the
         # piece keeps its distance from the text it came out of.
+        # The empty inline-block is the line a baseline needs (_reserve_base).
+        line = '<span style="display:inline-block"></span>' if _reserve_base(p) else ""
         return (f'<div class="ds-spacer" data-spacer-for="{el_id}" '
                 f'data-anc-host="spacer:{el_id}" style="{wid}height:{p["reserve"]}in;'
-                f'flex:0 0 auto{extra}" aria-hidden="true"></div>')
+                f'flex:0 0 auto{extra}" aria-hidden="true">{line}</div>')
 
     def wrap(self, el_id: str, inner: str) -> str:
         """`inner` — markup the renderer built — held in a movable block of its

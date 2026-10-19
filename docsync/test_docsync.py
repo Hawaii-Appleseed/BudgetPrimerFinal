@@ -276,10 +276,10 @@ check_eq("an unmoved element keeps the renderer's own placement",
 
 moved = _layout({"positions": {"c.o": {"x": 1.2, "y": 3.4, "w": 5.0}}, "shapes": []})
 check("a moved element is absolutely placed", moved.attr("c.o"),
-      'style="margin:0;position:absolute;left:1.2in;top:3.4in;box-sizing:border-box;width:5.0in;z-index:1"')
+      'style="margin:0;position:absolute;left:1.2in;top:3.4in;bottom:auto;box-sizing:border-box;width:5.0in;z-index:1"')
 check_eq("an override beats the renderer's placement",
          moved.style("c.o", "left:9in;top:9in"),
-         "margin:0;position:absolute;left:1.2in;top:3.4in;box-sizing:border-box;width:5.0in;z-index:1")
+         "margin:0;position:absolute;left:1.2in;top:3.4in;bottom:auto;box-sizing:border-box;width:5.0in;z-index:1")
 
 # Hidden elements: Delete on a designed element records it here rather than
 # editing output that is regenerated every build. Published: display:none,
@@ -490,7 +490,7 @@ moved_para = _content(_layout({"positions": {"para.a.b": {"x": 1, "y": 2, "w": 4
                                                           "reserve": 0.5}}}))
 check("a moved prose block travels in one positioned wrapper",
       moved_para.html("a.b"),
-      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;box-sizing:border-box;width:4in;z-index:1" '
+      '<div data-placed style="margin:0;position:absolute;left:1in;top:2in;bottom:auto;box-sizing:border-box;width:4in;z-index:1" '
       'data-reserve-for="para.a.b" data-reserve="0.5" data-reserve-w="4">'
       '<p>Text.</p></div>')
 # A renderer that never calls spacer() still gets a strut: the element names
@@ -793,7 +793,7 @@ check("a box's style is validated like any other",
 both = _layout({"positions": {"c.o": {"x": 1, "y": 2}}})
 check("attr merges a computed background into the move",
       both.attr("c.o", "background:#2F3E46"),
-      'style="margin:0;position:absolute;left:1in;top:2in;z-index:1;background:#2F3E46"')
+      'style="margin:0;position:absolute;left:1in;top:2in;bottom:auto;z-index:1;background:#2F3E46"')
 check_eq("extra alone still emits a style", empty.attr("c.o", "background:#2F3E46"),
          ' style="background:#2F3E46"')
 check_eq("no move, no extra, no attribute", empty.attr("c.o"), "")
@@ -3318,7 +3318,7 @@ _ce, _cL = _copy_render(True)
 check("a copied heading is the document's CURRENT words, as a slot",
       _ce, '<span data-slot="copy.p1.h" data-inline="1" style="font-size:20px">Hello</span>')
 check("a copied element is placed by its own layout entry, extra css kept",
-      _ce, 'data-el="copy.p1.stat" data-placed style="margin:0;position:absolute;left:1in;top:2in;'
+      _ce, 'data-el="copy.p1.stat" data-placed style="margin:0;position:absolute;left:1in;top:2in;bottom:auto;'
            'box-sizing:border-box;width:3in;z-index:1;color:red;background:#FFEEDD"')
 check("…and its strut is emitted before it",
       _ce, '<div class="ds-spacer" data-spacer-for="copy.p1.stat"')
@@ -3785,7 +3785,7 @@ _moved = _filled(False, {"positions": {"field.n1": {"x": 1, "y": 2, "w": 3,
                         "text": {"n1": {"size": 20}}})
 check("a moved field with a style of its own and a text style is ONE style "
       "attribute, the page's first and the position last",
-      _moved, 'style="margin:0;position:absolute;left:1in;top:2in')
+      _moved, 'style="margin:0;position:absolute;left:1in;top:2in;bottom:auto')
 check_eq("…never two (the parser keeps only the first)",
          re.search(r'<div class="bar"[^>]*>', _moved).group(0).count("style="), 1)
 check_eq("a moved field says what room it leaves, for the runtime strut",
@@ -3818,7 +3818,7 @@ check_eq("published and unmoved, L.wrap adds nothing",
 _moved_w = _wl.wrap("table1", _twins)
 check("…moved, both years ride one positioned block behind a strut",
       _moved_w, 'data-spacer-for="table1"')
-check("…positioned", _moved_w, 'style="margin:0;position:absolute;left:1in;top:2in')
+check("…positioned", _moved_w, 'style="margin:0;position:absolute;left:1in;top:2in;bottom:auto')
 os.environ["DOCSYNC_EDIT"] = "1"
 check_eq("…and while editing it is the handle",
          _layout({}).wrap("table1", _twins), f'<div data-el="table1">{_twins}</div>')
@@ -3857,6 +3857,18 @@ check_eq("a doubled attribute is found, and named by its hook",
          attributes_twice('<h3 data-el="a.h" style="color:red" style="left:1in">x</h3>'),
          ['<h3 data-el="a.h"> (line 1): style'])
 check_eq("one of each is fine", attributes_twice('<p class="a" style="b">x</p>'), [])
+from docsync.check import moves_dropped  # noqa: E402
+check_eq("a movable whose placement never reaches its tag is a dropped move",
+         moves_dropped('<div class="card" data-el="branch.a" style="background:#fff"><h4>t</h4></div>'
+                       '<p data-el="para.b" data-placed style="margin:0;position:absolute;left:1in">p</p>'
+                       '<div data-el="c.d" style="color:red;margin:0;position:absolute;top:1in">q</div>'),
+         ["branch.a"])
+check_eq("…endnotes reorder and chevrons never park, so neither is one",
+         moves_dropped('<li data-el="endnote.x">n</li>'
+                       '<svg class="ds-tgl-svg" data-el="tgl.chev"></svg>'
+                       '<p data-el="p" data-placed style="position:absolute">p</p>'), [])
+check_eq("…and a build that places nothing has no placements to check",
+         moves_dropped('<div data-el="a">x</div><div data-el="b">y</div>'), [])
 check_eq("and a doubled one fails the page",
          [pr.is_error for pr in check_attributes('<i style="a" style="b"></i>')], [True])
 

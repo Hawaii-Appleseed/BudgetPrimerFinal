@@ -5004,9 +5004,6 @@ function layerMenu(d, el, e) {
   // A page or a table row is a SURFACE: it can change colour but it is not a
   // thing that moves, so it gets the fill section and nothing else.
   const surface = !el.dataset.shape && !el.dataset.el;
-  // Only a moved element has a layer to change: an untouched one is still
-  // wherever the design put it, and z-index would not apply to it anyway.
-  const known = !!shapeOf(id) || !!layout.positions[id] || !!boxOf(id);
   const m = d.createElement('div');
   m.className = 'ds-menu';
   m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
@@ -5194,22 +5191,12 @@ function layerMenu(d, el, e) {
 
     // Layering an untouched designed element pins it into positions{} first —
     // z-index means nothing to a thing still in the flow, and "send this
-    // behind" IS a placement decision. Front/back scan THIS page's stack;
-    // another page's z ceiling is not this page's business.
-    const pg2 = el.closest('section.page') || d.querySelector('section.page');
-    const zSet = async z => {
-      pushHistory();
-      if (!known) ensureStore(d, el);
-      setZ(id, z);
-      markDirty();
-      await render();
-    };
-    const zsPage = () => [...pg2.querySelectorAll('[data-el], [data-shape]')]
-      .map(x => zOf(idOf(x)));
-    item('Bring to front', () => zSet(Math.max(...zsPage(), 0) + 1));
-    item('Forward',        () => zSet(zOf(id) + 1));
-    item('Backward',       () => zSet(zOf(id) - 1));
-    item('Send to back',   () => zSet(Math.min(...zsPage(), 0) - 1));
+    // behind" IS a placement decision. The same steps as ⌘] / ⌘[ (layerStep),
+    // on the thing right-clicked, through THIS page's stack.
+    item('Bring to front', () => layerStep(d, 1, true, [el]));
+    item('Forward',        () => layerStep(d, 1, false, [el]));
+    item('Backward',       () => layerStep(d, -1, false, [el]));
+    item('Send to back',   () => layerStep(d, -1, true, [el]));
     item(isLocked(id) ? 'Unlock' : 'Lock', () => {
       pushHistory();
       layout.locked = isLocked(id) ? lockedList().filter(x => x !== id)
@@ -9592,7 +9579,9 @@ function syncReserves(d) {
     const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
     const page = el && el.closest('section.page');
     if (!sp || !el || !page) continue;
-    const h = +inchBox(el, page).h.toFixed(2);
+    // Less the margins that moved inside it when it left the flow (trim):
+    // the flow never held those as part of the box.
+    const h = +(inchBox(el, page).h - trimOf(p)).toFixed(2);
     if (!(h > 0) || Math.abs(h - p.reserve) < 0.03) continue;
     p.reserve = h;
     sp.style.height = h + 'in';
@@ -10823,27 +10812,63 @@ function pageMembers(d) {
   return { page, els: els.filter(el => (el.closest('section.page')) === page) };
 }
 
-// Align: a single element aligns to the page (edges = the text column's
+/** The selection as the things Align and Distribute move: a group, when all of
+ *  it is selected, is ONE thing — its box the bounds of its members, and its
+ *  members moved by the same amount — and anything else is a thing of its own.
+ *  Treated member by member, centring a selected group on the page lined its
+ *  members up with each other instead, and aligning it with another box
+ *  pulled it apart. Each box is the one the drag uses (placer): for a piece
+ *  still in the flow, the box it will have once placed — so what lines up is
+ *  what you will see lined up. All measured before anything moves. */
+function arrangeUnits(d, page, els) {
+  const units = [], seen = new Set();
+  for (const el of els) {
+    const id = idOf(el);
+    if (seen.has(id)) continue;
+    const g = groupOf(id);
+    const members = g && g.length > 1 && g.every(m => selIds.has(m))
+      ? els.filter(e => g.includes(idOf(e))) : [el];
+    members.forEach(m => seen.add(idOf(m)));
+    const Ps = members.map(m => placer(d, m, page));
+    const bs = Ps.map(P => P.box);
+    const x1 = Math.min(...bs.map(b => b.x)), y1 = Math.min(...bs.map(b => b.y));
+    units.push({ Ps, b: { x: x1, y: y1,
+      w: Math.max(...bs.map(b => b.x + b.w)) - x1, h: Math.max(...bs.map(b => b.y + b.h)) - y1 } });
+  }
+  return units;
+}
+/** Put a unit's box at (x, y): every member moves by the same amount. */
+const moveUnit = (u, x, y) => u.Ps.forEach(P =>
+  P.commit(P.put(P.box.x + (x - u.b.x), P.box.y + (y - u.b.y), false)));
+
+// Align: a single thing aligns to the page (edges = the text column's
 // margins, centres = the true page centre — flush beats touching the trim);
 // several align to their own bounding box, which is what "align these" means.
+// A whole group is one thing (arrangeUnits).
 function alignSel(d, mode) {
   const { page, els } = pageMembers(d);
   if (!els.length) return;
   pushHistory();
-  const items = els.map(el => ({ el, b: inchBox(el, page) }));
+  const items = arrangeUnits(d, page, els);
   let ref;
   if (items.length === 1) {
+    // The page as laid out, not PAGE_H_IN: a pageless document's PAGE_H_IN is
+    // a sentinel no report reaches (PAGELESS_H), so "align bottom" sent the
+    // piece a couple of hundred inches below the last line of the page.
+    const pageH = Math.min(PAGE_H_IN,
+      page.getBoundingClientRect().height / (DPI * zoomOf(page)));
     ref = { x: MARGIN_IN, y: TOP_IN,
-            w: PAGE_W_IN - 2 * MARGIN_IN, h: PAGE_H_IN - TOP_IN - 0.9 };
+            w: PAGE_W_IN - 2 * MARGIN_IN, h: pageH - TOP_IN - 0.9 };
     if (mode === 'hcenter') { ref.x = 0; ref.w = PAGE_W_IN; }
-    if (mode === 'vcenter') { ref.y = 0; ref.h = PAGE_H_IN; }
+    if (mode === 'vcenter') { ref.y = 0; ref.h = pageH; }
   } else {
     const x1 = Math.min(...items.map(o => o.b.x)), y1 = Math.min(...items.map(o => o.b.y));
     const x2 = Math.max(...items.map(o => o.b.x + o.b.w));
     const y2 = Math.max(...items.map(o => o.b.y + o.b.h));
     ref = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
   }
-  items.forEach(({ el, b }) => {
+  items.forEach(u => {
+    const { b } = u;
     let { x, y } = b;
     if (mode === 'left') x = ref.x;
     if (mode === 'hcenter') x = ref.x + (ref.w - b.w) / 2;
@@ -10851,8 +10876,7 @@ function alignSel(d, mode) {
     if (mode === 'top') y = ref.y;
     if (mode === 'vcenter') y = ref.y + (ref.h - b.h) / 2;
     if (mode === 'bottom') y = ref.y + ref.h - b.h;
-    const P = placer(d, el, page);
-    P.commit(P.put(x, y, false));
+    moveUnit(u, x, y);
   });
   clearGuides(d);
   paintSel(d);
@@ -10861,27 +10885,33 @@ function alignSel(d, mode) {
 function distributeSel(d, axis) {
   const { page, els } = pageMembers(d);
   if (els.length < 3) return;
-  pushHistory();
-  const items = els.map(el => ({ el, b: inchBox(el, page) }))
+  const items = arrangeUnits(d, page, els)
     .sort((a, q) => axis === 'h' ? a.b.x - q.b.x : a.b.y - q.b.y);
-  const first = items[0].b, last = items[items.length - 1].b;
+  if (items.length < 3) return;          // a group and one other thing: nothing to space
+  pushHistory();
+  // The span is the selection's own extent — leftmost edge to rightmost edge
+  // — not the first and last pieces by position: with a wide piece early in
+  // the order (a full-width caption among two small callouts) "the last
+  // one's right edge" stopped short of where the selection ends, and the
+  // spacing came out uneven.
+  const lo = axis === 'h' ? Math.min(...items.map(o => o.b.x)) : Math.min(...items.map(o => o.b.y));
+  const hi = axis === 'h' ? Math.max(...items.map(o => o.b.x + o.b.w))
+                          : Math.max(...items.map(o => o.b.y + o.b.h));
   if (axis === 'h') {
-    const gap = ((last.x + last.w - first.x)
+    const gap = ((hi - lo)
                - items.reduce((s, o) => s + o.b.w, 0)) / (items.length - 1);
-    let x = first.x;
-    items.forEach(({ el, b }) => {
-      const P = placer(d, el, page);
-      P.commit(P.put(x, b.y, false));
-      x += b.w + gap;
+    let x = lo;
+    items.forEach(u => {
+      moveUnit(u, x, u.b.y);
+      x += u.b.w + gap;
     });
   } else {
-    const gap = ((last.y + last.h - first.y)
+    const gap = ((hi - lo)
                - items.reduce((s, o) => s + o.b.h, 0)) / (items.length - 1);
-    let y = first.y;
-    items.forEach(({ el, b }) => {
-      const P = placer(d, el, page);
-      P.commit(P.put(b.x, y, false));
-      y += b.h + gap;
+    let y = lo;
+    items.forEach(u => {
+      moveUnit(u, u.b.x, y);
+      y += u.b.h + gap;
     });
   }
   clearGuides(d);
@@ -11291,13 +11321,20 @@ const canUngroup = () => selGroups().length > 0;
 // mouseup AND a dblclick, and both want to act on the same gesture.
 let lastDrill = { id: null, t: 0 };
 
-let lastNudge = 0;
+let lastNudge = 0, nudgeSeq = -1;
 function nudgeSel(d, d4) {
   const els = outermost(selEls(d).filter(el => !isLocked(idOf(el))));
   if (!els.length) return;
-  // One undo step per burst of presses, not one per pixel of progress.
+  // One undo step per burst of presses, not one per pixel of progress — but
+  // only while the burst's own step is still the latest. Timing alone merged
+  // a nudge into whatever came before it: nudge, ⌘Z, nudge again inside the
+  // 0.9s and the second nudge had no step at all, so the next ⌘Z found
+  // nothing to undo or took back an older, unrelated change.
   const now = Date.now();
-  if (now - lastNudge > 900) pushHistory();
+  if (now - lastNudge > 900 || nudgeSeq !== historySeq) {
+    pushHistory();
+    nudgeSeq = historySeq;
+  }
   lastNudge = now;
   els.forEach(el => {
     const page = el.closest('section.page') || d.querySelector('section.page');
@@ -13030,31 +13067,67 @@ async function applyLayerOrder(d, seq) {
   layersRender();
 }
 
-/** Step the selection through the stack: ⌘] forward, ⌘[ backward, ⌥ for all
- *  the way. An unpinned designed element is pinned first — same rule as the
- *  menu, layering is placement. */
-async function layerStep(d, dir, extreme) {
-  const els = selEls(d).filter(el => !isLocked(idOf(el)));
+/** Step the selection through its page's stack: ⌘] forward, ⌘[ backward, ⌥
+ *  for all the way. The stack is the Layers panel's — everything floating on
+ *  the page, top first, around the page's own content — so one step is one
+ *  place in that list, and the page is then renumbered the way a drop in the
+ *  panel does it (applyLayerOrder): 1..n counting up from the content, -1..-m
+ *  down from it, no ties.
+ *
+ *  It used to add or take 1 from the number. Layers are handed out with gaps
+ *  (a new object takes the top + 1, Send to back the bottom − 1), so one step
+ *  often passed nothing and Forward visibly did nothing, and a tie left the
+ *  order to the markup. And a piece still in the flow stepped Backward to 0,
+ *  which the panel lists behind the content but CSS paints in FRONT of it — a
+ *  positioned z-index:0 covers the page's own text.
+ *
+ *  A piece still in the flow enters at the content's level: Forward puts it
+ *  just above the content, Backward just below — that is its one step.
+ *  `els` lets the right-click menu act on the thing it was opened on. */
+async function layerStep(d, dir, extreme, els = null) {
+  els = (els || selEls(d)).filter(el => !isLocked(idOf(el)));
   if (!els.length) return;
   pushHistory();
+  const byPage = new Map();
   els.forEach(el => {
-    const id = idOf(el);
-    // Read BEFORE pinning. A piece still in the flow sits at the content's
-    // level, and one step from THERE is what was asked; pinning it (placer)
-    // first carries it to the top of the stack, and "backward" from the top
-    // is nowhere near "behind the content". The right-click menu reads its
-    // zOf(id) before its zSet pins, so it already behaves this way.
-    const z0 = zOf(id);
-    if (!!!shapeOf(id) && !boxOf(id)
-        && !layout.positions[id]) ensureStore(d, el);
     const pg = el.closest('section.page') || d.querySelector('section.page');
-    const zs = [...pg.querySelectorAll('[data-el], [data-shape]')]
-      .map(x => zOf(idOf(x)));
-    setZ(id, extreme ? (dir > 0 ? Math.max(...zs, 0) + 1 : Math.min(...zs, 0) - 1)
-                     : z0 + dir);
+    if (!byPage.has(pg)) byPage.set(pg, []);
+    byPage.get(pg).push(el);
   });
+  for (const [pg, list] of byPage) {
+    const ids = list.map(idOf);
+    const fresh = ids.filter(id => !shapeOf(id) && !boxOf(id) && !layout.positions[id]);
+    list.filter(el => fresh.includes(idOf(el))).forEach(el => ensureStore(d, el));
+    const stack = layerItems(d, pg).map(o => o.id).filter(id => !fresh.includes(id));
+    let seq = [...stack.filter(id => zOf(id) > 0), '__content__',
+               ...stack.filter(id => zOf(id) <= 0)];
+    if (fresh.length) {
+      const ci = seq.indexOf('__content__');
+      seq.splice(dir > 0 ? ci : ci + 1, 0, ...fresh);
+    }
+    const sel = new Set(ids);
+    if (extreme) {
+      const mine = seq.filter(id => sel.has(id)), rest = seq.filter(id => !sel.has(id));
+      seq = dir > 0 ? [...mine, ...rest] : [...rest, ...mine];
+    } else {
+      // A fresh piece's step was its entry; the others move one place, and a
+      // run of selected pieces moves as a block (none passes another).
+      const step = new Set(ids.filter(id => !fresh.includes(id)));
+      if (dir > 0) {
+        for (let i = 1; i < seq.length; i++)
+          if (step.has(seq[i]) && !sel.has(seq[i - 1])) [seq[i - 1], seq[i]] = [seq[i], seq[i - 1]];
+      } else {
+        for (let i = seq.length - 2; i >= 0; i--)
+          if (step.has(seq[i]) && !sel.has(seq[i + 1])) [seq[i + 1], seq[i]] = [seq[i], seq[i + 1]];
+      }
+    }
+    const di = seq.indexOf('__content__');
+    seq.slice(0, di).forEach((id, i, a) => setZ(id, a.length - i));
+    seq.slice(di + 1).forEach((id, i) => setZ(id, -(i + 1)));
+  }
   markDirty();
   await render();
+  if (!$('layerspop').hidden) layersRender();
   $('stat').textContent = extreme
     ? (dir > 0 ? 'brought to front' : 'sent to back')
     : (dir > 0 ? 'brought forward' : 'sent backward');
@@ -13926,7 +13999,13 @@ function syncHistoryButtons() {
 // mine, keep theirs". pushHistory() keeps its meaning exactly — it is the
 // boundary between undo steps — it just marks one in the document instead of
 // copying the state; the state itself lands at the next render's flush.
+/** Bumped at every undo boundary, undo and redo. Something that wants a run of
+ *  its own changes to be ONE step (a burst of arrow-key nudges) compares it
+ *  with the value it saw when its step began: anything else touching the
+ *  history in between — another edit, an undo — means a new step. */
+let historySeq = 0;
 function pushHistory() {
+  historySeq++;
   suggestCapture();
   if (collab) { collab.mark(); syncHistoryButtons(); return; }
   past.push(snapshot());
@@ -13942,6 +14021,7 @@ async function restore(json) {
   await render();
 }
 async function undo() {
+  historySeq++;
   if (collab) {
     if (!collab.canUndo()) { $('stat').textContent = 'nothing to undo'; return; }
     collabNoteCaret();
@@ -13957,6 +14037,7 @@ async function undo() {
   $('stat').textContent = 'undone';
 }
 async function redo() {
+  historySeq++;
   if (collab) {
     if (!collab.canRedo()) { $('stat').textContent = 'nothing to redo'; return; }
     collabNoteCaret();
@@ -14103,9 +14184,104 @@ function dragify(d, roots) {
  *  line. The twin of layout.py's strut_extra() and of ANCHOR_JS's reading of
  *  data-reserve-m — the live strut, the renderer's and the published page's
  *  runtime one have to be the same box, or the page moves on the next build. */
-const strutExtra = (m, inline) =>
+const strutExtra = (m, inline, grid, base) =>
   (m && m.length === 4 && m.some(v => +v) ? ';margin:' + m.map(v => `${+v}in`).join(' ') : '')
-  + (inline ? ';display:inline-block;vertical-align:top' : '');
+  + (inline ? ';display:inline-block;vertical-align:' + (typeof inline === 'string' ? inline : 'top') : '')
+  + (base ? `;padding-top:${+base}in;box-sizing:border-box;font-size:0;line-height:0` : '')
+  + (grid ? ';grid-area:' + grid : '');
+/** Where an element's first baseline sits, inches below its top — a probe of
+ *  no size put on its first line of text and read back — or null when it
+ *  has no text. layout.py _reserve_base says what it is for. */
+function firstBaseline(d, el, page) {
+  const w = d.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => (n.textContent.trim() && !n.parentElement.closest('svg'))
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
+  const t = w.nextNode();
+  if (!t) return null;
+  const probe = d.createElement('span');
+  probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+  t.parentNode.insertBefore(probe, t);
+  const px = DPI * zoomOf(page);
+  const b = (probe.getBoundingClientRect().top - el.getBoundingClientRect().top) / px;
+  probe.remove();
+  return b > 0 ? +b.toFixed(3) : null;
+}
+/** An in-flow block's pieces when columns split it, as ONE column-wide box
+ *  (see placer), or null when it is in one piece. */
+function columnPieces(el, page) {
+  const rs = [...el.getClientRects()].filter(r => r.width && r.height);
+  if (rs.length < 2) return null;
+  const left0 = rs[0].left;
+  if (!rs.some(r => Math.abs(r.left - left0) > rs[0].width / 2)) return null;
+  const pr = page.getBoundingClientRect(), px = DPI * zoomOf(page);
+  return { x: (rs[0].left - pr.left) / px, y: (rs[0].top - pr.top) / px,
+           w: rs[0].width / px, h: rs.reduce((t, r) => t + r.height, 0) / px };
+}
+/** Up to the next hundredth of an inch (the precision placements are saved
+ *  at), so a pinned width is never a hair narrower than what it measured. */
+const ceilIn = v => Math.ceil(v * 100 - 1e-6) / 100;
+/** Two adjoining vertical margins as CSS collapses them: the larger of two
+ *  positives, the more negative of two negatives, the sum of one of each. */
+const collapseMargins = (a, b) => (a >= 0 && b >= 0) ? Math.max(a, b)
+  : (a <= 0 && b <= 0) ? Math.min(a, b) : a + b;
+/** The margins a placement holds inside its box that the flow had outside it
+ *  (positions[id].trim, written by placer's commit). */
+const trimOf = p => (p && Array.isArray(p.trim)) ? (+p.trim[0] || 0) + (+p.trim[1] || 0) : 0;
+
+/** What an in-flow element's box becomes once it is placed (absolute), found
+ *  by laying it out that way for a moment — the same position, margin:0,
+ *  border-box and the width the placement will pin — and putting it back
+ *  before anything paints.
+ *
+ *  Two things change, and both used to show:
+ *  - trim: margins of its first and last children that collapsed THROUGH it
+ *    in the flow and sit inside it once it is absolute (absolute boxes never
+ *    collapse with their children). A paragraph block's <p> margins are the
+ *    usual case: picked up, the words dropped by their own top margin, and
+ *    after the next render the strut, re-measured with them inside, pushed
+ *    everything below down by the same again.
+ *  - floorH: a height a flex or grid row gave it that its own content does
+ *    not ask for (equal-height stat cards). Absolute, it shrank to its
+ *    content; kept as a floor, the card stays the card it was.
+ *  Measured, not derived from computed margins, because whether a margin
+ *  collapses depends on padding, borders, formatting contexts and emptiness
+ *  all the way down — the layout engine already knows. */
+function flowExit(d, el, page, measured, delta, wPin, gridded, noMaxW, pinMargin) {
+  const px = DPI * zoomOf(page);
+  const win = d.defaultView;
+  const kids = [...el.children].filter(c => {
+    const cs = win.getComputedStyle(c);
+    return cs.display !== 'none' && cs.position !== 'absolute' && cs.position !== 'fixed';
+  });
+  const span = () => {
+    const r = el.getBoundingClientRect();
+    const rs = kids.map(c => c.getBoundingClientRect()).filter(b => b.width || b.height);
+    if (!rs.length) return { top: 0, bottom: 0, h: r.height / px };
+    return { top: (Math.min(...rs.map(b => b.top)) - r.top) / px,
+             bottom: (r.bottom - Math.max(...rs.map(b => b.bottom))) / px,
+             h: r.height / px };
+  };
+  const inFlow = span();
+  const keep = el.getAttribute('style');
+  const s = el.style;
+  s.position = 'absolute'; s.bottom = 'auto';
+  if (pinMargin) s.setProperty('margin', '0', 'important'); else s.margin = '0';
+  if (gridded) s.gridArea = 'auto';
+  if (noMaxW) s.maxWidth = 'none';
+  s.left = (measured.x - delta.x).toFixed(3) + 'in';
+  s.top = (measured.y - delta.y).toFixed(3) + 'in';
+  if (wPin) { s.boxSizing = 'border-box'; s.width = wPin + 'in'; }
+  const out = span();
+  if (keep === null) el.removeAttribute('style'); else el.setAttribute('style', keep);
+  // Never below zero: margins coming inside can only add room, and room the
+  // flow gave BELOW the content (a row stretching the card) is not a margin
+  // — read as a negative trim it cancelled the floor that keeps the card.
+  const r3 = v => v < 0.004 ? 0 : +v.toFixed(3);
+  const trim = kids.length ? [r3(out.top - inFlow.top), r3(out.bottom - inFlow.bottom)] : [0, 0];
+  const want = inFlow.h + trim[0] + trim[1];
+  const floorH = out.h < want - 0.02 ? ceilIn(want) : null;
+  return { trim, floorH };
+}
 
 /** Shared by pointer and keyboard: place the element, snapping as it goes. */
 function placer(d, el, page) {
@@ -14116,7 +14292,6 @@ function placer(d, el, page) {
   // reading of it: rects carry rounding, and the lift's scale nudges them. Take
   // the measurement as truth and picking a box up without moving it walks it a
   // few hundredths of an inch — every time.
-  const measured = inchBox(el, page);
   // IN THE FLOW is static or relative. A relative element holds its place in
   // the flow exactly as a static one does — its offsets only move where it
   // paints — and an imported page sets position:relative on half its text,
@@ -14125,6 +14300,14 @@ function placer(d, el, page) {
   // behind, and the page closed up under the drag.
   const cs0 = d.defaultView.getComputedStyle(el);
   const heldFlow = !shapeId && (cs0.position === 'static' || cs0.position === 'relative');
+  // A block split across columns (a paragraph running from the foot of one
+  // column to the head of the next) measures as the union of its pieces —
+  // two columns wide — and leaves the flow as ONE block a column wide. Its
+  // box is that block: the first piece's corner and width, the pieces'
+  // heights added up; its strut, that height, splits across the columns
+  // just as the paragraph did.
+  const frags = heldFlow ? columnPieces(el, page) : null;
+  const measured = frags || inchBox(el, page);
   // What the element took in the flow is its MARGIN box, and a strut the
   // size of its border box came up short by exactly the margins: move an
   // <h1> with a 12px bottom margin and the line under it rose 12px. So the
@@ -14136,6 +14319,27 @@ function placer(d, el, page) {
     ? ['Top', 'Right', 'Bottom', 'Left'].map(s => +((parseFloat(cs0['margin' + s]) || 0) / 96).toFixed(3))
     : null;
   const flowInline = heldFlow && /^inline/.test(cs0.display);
+  // A picture in a line keeps its own vertical-align on the strut (layout.py
+  // _reserve_inline): on the baseline, with the descender gap under it.
+  const inlineAlign = flowInline
+    && /^(IMG|SVG|VIDEO|CANVAS|IFRAME|OBJECT|EMBED|PICTURE|INPUT)$/i.test(el.tagName)
+    && cs0.verticalAlign !== 'top' ? cs0.verticalAlign : null;
+  const parCs = el.parentElement ? d.defaultView.getComputedStyle(el.parentElement) : null;
+  // The grid cell its css put it in, if any (layout.py strut_extra): the strut
+  // holds that cell, and the placed element leaves it (grid-area:auto) so its
+  // left/top measure against the grid's own box like everything else's.
+  const gridOf = parCs && /grid/.test(parCs.display)
+    ? [cs0.gridRowStart, cs0.gridColumnStart, cs0.gridRowEnd, cs0.gridColumnEnd] : null;
+  // A flex or grid item lined up by its baseline: the strut gets a baseline at
+  // the same height (layout.py _reserve_base), or the row makes one up from
+  // its bottom edge and grows.
+  const rowAlign = cs0.alignSelf && !/^(auto|normal)$/.test(cs0.alignSelf)
+    ? cs0.alignSelf : (parCs ? parCs.alignItems : '');
+  const reserveBase = heldFlow && !flowInline && parCs && /baseline/.test(rowAlign || '')
+    && (/grid/.test(parCs.display) || (/flex/.test(parCs.display) && /^row/.test(parCs.flexDirection)))
+    ? firstBaseline(d, el, page) : null;
+  const reserveGrid = heldFlow && gridOf && gridOf.some(v => v && v !== 'auto')
+    ? gridOf.join(' / ') : null;
   // An already-absolute designed element may resolve against a POSITIONED
   // ANCESTOR, not the page (a lifecycle callout inside .lifecycle-wrap), and
   // may carry a class transform (.lc-right's translateY(-50%)) — so what its
@@ -14149,7 +14353,13 @@ function placer(d, el, page) {
     const cs = d.defaultView.getComputedStyle(el);
     const lx = parseFloat(cs.left) / 96, ly = parseFloat(cs.top) / 96;
     if (isFinite(lx) && isFinite(ly)) {
-      delta = { x: +(measured.x - lx).toFixed(3), y: +(measured.y - ly).toFixed(3) };
+      // Less its own margins: a margin on an absolute element offsets where
+      // it paints, and the placement sets margin:0 (layout.py _style). Read
+      // as part of the ancestor's offset, a designed piece's css margin
+      // (rxkids' scene tags, 11px) put it that much higher than the drag said
+      // the moment it was first placed.
+      const ml = (parseFloat(cs.marginLeft) || 0) / 96, mt = (parseFloat(cs.marginTop) || 0) / 96;
+      delta = { x: +(measured.x - lx - ml).toFixed(3), y: +(measured.y - ly - mt).toFixed(3) };
       // Pin the element's own transform inline for the drag: .ds-lifted's
       // transform:scale(1.015) REPLACES a class transform (.lc-right's
       // translateY(-50%)), so mid-drag the box rode half its height away
@@ -14173,15 +14383,70 @@ function placer(d, el, page) {
     if (a && a !== page && page.contains(a)) {
       const ab = inchBox(a, page);
       const acs = d.defaultView.getComputedStyle(a);
-      delta = { x: +(ab.x + (parseFloat(acs.borderLeftWidth) || 0) / 96).toFixed(3),
-                y: +(ab.y + (parseFloat(acs.borderTopWidth) || 0) / 96).toFixed(3) };
+      // Less its scroll: an absolute child is placed against a scrolled
+      // ancestor's scroll ORIGIN, not its visible corner — a carousel showing
+      // its second slide put a bar moved inside it a slide's width away.
+      delta = { x: +(ab.x + ((parseFloat(acs.borderLeftWidth) || 0) - a.scrollLeft) / 96).toFixed(3),
+                y: +(ab.y + ((parseFloat(acs.borderTopWidth) || 0) - a.scrollTop) / 96).toFixed(3) };
     }
   }
   const stored = shapeId ? shapeOf(shapeId)
                          : (bx || layout.positions[id]);
-  const box = stored && stored.x !== undefined
+  const placedBefore = !!stored && stored.x !== undefined;
+  const box = placedBefore
     ? { ...measured, x: +stored.x + delta.x, y: +stored.y + delta.y }
-    : measured;
+    : { ...measured };
+  // The width a placement pins (see pinW), decided before the trial below so
+  // the trial lays the element out exactly as the placement will.
+  const wPin = (shapeId ? null : (layout.positions[id] || {}).w)
+    ?? (measured.w <= PAGE_W_IN ? ceilIn(measured.w) : undefined);
+  // A css max-width is written for the element's own box-sizing; a placement
+  // pins the BORDER box (border-box), so a max-width meant for the content
+  // (rxkids' 620px subtitle, 40px of padding a side) capped the whole box
+  // 80px short and the words rewrapped a line taller. The pinned width is
+  // the one it had, max-width and all: free it (layout.py _style, noMaxW).
+  const noMaxW = !shapeId && !bx && cs0.maxWidth && cs0.maxWidth !== 'none'
+    && (placedBefore ? !!(layout.positions[id] || {}).noMaxW : true);
+  // A margin its css marks !important beats the placement's inline margin:0
+  // — rxkids' call-to-action panel, margin-top:28px !important, landed that
+  // far below every place it was put. Asked of the layout itself: zero the
+  // margin inline and see whether any survives (layout.py _style, pinMargin).
+  const pinMargin = !shapeId && !bx && (() => {
+    if ((layout.positions[id] || {}).pinMargin) return true;
+    const keep = el.getAttribute('style');
+    el.style.margin = '0';
+    const c = d.defaultView.getComputedStyle(el);
+    const left = ['Top', 'Right', 'Bottom', 'Left'].some(k => (parseFloat(c['margin' + k]) || 0) !== 0);
+    if (keep === null) el.removeAttribute('style'); else el.setAttribute('style', keep);
+    return left;
+  })();
+  const zeroMargin = () => pinMargin ? el.style.setProperty('margin', '0', 'important')
+                                     : (el.style.margin = '0');
+  // Leaving the flow changes the box itself, so measure what it will be before
+  // it happens (flowExit): margins that collapsed THROUGH the element (a
+  // paragraph block's own <p> margins) end up inside it, and a height a flex
+  // or grid row stretched it to goes away. The box the drag, the snaps and
+  // Align all work with is the placed one, raised by the inner top margin so
+  // the words stay exactly where they were.
+  const exit = heldFlow && !flowInline && !bx && !placedBefore && !frags
+    ? flowExit(d, el, page, measured, delta, wPin, !!reserveGrid, noMaxW, pinMargin) : null;
+  const trim = exit ? exit.trim : [0, 0];
+  if (exit) {
+    box.y -= trim[0];
+    box.h = Math.max(box.h + trim[0] + trim[1], exit.floorH || 0);
+  }
+  // What the element held IN the flow: its border box, and margins that
+  // collapse with its neighbours exactly as its own (and those collapsing
+  // through it) did. The strut holds this, live and in the render.
+  const flowH = measured.h;
+  // And its width as measured — not the pinned one, rounded up so the words
+  // never wrap: a strut a hair wider than what it stands in for took that
+  // hair from its flexible neighbours (layout.py spacer, reserveW).
+  const flowW = +measured.w.toFixed(3);
+  const holdMargin = flowMargin && exit
+    ? [collapseMargins(flowMargin[0], trim[0]), flowMargin[1],
+       collapseMargins(flowMargin[2], trim[1]), flowMargin[3]]
+    : flowMargin;
   // A designed piece taking a place for the first time — off the flow, or off
   // the spot the design's own CSS gave it — lands on TOP of this page's stack
   // (nextZ). Decided here at pick-up, painted inline through the drag so the
@@ -14195,8 +14460,15 @@ function placer(d, el, page) {
   // every clamp and snap is then computed against the wrong edges (it stops
   // short of the page edge and snaps to lines that are not where it looks).
   // Its declared size is the truth; only the position needs measuring.
-  if (stored && stored.kind === 'chart') {
+  // Every shape's declared size is its box, as a chart's is. What it PAINTS
+  // is something else: an icon's stroked glyph sits well inside its declared
+  // square, so its rect was a fraction of the box its x/y describe — and
+  // Align, mixing the declared corner with the painted size, set chevrons
+  // down a tenth of an inch from where the others lined up.
+  if (shapeId && stored && +stored.w > 0 && +stored.h > 0) {
     box.w = +stored.w; box.h = +stored.h;
+  }
+  if (stored && stored.kind === 'chart') {
     // paintShape moves a chart by translating it from where the RENDERER drew
     // it, which the renderer stamps on the node as data-ox/oy/ow/oh. A tab
     // still running an older engine has no stamp, and the chart then sat
@@ -14226,8 +14498,10 @@ function placer(d, el, page) {
     // written at the drop finds its host before the re-render does.
     spacer.dataset.spacerFor = id;
     spacer.dataset.ancHost = 'spacer:' + id;
-    spacer.style.cssText = `width:${box.w.toFixed(2)}in;height:${box.h.toFixed(2)}in;`
-      + 'flex:0 0 auto' + strutExtra(flowMargin, flowInline);
+    spacer.style.cssText = `width:${flowW}in;height:${flowH.toFixed(2)}in;`
+      + 'flex:0 0 auto'
+      + strutExtra(holdMargin, flowInline && (inlineAlign || true), reserveGrid, reserveBase);
+    if (reserveBase) spacer.innerHTML = '<span style="display:inline-block"></span>';
     spacer.setAttribute('aria-hidden', 'true');
     el.parentNode.insertBefore(spacer, el);
   };
@@ -14244,9 +14518,12 @@ function placer(d, el, page) {
   // its longest line: drag it and it stretches into a strip. Pin the width it
   // had. Skip only things genuinely wider than the page (the cover lockup is
   // full-bleed on purpose); pinning that would shove it off the edge.
+  // Rounded UP to the hundredth: rounded to nearest, a label that exactly
+  // fitted its line lost a few thousandths of an inch and wrapped — a stat
+  // two lines tall, and the strut grown to match pushed the page down.
   const pinW = () => {
     const prev = (shapeId ? null : layout.positions[id]) || {};
-    return prev.w ?? (box.w <= PAGE_W_IN ? +box.w.toFixed(2) : undefined);
+    return prev.w ?? (box.w <= PAGE_W_IN ? ceilIn(box.w) : undefined);
   };
 
   const put = (x, y, snap = true) => {
@@ -14259,8 +14536,13 @@ function placer(d, el, page) {
     }
     // Clamp inside the page: .page is overflow:hidden, so "off the edge" is
     // not bleed, it is gone. Better to refuse the pixel than fail the build.
-    x = Math.min(Math.max(x, 0), PAGE_W_IN - Math.min(box.w, PAGE_W_IN));
-    y = Math.min(Math.max(y, 0), PAGE_H_IN - Math.min(box.h, PAGE_H_IN));
+    // Except as far as it already overhung: a piece that starts past the edge
+    // (a bar in a carousel's second slide, laid out off to the right and
+    // clipped) was yanked a slide's width sideways by a move straight down.
+    x = Math.min(Math.max(x, Math.min(0, box.x)),
+                 Math.max(PAGE_W_IN - Math.min(box.w, PAGE_W_IN), box.x));
+    y = Math.min(Math.max(y, Math.min(0, box.y)),
+                 Math.max(PAGE_H_IN - Math.min(box.h, PAGE_H_IN), box.y));
     if (shapeId) {
       const sh = shapeOf(shapeId);
       if (sh) {
@@ -14287,13 +14569,21 @@ function placer(d, el, page) {
       // drawn that far below the pointer for the whole drag and jumped back
       // up on the render after the drop — and border-box, so a pinned width
       // is the measured one, padding and border included, not that plus them.
-      el.style.margin = '0';
+      zeroMargin();
       el.style.left = (x - delta.x).toFixed(2) + 'in';   // page -> local coords
       el.style.top = (y - delta.y).toFixed(2) + 'in';
+      el.style.bottom = 'auto';             // layout.py _style: top, not bottom
+      if (reserveGrid) el.style.gridArea = 'auto';
       const w = pinW();
       if (w) {                              // what the renderer will do, now
         el.style.boxSizing = 'border-box';
         el.style.width = w + 'in';
+        if (noMaxW) el.style.maxWidth = 'none';
+      }
+      // The height a row stretched it to, kept as a floor (h + hmin below).
+      if (exit && exit.floorH) {
+        el.style.boxSizing = 'border-box';
+        el.style.minHeight = exit.floorH + 'in';
       }
       if (zNew !== null) el.style.zIndex = String(zNew);   // and the layer it will keep
     }
@@ -14312,8 +14602,11 @@ function placer(d, el, page) {
       // height it had the day it was first moved: it used to be written once
       // and never again, so retexting or resizing a pinned heading left a gap
       // in the flow the size of the old one. (syncReserves does the same after
-      // every render, for the edits that do not pass through here.)
-      const reserve = (heldFlow || prev.reserve !== undefined) ? +box.h.toFixed(2) : undefined;
+      // every render, for the edits that do not pass through here.) What the
+      // flow lost is the in-flow box: leaving the flow, that is flowH; once
+      // placed, the placed box less the margins that moved inside it (trim).
+      const reserve = heldFlow ? +flowH.toFixed(2)
+        : prev.reserve !== undefined ? +(box.h - trimOf(prev)).toFixed(2) : undefined;
       // Stored in the element's OWN coordinate space (page space minus delta),
       // so the renderer's naive left/top reproduces the exact visual spot even
       // inside a positioned ancestor. For page-anchored elements delta is 0
@@ -14322,12 +14615,22 @@ function placer(d, el, page) {
       // time it leaves the flow and kept after: once placed it is absolute,
       // with margin:0 (layout.py _style), and has none left to read.
       const held = heldFlow && reserve ? {
-        ...(flowMargin && flowMargin.some(v => v) ? { reserveMargin: flowMargin } : {}),
-        ...(flowInline ? { reserveInline: true } : {}),
+        ...(holdMargin && holdMargin.some(v => v) ? { reserveMargin: holdMargin } : {}),
+        ...(flowInline ? { reserveInline: inlineAlign || true } : {}),
+        ...(reserveGrid ? { reserveGrid } : {}),
+        ...(reserveBase ? { reserveBase } : {}),
+        ...(w && Math.abs(w - flowW) > 0.0005 ? { reserveW: flowW } : {}),
+        // The margins that now sit INSIDE it, so syncReserves can tell the
+        // box the flow lost from the placed one.
+        ...(trim[0] || trim[1] ? { trim } : {}),
+        // And the height a row stretched it to, as a floor it grows past.
+        ...(exit && exit.floorH && prev.h === undefined ? { h: exit.floorH, hmin: true } : {}),
       } : {};
       layout.positions[id] = { ...prev,
                               x: +(x - delta.x).toFixed(2), y: +(y - delta.y).toFixed(2),
                               ...(w ? { w } : {}),
+                              ...(w && noMaxW ? { noMaxW: true } : {}),
+                              ...(pinMargin ? { pinMargin: true } : {}),
                               ...(reserve ? { reserve } : {}),
                               ...held,
                               ...(zNew !== null && prev.z === undefined ? { z: zNew } : {}) };

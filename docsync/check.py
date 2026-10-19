@@ -1112,6 +1112,33 @@ def stress_layout(layout_json: Path | None, edit_html: str) -> dict:
     return raw
 
 
+_EL_TAG = re.compile(r'<([A-Za-z][\w-]*)\b([^>]*?\bdata-el="([^"]+)"[^>]*)>')
+
+
+def moves_dropped(stress_html: str) -> list[str]:
+    """Movables a renderer gives a handle and then never places: in the build
+    where every data-el has a position (stress_layout), their tag still
+    carries no placement — no data-placed, no absolute position in its style.
+    In the editor they drag, and snap back to where they were on the next
+    render. The usual cause is L.tag() beside a style the renderer writes
+    itself without merging L.style() into it (the Budget Primer's branch
+    cards). Endnotes reorder rather than park, and a toggle's chevron is
+    selectable but never moved, so neither counts."""
+    out, placed = [], 0
+    for m in _EL_TAG.finditer(stress_html):
+        attrs, el_id = m.group(2), m.group(3)
+        if el_id.startswith("endnote.") or "ds-tgl-svg" in attrs:
+            continue
+        if "data-placed" in attrs or re.search(r'style="[^"]*position:\s*absolute', attrs):
+            placed += 1
+            continue
+        out.append(el_id)
+    # A build that placed nothing at all has no placements to check — fixed
+    # markup, as the engine's own test renderers write — rather than one that
+    # drops some of them.
+    return list(dict.fromkeys(out)) if placed else []
+
+
 def _tally(counts: dict[str, int], n: int = 4) -> str:
     items = sorted(counts.items(), key=lambda kv: -kv[1])
     out = ", ".join(f"{k[:50]!r}" + (f" (x{c})" if c > 1 else "")
@@ -1352,6 +1379,15 @@ def check_editability(binding) -> list[Problem]:
                 f"every slot styled) — the browser keeps the first, so that move "
                 f"or style never reaches the page. Merge them into one: "
                 f"L.attr(id, extra), or merge_attrs()"))
+        dropped = moves_dropped(stress_html)
+        if dropped:
+            problems.append(Problem(
+                "editability",
+                f"{len(dropped)} movable(s) the renderer never places — they drag "
+                f"in the editor and snap back on the next render: {_samples(dropped)}. "
+                f"Merge L.style(id) into the style the renderer writes itself "
+                f"(L.tag() marks the element; L.style() is its placement), or use L.attr",
+                level))
     return problems
 
 

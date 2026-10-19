@@ -61,11 +61,12 @@ PREFIX = "copy."
 # layout.py / content.py withholds these when publishing, and the stored
 # snapshot was taken in edit mode, so a publish render strips them here.
 _EDIT_ONLY = ("data-el", "data-slot", "data-inline", "data-extra", "data-fill",
-              "data-sec", "data-hidden", "data-fixed", "data-master", "data-new")
+              "data-sec", "data-hidden", "data-fixed", "data-master", "data-new",
+              "data-frame")
 # Attributes fill() re-derives from layout.json on every render; a stale copy
 # in the stored markup would fight the fresh one.
 _REDERIVED = ("data-placed", "data-reserve-for", "data-reserve", "data-reserve-w",
-              "data-reserve-m", "data-reserve-inline",
+              "data-reserve-m", "data-reserve-g", "data-reserve-b", "data-reserve-inline",
               "data-anc-host", "data-anc", "data-anc-edge", "data-anc-gap",
               "data-spacer-for")
 _VOID = frozenset("area base br col embed hr img input link meta param source "
