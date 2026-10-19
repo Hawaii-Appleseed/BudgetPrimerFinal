@@ -1215,10 +1215,14 @@ branch_cards = [
         ("oha", MINT, "branch-3.jpg", False),
     ]
 ]
+# The card's background and its placement are ONE style attribute (L.attr with
+# the background as `extra`): with L.tag() and a style written here, the
+# placement never reached the page and a moved card snapped back on render.
+# Its strut holds its slot in the row beside the photo.
 bc = "".join(
     f'<div class="branch">{L.spacer(f"branch.photo.{k}")}{img_el(f"branch.photo.{k}", "", f"assets/{img}", esc(C.text(f"basics.branch.{k}.title")), desc=f"basics.branch.{k}.title")}'
-    f'<div class="branch-card{" onlight" if is_light_bg(fill_repr(L.fill(f"branch.{k}", bg))) else ""}"'
-    f'{L.tag(f"branch.{k}")}{L.fill_tag(f"branch.{k}")} style="background:{fill_css(L.fill(f"branch.{k}", bg))}">'
+    f'{L.spacer(f"branch.{k}")}<div class="branch-card{" onlight" if is_light_bg(fill_repr(L.fill(f"branch.{k}", bg))) else ""}"'
+    f'{L.attr(f"branch.{k}", "background:" + fill_css(L.fill(f"branch.{k}", bg)))}{L.fill_tag(f"branch.{k}")}>'
     f'<h4>{t}</h4><ul{C.ul_attr(f"basics.branch.{k}.bullets")}>' + "".join(f"<li>{b}</li>" for b in bl) + "</ul></div></div>"
     for t, bg, img, lt, bl, k in branch_cards)
 pages.append(f"""
