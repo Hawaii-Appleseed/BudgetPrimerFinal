@@ -4017,6 +4017,76 @@ check_eq("check_alt_text warns (never errors) once per file-name alt",
 check_eq("an <img> inside a <script> string is not on the page",
          check_alt_text('<script>x = \'<img src="a.png" alt="a.png">\'</script>'), [])
 
+# --- paragraph keys, text variables, character styles (INDESIGN_PARITY 17-22) -
+from docsync.layout import text_css, char_css, TYPE_CSS                      # noqa: E402
+from docsync.content import md_inline as _mdi, VAR_RE                        # noqa: E402
+
+check_eq("the paragraph keys are the CSS they mean",
+         text_css({"wrap": "pretty", "hyphenate": True, "keep": "together",
+                   "figures": "oldstyle", "smallCaps": "small"}),
+         "text-wrap:pretty;-webkit-hyphens:auto;hyphens:auto;break-inside:avoid;"
+         "font-variant-numeric:oldstyle-nums;font-variant-caps:small-caps;"
+         "display:inline-block;width:100%")
+check_eq("ligatures are on unless a style says false; true writes nothing",
+         (text_css({"ligatures": True}), text_css({"ligatures": False})),
+         ("", "font-variant-ligatures:none"))
+check_eq("a drop cap and a list look ride as custom properties for TYPE_CSS",
+         text_css({"dropCap": 3, "list": {"marker": "decimal", "color": "#123456", "indent": 0.25}}),
+         "--ds-cap:3;--ds-lt:decimal;--ds-mk:#123456;--ds-li:0.25in;display:inline-block;width:100%")
+for _bad, _says in (({"wrap": "even"}, "wrap"), ({"keep": "all"}, "keep"),
+                    ({"figures": "tab"}, "figures"), ({"smallCaps": True}, "smallCaps"),
+                    ({"hyphenate": 1}, "hyphenate"), ({"dropCap": 1}, "dropCap"),
+                    ({"list": {"marker": "star"}}, "marker"),
+                    ({"list": {"bullet": "disc"}}, "unknown key"),
+                    ({"list": {"indent": -1}}, "indent")):
+    check_eq(f"a style saying {_bad} is refused at load, naming {_says}",
+             _says in _layout_error({"text": {"x.y": _bad}}), True)
+
+_plain = _layout({"boxes": [{"id": "b1", "page": 1, "x": 1, "y": 1, "w": 2, "md": "hi"}]})
+check_eq("a layout using none of them emits none of their CSS or runtime",
+         "--ds-cap" in _plain.layer(1) or "__dsVars" in _plain.layer(1)
+         or ".ds-cs[" in _plain.layer(1), False)
+_cap = _layout({"text": {"intro.p1": {"dropCap": 2}}})
+_h = _cap.layer(1) + _cap.layer(2)
+check_eq("TYPE_CSS rides out once, when a style asks for a drop cap",
+         _h.count(TYPE_CSS), 1)
+_v = _layout({"boxes": [{"id": "f", "page": 1, "x": 1, "y": 1, "w": 2, "md": "p. {page}"}]})
+check_eq("the variables runtime rides out once, when a box uses a token",
+         (_v.layer(1) + _v.layer(2)).count("window.__dsVars"), 1)
+check_eq("only the named tokens are read — a renderer's own {fy} is left alone",
+         _mdi("{fy} and {page}"),
+         '{fy} and <span class="ds-var" data-var="page"></span>')
+check_eq("{pageof:key} carries the key and a '?' for a reader with no script",
+         _mdi("see {pageof:whopays.h1}"),
+         'see <span class="ds-var" data-var="pageof" data-ref="whopays.h1">?</span>')
+import os as _os                                                             # noqa: E402
+_os.environ["DOCSYNC_DATE"] = "2026-03-04"
+check_eq("{date} is the build date, pinned by DOCSYNC_DATE",
+         _mdi("{date}"), '<span class="ds-var" data-var="date">March 4, 2026</span>')
+del _os.environ["DOCSYNC_DATE"]
+check_eq("VAR_RE knows exactly these names",
+         [m.group(1) for m in VAR_RE.finditer("{page}{pages}{section}{title}{date}{contents}{pageof:a.b}{x}")],
+         ["page", "pages", "section", "title", "date", "contents", "pageof:a.b"])
+
+check_eq("a character-style run is a span naming its style, words formatted inside",
+         _mdi("a [big **red** run]{.Accent} b"),
+         'a <span class="ds-cs" data-cs="Accent">big <b>red</b> run</span> b')
+check_eq("a footnote ref is never a run",
+         _mdi("x [^fn1]{.Accent}"), "x [^fn1]{.Accent}")
+check_eq("a link inside a run is the link, not a link from the run's bracket",
+         _mdi("[the [GET](https://x.org/a) now]{.P}"),
+         '<span class="ds-cs" data-cs="P">the <a href="https://x.org/a">GET</a> now</span>')
+check_eq("a character style drops the paragraph's keys",
+         char_css({"color": "#C0392B", "align": "center", "leading": 2, "dropCap": 3,
+                   "figures": "tabular"}),
+         "color:#C0392B;font-variant-numeric:tabular-nums")
+_cs = _layout({"textStyles": {"Accent": {"color": "#C0392B", "align": "center"}},
+               "boxes": [{"id": "b", "page": 1, "x": 1, "y": 1, "w": 2,
+                          "md": "a [run]{.Accent} and [ghost]{.Nobody}"}]})
+_csh = _cs.layer(1)
+check_eq("one rule per style a run wears, and none for a name with no style",
+         ('.ds-cs[data-cs="Accent"]{color:#C0392B}' in _csh, "Nobody" in _csh), (True, False))
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

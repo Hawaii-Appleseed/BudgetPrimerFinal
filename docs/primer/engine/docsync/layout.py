@@ -32,7 +32,8 @@ from pathlib import Path
 # styler duck-typed), so there is no cycle. A text box is a markdown block that
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
-from .content import Footnotes, block_html, md_inline, paragraph
+from .content import (Footnotes, block_html, char_styles_used, md_inline,
+                      paragraph, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
 # different page passes its own size in — this is a default, not a law. It is
@@ -769,6 +770,74 @@ def _lfs(size_in: float) -> float:
 ALIGNS = ("left", "center", "right", "justify")
 CASES = ("none", "upper", "lower", "title")
 
+# --- paragraph and OpenType keys (INDESIGN_PARITY.md 20-22) -----------------
+# Every one is a thing the browser already does, so none of them needs a
+# measured text engine — they are named here so a STYLE can carry them, which
+# is the difference between setting them once and setting them per box.
+#
+# `wrap`: how lines break. "balance" evens a heading's lines out (no lone word
+# on the second line); "pretty" spends more effort on a paragraph's last line.
+WRAPS = ("balance", "pretty")
+# `keep`: where a printed page may break. "together" keeps the block on one
+# page; "next" keeps it on the page of whatever follows (a heading with its
+# first paragraph). Screens ignore both, which is right.
+KEEPS = ("together", "next")
+# `figures`: font-variant-numeric. Tabular figures are all one width, so a
+# column of amounts lines up digit under digit — budget tables are why.
+FIGURES = {"tabular": "tabular-nums", "proportional": "proportional-nums",
+           "lining": "lining-nums", "oldstyle": "oldstyle-nums",
+           "tabular-lining": "tabular-nums lining-nums",
+           "tabular-oldstyle": "tabular-nums oldstyle-nums"}
+# `smallCaps`: "small" keeps capitals as capitals; "all" turns them small too,
+# which is what an acronym run in prose wants (GET, TANF).
+SMALL_CAPS = {"small": "small-caps", "all": "all-small-caps"}
+# `dropCap`: how many lines the first letter sinks. initial-letter, through a
+# custom property and a rule emitted once (TYPE_CSS) — a pseudo-element cannot
+# be reached from an inline style, and the custom property inherits, so the
+# rule finds it on the slot or on the slot's first paragraph alike.
+DROP_CAP_LINES = (2, 3, 4, 5)
+# `list`: {marker, color, indent}. All three ride inline as custom properties
+# and TYPE_CSS applies them to the <ul>/<ol> and ::marker — the UA sheet sets
+# list-style-type on every list, so inheriting it from the slot does nothing.
+LIST_MARKERS = {"disc": "disc", "circle": "circle", "square": "square",
+                "dash": "'\\2013  '", "decimal": "decimal",
+                "lower-alpha": "lower-alpha", "upper-alpha": "upper-alpha",
+                "lower-roman": "lower-roman", "upper-roman": "upper-roman",
+                "none": "none"}
+LIST_KEYS = ("marker", "color", "indent")
+# The rules the inline custom properties need. One string, emitted once per
+# document and only when some style asks for a drop cap or a list look
+# (Layout._type_once), so a report that uses neither keeps its bytes.
+TYPE_CSS = (
+    "[style*='--ds-cap:']::first-letter,"
+    "[style*='--ds-cap:']>p:first-of-type::first-letter{"
+    "-webkit-initial-letter:var(--ds-cap);initial-letter:var(--ds-cap);"
+    "margin-right:.06em}"
+    # The UA sheet gives every <ul> its own list-style-type, so an inherited
+    # one from the slot never reaches the items: the list itself is set.
+    "[style*='--ds-lt:'] ul,[style*='--ds-lt:'] ol,"
+    "ul[style*='--ds-lt:'],ol[style*='--ds-lt:']{list-style-type:var(--ds-lt)}"
+    "[style*='--ds-mk:'] li::marker{color:var(--ds-mk)}"
+    "[style*='--ds-li:'] ul,[style*='--ds-li:'] ol,"
+    "ul[style*='--ds-li:'],ol[style*='--ds-li:']{padding-left:var(--ds-li)}"
+)
+# What a CHARACTER style may set — a run of words inside a paragraph has a
+# face, a size, a colour and letterforms, but no alignment, line breaking,
+# leading, keep, drop cap or list of its own; those belong to the paragraph.
+CHAR_KEYS = ("font", "size", "weight", "italic", "underline", "color",
+             "tracking", "case", "effect", "figures", "smallCaps", "ligatures")
+
+
+def char_css(st: dict) -> str:
+    """A text style as a character style: text_css of only CHAR_KEYS."""
+    return text_css({k: v for k, v in (st or {}).items() if k in CHAR_KEYS})
+
+
+# The keys that need the text to be a BOX to mean anything — alignment, line
+# balancing and a drop cap all act on a block container, and the inline slots
+# are spans. text_css gives such a slot inline-block at full width, once.
+_BOX_KEYS = ("align", "wrap", "dropCap")
+
 
 def _hex(v, where: str) -> str:
     if not isinstance(v, str) or not re.fullmatch(r"#[0-9a-fA-F]{3,8}", v):
@@ -824,9 +893,35 @@ def text_css(st: dict) -> str:
         out.append(EFFECTS[fx["kind"]](fx))
     if st.get("align"):
         out.append(f'text-align:{st["align"]}')
-        # text-align does nothing to an inline box, and the inline slots are
-        # spans. Give it a box to align within — but only when alignment was
-        # actually asked for, so nothing else grows a width it never had.
+    if st.get("wrap"):
+        out.append(f'text-wrap:{st["wrap"]}')
+    if st.get("hyphenate"):
+        out.append("-webkit-hyphens:auto;hyphens:auto")
+    keep = st.get("keep")
+    if keep == "together":
+        out.append("break-inside:avoid")
+    elif keep == "next":
+        out.append("break-after:avoid")
+    if st.get("figures"):
+        out.append(f'font-variant-numeric:{FIGURES[st["figures"]]}')
+    if st.get("smallCaps"):
+        out.append(f'font-variant-caps:{SMALL_CAPS[st["smallCaps"]]}')
+    if st.get("ligatures") is False:
+        out.append("font-variant-ligatures:none")
+    if st.get("dropCap"):
+        out.append(f'--ds-cap:{int(st["dropCap"])}')
+    lst = st.get("list") or {}
+    if lst.get("marker"):
+        out.append(f'--ds-lt:{LIST_MARKERS[lst["marker"]]}')
+    if lst.get("color"):
+        out.append(f'--ds-mk:{lst["color"]}')
+    if lst.get("indent") is not None:
+        out.append(f'--ds-li:{float(lst["indent"]):g}in')
+    if any(st.get(k) for k in _BOX_KEYS):
+        # text-align, text-wrap and ::first-letter do nothing to an inline
+        # box, and the inline slots are spans. Give it a box — but only when
+        # one of those was actually asked for, so nothing else grows a width
+        # it never had.
         out.append("display:inline-block;width:100%")
     return ";".join(out)
 
@@ -945,6 +1040,35 @@ def _check_text(st: dict, where: str) -> None:
                           f"{', '.join(CASES)}")
     if st.get("color"):
         _hex(st["color"], where + ".color")
+    for k, allowed in (("wrap", WRAPS), ("keep", KEEPS), ("figures", tuple(FIGURES)),
+                       ("smallCaps", tuple(SMALL_CAPS))):
+        if st.get(k) is not None and st[k] not in allowed:
+            raise LayoutError(f"{where}: {k} {st[k]!r} must be one of "
+                              f"{', '.join(allowed)}")
+    for k in ("hyphenate", "ligatures"):
+        if st.get(k) is not None and not isinstance(st[k], bool):
+            raise LayoutError(f"{where}: {k} must be true or false")
+    if st.get("dropCap") is not None and st["dropCap"] not in DROP_CAP_LINES:
+        raise LayoutError(f"{where}: dropCap is how many lines the letter sinks — "
+                          f"one of {', '.join(map(str, DROP_CAP_LINES))}")
+    lst = st.get("list")
+    if lst is not None:
+        if not isinstance(lst, dict):
+            raise LayoutError(f"{where}: list must be an object of "
+                              f"{', '.join(LIST_KEYS)}")
+        bad = [k for k in lst if k not in LIST_KEYS]
+        if bad:
+            raise LayoutError(f"{where}.list: unknown key(s) {', '.join(bad)} — "
+                              f"one of {', '.join(LIST_KEYS)}")
+        if lst.get("marker") is not None and lst["marker"] not in LIST_MARKERS:
+            raise LayoutError(f"{where}.list.marker {lst['marker']!r} must be one of "
+                              f"{', '.join(LIST_MARKERS)}")
+        if lst.get("color"):
+            _hex(lst["color"], where + ".list.color")
+        if lst.get("indent") is not None:
+            v = _num(lst["indent"], f"{where}.list.indent")
+            if not 0 <= v <= 2:
+                raise LayoutError(f"{where}.list.indent is inches, 0 to 2 — {v} is not")
     for k in ("size", "tracking", "leading"):
         if st.get(k) is not None:
             _num(st[k], f"{where}.{k}")
@@ -2970,6 +3094,63 @@ def strut_extra(p: dict) -> str:
 # anchored object reads in order there, exactly as an unanchored one does.
 # One source: the editor evaluates this same string after an incremental
 # render (imported nodes do not run their scripts), so the two cannot drift.
+# The text-variables runtime (content.py's VAR_RE). Every token is a
+# <span class="ds-var" data-var=…> whose words only the laid-out document
+# knows, so this fills them in after layout — at parse, load, when fonts
+# arrive (a reflow can move a heading to another page) and on resize. Like
+# ANCHOR_JS it is one string the published page runs and the editor evaluates
+# after each render, so the two cannot disagree.
+#
+# A page's number is its place among the document's sheets. {section} is the
+# last h1/h2 on or before the token's page — a running header. {contents}
+# lists every h1/h2 AFTER the contents' own page, with the page each is on,
+# and links to it (an id is given to a heading that has none). Each span is
+# rewritten only when its words change, so running it often is cheap and an
+# edit-in-progress beside it is not disturbed.
+VARS_CSS = (
+    ".ds-var[data-var=contents]{display:block}"
+    ".ds-toc{list-style:none;margin:0;padding:0}"
+    ".ds-toc li{display:flex;align-items:baseline;gap:.35em;margin:.25em 0}"
+    ".ds-toc li.ds-toc-2{padding-left:1.1em}"
+    ".ds-toc a{display:contents;color:inherit;text-decoration:none}"
+    ".ds-toc .ds-toc-d{flex:1 1 auto;min-width:1em;border-bottom:1px dotted currentColor;"
+    "opacity:.45;transform:translateY(-.3em)}"
+    ".ds-toc .ds-toc-n{font-variant-numeric:tabular-nums}"
+)
+VARS_JS = (
+    "(function(){function go(){"
+    "var P=[].slice.call(document.querySelectorAll('section.page'));"
+    "function pn(el){var p=el.closest('section.page');return p?P.indexOf(p)+1:0;}"
+    "var H=[].slice.call(document.querySelectorAll('section.page h1,section.page h2'))"
+    ".filter(function(h){return !h.closest('.ds-var')&&(h.textContent||'').trim();});"
+    "var vs=document.querySelectorAll('.ds-var');"
+    "for(var i=0;i<vs.length;i++){var v=vs[i],k=v.getAttribute('data-var'),n=pn(v),t=null;"
+    "if(k==='page')t=n?String(n):'';"
+    "else if(k==='pages')t=String(P.length);"
+    "else if(k==='title')t=document.title||'';"
+    "else if(k==='section'){t='';for(var j=H.length-1;j>=0;j--){var hp=pn(H[j]);"
+    "if(hp&&hp<=n){t=H[j].textContent.replace(/\\s+/g,' ').trim();break;}}}"
+    "else if(k==='pageof'){var r=v.getAttribute('data-ref');"
+    "var h=document.querySelector('[data-anc-host=\\''+r+'\\'],[data-slot=\\''+r+'\\']');"
+    "t=h&&pn(h)?String(pn(h)):'?';}"
+    "else if(k==='contents'){var rows=[];"
+    "for(var q=0;q<H.length;q++){var hq=H[q],np=pn(hq);if(!np||np<=n)continue;"
+    "if(!hq.id)hq.id='ds-h-'+q;"
+    "rows.push([hq.tagName==='H1'?1:2,hq.id,hq.textContent.replace(/\\s+/g,' ').trim(),np]);}"
+    "var sig=JSON.stringify(rows);if(v.getAttribute('data-sig')===sig)continue;"
+    "v.setAttribute('data-sig',sig);var ol=document.createElement('ol');ol.className='ds-toc';"
+    "rows.forEach(function(r){var li=document.createElement('li');li.className='ds-toc-'+r[0];"
+    "var a=document.createElement('a');a.href='#'+r[1];"
+    "var s1=document.createElement('span');s1.className='ds-toc-t';s1.textContent=r[2];"
+    "var s2=document.createElement('span');s2.className='ds-toc-d';"
+    "var s3=document.createElement('span');s3.className='ds-toc-n';s3.textContent=r[3];"
+    "a.appendChild(s1);a.appendChild(s2);a.appendChild(s3);li.appendChild(a);ol.appendChild(li);});"
+    "v.textContent='';v.appendChild(ol);continue;}"
+    "if(t!==null&&v.textContent!==t)v.textContent=t;}}"
+    "window.__dsVars=go;go();addEventListener('load',go);addEventListener('resize',go);"
+    "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
+)
+
 ANCHOR_JS = (
     "(function(){var W=%(w)s;function go(){"
     # Struts first: an element that reserves flow space and whose page holds
@@ -3242,6 +3423,9 @@ class Layout:
                               + [p for p in self.positions.values() if isinstance(p, dict)])
             if isinstance(a, dict) and isinstance(a.get("to"), str) and a.get("to")}
         self._anchor_sent = False
+        self._type_sent = False
+        self._vars_sent = False
+        self._char_sent = False
         # Ids whose vacated flow slot is held. The runtime materialises the
         # strut for any of these whose renderer never called spacer() — see
         # attr() and ANCHOR_JS — so it ships whenever one exists.
@@ -3698,6 +3882,87 @@ class Layout:
             return ""
         self._anchor_sent = True
         return f"<script>{ANCHOR_JS % {'w': f'{float(self.page_w):g}'}}</script>"
+
+    def text_style_dicts(self):
+        """Every text style this layout can put on a page, RESOLVED: slot
+        styles, box and table styles (master boxes too), and the named styles
+        themselves — so a question like "does anything ask for a drop cap"
+        has one answer wherever the style was written."""
+        raw = list(self.text.values()) + list(self.text_styles.values())
+        boxes = list(self.boxes) + [b for m in self.masters.values()
+                                    for b in (m.get("boxes") or [])]
+        for o in boxes + list(self.tables):
+            raw.append(self.dressed(o).get("style"))
+        return [self.styled_as(st) for st in raw if st]
+
+    def all_boxes(self) -> list:
+        """Every text box the document can draw: the pages' own and the
+        masters' (as authored, not as page instances)."""
+        return list(self.boxes) + [b for m in self.masters.values()
+                                   for b in (m.get("boxes") or [])]
+
+    def char_styles_used(self) -> set:
+        """Every style name a `[words]{.Name}` in the document wears — in a
+        slot's words or a text box's."""
+        c = getattr(self, "_content", None)
+        words = [str(b.get("md", "")) for b in self.all_boxes()]
+        if c is not None:
+            words += [v for v in getattr(c, "_raw", {}).values() if isinstance(v, str)]
+        out = set()
+        for w in words:
+            if "]{." in w:
+                out |= char_styles_used(w)
+        return out
+
+    def char_rules(self, names) -> str:
+        """One rule per named style, for the runs that wear it. A name with no
+        style behind it gets no rule — its words render as the paragraph's."""
+        rules = []
+        for n in sorted(names):
+            if n not in self.text_styles:
+                continue
+            css = char_css(self.styled_as({"use": n}))
+            if css:
+                q = n.replace("\\", "\\\\").replace('"', '\\"')
+                rules.append(f'.ds-cs[data-cs="{q}"]{{{css}}}')
+        return "".join(rules)
+
+    def _char_once(self) -> str:
+        """The character-style rules, once per document and only when some
+        run wears one — a document without any keeps its bytes."""
+        if self._char_sent:
+            return ""
+        rules = self.char_rules(self.char_styles_used())
+        if not rules:
+            return ""
+        self._char_sent = True
+        return f"<style>{rules}</style>"
+
+    def _vars_once(self) -> str:
+        """VARS_JS and its CSS, once per document and only when some text box
+        or slot uses a token — a document that uses none keeps its bytes."""
+        if self._vars_sent:
+            return ""
+        c = getattr(self, "_content", None)
+        words = [str(b.get("md", "")) for b in self.all_boxes()]
+        if c is not None:
+            words += [v for v in getattr(c, "_raw", {}).values() if isinstance(v, str)]
+        if not any(uses_vars(w) for w in words):
+            return ""
+        self._vars_sent = True
+        return f"<style>{VARS_CSS}</style><script>{VARS_JS}</script>"
+
+    def _type_once(self) -> str:
+        """TYPE_CSS, once per document and only when some style asks for a
+        drop cap or a list look — a layout using neither emits the bytes it
+        always did."""
+        if self._type_sent:
+            return ""
+        if not any(st.get("dropCap") or st.get("list")
+                   for st in self.text_style_dicts()):
+            return ""
+        self._type_sent = True
+        return f"<style>{TYPE_CSS}</style>"
 
     def _anim_block(self) -> str:
         """Keyframes for every animated element, and — published only — the
@@ -5010,7 +5275,8 @@ class Layout:
         for the page-size override, which has to reach the document even on a
         page that holds no shapes."""
         head = (self._mobile_css_once() + self._page_style_once()
-                + self._chart_tip_once() + self._anchor_once())
+                + self._chart_tip_once() + self._anchor_once() + self._type_once()
+                + self._vars_once() + self._char_once())
         # A blank page that is a COPY of a designed one draws that page's
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.

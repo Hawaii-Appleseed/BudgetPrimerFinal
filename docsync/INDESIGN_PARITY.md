@@ -411,39 +411,88 @@ bleed and crop marks for report2027 (see (11)).
       `altIsFilename()` in `edit.html` are one rule twice; keep them equal.
       All 29 checked files were clean when it landed.
 
-### Tier 2 — real gaps with a workaround
+### Tier 2 — real gaps with a workaround — ALL CLOSED 2026-10-19
 
-17. **No character styles inside a paragraph.** A text style dresses a
-    whole slot, box or table cell. Inside one, the only marks are bold,
-    italic and links. A run of words in the topic colour, or a figure set
-    in the heading face, is either hand HTML or not possible. A markdown
-    span such as `[words]{.Name}` read by `content.py` and `resolve_style()`.
-    The work is the round trip through the rich editor's markdown
-    serialiser without corrupting it (see `boldItalicBlocked()`). **M.**
-18. **No generated contents page or cross-references.** `toc.*` in the
-    primer is a hand-written slot, and "see page 12" is typed text. Both
-    go stale every time pages move, which is what (13) through (16) are
-    ranked on. `{page}` already works on masters. The cheap half is a
-    contents block built from headings and page order. The harder half is
-    a page reference resolved at render time, which in a flowed report is
-    only known after layout, so it needs the same measure-then-write
-    runtime as `ANCHOR_JS`. **M** for contents, **L** for references.
-19. **Only one text variable.** `{page}` exists. There is no running
-    header (the current section's title), no `{date}`, no `{title}`, and no
-    section-relative numbering or start-at. Running headers are the common
-    master-page use after the page number. **S–M.**
-20. **No paragraph keep options, hyphenation or justification controls.**
-    No widow, orphan or keep-with-next, no `hyphens`, no `text-wrap:
-    pretty` or `balance`. All of it is CSS the browser already does, so
-    this does not need the text engine "Not coming" rules out: text-style
-    keys for `hyphenate`, `balance` (headings) and `keep` (break-inside
-    and break-after, for the PDF). **S.**
-21. **No drop caps, and no list styling.** Lists come from markdown with
-    whatever the renderer's CSS gives them: no bullet glyph or colour, no
-    numbering format, no list indent in a style. A drop cap is
-    `::first-letter` or `initial-letter`. Both are text-style keys. **S–M.**
-22. **OpenType features beyond (15).** Small caps, old-style figures,
-    ligature control. Cheap once (15) adds `font-variant`. **S.**
+Built in the order (20)+(22), (21), (19)+(18), (17). Every one is opt-in,
+and a layout that uses none of them builds byte-for-byte what it did: all 15
+bound outputs were built with the engine before and after and hashed equal.
+Each thing that needs more than an inline style rides out ONCE per document
+and only when something asks for it (`_type_once`, `_vars_once`,
+`_char_once` in `layer()`, beside `_anchor_once`).
+
+17. **Character styles inside a paragraph. — CLOSED.** `[these words]{.Name}`
+    puts the named text style on a run. content.py's `CHAR_STYLE_RE` makes it
+    `<span class="ds-cs" data-cs="Name">`, which names the style and carries
+    no CSS; `Layout._char_once` emits one `.ds-cs[data-cs=…]` rule per style
+    a run wears, so a redefine moves every run. A run takes only the
+    letterform keys (`CHAR_KEYS`: face, size, weight, italic, underline,
+    colour, tracking, case, effect, figures, small caps, ligatures) —
+    alignment, leading, keep, drop cap and list are the paragraph's.
+    In the editor the words toolbar has **Aa▾**: a style on the selection,
+    or "No style" off it, splitting a run like un-bolding part of bold
+    (`applyCharStyle`). The rule is injected live (`liveCharRule`) so the
+    words change before the edit commits. Runs do not nest; a run holding a
+    `]` of the person's own keeps its words and drops the style rather than
+    the reverse. `styles()` counts runs in `wornBy` (and `runs`), and
+    `dropStyle` unwraps them, since a run cannot carry a look of its own.
+    One grammar change on the way: link text may no longer contain `[`, in
+    content.py and the editor alike, or a link inside a run started at the
+    run's bracket. No bound report had such a link.
+    A name with no style behind it renders as the paragraph's words, with no
+    rule — not refused at load, because the run is in content.md and the
+    stylesheet is in layout.json, and a draft must not fail to build over
+    a stale name.
+18. **Contents and page references. — CLOSED.** `{contents}` in a box is a
+    list of every h1/h2 after the box's own page, with the page each is on,
+    leader dots, and links (a heading with no id is given one).
+    `{pageof:<slot key>}` is the page that slot landed on, "?" when nothing
+    carries the key. Both are filled after layout by `layout.VARS_JS`, the
+    same measure-then-write pattern as `ANCHOR_JS`, which the editor
+    evaluates after each render (`fillVars`). A referenced slot gets the
+    `data-anc-host` hook in both modes (`Content.page_ref_hosts`), because
+    `data-slot` is edit-only. Text menu: **Insert ▸** for the tokens and
+    **Page reference ▸**, which lists the document's headings by their words
+    and writes the key, so a retitled heading keeps its references.
+    What it does not do: pick which headings count (it is h1/h2, the shape
+    every bound report uses), or number a contents list differently from the
+    sheet order.
+19. **Text variables. — CLOSED.** `{page}` `{pages}` `{section}` (the last
+    h1/h2 on or before this page — a running header) `{title}` (the
+    document's `<title>`) `{date}` (the build date, the one the engine knows
+    itself; `DOCSYNC_DATE` pins it). They work in any slot's or box's words,
+    not only on a master. While typing, each is an atomic chip, so an edit
+    gives back the token and never the number it shows; `VAR_RE` lists the
+    names, so a renderer's own `{fy}` is left alone. A master's `{page}` is
+    still replaced in Python, as before, so those bytes did not move.
+20. **Keep options, hyphenation, line breaking. — CLOSED.** Text-style keys:
+    `wrap` (`balance` for headings, `pretty` for paragraphs), `hyphenate`,
+    `keep` (`together` = break-inside:avoid, `next` = break-after:avoid, for
+    the PDF). Every renderer already declares `lang="en"`, which hyphenation
+    needs. `wrap` joins `align` and `dropCap` in `_BOX_KEYS`: on an inline
+    slot they mean nothing, so the slot is given inline-block at full width,
+    as align always did.
+21. **Drop caps and list styling. — CLOSED.** `dropCap: 2–5` is
+    `initial-letter` on the first letter of the slot or of its first
+    paragraph. `list: {marker, color, indent}` sets the marker (disc, circle,
+    square, dash, numbers, letters, roman, none), its colour and the list's
+    indent. A pseudo-element and the UA sheet's own `list-style-type` on
+    every `<ul>` are both out of an inline style's reach, so these ride as
+    custom properties (`--ds-cap`, `--ds-lt`, `--ds-mk`, `--ds-li`) and
+    `TYPE_CSS` applies them.
+22. **OpenType features. — CLOSED**, with (15)'s figures half: `figures`
+    (tabular, tabular-lining, lining, oldstyle, tabular-oldstyle,
+    proportional), `smallCaps` (`small`, or `all` for acronyms), and
+    `ligatures: false`.
+
+    All of (20)–(22) are in one **Paragraph** panel (¶ on the type bar),
+    which reads the RESOLVED style, so a slot wearing Body shows Body's
+    settings, and writes through `setStyle` like every other type control;
+    a pilot sets the same keys with `setStyle` or `defineStyle`.
+
+(15) is half done by (22): figures line up once a table's style says
+`figures: "tabular"`. Its other half — right or decimal alignment per column
+of a placed table — and (14), paragraph spacing and indents, are Tier 1 and
+still open.
 
 ### Tier 3 — drawing and production, not what is stopping anyone
 
@@ -486,8 +535,7 @@ feature.
 
 ### The order
 
-Done: (16) alt text; (13) turned out not to be a gap. Next, (14), (15) and (20), all opt-in
-text-style keys on the one resolver, which keep every existing render
-byte-identical the way (1) did. Then (19) and (18)'s contents half, which
-reuse what masters already built. (17) character styles last of the text
-work, because it is the only one that changes the markdown.
+Done: (16) alt text; (17)–(22), all of Tier 2; (13) turned out not to be a
+gap. Next: (14) paragraph spacing and indents, and (15)'s other half,
+column alignment in a placed table — both opt-in keys on the resolvers that
+already exist. Then Tier 3, which is drawing and production.

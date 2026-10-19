@@ -87,6 +87,70 @@ def parse_sources(block: str) -> dict:
 _DEST = r"(?:[^()\s]+|\([^()\s]*\))+"
 
 
+# --- text variables (INDESIGN_PARITY.md 18-19) ------------------------------
+# A token in braces stands for something only the finished document knows:
+# which page this is, which section it sits in, where another slot landed.
+# The engine cannot know those — it hands text to the browser and the browser
+# decides where pages break — so each token becomes a span that
+# layout.VARS_JS fills in after layout, measured, the way ANCHOR_JS places an
+# anchored object. {date} is the exception: it is when the report was BUILT,
+# which the engine does know, so it is written in here.
+#
+#   {page}  this page's number      {pages}  how many pages
+#   {section}  the last heading at or before this page (a running header)
+#   {title}  the document's <title>  {date}  the build date
+#   {pageof:<slot>}  the page a slot is on ("see page {pageof:whopays.h1}")
+#   {contents}  a contents list of every heading after this page
+#
+# Only these names, so a brace in prose ("{fy}" in a renderer's own template)
+# is never touched.
+VAR_NAMES = ("page", "pages", "section", "title", "date", "contents")
+VAR_RE = re.compile(r"\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+))\}")
+
+
+def build_date() -> str:
+    """The date {date} shows. DOCSYNC_DATE (ISO, 2026-10-19) pins it, so a
+    build can be reproduced byte for byte."""
+    import datetime
+    pin = os.environ.get("DOCSYNC_DATE")
+    d = datetime.date.fromisoformat(pin) if pin else datetime.date.today()
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def var_span(m) -> str:
+    """One token -> the span VARS_JS fills. The span's own text is what a
+    reader sees with no script (a PDF printer that runs none, a feed reader):
+    the build date, or a question mark where a page number would be."""
+    name = m.group(1)
+    if name.startswith("pageof:"):
+        return (f'<span class="ds-var" data-var="pageof" data-ref="{m.group(2)}">'
+                '?</span>')
+    if name == "date":
+        return f'<span class="ds-var" data-var="date">{build_date()}</span>'
+    return f'<span class="ds-var" data-var="{name}"></span>'
+
+
+def uses_vars(text: str) -> bool:
+    return bool(text) and VAR_RE.search(text) is not None
+
+
+def page_refs(text: str) -> set:
+    """The slot keys a text points at with {pageof:…}."""
+    return {m.group(2) for m in VAR_RE.finditer(text or "") if m.group(2)}
+
+
+# A character style: `[words]{.Name}` puts the named text style on a run of
+# words inside a paragraph (INDESIGN_PARITY.md 17). The span names the style
+# and carries no CSS of its own — Layout._char_once emits one rule per style
+# used — so redefining the style moves every run that wears it. The first
+# character after `[` may not be `^`, so a footnote ref is never one.
+CHAR_STYLE_RE = re.compile(r"\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}")
+
+
+def char_styles_used(text: str) -> set:
+    return {m.group(2).strip() for m in CHAR_STYLE_RE.finditer(text or "")}
+
+
 def md_inline(s: str) -> str:
     """Inline Markdown -> the report's HTML. Deliberately minimal: only the
     constructs the primer actually uses, emitting <b>/<i>/<a> (not <strong>).
@@ -109,7 +173,17 @@ def md_inline(s: str) -> str:
     # would leave a stray '!' in front of an anchor. Unlike links, src may be
     # repo-relative (assets/…), which is how uploaded images are referenced.
     s = re.sub(r"!\[([^\]]*)\]\((" + _DEST + r")\)", stash_img, s)
-    s = re.sub(r"\[([^\]^][^\]]*)\]\((https?://" + _DEST + r")\)", stash, s)
+    # Link text holds no `[`: otherwise "[the [GET](url) now]{.Pull}" — a link
+    # inside a character-style run — started the link at the RUN's bracket.
+    s = re.sub(r"\[([^\]^\[][^\]\[]*)\]\((https?://" + _DEST + r")\)", stash, s)
+    cnames: list[str] = []
+
+    def stash_cs(m):
+        cnames.append(m.group(2).strip())
+        return f"\x02CS{len(cnames) - 1}\x02{m.group(1)}\x03"
+
+    if "]{." in s:
+        s = CHAR_STYLE_RE.sub(stash_cs, s)
     s = s.replace("&", "&amp;").replace("<", "&lt;")
     s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s, flags=re.S)
     # Underline. Markdown has no underline of its own and raw <u> cannot get
@@ -124,6 +198,13 @@ def md_inline(s: str) -> str:
     s = re.sub(r"\x00IMG(\d+)\x00",
                lambda m: '<img class="inline-img" src="{}" alt="{}">'.format(*imgs[int(m.group(1))]),
                s)
+    if cnames:
+        s = re.sub(r"\x02CS(\d+)\x02(.*?)\x03",
+                   lambda m: '<span class="ds-cs" data-cs="{}">{}</span>'.format(
+                       cnames[int(m.group(1))].replace("&", "&amp;").replace('"', "&quot;"),
+                       m.group(2)), s, flags=re.S)
+    if "{" in s:
+        s = VAR_RE.sub(var_span, s)
     return s
 
 
@@ -666,9 +747,27 @@ class Content:
         # measure — data-slot is edit-only, and the anchor runtime has to find
         # its paragraph on the page a reader sees. Only for the slots named,
         # so every other report emits exactly what it did.
-        if key in getattr(self._styles, "anchor_hosts", ()):
+        # A slot some {pageof:…} names gets the same hook, for the same reason:
+        # the variables runtime has to find it on the published page.
+        if (key in getattr(self._styles, "anchor_hosts", ())
+                or key in self.page_ref_hosts()):
             out += f' data-anc-host="{key}"'
         return out
+
+    def page_ref_hosts(self) -> set:
+        """Every slot key a {pageof:…} anywhere in the document names — in a
+        slot's words or in a text box's. Worked out once."""
+        if getattr(self, "_ref_hosts", None) is None:
+            refs = set()
+            for v in self._raw.values():
+                if isinstance(v, str):
+                    refs |= page_refs(v)
+            L = self._styles
+            if L is not None:
+                for b in L.all_boxes():
+                    refs |= page_refs(str(b.get("md", "")))
+            self._ref_hosts = refs
+        return self._ref_hosts
 
     def styleable(self) -> set:
         return set(self._styleable)

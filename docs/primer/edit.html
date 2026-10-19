@@ -2296,6 +2296,9 @@
     <button id="ty-mb" aria-label="Bold the selection"><b>B</b></button>
     <button id="ty-mi" aria-label="Italicise the selection"><i>I</i></button>
     <button id="ty-mu" aria-label="Underline the selection"><u>U</u></button>
+    <button id="ty-mcs" aria-label="Character style — a named text style on the selected words">Aa▾</button>
+    <div class="pop" id="ty-cspop" hidden><p class="pop-h">Style on these words</p>
+      <div id="ty-csbody"></div></div>
     <button id="ty-mul" aria-label="Bulleted list"><svg width="14" height="14" viewBox="0 0 14 14"
       stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 3.5h7M5 7h7M5 10.5h7"/>
       <circle cx="2.2" cy="3.5" r="1" fill="currentColor" stroke="none"/>
@@ -2336,6 +2339,9 @@
   <button id="ty-spacebtn" aria-label="Letter spacing and line height"><svg width="14"
     height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
     stroke-linecap="round"><path d="M2 2v10M12 2v10M4.6 7h4.8M4.6 7l1.5-1.5M4.6 7l1.5 1.5M9.4 7L7.9 5.5M9.4 7l-1.5 1.5"/></svg></button>
+  <button id="ty-parabtn" aria-label="Paragraph — line breaks, keeping, figures, drop cap, list"><svg width="14"
+    height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
+    stroke-linecap="round"><path d="M9.5 2v10M11.5 2v10M12.5 2H6.5a2.6 2.6 0 0 0 0 5.2h3"/></svg></button>
   <select id="ty-fx" title="Effect"></select>
   <span id="ty-fxp"></span>
   <button id="ty-reset" aria-label="Put this text back the way the report designed it">Reset</button>
@@ -2349,6 +2355,44 @@
   <div class="pop" id="ty-stylepop" hidden>
     <p class="pop-h">Text styles</p>
     <div id="ty-stylebody"></div>
+  </div>
+  <!-- Paragraph: the text-style keys InDesign keeps in its Paragraph panel
+       and OpenType menu (INDESIGN_PARITY.md 20-22). Every control writes the
+       one style the type bar is editing, so all of it can live in a named
+       style and change in one place. -->
+  <div class="pop" id="ty-parapop" hidden>
+    <p class="pop-h">Paragraph</p>
+    <label><span>Line breaks</span><select id="ty-wrap">
+      <option value="">as typed</option><option value="balance">balanced (headings)</option>
+      <option value="pretty">no lone last word</option></select></label>
+    <label><span>Hyphenate</span><input type="checkbox" id="ty-hyph"></label>
+    <label><span>In print</span><select id="ty-keep">
+      <option value="">may break anywhere</option><option value="together">keep lines together</option>
+      <option value="next">keep with what follows</option></select></label>
+    <p class="pop-h">Figures and letters</p>
+    <label><span>Figures</span><select id="ty-fig">
+      <option value="">font's own</option><option value="tabular">tabular (columns line up)</option>
+      <option value="tabular-lining">tabular, lining</option><option value="lining">lining</option>
+      <option value="oldstyle">old-style</option><option value="proportional">proportional</option></select></label>
+    <label><span>Small caps</span><select id="ty-smcp">
+      <option value="">off</option><option value="small">small caps</option>
+      <option value="all">all small caps (acronyms)</option></select></label>
+    <label><span>Ligatures</span><input type="checkbox" id="ty-liga"></label>
+    <p class="pop-h">Drop cap and lists</p>
+    <label><span>Drop cap</span><select id="ty-dcap">
+      <option value="">none</option><option value="2">2 lines</option>
+      <option value="3">3 lines</option><option value="4">4 lines</option>
+      <option value="5">5 lines</option></select></label>
+    <label><span>List marker</span><select id="ty-lmark">
+      <option value="">report's own</option><option value="disc">• disc</option>
+      <option value="circle">◦ circle</option><option value="square">▪ square</option>
+      <option value="dash">– dash</option><option value="decimal">1. numbers</option>
+      <option value="lower-alpha">a. letters</option><option value="upper-alpha">A. letters</option>
+      <option value="lower-roman">i. roman</option><option value="upper-roman">I. roman</option>
+      <option value="none">no marker</option></select></label>
+    <label><span>Marker colour</span><select id="ty-lcol"></select></label>
+    <label><span>List indent</span><input id="ty-lind" type="number" step="0.05" min="0" max="2"
+      placeholder="in"></label>
   </div>
   <div class="pop" id="ty-spacepop" hidden>
     <p class="pop-h">Spacing</p>
@@ -3126,6 +3170,22 @@ const writeSlot = (k, v) => {
 // toolbar keeps the two mutually exclusive rather than let the UI create
 // markup that silently corrupts on save — see boldItalicBlocked().
 const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+// content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
+const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
+// content.py's VAR_RE, and the one place the editor spells it.
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+))\}/g;
+const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
+                    date: 'date', contents: 'contents', pageof: 'page of' };
+const varToken = (name, ref) => name === 'pageof' ? `{pageof:${ref}}` : `{${name}}`;
+const varChipHtml = (name, ref) =>
+  `<span class="ds-chip ds-varchip" contenteditable="false" data-var="${escAttr(name)}"`
+  + (ref ? ` data-ref="${escAttr(ref)}"` : '') + ` title="${escAttr(varToken(name, ref))}">`
+  + `${escAttr(VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
+function makeVarChip(d, name, ref) {
+  const t = d.createElement('template');
+  t.innerHTML = varChipHtml(name, ref);
+  return t.content.firstChild;
+}
 
 // A link destination with BALANCED parentheses, one nesting level — the same
 // rule as content.py's _DEST, so the editor and the renderer read a pasted
@@ -3149,9 +3209,18 @@ function mdInlineToHtml(text, fnLabels) {
     return `\x00IMG${imgs.length - 1}\x00`;
   });
   const urls = [];
-  s = s.replace(new RegExp(`\\[([^\\]^][^\\]]*)\\]\\((https?://${DEST})\\)`, 'g'), (m, txt, url) => {
+  // No `[` in link text — content.py's rule, so a link inside a character
+  // style run is read as the link and not from the run's own bracket.
+  s = s.replace(new RegExp(`\\[([^\\]^\\[][^\\]\\[]*)\\]\\((https?://${DEST})\\)`, 'g'), (m, txt, url) => {
     urls.push(url);
     return `\x00LINK${urls.length - 1}\x00${txt}\x01`;
+  });
+  // Character styles, content.py's CHAR_STYLE_RE: stashed like a link so the
+  // passes below format the words inside but cannot cut across the span.
+  const cnames = [];
+  s = s.replace(CHAR_STYLE_RE_G, (m, txt, name) => {
+    cnames.push(name.trim());
+    return `\x02CS${cnames.length - 1}\x02${txt}\x03`;
   });
   s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
   s = s.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>');
@@ -3159,6 +3228,8 @@ function mdInlineToHtml(text, fnLabels) {
   s = s.replace(/(?<![\w*])\*(?!\s)([\s\S]+?)(?<!\s)\*(?![\w*])/g, '<i>$1</i>');
   s = s.replace(/\x00LINK(\d+)\x00([\s\S]*?)\x01/g,
     (m, i, inner) => `<a href="${escAttr(urls[+i])}">${inner}</a>`);
+  s = s.replace(/\x02CS(\d+)\x02([\s\S]*?)\x03/g,
+    (m, i, inner) => `<span class="ds-cs" data-cs="${escAttr(cnames[+i])}">${inner}</span>`);
   s = s.replace(/\x00IMG(\d+)\x00/g, (m, i) => {
     const [alt, src] = imgs[+i];
     return `<img class="inline-img" contenteditable="false" src="${escAttr(src)}" alt="${escAttr(alt)}">`;
@@ -3175,6 +3246,10 @@ function mdInlineToHtml(text, fnLabels) {
     // A <sup>, matching the marker it stands in for — see makeFnChip.
     return `<sup class="ds-chip ds-fnchip" contenteditable="false" data-fn-id="${escAttr(id)}">${escAttr(label)}</sup>`;
   });
+  // Text variables (content.py VAR_RE) are atomic chips while editing, the
+  // way footnote refs are: the token is what the file holds, so the token is
+  // what an edit must hand back, never the page number it currently shows.
+  s = s.replace(VAR_RE_G, (m, name, ref) => varChipHtml(ref ? 'pageof' : name, ref));
   // A newline reaches this only from a TABLE CELL, whose value is one string
   // — prose arrives with its soft wraps already closed up to spaces by the
   // caller, exactly as content.py's paragraphs() does it. So a newline here
@@ -3424,6 +3499,18 @@ function nodeToMdInline(node, br = ' ') {
     if (n.nodeType === Node.TEXT_NODE) { out += n.nodeValue.replace(/​/g, ''); return; }
     if (n.nodeType !== Node.ELEMENT_NODE) return;
     if (n.classList && n.classList.contains('ds-fnchip')) { out += `[^${n.dataset.fnId}]`; return; }
+    if (n.classList && n.classList.contains('ds-varchip')) { out += varToken(n.dataset.var, n.dataset.ref); return; }
+    // A run of no words wears nothing. A `]` of the person's own inside a
+    // run would end the run's brackets early, so such a run keeps its words
+    // and loses the style rather than the other way round (a link inside is
+    // fine: content.py stashes links before it reads runs).
+    if (n.classList && n.classList.contains('ds-cs')) {
+      const inner = nodeToMdInline(n, br);
+      const bare = inner.replace(new RegExp(`\\[[^\\]]*\\]\\(${DEST}\\)`, 'g'), '');
+      if (!inner.trim() || bare.includes(']')) { out += inner; return; }
+      out += edgeOut(inner, '\u0000').replace(/\u0000([\s\S]*)\u0000/, `[$1]{.${n.dataset.cs}}`);
+      return;
+    }
     const tag = n.tagName;
     // A mark wraps WORDS, and the spaces beside them go outside it. Chromium
     // hands a double-click the word AND its trailing space, so the obvious
@@ -3617,6 +3704,63 @@ function toggleMark(d, host, tag) {
     sel.addRange(nr);
   }
   host.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Put the named text style on the selected words, or (name null) take any
+ *  off them. Runs do not nest — a run inside a run cannot be written in the
+ *  markdown — so whatever runs the selection held are unwrapped first, and a
+ *  selection inside a run is split out of it the way un-bolding part of a
+ *  bold run is. Words only: the paragraph keys a style may carry (leading,
+ *  alignment, a drop cap) are the paragraph's, not the run's (CHAR_KEYS). */
+function applyCharStyle(d, host, name) {
+  const sel = d.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  if (r.collapsed) return;
+  let n = r.commonAncestorContainer;
+  if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+  const inside = n && n.closest && n.closest('span.ds-cs');
+  let mid;
+  if (inside && host.contains(inside)) {
+    mid = splitMarkOut(d, inside, r);
+  } else {
+    const frag = r.extractContents();
+    frag.querySelectorAll('span.ds-cs').forEach(el => el.replaceWith(...el.childNodes));
+    mid = [...frag.childNodes];
+    r.insertNode(frag);
+  }
+  mid = mid.filter(x => x.isConnected);
+  if (name && mid.length) {
+    const span = d.createElement('span');
+    span.className = 'ds-cs';
+    span.dataset.cs = name;
+    mid[0].before(span);
+    mid.forEach(x => span.appendChild(x));
+    mid = [span];
+    liveCharRule(d, name);
+  }
+  host.querySelectorAll('span.ds-cs').forEach(el => { if (!el.textContent) el.remove(); });
+  if (mid.length) {
+    const nr = d.createRange();
+    nr.setStartBefore(mid[0]);
+    nr.setEndAfter(mid[mid.length - 1]);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+  }
+  host.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** The rule a run needs, put in the live document now — the render that
+ *  emits it for real (Layout._char_once) only happens when the edit commits,
+ *  and words that do not change when a style is chosen look like a no-op. */
+function liveCharRule(d, name) {
+  let st = d.getElementById('ds-cs-live');
+  if (!st) { st = d.createElement('style'); st.id = 'ds-cs-live'; d.head.appendChild(st); }
+  try {
+    py.globals.set('STYLE_JSON', JSON.stringify(resolvedStyle({ use: name })));
+    const css = py.runPython('import json\nfrom docsync.layout import char_css\nchar_css(json.loads(STYLE_JSON))');
+    if (css) st.textContent += `.ds-cs[data-cs="${String(name).replace(/["\\]/g, '\\$&')}"]{${css}}`;
+  } catch (e) { /* the commit's render emits the real rule */ }
 }
 
 /** Shift+Enter in a table cell: a real line break at the caret. */
@@ -4086,10 +4230,58 @@ function textMenu(d, host, e) {
   item('Link…', () => { restoreRange(d, range); return link(d, host); }, hasRange);
   sep();
   buildEndnoteRows(d, m, host, range);
+  sep();
+  buildVarRows(d, m, host, range);
   d.body.appendChild(m);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
+}
+
+/** Insert ▸ — the text variables, at the caret. "Page of" lists the
+ *  document's headings by their words, because a slot key is not something
+ *  anyone chose; the token keeps the key, so a retitled heading still points
+ *  at the same place. */
+function buildVarRows(d, m, host, range) {
+  const put = async (name, ref) => {
+    closeMenu(d);
+    await insertNodeAt(d, host, range, makeVarChip(d, name, ref));
+  };
+  submenuRow(d, m, 'Insert ▸', sub => {
+    [['page', 'Page number'], ['pages', 'Number of pages'], ['section', 'Section name'],
+     ['title', 'Document title'], ['date', "Today's date"], ['contents', 'Contents list']]
+      .forEach(([k, label]) => {
+        const b = d.createElement('button');
+        b.textContent = label;
+        b.addEventListener('click', () => put(k));
+        sub.appendChild(b);
+      });
+  });
+  // Its own row, not nested in Insert: a submenu of a submenu closes the
+  // moment the pointer leaves the first one for the second.
+  {
+    const heads = [...d.querySelectorAll('section.page h1[data-slot], section.page h2[data-slot],'
+      + ' section.page h3[data-slot], section.page [data-slot] > h1, section.page [data-slot] > h2')]
+      .map(h => h.dataset.slot ? h : h.parentElement)
+      .filter((h, i, a) => h && h.dataset.slot && a.indexOf(h) === i
+        && !h.closest('.ds-textbox') && (h.textContent || '').trim());
+    submenuRow(d, m, 'Page reference ▸', sub2 => {
+      if (!heads.length) {
+        const none = d.createElement('div');
+        none.className = 'ds-menu-head'; none.textContent = 'no headings to point at';
+        sub2.appendChild(none);
+        return;
+      }
+      heads.slice(0, 60).forEach(h => {
+        const b = d.createElement('button');
+        const pg = h.closest('section.page');
+        const n = pg ? [...d.querySelectorAll('section.page')].indexOf(pg) + 1 : '';
+        b.textContent = `${(h.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 48)}  · p. ${n}`;
+        b.addEventListener('click', () => put('pageof', h.dataset.slot));
+        sub2.appendChild(b);
+      });
+    });
+  }
 }
 
 /** The endnote rows: one for a brand-new source, one that opens the list of
@@ -6403,7 +6595,7 @@ function togglePop(pop, anchor) {
 // Only the controls that OPEN one of these surfaces. #tok and the File menu's
 // own entries are inside .pop already, and #guides is a plain toggle, not an
 // anchor — listing either would just stop a click there from closing anything.
-const POP_ANCHORS = '#ty-colorbtn, #ty-spacebtn, #text, #shape, #icon, #layers,'
+const POP_ANCHORS = '#ty-colorbtn, #ty-spacebtn, #ty-parabtn, #text, #shape, #icon, #layers,'
   + ' #download, #file, #ar-img';
 
 // The rail's PICKERS — the panels that exist to put a new object on the page.
@@ -9420,6 +9612,35 @@ function whatIs(key) {
   return 'text';
 }
 
+/** The Paragraph panel, read off the RESOLVED style — what the text wears,
+ *  named style included — so a slot wearing Body shows Body's settings. */
+function fillParaPop(key) {
+  if (!key) return;
+  const eff = resolvedStyle(styleOf(key));
+  $('ty-wrap').value = eff.wrap || '';
+  $('ty-hyph').checked = !!eff.hyphenate;
+  $('ty-keep').value = eff.keep || '';
+  $('ty-fig').value = eff.figures || '';
+  $('ty-smcp').value = eff.smallCaps || '';
+  $('ty-liga').checked = eff.ligatures !== false;
+  $('ty-dcap').value = eff.dropCap ? String(eff.dropCap) : '';
+  const lst = eff.list || {};
+  $('ty-lmark').value = lst.marker || '';
+  const col = $('ty-lcol');
+  col.textContent = '';
+  const opts = [['', "text's own"], ...(M.palette || []).map(c => [c.toUpperCase(), c.toUpperCase()])];
+  const have = (lst.color || '').toUpperCase();
+  if (have && !opts.some(o => o[0] === have)) opts.push([have, have]);
+  opts.forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    if (v) o.style.color = v;
+    col.appendChild(o);
+  });
+  col.value = have;
+  $('ty-lind').value = lst.indent ?? '';
+}
+
 function showType(key) {
   selected = key;
   // The same comment button the arrange strip has, for the strip a lone
@@ -9639,6 +9860,22 @@ function placeAnchors(d) {
   const w = d.defaultView;
   if (!w.__dsAnchor) { try { w.eval(anchorSrc()); } catch (e) { return; } }
   try { w.__dsAnchor(); } catch (e) { /* a half-built document; the next render places */ }
+}
+// The text-variables runtime (layout.VARS_JS) — {page}, {section},
+// {pageof:…}, {contents} — evaluated here after each render for the same
+// reason as the anchors: an imported page node never runs its scripts.
+let VARS_SRC = null;
+function fillVars(d) {
+  if (!d || !d.querySelector('.ds-var')) return;
+  const w = d.defaultView;
+  if (!w.__dsVars) {
+    if (VARS_SRC === null) {
+      try { VARS_SRC = py.runPython('from docsync.layout import VARS_JS\nVARS_JS'); }
+      catch (e) { VARS_SRC = ''; }
+    }
+    try { w.eval(VARS_SRC); } catch (e) { return; }
+  }
+  try { w.__dsVars(); } catch (e) { /* a half-built document; the next render fills */ }
 }
 const anchorable = id => !!id && !id.startsWith('table.') && !!!shapeOf(id)
   && !!$('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"]`);
@@ -10294,6 +10531,37 @@ function wireType() {
     togglePop($('ty-colorpop'), $('ty-colorbtn'));
   });
   $('ty-spacebtn').addEventListener('click', () => togglePop($('ty-spacepop'), $('ty-spacebtn')));
+  $('ty-parabtn').addEventListener('click', () => {
+    fillParaPop(selected);
+    togglePop($('ty-parapop'), $('ty-parabtn'));
+  });
+  // One write path for the whole panel: a patch through setStyle, a render,
+  // and the type bar re-read — exactly what the case picker does.
+  const paraSet = async patch => {
+    setStyle(selected, patch);
+    markDirty(); await render(); showType(selected); fillParaPop(selected);
+  };
+  const paraSel = (id, key, num) => $(id).addEventListener('change', () => {
+    const v = $(id).value;
+    paraSet({ [key]: v === '' ? null : (num ? +v : v) });
+  });
+  paraSel('ty-wrap', 'wrap'); paraSel('ty-keep', 'keep'); paraSel('ty-fig', 'figures');
+  paraSel('ty-smcp', 'smallCaps'); paraSel('ty-dcap', 'dropCap', true);
+  $('ty-hyph').addEventListener('change', () => paraSet({ hyphenate: $('ty-hyph').checked || null }));
+  // Ligatures are ON unless a style turns them off, so unchecking writes
+  // false and checking clears the key rather than writing a redundant true.
+  $('ty-liga').addEventListener('change', () => paraSet({ ligatures: $('ty-liga').checked ? null : false }));
+  // The list look is one object; each control rewrites the whole of it, and
+  // an empty object is no list look at all.
+  const listSet = (k, v) => {
+    const cur = { ...(styleOf(selected).list || {}) };
+    if (v === '' || v === null || v === undefined || Number.isNaN(v)) delete cur[k]; else cur[k] = v;
+    paraSet({ list: Object.keys(cur).length ? cur : null });
+  };
+  $('ty-lmark').addEventListener('change', () => listSet('marker', $('ty-lmark').value));
+  $('ty-lcol').addEventListener('change', () => listSet('color', $('ty-lcol').value));
+  $('ty-lind').addEventListener('change', () =>
+    listSet('indent', $('ty-lind').value === '' ? '' : Math.max(0, Math.min(2, +$('ty-lind').value))));
   $('ty-style').addEventListener('change', async () => {
     const name = $('ty-style').value || null;
     // Wearing a style drops the slot's own keys. Anything else and the first
@@ -13996,6 +14264,29 @@ const richDo = fn => {
 $('ty-mb').addEventListener('click', () => richDo(d => toggleMark(d, richHost, 'b')));
 $('ty-mi').addEventListener('click', () => richDo(d => toggleMark(d, richHost, 'i')));
 $('ty-mu').addEventListener('click', () => richDo(d => toggleMark(d, richHost, 'u')));
+$('ty-mcs').addEventListener('click', () => {
+  const body = $('ty-csbody');
+  body.textContent = '';
+  const names = Object.keys(layout.textStyles || {}).sort();
+  const row = (label, name) => {
+    const b = document.createElement('button');
+    b.className = 'shp'; b.textContent = label;
+    b.addEventListener('click', () => {
+      $('ty-cspop').hidden = true;
+      richDo(d => applyCharStyle(d, richHost, name));
+    });
+    body.appendChild(b);
+  };
+  if (!names.length) {
+    const p = document.createElement('p');
+    p.className = 'pop-h';
+    p.textContent = 'No text styles yet — save one from the style picker first.';
+    body.appendChild(p);
+  }
+  names.forEach(n => row(n, n));
+  row('No style (the paragraph\'s own)', null);
+  togglePop($('ty-cspop'), $('ty-mcs'));
+});
 $('ty-mul').addEventListener('click', () => richDo(d => toggleListRich(d, richHost, false)));
 $('ty-mol').addEventListener('click', () => richDo(d => toggleListRich(d, richHost, true)));
 
@@ -18690,6 +18981,7 @@ function wire(roots) {
     anchorWire(d);             // the armed anchor click, once per document
   }
   applyZoom();
+  fillVars(d);                 // page numbers and contents first: they change widths
   placeAnchors(d);             // anchored objects find their paragraphs FIRST,
   if (syncReserves(d)) placeAnchors(d);   // a strut re-sized moves what hangs below it
   reportFit(d);                // so every measurement below sees them there
@@ -18873,6 +19165,7 @@ function wire(roots) {
        that keeps a cited line the same height being edited as it is rendered.
        Setting either here would put the reflow straight back. */
     .ds-chip.ds-fnchip { color:#2F3E46; }
+    .ds-chip.ds-varchip { color:#2F3E46; font-size:.82em; font-style:normal; white-space:nowrap; }
     .ds-endnote-edit { display:block; padding:2px 0; }
     .ds-endnote-edit input { display:block; width:100%; box-sizing:border-box; font:inherit;
                color:inherit; margin:0 0 4px; padding:2px 4px; border:2px solid #6B9E78;
@@ -25097,6 +25390,22 @@ function _pilotTextWearers(name) {
   return out;
 }
 
+/** Runs of words wearing a text style as a CHARACTER style, `[w]{.Name}` —
+ *  in content.md and in every text box (masters' too). Counted, and on a
+ *  drop unwrapped, because they are wearers a style change moves. */
+function _pilotCharRuns(name) {
+  let n = 0;
+  const count = t => { for (const m of (t || '').matchAll(CHAR_STYLE_RE_G)) if (m[2].trim() === name) n++; };
+  count(source);
+  _pilotStyleHosts().forEach(h => { if (h.kind === 'box') count(h.obj.md); });
+  return n;
+}
+function _pilotUnwrapRuns(name) {
+  const strip = t => (t || '').replace(CHAR_STYLE_RE_G, (m, w, nm) => nm.trim() === name ? w : m);
+  source = strip(source);
+  _pilotStyleHosts().forEach(h => { if (h.kind === 'box' && h.obj.md) h.obj.md = strip(h.obj.md); });
+}
+
 const _pilotObjWearers = name =>
   _pilotStyleHosts().filter(h => h.obj.use === name);
 
@@ -25106,7 +25415,8 @@ const _pilotObjWearers = name =>
 function _pilotStyles() {
   const text = {};
   Object.entries(layout.textStyles || {}).forEach(([n, st]) => {
-    text[n] = { ...cloneJson(st), wornBy: _pilotTextWearers(n).length };
+    const runs = _pilotCharRuns(n);
+    text[n] = { ...cloneJson(st), wornBy: _pilotTextWearers(n).length + runs, runs };
   });
   const object = {};
   Object.entries(objectStyles()).forEach(([n, st]) => {
@@ -25233,12 +25543,17 @@ function _pilotApplyDropStyle(scope, name) {
       if (host[p] === undefined) host[p] = cloneJson(v);
     });
   });
+  // A run cannot carry a look of its own (it is a span naming a style, no
+  // CSS), so a run of a dropped style goes back to being the paragraph's
+  // words rather than naming a style that no longer exists.
+  const runs = scope === 'text' ? _pilotCharRuns(name) : 0;
+  if (runs) _pilotUnwrapRuns(name);
   const key = scope === 'text' ? 'textStyles' : 'objectStyles';
   const next = { ...(layout[key] || {}) };
   delete next[name];
   if (Object.keys(next).length) layout[key] = next;
   else delete layout[key];
-  return { scope, name, unlinked: wearers.length,
+  return { scope, name, unlinked: wearers.length, runs,
            ids: wearers.map(w => w.id) };
 }
 
