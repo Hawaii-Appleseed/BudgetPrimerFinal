@@ -1482,6 +1482,28 @@
         border-top:1px solid #E8EEEA; border-radius:8px 8px 0 0; }
   /* the layers panel: this page's objects, top of the stack first */
   #layerspop { min-width:230px; max-height:420px; overflow-y:auto; }
+  #preflight { position:relative; }
+  #pf-count { position:absolute; top:-4px; right:-5px; min-width:15px; height:15px; padding:0 3px;
+              box-sizing:border-box; border-radius:8px; background:#B42318; color:#fff;
+              font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
+  #pf-count.warn { background:#B54708; }
+  #preflightpop, #hyperlinkspop { min-width:320px; max-width:420px; max-height:460px; overflow-y:auto; }
+  .pf-group { margin:6px 0 2px; font-size:11px; font-weight:600; color:#374151; }
+  .pf-row { display:grid; grid-template-columns:10px 1fr; gap:7px; align-items:start; padding:4px 2px;
+            border-top:1px solid rgba(0,0,0,.07); font-size:12px; cursor:pointer; }
+  .pf-row:hover { background:rgba(0,0,0,.04); }
+  .pf-dot { width:8px; height:8px; border-radius:50%; margin-top:4px; background:#B54708; }
+  .pf-row.error .pf-dot { background:#B42318; }
+  .pf-note { color:#6b7280; font-size:11px; }
+  .pf-ok { color:#027A48; font-size:12px; padding:6px 2px; }
+  .hl-row { display:grid; grid-template-columns:1fr auto; gap:6px; padding:5px 2px; border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
+  .hl-url { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hl-meta { color:#6b7280; font-size:11px; }
+  .hl-row.broken .hl-meta { color:#B42318; }
+  .hl-row.unverified .hl-meta { color:#B54708; }
+  .hl-acts { display:flex; gap:4px; align-items:start; }
+  .hl-acts button, #hl-tools button { font-size:11px; padding:2px 6px; }
+  #hl-tools { display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 6px; }
   #linkspop { min-width:300px; max-width:380px; max-height:420px; overflow-y:auto; }
   .lk-row { display:grid; grid-template-columns:36px 1fr auto; gap:8px; align-items:center;
             padding:5px 2px; border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
@@ -2161,6 +2183,23 @@
       stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" rx="1"/>
       <path d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"
         stroke-linecap="round"/></svg></button>
+  <button id="preflight" aria-label="Preflight — every problem in the report, in one list">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="5.5"/>
+      <path d="M4.6 7.1l1.7 1.7 3.2-3.4"/></svg><span id="pf-count" hidden></span></button>
+  <div class="pop" id="preflightpop" hidden>
+    <p class="pop-h">Preflight</p>
+    <div id="pf-list"></div>
+  </div>
+  <button id="hyperlinks" aria-label="Hyperlinks — every link in the report; check for broken ones">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.3" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/>
+      <path d="M1.5 7h11M7 1.5c-2 2.2-2 8.8 0 11M7 1.5c2 2.2 2 8.8 0 11"/></svg></button>
+  <div class="pop" id="hyperlinkspop" hidden>
+    <p class="pop-h">Hyperlinks</p>
+    <div id="hl-tools"></div>
+    <div id="hl-list"></div>
+  </div>
   <button id="links" aria-label="Links — every picture in the report, missing ones flagged; relink a file everywhere it is used">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.3" stroke-linecap="round"><path d="M6 8a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/>
@@ -15349,6 +15388,322 @@ $('layers').addEventListener('click', () => {
   togglePop(pop, $('layers'));
 });
 
+// --------------------------------------------------------------- preflight
+// One list of everything wrong (INDESIGN_PARITY.md 47): audit()'s layout
+// problems, the Links panel's missing and low-resolution pictures, and three
+// checks of its own — pictures with no description at all, text whose
+// contrast with what is behind it is under WCAG AA (4.5:1, 3:1 for large
+// text), and web fonts that failed to load. Errors (would be wrong in print
+// or refused at publish) and warnings; the toolbar badge counts them a beat
+// after each render; click a row to go to it.
+const PF_ERRORS = new Set(['print-overflow', 'overset', 'uncited-source', 'missing-image', 'font-failed']);
+const PF_LABEL = { 'print-overflow': 'Cut off in print', 'off-sheet': 'Off the page', overlap: 'Overlapping',
+  'covers-flow': 'Covering the text', 'rule-through-glyph': 'A rule through the letters',
+  'orphaned-group-member': 'A group names a missing object', 'uncited-source': 'Source never cited',
+  'alt-is-filename': 'Described by its file name', 'overset': 'Text runs out of frames',
+  'immovable-text': 'Text that cannot be moved', 'missing-image': 'Missing picture',
+  'low-res': 'Low resolution for print', 'no-alt': 'No description', 'low-contrast': 'Low contrast',
+  'font-failed': 'Font did not load' };
+const rgbaOf = c => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null;
+  const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v[3] ?? 1]; };
+const lumOf = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+  .reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+const contrastOf = (a, b) => { const x = lumOf(a), y = lumOf(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+const over = (top, under) => { const a = top[3]; return [0, 1, 2].map(i => top[i] * a + under[i] * (1 - a)).concat(1); };
+/** What a text element is painted on: whatever is under its middle, read off
+ *  the paint stack (a placed shape behind it counts, which an ancestor walk
+ *  would miss), composited down to the page. null when it is a picture or a
+ *  gradient — a contrast nobody can state as one number. */
+function backdropOf(d, el) {
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const px = r.left + r.width / 2, py = r.top + Math.min(r.height / 2, 12);
+  let stack = d.elementsFromPoint(px, py);
+  // Off the frame's viewport (most pages, most of the time) the browser has
+  // no stack to give: the same answer from geometry — the element's own
+  // ancestors, with any placed shape under the point that stacks below it.
+  if (!stack.length) stack = backdropStack(d, el, px, py);
+  if (!stack.length) return null;
+  // From the element itself down: its own background is behind its words.
+  const i = stack.indexOf(el);
+  stack = i >= 0 ? stack.slice(i) : stack;
+  const layers = [];
+  const win = d.defaultView;
+  for (const n of stack) {
+    if (n.tagName === 'IMG' || n.tagName === 'VIDEO' || n.tagName === 'CANVAS' || n.tagName === 'IMAGE') return null;
+    const cs = win.getComputedStyle(n);
+    if (n instanceof win.SVGElement) {
+      if (!/^(rect|path|circle|ellipse|polygon)$/.test(n.tagName)) continue;
+      const f = rgbaOf(cs.fill);
+      if (!f) { if (/url\(/.test(cs.fill)) return null; continue; }
+      f[3] *= +cs.fillOpacity * +cs.opacity;
+      if (f[3] > 0.01) layers.push(f);
+    } else {
+      if (cs.backgroundImage && cs.backgroundImage !== 'none') return null;
+      const b = rgbaOf(cs.backgroundColor);
+      if (b && b[3] > 0.01) layers.push(b);
+    }
+    if (layers.length && layers[layers.length - 1][3] >= 0.99) break;
+  }
+  return layers.reverse().reduce((under, top) => over(top, under), [255, 255, 255, 1]);
+}
+function backdropStack(d, el, px, py) {
+  const win = d.defaultView;
+  const zOfEl = n => { for (let x = n; x && x !== d.body; x = x.parentElement) {
+    const z = parseInt(win.getComputedStyle(x).zIndex, 10); if (!isNaN(z)) return z; } return 0; };
+  const anc = [];
+  for (let x = el; x; x = x.parentElement) anc.push(x);
+  const pg = el.closest('section.page');
+  if (!pg) return anc;
+  const myZ = zOfEl(el);
+  const shapes = [...pg.querySelectorAll('rect, path, circle, ellipse, polygon')].filter(sh => {
+    if (el.contains(sh) || sh.closest('defs, clipPath, mask, .ds-chip')) return false;
+    const b = sh.getBoundingClientRect();
+    return b.width && px >= b.left && px <= b.right && py >= b.top && py <= b.bottom && zOfEl(sh) < myZ;
+  }).sort((a, b) => zOfEl(b) - zOfEl(a));
+  // Top down: the element's own boxes up to the page, the shapes behind it,
+  // then the page and what holds it.
+  const i = anc.indexOf(pg);
+  return [...anc.slice(0, i), ...shapes, ...anc.slice(i)];
+}
+function contrastIssues(d) {
+  const out = [], seen = new Set();
+  const w = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = w.nextNode()) && out.length < 60) {
+    if (!n.nodeValue.trim()) continue;
+    const el = n.parentElement;
+    if (!el || seen.has(el) || !el.closest('section.page') || el.closest('.ds-chip, script, style, [aria-hidden="true"], .ds-gd, .ds-menu')) continue;
+    seen.add(el);
+    const cs = d.defaultView.getComputedStyle(el);
+    if (cs.visibility === 'hidden' || +cs.opacity === 0 || cs.display === 'none') continue;
+    const fg = rgbaOf(cs.color);
+    if (!fg) continue;
+    const bg = backdropOf(d, el);
+    if (!bg) continue;
+    const ratio = contrastOf(over(fg, bg), bg);
+    const px = parseFloat(cs.fontSize), bold = (+cs.fontWeight || 400) >= 700;
+    const need = px >= 24 || (px >= 18.66 && bold) ? 3 : 4.5;
+    if (ratio >= need) continue;
+    const host = el.closest('[data-el], [data-slot], [data-shape]');
+    const id = host ? (host.dataset.el || host.dataset.slot || host.dataset.shape) : null;
+    const key = id || el.textContent.slice(0, 20);
+    if (out.some(x => x.key === key)) continue;
+    const pg = el.closest('section.page');
+    out.push({ kind: 'low-contrast', key, ids: id ? [id] : [], page: pg && pg.dataset.page,
+      note: `${ratio.toFixed(1)}:1 — needs ${need}:1 (“${el.textContent.trim().slice(0, 40)}”)` });
+  }
+  return out.map(({ key, ...x }) => x);
+}
+function preflightIssues() {
+  const d = $('out').contentDocument;
+  if (!d || !d.body) return [];
+  const issues = docsync.api.audit().issues.slice();
+  linksList(d).forEach(l => {
+    const ids = l.uses.map(u => u.id).filter(Boolean);
+    if (l.missing) issues.push({ kind: 'missing-image', ids, page: l.uses[0] && l.uses[0].page, note: l.src });
+    else if (l.ppi != null && l.ppi < LOW_PPI) issues.push({ kind: 'low-res', ids, page: l.uses[0] && l.uses[0].page,
+      note: `${l.src.split('/').pop()} — ${l.ppi} ppi at its printed size; ${LOW_PPI} or more for print` });
+  });
+  d.querySelectorAll('section.page img:not([alt])').forEach(img => {
+    const host = img.closest('[data-el], [data-slot]');
+    issues.push({ kind: 'no-alt', ids: host ? [host.dataset.el || host.dataset.slot] : [],
+      note: `${imgSrcOf(img).split('/').pop()} — a screen reader has nothing to say for it` });
+  });
+  issues.push(...contrastIssues(d));
+  try {
+    [...d.fonts].filter(f => f.status === 'error').forEach(f =>
+      issues.push({ kind: 'font-failed', ids: [], note: `${f.family.replace(/^["']|["']$/g, '')} ${f.weight} ${f.style} — the page shows a fallback` }));
+  } catch (e) { /* no FontFaceSet */ }
+  return issues.map(i => ({ ...i, severity: PF_ERRORS.has(i.kind) ? 'error' : 'warning' }));
+}
+let pfTimer = null;
+function schedulePreflight() {
+  clearTimeout(pfTimer);
+  pfTimer = setTimeout(() => {
+    if (presenting || editing) return;
+    let list;
+    try { list = preflightIssues(); } catch (e) { return; }
+    const b = $('pf-count');
+    const errs = list.filter(i => i.severity === 'error').length;
+    b.hidden = !list.length;
+    b.textContent = list.length > 99 ? '99+' : String(list.length);
+    b.classList.toggle('warn', !errs);
+    $('preflight').title = list.length ? `${errs} error${errs === 1 ? '' : 's'}, ${list.length - errs} warning${list.length - errs === 1 ? '' : 's'}` : 'no problems found';
+    if (!$('preflightpop').hidden) preflightRender(list);
+  }, 1200);
+}
+function goToIssue(i) {
+  const d = $('out').contentDocument;
+  const id = (i.ids || [])[0];
+  const el = id && d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"], [data-slot="${CSS.escape(id)}"]`);
+  if (el) {
+    el.scrollIntoView({ block: 'center' });
+    if (el.dataset.el || el.dataset.shape) setSel(d, [idOf(el)]);
+    return;
+  }
+  const sheet = i.page != null && docSheets().find(s => String(s.id) === String(i.page));
+  if (sheet) sheet.pg.scrollIntoView({ block: 'start' });
+  else if (i.kind === 'uncited-source') $('stat').textContent = `${id}: cite it, or delete it from the sources`;
+}
+function preflightRender(list = preflightIssues()) {
+  const box = $('pf-list');
+  box.textContent = '';
+  if (!list.length) { const ok = document.createElement('p'); ok.className = 'pf-ok'; ok.textContent = 'No problems found.'; box.appendChild(ok); return; }
+  const kinds = [...new Set(list.map(i => i.kind))]
+    .sort((a, b) => (PF_ERRORS.has(b) - PF_ERRORS.has(a)));
+  kinds.forEach(k => {
+    const rows = list.filter(i => i.kind === k);
+    const h = document.createElement('p');
+    h.className = 'pf-group';
+    h.textContent = `${PF_LABEL[k] || k} · ${rows.length}`;
+    box.appendChild(h);
+    rows.slice(0, 25).forEach(i => {
+      const r = document.createElement('div');
+      r.className = 'pf-row ' + i.severity;
+      r.dataset.kind = k;
+      const dot = document.createElement('span'); dot.className = 'pf-dot';
+      const t = document.createElement('div');
+      const a = document.createElement('div');
+      a.textContent = (i.ids || []).join(', ') || (i.page != null ? `page ${i.page}` : '');
+      const nt = document.createElement('div'); nt.className = 'pf-note'; nt.textContent = i.note || '';
+      t.append(a, nt);
+      r.append(dot, t);
+      r.addEventListener('click', () => goToIssue(i));
+      box.appendChild(r);
+    });
+  });
+}
+$('preflight').addEventListener('click', () => {
+  const pop = $('preflightpop');
+  if (pop.hidden) preflightRender();
+  togglePop(pop, $('preflight'));
+});
+
+// -------------------------------------------------------------- hyperlinks
+// InDesign's Hyperlinks panel (INDESIGN_PARITY.md 52): every link in the
+// report — in the words, on buttons, in the sources — by address, where it
+// is used, and a broken-link check the local server runs (a page cannot
+// fetch another site). Change one address everywhere it is written; link
+// the bare addresses pasted into text. Internal links (#…) are checked here
+// against the ids on the page.
+let linkStatus = new Map();            // url -> {status, final?, error?}
+const BARE_URL_RE = /(?<![(\[<"'=\w/])https?:\/\/[^\s<>()\[\]"']+[^\s<>()\[\]"'.,;:!?]/g;
+function hyperlinkList() {
+  const d = $('out').contentDocument;
+  const by = new Map();
+  const add = (url, where, text) => {
+    const e = by.get(url) || { url, uses: [], text: new Set() };
+    e.uses.push(where); if (text) e.text.add(text);
+    by.set(url, e);
+  };
+  if (d) d.querySelectorAll('section.page a[href]').forEach(a => {
+    const href = a.getAttribute('href');
+    if (!href || href.startsWith('javascript:')) return;
+    if (a.closest('sup') || /^#(fn|ref|ds-h-)/.test(href)) return;    // endnote markers, the contents list
+    const host = a.closest('[data-el], [data-slot]');
+    add(href, host ? (host.dataset.el || host.dataset.slot) : 'page', a.textContent.trim().slice(0, 60));
+  });
+  parseSources().forEach(s => { if (s.url) add(s.url, 'source ' + s.id, s.text.slice(0, 60)); });
+  return [...by.values()].map(e => {
+    const internal = e.url.startsWith('#');
+    const st = internal ? { status: d && d.getElementById(decodeURIComponent(e.url.slice(1))) ? 200 : 404 } : linkStatus.get(e.url);
+    return { url: e.url, uses: e.uses, text: [...e.text], internal,
+             status: st ? st.status : null, final: st && st.final,
+             state: !st ? 'unchecked' : st.status >= 200 && st.status < 400 ? 'ok'
+               : [401, 403, 429, 999].includes(st.status) ? 'unverified' : 'broken' };
+  });
+}
+async function checkLinks() {
+  const urls = hyperlinkList().filter(l => !l.internal && /^https?:/.test(l.url)).map(l => l.url);
+  if (!local) return { ok: false, error: 'the broken-link check runs through the local server' };
+  const r = await postLocal('/__linkcheck', { urls }, 120000);
+  if (!r.ok) return r;
+  r.results.forEach(x => linkStatus.set(x.url, x));
+  return { ok: true, checked: r.results.length };
+}
+/** Every place an address is written: link markdown in slots, boxes and
+ *  cells, and the sources list. */
+function changeLink(oldUrl, newUrl) {
+  if (!oldUrl || !newUrl || oldUrl === newUrl) return 0;
+  let n = 0;
+  const re = new RegExp(`\\]\\(${rxEsc(oldUrl)}\\)`, 'g');
+  const swap = md => md.replace(re, `](${newUrl})`);
+  [...source.matchAll(/^\[\[([A-Za-z0-9._-]+)\]\][ \t]*$/gm)].forEach(([, k]) => {
+    if (k === 'sources') return;
+    const v = readSlot(k);
+    if (swap(v) !== v) { writeSlot(k, swap(v)); n++; }
+  });
+  [...boxes(), ...Object.values(layout.masters || {}).flatMap(m => m.boxes || [])].forEach(b => {
+    if (typeof b.md === 'string' && swap(b.md) !== b.md) { b.md = swap(b.md); n++; }
+  });
+  tables().forEach(t => (t.rows || []).forEach(row => row.forEach((c, j) => {
+    if (typeof c === 'string' && swap(c) !== c) { row[j] = swap(c); n++; }
+  })));
+  parseSources().forEach(s => { if (s.url === oldUrl) { updateSource(s.id, s.text, newUrl); n++; } });
+  linkStatus.delete(oldUrl);
+  return n;
+}
+/** Bare addresses in words become links to themselves. */
+function linkBareUrls(dry = false) {
+  let n = 0;
+  const fix = md => md.replace(BARE_URL_RE, u => { n++; return `[${u}](${u})`; });
+  [...source.matchAll(/^\[\[([A-Za-z0-9._-]+)\]\][ \t]*$/gm)].forEach(([, k]) => {
+    if (k === 'sources') return;
+    const v = readSlot(k), f = fix(v);
+    if (f !== v && !dry) writeSlot(k, f);
+  });
+  boxes().forEach(b => { if (typeof b.md === 'string') { const f = fix(b.md); if (f !== b.md && !dry) b.md = f; } });
+  return n;
+}
+function hyperlinksRender() {
+  const tools = $('hl-tools'), list = $('hl-list');
+  tools.textContent = ''; list.textContent = '';
+  const links = hyperlinkList();
+  const btn = (label, fn, on = true) => { const b = document.createElement('button'); b.textContent = label; b.disabled = !on; b.addEventListener('click', fn); tools.appendChild(b); return b; };
+  const chk = btn(local ? 'Check links' : 'Check links (local only)', async () => {
+    chk.disabled = true; chk.textContent = 'Checking…';
+    const r = await checkLinks();
+    $('stat').textContent = r.ok ? `checked ${r.checked} link${r.checked === 1 ? '' : 's'}` : r.error;
+    hyperlinksRender();
+  }, local && links.some(l => !l.internal));
+  const bare = linkBareUrls(true);
+  btn(`Link bare addresses (${bare})`, async () => {
+    pushHistory(); const n = linkBareUrls(); markDirty(); await render(); hyperlinksRender();
+    $('stat').textContent = `linked ${n} address${n === 1 ? '' : 'es'}`;
+  }, bare > 0);
+  if (!links.length) { list.textContent = 'No links.'; return; }
+  const order = { broken: 0, unverified: 1, unchecked: 2, ok: 3 };
+  links.sort((a, b) => order[a.state] - order[b.state] || a.url.localeCompare(b.url)).forEach(l => {
+    const row = document.createElement('div');
+    row.className = 'hl-row ' + l.state;
+    row.dataset.url = l.url;
+    const mid = document.createElement('div');
+    const u = document.createElement('div'); u.className = 'hl-url'; u.textContent = l.url; u.title = l.url;
+    const meta = document.createElement('div'); meta.className = 'hl-meta';
+    meta.textContent = (l.state === 'broken' ? `broken (${l.status || 'no answer'}) · ` : l.state === 'unverified' ? `the site refused a check (${l.status}) · `
+      : l.state === 'ok' && l.final && l.final !== l.url ? 'moves to ' + l.final + ' · ' : '')
+      + `${l.uses.length} use${l.uses.length === 1 ? '' : 's'}: ${[...new Set(l.uses)].slice(0, 4).join(', ')}`;
+    mid.append(u, meta);
+    const acts = document.createElement('div'); acts.className = 'hl-acts';
+    const ch = document.createElement('button'); ch.textContent = 'Change…';
+    ch.addEventListener('click', async () => {
+      const got = await dsForm('Change link', [{ name: 'url', label: `Everywhere ${l.url} is written`, value: l.url }], { okLabel: 'Change' });
+      if (got == null || !got.url.trim() || got.url.trim() === l.url) return;
+      pushHistory(); const n = changeLink(l.url, got.url.trim()); markDirty(); await render(); hyperlinksRender();
+      $('stat').textContent = `changed in ${n} place${n === 1 ? '' : 's'}`;
+    });
+    acts.appendChild(ch);
+    row.append(mid, acts);
+    list.appendChild(row);
+  });
+}
+$('hyperlinks').addEventListener('click', () => {
+  const pop = $('hyperlinkspop');
+  if (pop.hidden) hyperlinksRender();
+  togglePop(pop, $('hyperlinks'));
+});
+
 // ------------------------------------------------------------------- links
 // InDesign's Links panel: every picture the report places, by file — where
 // it is used, its pixel size, its effective resolution at the size it is
@@ -21250,6 +21605,7 @@ function wire(roots) {
   presentRewire(d);            // and so does a running presentation
   renderNotices(d);
   checkImmovable(d);           // text that types but cannot move: say so
+  schedulePreflight();         // the badge, a beat after the page settles
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {
@@ -28004,6 +28360,10 @@ const PILOT_BATCH_VERBS = {
         return { ok: false, error: 'setMargins({top, bottom, left, right, columns, gutter} | null, master?)' };
       return { ok: true };
     }, apply: (mg, master) => { setMargins(mg, master || null); return { margins: master ? layout.masters[master].margins || null : layout.margins || null }; } },
+  changeLink: { validate: (a, b) => (typeof a === 'string' && a && typeof b === 'string' && b) ? { ok: true }
+      : { ok: false, error: 'changeLink(oldUrl, newUrl)' },
+    apply: (a, b) => ({ changed: changeLink(a, b) }) },
+  linkBareUrls: { validate: () => ({ ok: true }), apply: () => ({ linked: linkBareUrls() }) },
   setVariable: { validate: (n, t) => (/^[A-Za-z0-9_-]{1,30}$/.test(n || '') && (t == null || (typeof t === 'string' && !t.includes('\n') && t.length <= 200 && !t.includes('{var:'))))
       ? { ok: true } : { ok: false, error: 'setVariable(name, text | null) — a name of letters, digits, - and _; one line of text' },
     apply: (n, t) => { setVariable(n, t); return { variables: clone(layout.variables || {}) }; } },
@@ -28773,6 +29133,22 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  textToTable(boxId, sep?) turns a text box's lines into a table. */
   /** Reading order: setReadingOrder(page, [ids] | null) — the order a screen
    *  reader and the tagged PDF read the page's objects in. */
+  /** Preflight: every problem at once — audit()'s kinds plus missing-image,
+   *  low-res, no-alt, low-contrast (WCAG AA) and font-failed, each with a
+   *  severity (error / warning). */
+  preflight() {
+    const issues = preflightIssues();
+    return { ok: true, issues, errors: issues.filter(i => i.severity === 'error').length,
+             counts: issues.reduce((m, i) => ({ ...m, [i.kind]: (m[i.kind] || 0) + 1 }), {}) };
+  },
+  /** Hyperlinks: hyperlinks() lists every link by address (uses, state);
+   *  checkLinks() asks the local server whether each still answers;
+   *  changeLink(old, new) rewrites one everywhere; linkBareUrls() links the
+   *  bare addresses typed into words. */
+  hyperlinks() { return { ok: true, links: hyperlinkList() }; },
+  async checkLinks() { const r = await checkLinks(); return r.ok ? { ...r, links: hyperlinkList() } : r; },
+  async changeLink(a, b) { return _pilotOne('changeLink', [a, b]); },
+  async linkBareUrls() { return _pilotOne('linkBareUrls', []); },
   /** Text variables: setVariable(name, text | null); {var:name} in words. */
   async setVariable(n, t) { return _pilotOne('setVariable', [n, t]); },
   /** Page numbering: setPageSection(sheet, {start, style, prefix} | null) —

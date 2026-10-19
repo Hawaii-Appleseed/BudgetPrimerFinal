@@ -359,6 +359,45 @@ def _host_lock(timeout: float = 30.0):
 INVENTORY_IDS: dict = {}
 
 
+# The Hyperlinks panel's broken-link check (INDESIGN_PARITY.md 52). A page
+# cannot fetch another site's URL (CORS), so the server does it: HEAD first,
+# GET where a site refuses HEAD, a browser User-Agent (some sites answer a
+# script's default one with an empty 202), eight at a time, eight seconds
+# each. Only http(s), at most 300 a call.
+_LINK_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+
+def _linkcheck_urls(req) -> list:
+    return [u for u in (req.get("urls") or [])
+            if isinstance(u, str) and re.match(r"https?://[^\s]+$", u)][:300]
+
+
+def _linkcheck(urls: list) -> list:
+    import urllib.error
+    import urllib.request
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(u):
+        for method in ("HEAD", "GET"):
+            try:
+                rq = urllib.request.Request(u, method=method, headers={"User-Agent": _LINK_UA})
+                with urllib.request.urlopen(rq, timeout=8) as resp:
+                    return {"url": u, "status": resp.status, "final": resp.geturl()}
+            except urllib.error.HTTPError as e:
+                if method == "HEAD" and e.code in (400, 403, 405, 501):
+                    continue
+                return {"url": u, "status": e.code}
+            except Exception as e:                              # noqa: BLE001
+                if method == "HEAD":
+                    continue
+                return {"url": u, "status": 0, "error": str(e)[:160]}
+        return {"url": u, "status": 0}
+
+    with ThreadPoolExecutor(8) as ex:
+        return list(ex.map(one, urls))
+
+
 class _WarmChrome:
     """One headless Chrome kept running between PDF exports, driven over
     --remote-debugging-pipe (the DevTools protocol on fds 3/4: NUL-terminated
@@ -1617,7 +1656,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path not in ("/__save", "/__push", "/__export", "/__upload",
                         "/__update", "/__rollback", "/__window", "/__quit",
                         "/__scaffold", "/__adopt", "/__connect", "/__pull",
-                        "/__doc", "/__doc/import",
+                        "/__doc", "/__doc/import", "/__linkcheck",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
                         "/__agent/change", "/__agent/undo", "/__agent/seen",
                         "/__oauth/device/code", "/__oauth/device/token",
@@ -1661,6 +1700,12 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/__pull" and self.headers.get("X-Primer-Test-Pull") != "1":
                 return self._json(200, {"ok": False, "error":
                     "blocked in tests — no real repo is updated here"})
+            if path == "/__linkcheck":
+                # No network in the suite: a URL with "broken" in it is a 404,
+                # "blocked" a 403, anything else a 200 — the shape is real.
+                return self._json(200, {"ok": True, "results": [
+                    {"url": u, "status": 404 if "broken" in u else 403 if "blocked" in u else 200}
+                    for u in _linkcheck_urls(req)]})
             if path == "/__upload":
                 name = str(req.get("name") or "upload.png")
                 return self._json(200, {"ok": True, "src": f"assets/{name}",
@@ -1682,6 +1727,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+        if path == "/__linkcheck":
+            return self._json(200, {"ok": True, "results": _linkcheck(_linkcheck_urls(req))})
         if path == "/__window":
             return self._new_window(req)
         if path == "/__quit":

@@ -623,7 +623,7 @@ same day — see Tier 1.
     assets, and templates carry the house style. A saved callout, figure
     frame or stat card that can be dropped into any report is not offered.
     `style_guide()`'s ready dicts are most of it. **M.**
-27. **Preflight is split up.** Now (47). `docsync.check` is already a good preflight
+27. **Preflight is split up. — CLOSED 2026-10-19 by (47).** `docsync.check` is already a good preflight
     (legibility floor, citations, bounds, dead text), but it runs from the
     shell and the editor shows parts of it in separate chips. One panel
     listing it all, with (13) and (16) added and a low-resolution image
@@ -955,15 +955,26 @@ Google Doc import exist, and were never listed here.
 
 ### Worth building — these land on the reports made here
 
-47. **One Preflight panel** (folds in 27). `audit()` already finds print
-    overflow, off-sheet, overlap, overset, text that cannot move and
-    uncited sources; the Links panel finds missing and low-resolution
-    pictures; `docsync.check` finds the legibility floor and dead text. A
-    person sees none of it in one place. A panel with every problem, a
-    count on the toolbar, click to go — plus three checks nothing makes
-    yet: text-to-background **contrast** (WCAG ratio, measured on the
-    rendered colours), images with **no alt text**, and fonts that did not
-    load. **M.**
+47. **One Preflight panel. — CLOSED 2026-10-19** (folds in 27). A toolbar
+    button with a count — red when any error, amber for warnings only —
+    worked out a beat after each render; the panel lists every problem by
+    kind, and a click goes to it (selects it, or scrolls to its page). It
+    gathers `audit()` (print overflow, off the sheet, overlap, covering the
+    text, a rule through letters, an orphaned group member, an uncited
+    source, a file-name description, overset, text that cannot move), the
+    Links panel's missing and low-resolution pictures, and three checks of
+    its own: a picture with no `alt` at all; text under WCAG AA contrast
+    (4.5:1, 3:1 for large text) against what is actually painted behind it
+    — read off the paint stack, so a placed shape under white words counts,
+    and worked out from the element's own ancestors and the placed shapes
+    below it where a page is scrolled out of view; a picture or gradient
+    behind the words is skipped, not guessed — and a web font that failed
+    to load. Errors are what print or publish would get wrong (overflow,
+    overset, uncited, missing picture, failed font); the rest are warnings.
+    Pilot `preflight()` — `{issues, errors, counts}`, each issue with a
+    severity. About 15 ms on a 30-page report. Not in it yet:
+    `docsync.check`'s legibility floor, which needs the engine's own
+    measure.
 48. **Footnotes at the foot of the page.** Cider makes endnotes only
     (`Footnotes` in content.py). A brief or testimony often wants the note
     on the page it supports. Same markers and sources, a per-report switch
@@ -990,11 +1001,20 @@ Google Doc import exist, and were never listed here.
     style, swatch, command or pilot verb by typing a few letters and applies
     it to the selection — InDesign's fastest path, and the editor's menus
     are deep. **M.**
-52. **Hyperlinks panel.** Every link in the report — text, buttons, the
-    sources list — with where it is, edit-in-place, and a **broken-link
-    check** (the local server fetches each URL; the hub its own worker).
-    "Convert URLs to links" for bare addresses pasted into text. Sources
-    rot; a report full of dead links is a credibility problem. **M.**
+52. **Hyperlinks panel. — CLOSED 2026-10-19.** Every link in the report —
+    in slots, boxes and table cells, and the sources list — by address, with
+    where each is used and its words. **Check links** sends the addresses to
+    the local server (`/__linkcheck`: HEAD, GET where a site refuses HEAD,
+    a browser User-Agent, eight at a time, eight seconds each), because a
+    page cannot fetch another site; broken ones sort to the top, a site that
+    refuses a script (401/403/429) is "unverified" rather than broken, and a
+    redirect says where it moves to. A link to `#…` is checked against the
+    page's own ids. **Change…** rewrites an address everywhere it is
+    written, sources included. **Link bare addresses** turns an address
+    typed into words into a link to itself, leaving ones already linked
+    alone. Pilot `hyperlinks()`, `checkLinks()`, `changeLink(old, new)`,
+    `linkBareUrls()`. On the hub there is no check yet — it needs the
+    hub's worker to do the fetching.
 53. **What tables still lack** after (33): split a merged cell back into a
     grid of N (today: unmerge, then add a row), **header columns**,
     alternating **column** fills and strokes, **even row heights**,
@@ -1113,6 +1133,7 @@ layout).
 ### The order
 
 (49), (54), (56) and (60) closed first, 2026-10-19 — each kept every
-bound report's published bytes identical. Next (47) and (52), the two that catch mistakes before they
-publish. Then (59), (61) and (53). (48) and (62) are the large ones, worth
+bound report's published bytes identical — and then (47) and (52), which
+are the editor's alone and touch no published byte. Next (59), (61) and
+(53). (48) and (62) are the large ones, worth
 it when a report asks for footnotes or a local review round.
