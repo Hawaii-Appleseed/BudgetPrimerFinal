@@ -828,6 +828,119 @@ def _space_rule(var: str, prop: str) -> str:
             f"span[style*='{var}:']{{{prop}:var({var})!important}}")
 
 
+# Paragraph rules, borders and shading (INDESIGN_PARITY.md 28). A rule over
+# a heading was a placed shape, which stays where it was put while the text
+# under it moves: in the style, it moves with the paragraph. Same mechanism
+# as the spacing keys — custom properties on the slot, PARA_CSS applying them
+# to the paragraphs at or inside it, never to a placed box — and a rule is a
+# ::before / ::after of the paragraph, so it needs no element of its own.
+#
+#   ruleAbove / ruleBelow: {color, weight (pt), offset (in, the gap to the
+#       text), length (in; the column's width when absent)}
+#   shade: a fill behind the paragraph     paraPad: inches of padding inside it
+#   paraBorder: {color, weight (pt), sides} — sides as BOX_BORDER_SIDES, plus
+#       "topbottom" for the two rules a pull-out paragraph wants
+RULE_KEYS = ("color", "weight", "offset", "length")
+PARA_BORDER_SIDES = ("all", "top", "bottom", "left", "right", "topbottom")
+PARA_KEYS = ("ruleAbove", "ruleBelow", "shade", "paraBorder", "paraPad")
+
+
+# A RULE is never a list item's: reports draw their own bullets with
+# li::before (rxkids' benefit lists do), and a rule there would replace them.
+# Shading and borders, which are not pseudo-elements, still reach list items.
+_RULED = ":is(p,h1,h2,h3,h4,h5,h6)"
+
+
+def _para_rule(var: str, decls: str, pseudo: str = "") -> str:
+    sel = _RULED if pseudo else _PARA
+    return (f"{sel}[style*='{var}:']{pseudo},[style*='{var}:'] {sel}{pseudo},"
+            f"span[style*='{var}:']{pseudo}{{{decls}}}")
+
+
+PARA_CSS = (
+    _para_rule("--ds-ra", "content:'';display:block;height:0;"
+               "border-top:var(--ds-ra) solid var(--ds-ra-c,currentColor);"
+               "width:var(--ds-ra-l,100%);margin:0 0 var(--ds-ra-o,.06in)", "::before")
+    + _para_rule("--ds-rb", "content:'';display:block;height:0;"
+                 "border-top:var(--ds-rb) solid var(--ds-rb-c,currentColor);"
+                 "width:var(--ds-rb-l,100%);margin:var(--ds-rb-o,.06in) 0 0", "::after")
+    + _para_rule("--ds-sh", "background:var(--ds-sh)!important")
+    + _para_rule("--ds-pp", "padding:var(--ds-pp)!important")
+    + "".join(_para_rule(f"--ds-pb{c}", f"border-{side}:var(--ds-pb{c})!important")
+              for c, side in (("t", "top"), ("r", "right"), ("b", "bottom"), ("l", "left")))
+    + "span[style*='--ds-ra:'],span[style*='--ds-rb:'],span[style*='--ds-sh:'],"
+      "span[style*='--ds-pp:'],span[style*='--ds-pbt:'],span[style*='--ds-pbb:'],"
+      "span[style*='--ds-pbl:'],span[style*='--ds-pbr:']{display:block}"
+)
+
+
+def _para_css(st: dict) -> list:
+    out = []
+    for key, v in (("ruleAbove", "--ds-ra"), ("ruleBelow", "--ds-rb")):
+        r = st.get(key)
+        if r:
+            out.append(f'{v}:{float(r.get("weight", 1)):g}pt')
+            if r.get("color"):
+                out.append(f'{v}-c:{r["color"]}')
+            if r.get("offset") is not None:
+                out.append(f'{v}-o:{float(r["offset"]):g}in')
+            if r.get("length") is not None:
+                out.append(f'{v}-l:{float(r["length"]):g}in')
+    if st.get("shade"):
+        out.append(f'--ds-sh:{st["shade"]}')
+    if st.get("paraPad") is not None:
+        out.append(f'--ds-pp:{float(st["paraPad"]):g}in')
+    b = st.get("paraBorder")
+    if b:
+        spec = f'{float(b.get("weight", 1)):g}pt solid {b.get("color", "currentColor")}'
+        sides = {"all": "trbl", "top": "t", "bottom": "b", "left": "l", "right": "r",
+                 "topbottom": "tb"}[b.get("sides", "all")]
+        out += [f"--ds-pb{c}:{spec}" for c in sides]
+    return out
+
+
+def _check_para(st: dict, where: str) -> None:
+    for key in ("ruleAbove", "ruleBelow"):
+        r = st.get(key)
+        if r is None:
+            continue
+        if not isinstance(r, dict):
+            raise LayoutError(f"{where}.{key}: expected {{color, weight, offset, length}}")
+        bad = [k for k in r if k not in RULE_KEYS]
+        if bad:
+            raise LayoutError(f"{where}.{key}: unknown key(s) {', '.join(bad)} — "
+                              f"one of {', '.join(RULE_KEYS)}")
+        if r.get("color"):
+            _hex(r["color"], f"{where}.{key}.color")
+        for k, lo, hi in (("weight", 0.25, 12), ("offset", 0, 1), ("length", 0.1, 12)):
+            if r.get(k) is not None:
+                v = _num(r[k], f"{where}.{key}.{k}")
+                if not lo <= v <= hi:
+                    raise LayoutError(f"{where}.{key}.{k} must be {lo} to {hi} — {v:g} is not")
+    if st.get("shade"):
+        _hex(st["shade"], f"{where}.shade")
+    if st.get("paraPad") is not None:
+        v = _num(st["paraPad"], f"{where}.paraPad")
+        if not 0 <= v <= 1:
+            raise LayoutError(f"{where}.paraPad is inches, 0 to 1 — {v:g} is not")
+    b = st.get("paraBorder")
+    if b is not None:
+        if not isinstance(b, dict):
+            raise LayoutError(f"{where}.paraBorder: expected {{color, weight, sides}}")
+        bad = [k for k in b if k not in ("color", "weight", "sides")]
+        if bad:
+            raise LayoutError(f"{where}.paraBorder: unknown key(s) {', '.join(bad)}")
+        if b.get("color"):
+            _hex(b["color"], f"{where}.paraBorder.color")
+        if b.get("weight") is not None:
+            v = _num(b["weight"], f"{where}.paraBorder.weight")
+            if not 0.25 <= v <= 12:
+                raise LayoutError(f"{where}.paraBorder.weight is points, 0.25 to 12")
+        if b.get("sides") is not None and b["sides"] not in PARA_BORDER_SIDES:
+            raise LayoutError(f"{where}.paraBorder.sides {b['sides']!r} must be one of "
+                              f"{', '.join(PARA_BORDER_SIDES)}")
+
+
 SPACE_CSS = (
     _space_rule("--ds-sb", "margin-top") + _space_rule("--ds-sa", "margin-bottom")
     + _space_rule("--ds-il", "margin-left") + _space_rule("--ds-ir", "margin-right")
@@ -960,6 +1073,7 @@ def text_css(st: dict) -> str:
         out.append(f'--ds-ir:{float(st["indentRight"]):g}in')
     if st.get("indent") is not None or hang:
         out.append(f'--ds-ti:{float(st.get("indent") or 0) - hang:g}in')
+    out += _para_css(st)
     if any(st.get(k) for k in _BOX_KEYS):
         # text-align, text-wrap and ::first-letter do nothing to an inline
         # box, and the inline slots are spans. Give it a box — but only when
@@ -1115,6 +1229,7 @@ def _check_text(st: dict, where: str) -> None:
     for k in ("size", "tracking", "leading"):
         if st.get(k) is not None:
             _num(st[k], f"{where}.{k}")
+    _check_para(st, where)
     for k, (lo, hi) in SPACE_RANGE.items():
         if st.get(k) is not None:
             v = _num(st[k], f"{where}.{k}")
@@ -4122,10 +4237,12 @@ class Layout:
         dicts = self.text_style_dicts()
         typ = any(st.get("dropCap") or st.get("list") for st in dicts)
         spc = any(any(st.get(k) is not None for k in SPACE_KEYS) for st in dicts)
-        if not (typ or spc):
+        par = any(any(st.get(k) is not None for k in PARA_KEYS) for st in dicts)
+        if not (typ or spc or par):
             return ""
         self._type_sent = True
-        return f"<style>{TYPE_CSS if typ else ''}{SPACE_CSS if spc else ''}</style>"
+        return (f"<style>{TYPE_CSS if typ else ''}{SPACE_CSS if spc else ''}"
+                f"{PARA_CSS if par else ''}</style>")
 
     def _anim_block(self) -> str:
         """Keyframes for every animated element, and — published only — the

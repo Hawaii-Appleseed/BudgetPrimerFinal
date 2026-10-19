@@ -4197,6 +4197,23 @@ check_eq("a master box cannot thread",
          "next" in _layout_error({"masters": {"M": {"boxes": [_tf(id="f", md="x", next="g")]}},
                                   "boxes": [_tf(id="g", md="y")]}), True)
 
+# --- paragraph rules, borders and shading (INDESIGN_PARITY 28) --------------
+from docsync.layout import PARA_CSS                                          # noqa: E402
+
+check_eq("rules, shading, padding and a border ride as custom properties",
+         text_css({"ruleAbove": {"weight": 2, "color": "#1E6194", "offset": 0.05},
+                   "shade": "#FFF6D8", "paraPad": 0.1,
+                   "paraBorder": {"weight": 1, "sides": "left", "color": "#333333"}}),
+         "--ds-ra:2pt;--ds-ra-c:#1E6194;--ds-ra-o:0.05in;--ds-sh:#FFF6D8;--ds-pp:0.1in;"
+         "--ds-pbl:1pt solid #333333")
+for _bad in ({"ruleAbove": {"thickness": 1}}, {"ruleBelow": {"weight": 0}},
+             {"paraBorder": {"sides": "diagonal"}}, {"shade": "beige"}, {"paraPad": 2}):
+    check_eq(f"a paragraph look {_bad} is refused at load",
+             "no error raised" != _layout_error({"text": {"a.b": _bad}}), True)
+_pr = _layout({"text": {"a.b": {"ruleBelow": {"weight": 1}}}})
+check_eq("PARA_CSS rides out once when a style rules a paragraph, alone",
+         ((_pr.layer(1) + _pr.layer(2)).count(PARA_CSS), SPACE_CSS in _pr.layer(1)), (1, False))
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

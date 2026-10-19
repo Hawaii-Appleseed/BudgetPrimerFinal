@@ -603,3 +603,85 @@ turned out not to be a gap. Every one kept every existing render
 byte-identical, checked by building all 15 bound outputs with the engine
 before and after. What is left is Tier 3, drawing and production, and the
 standing follow-ups listed under "Already on this list".
+
+## Against InDesign itself — read 2026-10-19
+
+A third pass, read off the application rather than from memory: InDesign
+2026 (21.6)'s whole command surface through its own scripting —
+`app.menuActions` (3,488 actions, each with the menu area it lives in), the
+main menu tree, and `app.panels` (70 panels) — then checked against Cider's
+code. Read-only; nothing in InDesign was changed. Ranked by the same two
+questions as the rest of this file. Numbering continues from (27).
+
+### Worth building — these land on the reports made here
+
+28. **Paragraph rules, borders and shading. — CLOSED 2026-10-19.** A rule
+    over a heading was a placed shape, which stayed where it was put while
+    the words moved. Text-style keys now: `ruleAbove` / `ruleBelow`
+    `{color, weight (pt, 0.25–12), offset (in, the gap to the text, 0–1),
+    length (in; the column's width when absent)}`, `shade` (a fill behind
+    the paragraph), `paraBorder` `{color, weight (pt), sides}` (all, top,
+    bottom, left, right, or topbottom for a pull-out), and `paraPad` (inches
+    of padding inside the shading and border). They work the way the
+    spacing keys (14) do: custom properties on the slot, and `PARA_CSS`,
+    emitted once and only when a style asks, applies them to the paragraphs
+    at or inside it, never to a placed box. A rule is the paragraph's own
+    `::before` / `::after`, so it needs no element and goes wherever the
+    paragraph goes; shading, border and padding are `!important` for the
+    same reason spacing is. In the Paragraph panel under "Rules, border and
+    shading"; a weight of "none" removes a rule or border with its colour
+    and gap. A named style carries them like any other key.
+    Not done, and said so: InDesign merges the shading of consecutive
+    paragraphs into one panel; here each paragraph is shaded on its own,
+    with the gap between them showing. A rule's width cannot follow the
+    width of the TEXT on its line (InDesign's "Text" width), only the
+    column or a set length — CSS cannot measure a line from a pseudo-element.
+    A rule is never drawn on a list item: rxkids draws its benefit bullets
+    with `li::before`, and a rule there would replace them. A report whose
+    own stylesheet put `::before`/`::after` on a PARAGRAPH would lose that
+    decoration to a rule; checked, none bound today does.
+29. **Nested and GREP styles** (Drop Caps and Nested Styles, GREP Styles).
+    "Bold every figure", "italicise 'Source:'" — formatting a style applies
+    by pattern, rather than by hand after each edit.
+30. **Frame fitting for images** (Fit Content Proportionally, Fill Frame
+    Proportionally, Center Content, Frame Fitting Options, Auto-Fit). Cider
+    has crop only, so every resize of an image box is a re-crop by hand.
+31. **Special characters and breaks** (Insert White Space / Break
+    Character: nonbreaking space and hyphen, em/en/thin space, column,
+    frame and page break). No way to keep "$1.2 million" on one line, or to
+    push text to the next threaded frame (4).
+32. **Tab stops with leaders** (the Tabs panel). Absent.
+33. **Table structure** (Table menu): merged and split cells — Cider has no
+    rowspan/colspan anywhere — header and footer rows, cell insets and
+    vertical alignment, row heights, alternating strokes, text to table.
+34. **Accessible PDF out**: bookmarks, tagged PDF, reading order (the
+    Articles panel). Chrome's print-to-PDF tags only what it infers.
+35. **Track changes** (accept / reject). The hub has comments and version
+    history, but no way to propose an edit for someone else to accept.
+36. **Margins, columns and guide grids** (Margins and Columns, Create
+    Guides). Ruler guides exist; a page grid to snap to does not.
+37. **Find/Change past plain text**: GREP, by formatting, Find/Replace Font.
+
+### Smaller wins
+
+38. Paste in Place onto another page, Step and Repeat, Transform Again,
+    select next object above/below.
+39. Effects past drop shadow: inner shadow, glows, feathers.
+40. Named swatches with tints.
+41. Corner options beyond radius; polygons with N sides.
+42. Generate QR Code — cheap, and useful on a printed report.
+43. Live captions from image metadata.
+44. A Links panel: every image in the document, relink in one place.
+45. Conditional text — print and web versions of one report.
+46. Character controls: baseline shift, strikethrough, OpenType stylistic
+    sets and fractions.
+
+### Already listed, or not worth it
+
+Already above: pen and path tools, Pathfinder (23), named layers (8),
+baseline grid (9), contour wrap. Not worth doing here, for the reasons under
+"Not worth doing here": Book and Index, Data Merge, separations, trapping
+and colour profiles, InCopy, EPUB, interactive forms and buttons, and the
+generative-AI commands. Two unverified: spell check while typing is the
+browser's own, untested inside Cider; and Flex Layout (auto layout for
+groups) has no counterpart — a design question of its own, not a patch.

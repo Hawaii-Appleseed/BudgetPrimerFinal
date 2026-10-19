@@ -2400,6 +2400,20 @@
     <label><span>Marker colour</span><select id="ty-lcol"></select></label>
     <label><span>List indent</span><input id="ty-lind" type="number" step="0.05" min="0" max="2"
       placeholder="in"></label>
+    <p class="pop-h">Rules, border and shading</p>
+    <label><span>Rule above</span><select id="ty-raw" class="ty-w"></select><select id="ty-rac"></select></label>
+    <label><span>…gap, length</span><input id="ty-rao" type="number" step="0.02" min="0" max="1"
+      placeholder="gap in"><input id="ty-ral" type="number" step="0.1" min="0.1" max="12" placeholder="full"></label>
+    <label><span>Rule below</span><select id="ty-rbw" class="ty-w"></select><select id="ty-rbc"></select></label>
+    <label><span>…gap, length</span><input id="ty-rbo" type="number" step="0.02" min="0" max="1"
+      placeholder="gap in"><input id="ty-rbl" type="number" step="0.1" min="0.1" max="12" placeholder="full"></label>
+    <label><span>Shading</span><select id="ty-shade"></select></label>
+    <label><span>Border</span><select id="ty-pbw" class="ty-w"></select><select id="ty-pbs">
+      <option value="all">all sides</option><option value="topbottom">top and bottom</option>
+      <option value="top">top</option><option value="bottom">bottom</option>
+      <option value="left">left</option><option value="right">right</option></select></label>
+    <label><span>…colour</span><select id="ty-pbc"></select></label>
+    <label><span>Padding</span><input id="ty-pp" type="number" step="0.02" min="0" max="1" placeholder="in"></label>
   </div>
   <div class="pop" id="ty-spacepop" hidden>
     <p class="pop-h">Spacing</p>
@@ -9711,6 +9725,38 @@ function fillParaPop(key) {
   });
   col.value = have;
   $('ty-lind').value = lst.indent ?? '';
+  // Rules, border, shading (INDESIGN_PARITY.md 28).
+  const weights = sel => {
+    sel.textContent = '';
+    [['', 'none'], ['0.5', '½ pt'], ['1', '1 pt'], ['2', '2 pt'], ['3', '3 pt'], ['4', '4 pt'], ['6', '6 pt']]
+      .forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+  };
+  const colours = (sel, cur, none) => {
+    sel.textContent = '';
+    const opts = [['', none], ...(M.palette || []).map(c => [c.toUpperCase(), c.toUpperCase()])];
+    const have = (cur || '').toUpperCase();
+    if (have && !opts.some(o => o[0] === have)) opts.push([have, have]);
+    opts.forEach(([v, t]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = t; if (v) o.style.color = v;
+      sel.appendChild(o);
+    });
+    sel.value = have;
+  };
+  const ra = eff.ruleAbove || {}, rb = eff.ruleBelow || {}, pb = eff.paraBorder || {};
+  [['ty-raw', ra], ['ty-rbw', rb], ['ty-pbw', pb]].forEach(([id, r]) => {
+    weights($(id));
+    $(id).value = eff[{ 'ty-raw': 'ruleAbove', 'ty-rbw': 'ruleBelow', 'ty-pbw': 'paraBorder' }[id]]
+      ? String(r.weight ?? 1) : '';
+  });
+  colours($('ty-rac'), ra.color, 'text colour');
+  colours($('ty-rbc'), rb.color, 'text colour');
+  colours($('ty-pbc'), pb.color, 'text colour');
+  colours($('ty-shade'), eff.shade, 'none');
+  $('ty-rao').value = ra.offset ?? ''; $('ty-ral').value = ra.length ?? '';
+  $('ty-rbo').value = rb.offset ?? ''; $('ty-rbl').value = rb.length ?? '';
+  $('ty-pbs').value = pb.sides || 'all';
+  $('ty-pp').value = eff.paraPad ?? '';
 }
 
 function showType(key) {
@@ -10787,6 +10833,33 @@ function wireType() {
   $('ty-lcol').addEventListener('change', () => listSet('color', $('ty-lcol').value));
   $('ty-lind').addEventListener('change', () =>
     listSet('indent', $('ty-lind').value === '' ? '' : Math.max(0, Math.min(2, +$('ty-lind').value))));
+  // A rule or a border is one object; each control rewrites the whole of it,
+  // and a weight of "none" removes it — its colour and gap go with it.
+  const objSet = (key, k, v, clamp) => {
+    const cur = { ...(styleOf(selected)[key] || {}) };
+    if (k === 'weight' && (v === '' || v == null)) { paraSet({ [key]: null }); return; }
+    if (v === '' || v == null || Number.isNaN(v)) delete cur[k];
+    else cur[k] = clamp ? clamp(v) : v;
+    if (cur.weight == null) cur.weight = 1;
+    paraSet({ [key]: cur });
+  };
+  const num = id => $(id).value === '' ? '' : +$(id).value;
+  const clampTo = (lo, hi) => v => Math.max(lo, Math.min(hi, v));
+  [['ruleAbove', 'ty-raw', 'ty-rac', 'ty-rao', 'ty-ral'], ['ruleBelow', 'ty-rbw', 'ty-rbc', 'ty-rbo', 'ty-rbl']]
+    .forEach(([key, w, c, o, l]) => {
+      $(w).addEventListener('change', () => objSet(key, 'weight', $(w).value === '' ? '' : +$(w).value));
+      $(c).addEventListener('change', () => objSet(key, 'color', $(c).value));
+      $(o).addEventListener('change', () => objSet(key, 'offset', num(o), clampTo(0, 1)));
+      $(l).addEventListener('change', () => objSet(key, 'length', num(l), clampTo(0.1, 12)));
+    });
+  $('ty-pbw').addEventListener('change', () => objSet('paraBorder', 'weight', $('ty-pbw').value === '' ? '' : +$('ty-pbw').value));
+  $('ty-pbs').addEventListener('change', () => objSet('paraBorder', 'sides', $('ty-pbs').value));
+  $('ty-pbc').addEventListener('change', () => objSet('paraBorder', 'color', $('ty-pbc').value));
+  $('ty-shade').addEventListener('change', () => paraSet({ shade: $('ty-shade').value || null }));
+  $('ty-pp').addEventListener('change', () => {
+    const v = num('ty-pp');
+    paraSet({ paraPad: v === '' || Number.isNaN(v) ? null : Math.max(0, Math.min(1, v)) });
+  });
   $('ty-style').addEventListener('change', async () => {
     const name = $('ty-style').value || null;
     // Wearing a style drops the slot's own keys. Anything else and the first
