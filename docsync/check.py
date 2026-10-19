@@ -439,8 +439,49 @@ def check_attributes(html: str) -> list[Problem]:
             for t in attributes_twice(html)]
 
 
+# --- 6. an image's description is not its file name --------------------------
+# Insert image writes `![<file name>](assets/<file name>)`, because the file
+# name is all it knows. A screen reader then announces "chart-final-v3.png",
+# which is worse than silence and looks, in the markup, like an image that has
+# been described. Only a file-name alt is flagged: an EMPTY alt is how a page
+# says an image is decoration, and that is a decision, not a miss.
+
+_IMG_TAG = re.compile(r"(?is)<img\b[^>]*>")
+_IMG_EXT = re.compile(r"(?i)\.(?:png|jpe?g|gif|svg|webp|avif|bmp|tiff?|heic)$")
+
+
+def alt_is_filename(alt: str, src: str = "") -> bool:
+    """True when `alt` is a file name rather than a description: it ends in an
+    image extension, or it is the src's own base name with or without one.
+    The editor's twin is altIsFilename() in edit.html; keep the two equal."""
+    a = (alt or "").strip()
+    if not a:
+        return False
+    if _IMG_EXT.search(a):
+        return True
+    base = re.split(r"[/\\]", (src or "").split("?")[0].split("#")[0])[-1]
+    stem = _IMG_EXT.sub("", base)
+    return bool(base) and a.lower() in (base.lower(), stem.lower())
+
+
+def check_alt_text(html: str) -> list[Problem]:
+    """No image is described by its file name."""
+    out = []
+    for tag in _IMG_TAG.findall(_OPAQUE.sub(" ", html)):
+        alt = re.search(r'(?is)\balt\s*=\s*"([^"]*)"', tag)
+        src = re.search(r'(?is)\bsrc\s*=\s*"([^"]*)"', tag)
+        if alt and alt_is_filename(alt.group(1), src.group(1) if src else ""):
+            out.append(Problem(
+                "alt-text",
+                f"an image is described as {alt.group(1)!r}, its file name — a "
+                f"screen reader reads that out. Right-click it in the editor ▸ "
+                f"Description (for screen readers)…, or leave it empty if the "
+                f"image is decoration", level="warn"))
+    return out
+
+
 CHECKS = (check_citations, check_markdown, check_svg_bounds,
-          check_text_size, check_attributes)
+          check_text_size, check_attributes, check_alt_text)
 
 
 # --- editability coverage ----------------------------------------------------

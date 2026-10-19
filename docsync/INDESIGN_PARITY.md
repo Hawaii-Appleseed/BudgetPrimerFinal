@@ -260,8 +260,16 @@ its *text* model, and the whole idea of a named, redefinable style.
     Nothing left here that stops anyone.
 11. **Print production — bleed, slug, spot colour, preflight, package.** The
     deliverable here is HTML plus a Chrome-printed PDF, so most of this is
-    genuinely out of scope. Bleed is the exception and only for a report that
-    is actually going to a printer.
+    genuinely out of scope. **Bleed is half here (corrected 2026-10-19):**
+    the Download menu's "Bleed & crop marks (PDF)" box sends `marks` to
+    `/__export`, which sets `DOCSYNC_MARKS=1` for that one render, and
+    report2027's renderer puts `.ds-bleed` on `<body>` so `primer.css` grows
+    the sheet 0.125in a side and draws the trim ticks. That is report2027
+    only, at a hard-coded 8.5 × 11: no other renderer reads `DOCSYNC_MARKS`,
+    so for every other project the box is offered and does nothing. The
+    missing half is moving the bleed CSS into the engine (sized from the
+    page, not 8.5 × 11), or hiding the box where the renderer cannot honour
+    it.
 12. **Blend modes. — CLOSED 2026-09-17**, on the way past (2): `blend` on a
     shape, box or table, in the transparency pop, which is what a blend is a
     generalisation of. `normal` is accepted so an object can undo the blend
@@ -286,7 +294,8 @@ twelve bindings in both modes on every commit), one resolver or one runtime
 string shared by the page and the editor rather than two that could drift.
 
 What is left is Tier 3: (9) a baseline grid, which waits on threading; (11)
-bleed, only if a report goes to a printer. (8) is back. Threading between
+bleed beyond report2027, only if another report goes to a printer. (8) is
+back. Threading between
 frames stays in "Not coming". The next real work on this editor is not a gap
 in this list — it is the follow-ups each closed item named: tables as master
 items and as anchors, per-item master overrides, `shape-outside` if a wrapped
@@ -336,3 +345,149 @@ been the feature not working.
 The MCP tool description had also drifted — it named neither these nor the
 master and anchor verbs that landed the night before, and an MCP client can
 only call what that string lists.
+
+## What is still missing — scoped 2026-10-19
+
+A second pass, a month after the first, ranked by the same two questions. It
+was scoped by reading `layout.py`, `edit.html` and the renderers, not by
+running the editor, so each item names what the code has and lacks; check
+the claim before building on it. "Size" is a rough guess at the work: S is
+an evening, M a day or two, L longer.
+
+Since the first pass the editor has also gained things this file never
+listed, so they are not gaps: group/ungroup (⌘⇧G), lock, an eyedropper,
+copy and paste style (the format painter), ruler guides, gradient fills on
+shapes, PNG-per-page and HTML export, footnote and endnote chips, and
+bleed and crop marks for report2027 (see (11)).
+
+### Tier 1 — redone on every edit, or no way to say it
+
+13. **Overset text — NOT A GAP (corrected 2026-10-19).** Scoped above as
+    missing; it is not. A box's `h` is a min-height, so a box grows with its
+    words rather than hiding them, and the one place words CAN be lost is
+    the sheet's edge, which `fitCheck()` already measures on every render:
+    red hatching where the PDF cuts, a `!` on the page chip, `⚠ N pages cut
+    in print` in the bar, `fitReport()` on every pilot reply, and Save
+    refusing while anything is cut. That is InDesign's red `+`, at the only
+    edge that clips. What it does not do is tell you a box grew into the
+    thing under it, which is an overlap and not an overset, and would cry
+    wolf on every deliberate overlay.
+14. **Text styles cannot space paragraphs.** `style_css()` knows font,
+    size, weight, italic, underline, colour, tracking, leading, case,
+    effect and align. It has no space before or after, no first-line,
+    left, right or hanging indent. So a stylesheet can make Body the right
+    face and still not the right paragraph, and the spacing is fixed by
+    hand in each renderer or each box, every time. New opt-in keys on the
+    same resolver (`spaceBefore`, `spaceAfter`, `indent`, `hang`),
+    validated in inches like `pad`. **S.**
+15. **Numbers in tables do not line up.** No tabular or lining figures
+    (`font-variant-numeric`) and no decimal or right alignment per column.
+    These are budget and tax reports, so this lands on most of the tables
+    they print. A `figures: "tabular"` text-style key, plus an `align` per
+    column on a placed table. **S.**
+16. **An image's alt text. — CLOSED 2026-10-19.** Insert image writes
+    `![<file name>](path)` because the file name is all it knows, and a
+    designed figure's `data-desc` was already editable (right-click ▸
+    Description (for screen readers)…). What had no way in was an image
+    that came through MARKDOWN: Insert image's box, or a picture in a
+    paragraph. Its words live in that markdown, so that is what is
+    rewritten, never the `<img>`, which is the render's echo of it.
+
+    - **The menu.** Right-clicking such an image offers the same item, with
+      the same name, as a designed figure. Over a file name the field opens
+      EMPTY and says what is there now, so the file name is not offered as
+      words to keep. Empty is allowed and means decoration (a screen reader
+      skips it); brackets and newlines are stripped, because they would end
+      the alt or the image. Every `![…](src)` of that picture in that place
+      takes the words: the same picture twice in one box is one picture.
+    - **The pilot.** `describeImage(host, words, src?)`, batchable: `host` is
+      a text box id or a slot key; `src` picks one when the host carries
+      several, and the refusal lists them. `audit()` reports each image
+      still described by its file name as `alt-is-filename`, with the call
+      that fixes it.
+    - **The check.** `docsync.check`'s `alt-text` WARNS on an `<img>` whose
+      alt is a file name: an image extension, or the src's own base name.
+      An empty alt is never flagged. `alt_is_filename()` in `check.py` and
+      `altIsFilename()` in `edit.html` are one rule twice; keep them equal.
+      All 29 checked files were clean when it landed.
+
+### Tier 2 — real gaps with a workaround
+
+17. **No character styles inside a paragraph.** A text style dresses a
+    whole slot, box or table cell. Inside one, the only marks are bold,
+    italic and links. A run of words in the topic colour, or a figure set
+    in the heading face, is either hand HTML or not possible. A markdown
+    span such as `[words]{.Name}` read by `content.py` and `resolve_style()`.
+    The work is the round trip through the rich editor's markdown
+    serialiser without corrupting it (see `boldItalicBlocked()`). **M.**
+18. **No generated contents page or cross-references.** `toc.*` in the
+    primer is a hand-written slot, and "see page 12" is typed text. Both
+    go stale every time pages move, which is what (13) through (16) are
+    ranked on. `{page}` already works on masters. The cheap half is a
+    contents block built from headings and page order. The harder half is
+    a page reference resolved at render time, which in a flowed report is
+    only known after layout, so it needs the same measure-then-write
+    runtime as `ANCHOR_JS`. **M** for contents, **L** for references.
+19. **Only one text variable.** `{page}` exists. There is no running
+    header (the current section's title), no `{date}`, no `{title}`, and no
+    section-relative numbering or start-at. Running headers are the common
+    master-page use after the page number. **S–M.**
+20. **No paragraph keep options, hyphenation or justification controls.**
+    No widow, orphan or keep-with-next, no `hyphens`, no `text-wrap:
+    pretty` or `balance`. All of it is CSS the browser already does, so
+    this does not need the text engine "Not coming" rules out: text-style
+    keys for `hyphenate`, `balance` (headings) and `keep` (break-inside
+    and break-after, for the PDF). **S.**
+21. **No drop caps, and no list styling.** Lists come from markdown with
+    whatever the renderer's CSS gives them: no bullet glyph or colour, no
+    numbering format, no list indent in a style. A drop cap is
+    `::first-letter` or `initial-letter`. Both are text-style keys. **S–M.**
+22. **OpenType features beyond (15).** Small caps, old-style figures,
+    ligature control. Cheap once (15) adds `font-variant`. **S.**
+
+### Tier 3 — drawing and production, not what is stopping anyone
+
+23. **Drawing tools stop at preset shapes.** Shape kinds are rect,
+    ellipse, line, triangle, arrow, icon and chart. There is no pen or
+    freeform path, no polygon or star with N sides, no pathfinder
+    (combine or subtract), no corner options beyond radius, no skew, no
+    text on a path. The layer would need a `path` kind with a `d` string
+    and a node editor. Most report art is placed SVG, so this is the
+    least-felt item here. **L.**
+24. **No step and repeat or grid duplicate**, and no feather or outer
+    glow. Duplicate exists, one at a time. **S** each.
+25. **No image fitting presets.** Crop exists. Fit content to frame, fill
+    proportionally and centre are not offered as commands. **S.**
+26. **No reusable object library.** Images reuse through the project's
+    assets, and templates carry the house style. A saved callout, figure
+    frame or stat card that can be dropped into any report is not offered.
+    `style_guide()`'s ready dicts are most of it. **M.**
+27. **Preflight is split up.** `docsync.check` is already a good preflight
+    (legibility floor, citations, bounds, dead text), but it runs from the
+    shell and the editor shows parts of it in separate chips. One panel
+    listing it all, with (13) and (16) added and a low-resolution image
+    warning for print. **M.**
+
+### Already on this list, still open
+
+Threading between frames ("Not coming"), the baseline grid (9), named
+layers with lock and hide across the document (8), bleed outside report2027
+(11), tables as master items and anchors, per-item master overrides, and
+`shape-outside` contour wrap.
+
+### Not worth doing here
+
+Data merge, IDML or InDesign-file import, books (several documents as one),
+an index, CMYK, spot colour, and the rest of the paper-only list. None
+fits documents that are read on a screen first and drafted one at a time.
+An IDML import would matter only if a back catalogue of InDesign reports
+needed moving in, and that would be a one-off converter, not an editor
+feature.
+
+### The order
+
+Done: (16) alt text; (13) turned out not to be a gap. Next, (14), (15) and (20), all opt-in
+text-style keys on the one resolver, which keep every existing render
+byte-identical the way (1) did. Then (19) and (18)'s contents half, which
+reuse what masters already built. (17) character styles last of the text
+work, because it is the only one that changes the markdown.

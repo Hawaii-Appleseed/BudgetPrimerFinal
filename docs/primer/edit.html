@@ -4998,6 +4998,97 @@ function descOf(el, e) {
   };
 }
 
+// ---------------------------------------------------- an image's alt text
+// A designed figure's description is a slot (data-desc, above). An image that
+// came in through MARKDOWN — Insert image's box, or a picture dropped into a
+// paragraph — keeps its description in that markdown, `![words](src)`, and
+// Insert image can only write the file name there. So the words are edited
+// where they live: the box's md or the slot's text, never the <img>, which is
+// only the render's echo of them.
+const MD_IMG_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
+const IMG_EXT_RE = /\.(?:png|jpe?g|gif|svg|webp|avif|bmp|tiff?|heic)$/i;
+
+/** True when an alt is a file name rather than a description. The twin of
+ *  docsync/check.py's alt_is_filename(); keep the two equal. Empty is not a
+ *  file name: an empty alt is how a page says an image is decoration. */
+function altIsFilename(alt, src) {
+  const a = (alt || '').trim();
+  if (!a) return false;
+  if (IMG_EXT_RE.test(a)) return true;
+  const base = (src || '').split(/[?#]/)[0].split(/[/\\]/).pop() || '';
+  return !!base && [base.toLowerCase(), base.replace(IMG_EXT_RE, '').toLowerCase()]
+    .includes(a.toLowerCase());
+}
+
+/** Where a markdown image's words live: { kind: 'box', box } or
+ *  { kind: 'slot', key }, its src, its current alt, and which `![…](src)` it
+ *  is when the same picture appears twice in one place. Null when the image
+ *  did not come from markdown (a renderer's own <img>, which has data-desc
+ *  or nothing). `host` is a box id ('text.x') or a slot key; `src` narrows a
+ *  host carrying several images. */
+function mdImageIn(host, src) {
+  const b = /^text\./.test(host) ? boxOf(host) : null;
+  const md = b ? (b.md || '') : (slotRe(host).test(source) ? readSlot(host) : null);
+  if (md == null) return null;
+  const all = [...md.matchAll(MD_IMG_RE)];
+  const hits = src ? all.filter(m => m[2] === src) : all;
+  if (!hits.length || (!src && new Set(all.map(m => m[2])).size > 1)) return null;
+  return { kind: b ? 'box' : 'slot', box: b, key: b ? null : host,
+           src: hits[0][2], alt: hits[0][1] };
+}
+
+/** The markdown image under a right-click, if it is one. */
+function mdImageOf(el, e) {
+  const t = e && e.target && e.target.tagName === 'IMG' && el.contains(e.target) ? e.target
+    : (el.tagName === 'IMG' ? el
+       : (el.querySelectorAll('img').length === 1 ? el.querySelector('img') : null));
+  if (!t || t.closest('[data-desc]')) return null;
+  const src = t.getAttribute('src');
+  if (!src) return null;
+  const slotHost = t.closest('[data-slot]');
+  const boxId = (el.dataset.el || '').startsWith('text.') ? el.dataset.el : null;
+  const at = (boxId && mdImageIn(boxId, src)) || (slotHost && mdImageIn(slotHost.dataset.slot, src));
+  if (!at) {
+    // The page may show a src rewritten for the preview (a blob: for an
+    // upload not yet on disk) — fall back to the one image the host carries.
+    return (boxId && mdImageIn(boxId)) || (slotHost && mdImageIn(slotHost.dataset.slot)) || null;
+  }
+  return at;
+}
+
+/** Brackets end an alt and a newline ends the image, so neither may go in. */
+const cleanAlt = s => String(s == null ? '' : s).replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
+
+/** Write `words` as the alt of every `![…](src)` in that place. Every one,
+ *  not the first: the same picture twice in one box is the same picture. */
+function writeMdAlt(at, words) {
+  const alt = cleanAlt(words);
+  const swap = md => md.replace(MD_IMG_RE, (m, a, s) => s === at.src ? `![${alt}](${s})` : m);
+  if (at.kind === 'box') at.box.md = swap(at.box.md || '');
+  else writeSlot(at.key, swap(readSlot(at.key)));
+  return alt;
+}
+
+async function editMdAlt(at) {
+  const named = altIsFilename(at.alt, at.src);
+  const got = await dsForm(
+    'What a screen reader reads instead of this image',
+    [{ name: 'words', type: 'textarea',
+       label: named ? `now: ${at.alt} — a file name, which is read out as it is` : 'description',
+       value: named ? '' : at.alt,
+       placeholder: 'What the image shows. Leave it empty if it is only decoration.' }],
+    { okLabel: 'Save' });
+  if (got == null) return;
+  if (cleanAlt(got.words) === at.alt) return;
+  if (at.kind === 'slot') collabWarnShared(at.key, 'description');
+  pushHistory();
+  const alt = writeMdAlt(at, got.words);
+  markDirty();
+  await render();
+  $('stat').textContent = alt ? 'image description saved'
+    : 'image marked as decoration — a screen reader skips it';
+}
+
 function layerMenu(d, el, e) {
   closeMenu(d);
   const id = el.dataset.shape || el.dataset.el || el.dataset.fill;
@@ -5442,6 +5533,11 @@ function layerMenu(d, el, e) {
       await render();
       $('stat').textContent = `${desc.key} — updated`;
     });
+  }
+  const mdi = !desc && mdImageOf(el, e);
+  if (mdi) {
+    const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
+    item('Description (for screen readers)…', () => { closeMenu(d); editMdAlt(mdi); });
   }
   if (!!shapeOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
@@ -13158,7 +13254,8 @@ async function placeImageBox(path, name) {
   markDirty();
   await render();
   $('stat').textContent =
-    `${name} placed on page ${page} — drag to move, edges to resize`;
+    `${name} placed on page ${page} — drag to move, edges to resize; `
+    + 'right-click ▸ Description to say what it shows';
 }
 
 /** Every image this report already carries: the manifest's listing of its
@@ -25156,6 +25253,30 @@ function _pilotValidateSetBoxText(id, md) {
 }
 function _pilotApplySetBoxText(id, md) { boxOf(id).md = md.trim(); return { id }; }
 
+// describeImage(host, words, src?) — an image's alt text, where the markdown
+// keeps it (see mdImageIn). host is a text box id or a slot key; src picks one
+// picture when the host carries several. '' marks the image as decoration.
+function _pilotValidateDescribeImage(host, words, src) {
+  if (typeof host !== 'string' || !host)
+    return { ok: false, error: 'describeImage(host, words, src?) — host is a text box id or a slot key' };
+  if (words != null && typeof words !== 'string')
+    return { ok: false, error: 'words must be a string — "" marks the image as decoration' };
+  if (!mdImageIn(host, src || undefined)) {
+    const b = /^text\./.test(host) ? boxOf(host) : null;
+    const md = b ? (b.md || '') : (slotRe(host).test(source) ? readSlot(host) : null);
+    if (md == null) return { ok: false, error: `no text box or slot '${host}' — check inventory()` };
+    const srcs = [...new Set([...md.matchAll(MD_IMG_RE)].map(m => m[2]))];
+    if (!srcs.length) return { ok: false, error: `'${host}' carries no markdown image` };
+    return { ok: false, error: src ? `'${host}' has no image '${src}' — it has: ${srcs.join(', ')}`
+      : `'${host}' carries ${srcs.length} images — name one as src: ${srcs.join(', ')}` };
+  }
+  return { ok: true };
+}
+function _pilotApplyDescribeImage(host, words, src) {
+  const at = mdImageIn(host, src || undefined);
+  return { host, src: at.src, alt: writeMdAlt(at, words) };
+}
+
 function _pilotApplyRotate(id, deg) {
   const d = $('out').contentDocument;
   const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
@@ -25272,6 +25393,8 @@ const PILOT_BATCH_VERBS = {
                 apply: (p, sl, md) => _pilotApplyAddSection(p, sl, md) },
   setStyle: { validate: (k, p) => _pilotValidateSetStyle(k, p), apply: (k, p) => _pilotApplySetStyle(k, p) },
   setBoxText: { validate: (id, m) => _pilotValidateSetBoxText(id, m), apply: (id, m) => _pilotApplySetBoxText(id, m) },
+  describeImage: { validate: (h, w, s) => _pilotValidateDescribeImage(h, w, s),
+                   apply: (h, w, s) => _pilotApplyDescribeImage(h, w, s) },
   rotate: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplyRotate(id, deg) },
   // Existence only — place()'s validate also refuses LOCKED elements, which
   // here would make unlocking impossible.
@@ -25808,6 +25931,22 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     return { ...docsync.api.status(), id, box: _pilotMeasure(id) };
   },
 
+  /** An image's alt text, written into the markdown that holds it: a text
+   *  box (Insert image's) or a slot. src picks one when the host carries
+   *  several; '' marks the image as decoration. audit() lists every image
+   *  still described by its file name ('alt-is-filename').
+   *  describeImage('text.b3', 'Bar chart: GET share by income') */
+  async describeImage(host, words, src) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = _pilotValidateDescribeImage(host, words, src);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplyDescribeImage(host, words, src);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), ...r };
+  },
+
   /** Rotate about the element's centre, degrees clockwise; 0 clears. */
   async rotate(id, deg) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
@@ -26098,6 +26237,21 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     immovableSlots(d).forEach(s => {
       if (!stuckBy.has(s.page)) stuckBy.set(s.page, []);
       stuckBy.get(s.page).push(s.key);
+    });
+    // An image a screen reader would announce by its file name — what Insert
+    // image writes until somebody describes it. Read from the markdown, the
+    // place describeImage() writes, so the id given is the one to call it on.
+    boxes().forEach(b => [...(b.md || '').matchAll(MD_IMG_RE)].forEach(mm => {
+      if (altIsFilename(mm[1], mm[2]))
+        issues.push({ kind: 'alt-is-filename', page: b.page, ids: ['text.' + b.id],
+          note: `image described as "${mm[1]}", its file name — describeImage('text.${b.id}', words)` });
+    }));
+    [...source.matchAll(/(?:^|\n)\[\[([A-Za-z0-9._-]+)\]\]/g)].forEach(km => {
+      [...readSlot(km[1]).matchAll(MD_IMG_RE)].forEach(mm => {
+        if (altIsFilename(mm[1], mm[2]))
+          issues.push({ kind: 'alt-is-filename', ids: [km[1]],
+            note: `image described as "${mm[1]}", its file name — describeImage('${km[1]}', words)` });
+      });
     });
     stuckBy.forEach((keys, page) => issues.push({ kind: 'immovable-text', page, ids: keys,
       note: `${keys.length} text field${keys.length === 1 ? '' : 's'} can be typed into but `

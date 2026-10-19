@@ -3998,6 +3998,25 @@ check_eq("any other repo's slug passes through untouched",
          _slug_for("https://github.com/Hawaii-Appleseed/BudgetPrimerFinal.git"),
          "Hawaii-Appleseed/BudgetPrimerFinal")
 
+# --- an image described by its file name is flagged, decoration is not ------
+from docsync.check import alt_is_filename, check_alt_text                    # noqa: E402
+
+check_eq("an alt ending in an image extension is a file name",
+         alt_is_filename("chart-final-v3.png", "assets/chart-final-v3.png"), True)
+check_eq("the src's own stem, without an extension, is a file name too",
+         alt_is_filename("IMG_2041", "assets/IMG_2041.JPG"), True)
+check_eq("a description is not a file name",
+         alt_is_filename("Governor Green signs HB 2296", "assets/IMG_2041.jpg"), False)
+check_eq("an empty alt is decoration, a decision rather than a miss",
+         alt_is_filename("", "assets/rule.svg"), False)
+check_eq("check_alt_text warns (never errors) once per file-name alt",
+         [(p.check, p.level) for p in check_alt_text(
+             '<img src="assets/a.png" alt="a.png"><img src="b.png" alt="">'
+             '<img src="c.jpg" alt="A family at the market">')],
+         [("alt-text", "warn")])
+check_eq("an <img> inside a <script> string is not on the page",
+         check_alt_text('<script>x = \'<img src="a.png" alt="a.png">\'</script>'), [])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")
