@@ -7261,8 +7261,24 @@ const tableOf = id => {
   // every page that uses the layout.
   const mi = masterItemOf(id);
   if (mi) return mi.kind === 'tables' ? mi.item : undefined;
-  return tables().find(t => t.id === (id || '').replace(/^table\./, ''));
+  const key = (id || '').replace(/^table\./, '');
+  return tables().find(t => t.id === key) || seedFlowTable(key);
 };
+/** A flow table its renderer drew from a default (layout.py flow_table) is
+ *  in no layout.json yet, so nothing could edit it. The first time anything
+ *  reaches for it, its default (data-table-seed) goes into layout.tables —
+ *  quietly: the page looks the same, and the next real edit saves it. */
+function seedFlowTable(key) {
+  const d = $('out').contentDocument;
+  const el = key && d && d.querySelector(`table[data-unseeded="${CSS.escape(key)}"][data-table-seed]`);
+  if (!el) return undefined;
+  let t;
+  try { t = JSON.parse(el.dataset.tableSeed); } catch (e) { return undefined; }
+  if (!t || t.id !== key || !Array.isArray(t.rows)) return undefined;
+  tables().push(t);
+  el.removeAttribute('data-unseeded');
+  return t;
+}
 
 /** One popover open at a time, anchored under its button; any click that is
  *  not inside a popover (or on its trigger) closes them. */
@@ -8777,15 +8793,23 @@ let chartPanelId = null;
  *  downstream has to care which it is.
  */
 function chartOf(id) {
-  const key = (id || '').replace(/^chart\./, '');
+  const full = id || '';
+  const key = full.replace(/^chart\./, '');
   if (!key) return null;
   const sh = layout.shapes.find(s => s.id === key && s.kind === 'chart');
   if (sh) return { id: key, chart: sh.chart, shape: sh, inline: false };
   const d = $('out').contentDocument;
-  const node = d && d.querySelector(`[data-chart="${CSS.escape(key)}"]`);
+  // An inline chart is found by the id its renderer gave it, as given. A
+  // renderer that names its charts "chart.where" (uhero-trc-summary) used to
+  // be looked up as "where" and found nothing — no Chart button, no panel —
+  // so the exact id is tried first and the stripped one second. The id
+  // handed back is the node's own, the key the engine's chart_spec() reads
+  // its overrides under.
+  const node = d && (d.querySelector(`[data-chart="${CSS.escape(full)}"]`)
+                     || d.querySelector(`[data-chart="${CSS.escape(key)}"]`));
   if (node && node.dataset.chartSpec) {
     try {
-      return { id: key, chart: JSON.parse(node.dataset.chartSpec),
+      return { id: node.dataset.chart, chart: JSON.parse(node.dataset.chartSpec),
                shape: null, inline: true };
     } catch (e) { return null; }
   }

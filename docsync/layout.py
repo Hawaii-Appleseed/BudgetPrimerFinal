@@ -6881,7 +6881,13 @@ class Layout:
             attrs = self.attr(f'table.{t["id"]}',
                               css + (";" + style if style else "") + tglSty)
             if t.get("_unseeded") and edit:
-                attrs += f' data-unseeded="{t["id"]}"'
+                # The renderer's default, as JSON, so the editor can seed it
+                # into layout.json the first time the table is touched — a
+                # stored document saved before its renderer had this table
+                # (the hub's copy of uhero-trc-summary) is then editable as is.
+                seed = {k: v for k, v in t.items() if not k.startswith("_")}
+                attrs += (f' data-unseeded="{t["id"]}" data-table-seed="'
+                          + _html_escape(json.dumps(seed, ensure_ascii=False), quote=True) + '"')
             return (f'<table class="{klass} ds-flow"{extra}{attrs}>'
                     f'{colgroup}{body}</table>')
         return (f'<table class="{klass}"{extra}{tag}{PLACED}'
