@@ -3352,11 +3352,12 @@ const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+)\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+)\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
-                    'break:column': '⇥ column break', 'break:frame': '⇥ frame break' };
+                    'break:column': '⇥ column break', 'break:frame': '⇥ frame break',
+                    span: '⇔ spans columns' };
 // The characters InDesign's Insert White Space / Hyphens menus put in, and
 // how each shows while typing (INDESIGN_PARITY.md 31). In the file and on the
 // page they are the plain Unicode character; only the text editor shows them,
@@ -4690,7 +4691,8 @@ function buildSpecialRows(d, m, host, range) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; sub.appendChild(sep);
     [['break:line', 'Line break'], ['break:optional', 'Optional line break'],
      ['break:column', 'Column break (paragraph starts the next column)'],
-     ['break:frame', 'Frame break (paragraph starts the next frame)']]
+     ['break:frame', 'Frame break (paragraph starts the next frame)'],
+     ['span', 'Span columns (paragraph runs across every column)']]
       .forEach(([k, label]) => add(label, () => makeVarChip(d, k)));
   });
 }
@@ -6065,7 +6067,11 @@ function layerMenu(d, el, e) {
        ['Rotate 90° counter-clockwise', o => turnObjects(d, turnIds, { rot: -90 })],
        ['Rotate 180°', o => turnObjects(d, turnIds, { rot: 180 })],
        ['Flip horizontal', o => turnObjects(d, turnIds, { flip: 'h' })],
-       ['Flip vertical', o => turnObjects(d, turnIds, { flip: 'v' })]].forEach(([label, fn]) => {
+       ['Flip vertical', o => turnObjects(d, turnIds, { flip: 'v' })],
+       ['Clear transformations', async o => {
+         pushHistory(); const n = clearTransforms(turnIds); markDirty(); await render();
+         $('stat').textContent = n ? `straightened ${n}` : 'nothing was turned, skewed, flipped or scaled';
+       }]].forEach(([label, fn]) => {
         const b = d.createElement('button'); b.textContent = label;
         b.addEventListener('click', () => { closeMenu(d); fn(); }); sub.appendChild(b);
       });
@@ -7523,6 +7529,7 @@ async function addTextBox(kind) {
   if (preset.style && Object.keys(preset.style).length) box.style = { ...preset.style };
   if (preset.fill) box.fill = preset.fill;
   if (preset.act) box.act = preset.act;
+  else wearDefaults('box', box);
   boxes().push(box);
   setSel($('out').contentDocument, ['text.' + id]);
   markDirty();
@@ -7711,8 +7718,8 @@ $('table').onclick = async () => {
   const page = visiblePageId();
   pushHistory();
   const id = freeTableId();
-  tables().push({ id, page, x: placeX(3.5), y: 2, w: 3.5, z: 2, header: true,
-                  rows: [['Column 1', 'Column 2'], ['', ''], ['', '']] });
+  tables().push(wearDefaults('table', { id, page, x: placeX(3.5), y: 2, w: 3.5, z: 2, header: true,
+                  rows: [['Column 1', 'Column 2'], ['', ''], ['', '']] }));
   setSel($('out').contentDocument, ['table.' + id]);
   markDirty();
   await render();
@@ -11118,6 +11125,29 @@ function renderStylePop() {
       markDirty(); await render(); showType(selected); renderStylePop();
     }, !worn));
 
+  // Housekeeping (76) and the default for new text boxes (79).
+  const row3 = document.createElement('div');
+  row3.className = 'tp-row';
+  host.appendChild(row3);
+  const own = styleOverrides().find(o => o.key === selected);
+  row3.appendChild(btn('Clear overrides', own ? `Back to "${worn}" — drops ${own.keys.join(', ')}` : 'This text looks exactly like its style',
+    async () => {
+      pushHistory(); clearOverrides(selected);
+      markDirty(); await render(); showType(selected); renderStylePop();
+      $('stat').textContent = `back to "${worn}"`;
+    }, !own));
+  const hi = btn(showOverrides ? 'Highlighting overrides ✓' : 'Highlight overrides',
+    'Outline every piece of text that differs from the style it wears', () => { toggleOverrides(); renderStylePop(); });
+  row3.appendChild(hi);
+  const isDef = !!worn && defaultStyles().text === worn;
+  row3.appendChild(btn(isDef ? 'New text boxes wear this ✓' : 'Use for new text boxes',
+    isDef ? 'Stop giving this style to new text boxes' : `Every text box added from now on wears "${worn}"`,
+    async () => {
+      pushHistory(); setDefaultStyle('text', isDef ? null : worn); markDirty(); await render(); renderStylePop();
+      $('stat').textContent = isDef ? 'new text boxes wear no style' : `new text boxes wear "${worn}"`;
+    }, !worn));
+  styleHousekeeping(host, 'text', worn, () => { showType(selected); renderStylePop(); });
+
   const n = document.createElement('p');
   n.className = 'side-note';
   if (worn) {
@@ -11835,6 +11865,15 @@ function renderObjStyleVerbs(host, obj, kind, after) {
       Object.assign(obj, look);
       markDirty(); await render(); after();
     }, !worn));
+  // The default for new things of this kind (79), and housekeeping (76).
+  const isDef = !!worn && defaultStyles()[kind] === worn;
+  row2.appendChild(btn(isDef ? `New ${noun}s wear this ✓` : `Use for new ${noun}s`,
+    isDef ? `Stop giving this style to new ${noun}s` : `Every ${noun} added from now on wears "${worn}"`,
+    async () => {
+      pushHistory(); setDefaultStyle(kind, isDef ? null : worn); markDirty(); await render(); after();
+      $('stat').textContent = isDef ? `new ${noun}s wear no style` : `new ${noun}s wear "${worn}"`;
+    }, !worn));
+  styleHousekeeping(host, 'object', worn, after);
   const n = document.createElement('p');
   n.className = 'side-note';
   if (worn) {
@@ -15796,6 +15835,24 @@ async function turnObjects(d, ids, { rot = 0, flip = null }) {
   await render();
 }
 
+/** InDesign's Clear Transformations (INDESIGN_PARITY.md 81): rotation,
+ *  skew, flip and scale back to none on each object, its place and size
+ *  untouched. Only a store that already exists is written — a designed
+ *  element nobody has turned has nothing to clear and is not pinned. Returns
+ *  how many objects changed; the caller pushes history and renders. */
+const XFORM_KEYS = ['rot', 'skew', 'flip', 'scale'];
+function clearTransforms(ids) {
+  let n = 0;
+  (Array.isArray(ids) ? ids : [ids]).forEach(id => {
+    if (isLocked(id)) return;
+    const st = _pilotStoreOf(id) || (layout.positions || {})[id];
+    if (!st || !XFORM_KEYS.some(k => st[k] != null)) return;
+    XFORM_KEYS.forEach(k => { delete st[k]; });
+    n++;
+  });
+  return n;
+}
+
 // ---------------------------------------- hidden characters, text threads
 // InDesign's Show Hidden Characters and Show Text Threads (70), as one view
 // toggle (⌥⌘I): a ¶ at the end of every paragraph, tabs and breaks outlined,
@@ -16023,6 +16080,12 @@ function coloursRender() {
     $('stat').textContent = `${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`;
   });
   tools.appendChild(b);
+  const du = document.createElement('button');
+  du.textContent = 'Delete unused…';
+  du.title = 'Swatches, and styles, nothing in this report uses';
+  du.disabled = !unusedStyles().swatches.length && !Object.keys(layout.swatches || {}).length;
+  du.addEventListener('click', () => deleteUnusedDialog().then(coloursRender));
+  tools.appendChild(du);
   if (!cs.length) { list.textContent = 'This report sets no colours of its own yet.'; return; }
   cs.forEach(c => {
     const row = document.createElement('div'); row.className = 'cl-row'; row.dataset.hex = c.hex;
@@ -16093,6 +16156,7 @@ function mergeStyles(src, how) {
     if (Object.keys(mine).length) layout[k] = mine;
     out[k] = { added, replaced };
   });
+  pruneDefaults();                     // a replaced style may dress another kind now
   return out;
 }
 async function loadStylesDialog() {
@@ -16118,6 +16182,221 @@ async function loadStylesDialog() {
   markDirty(); await render();
   const n = Object.values(r).reduce((a, x) => a + x.added.length + x.replaced.length, 0);
   $('stat').textContent = `loaded ${n} from ${name(pick.pid)}`;
+}
+
+// ------------------------------------------------------ style housekeeping
+// InDesign's Select All Unused / Delete Style, Duplicate Style and the Style
+// Override Highlighter (INDESIGN_PARITY.md 76), for text, object and cell
+// styles and swatches. A style is IN USE when something wears it (a `use`
+// anywhere in layout.json, a character run in the words), when it is a
+// report's default for new things (79), or when a style in use is built
+// from it, nests it or greps it; a swatch when any colour names it outside
+// the styles about to go. Deleting the unused ones therefore never leaves a
+// `use` naming nothing — which the engine refuses at load.
+const STYLE_STORES = { text: 'textStyles', object: 'objectStyles', cell: 'cellStyles' };
+const SWATCH_REF_RE = /^@([A-Za-z0-9 _-]{1,30}?)(?:\s+(\d{1,3})%)?$/;
+function stylesInUse() {
+  const text = new Set(), object = new Set(), cell = new Set();
+  const walk = (o, key, above) => {
+    if (Array.isArray(o)) { o.forEach(v => walk(v, key, above)); return; }
+    if (!o || typeof o !== 'object') return;
+    if (typeof o.use === 'string')
+      (key === 'style' || above === 'text' ? text : above === 'cells' ? cell : object).add(o.use);
+    Object.entries(o).forEach(([k, v]) => { if (v && typeof v === 'object') walk(v, k, key); });
+  };
+  const SKIP = ['textStyles', 'objectStyles', 'cellStyles', 'swatches', 'defaultStyles', 'chartStyles'];
+  Object.entries(layout).forEach(([k, v]) => { if (!SKIP.includes(k)) walk(v, k, null); });
+  const words = source + '\n' + JSON.stringify(Object.fromEntries(Object.entries(layout).filter(([k]) => !SKIP.includes(k))));
+  for (const m of words.matchAll(CHAR_STYLE_RE_G)) text.add(m[2].trim());
+  const ds = defaultStyles();
+  Object.entries(ds).forEach(([k, n]) => (k === 'text' ? text : object).add(n));
+  const close = (set, all, more) => {
+    const q = [...set];
+    while (q.length) {
+      const st = all[q.pop()];
+      if (!st) continue;
+      [st.from, ...more(st)].forEach(n => { if (n && !set.has(n)) { set.add(n); q.push(n); } });
+    }
+  };
+  close(object, objectStyles(), () => []);
+  object.forEach(n => { const u = ((objectStyles()[n] || {}).style || {}).use; if (u) text.add(u); });
+  close(text, textStyles(), st => [...(st.grep || []), ...(st.nested || [])].map(r => r && r.style));
+  return { text, object, cell };
+}
+/** The styles and swatches nothing uses, by kind, names sorted. */
+function unusedStyles() {
+  const u = stylesInUse();
+  const out = {};
+  Object.entries(STYLE_STORES).forEach(([k, store]) => {
+    out[k] = Object.keys(layout[store] || {}).filter(n => !u[k].has(n)).sort();
+  });
+  // A swatch counts when a colour that STAYS names it: one named only by a
+  // style that is going goes with it.
+  const keep = clone(layout);
+  delete keep.swatches;
+  Object.entries(STYLE_STORES).forEach(([k, store]) => out[k].forEach(n => { delete (keep[store] || {})[n]; }));
+  const named = new Set();
+  const scan = o => {
+    if (typeof o === 'string') { const m = o.trim().match(SWATCH_REF_RE); if (m) named.add(m[1].trim()); }
+    else if (o && typeof o === 'object') Object.values(o).forEach(scan);
+  };
+  scan(keep);
+  out.swatches = Object.keys(layout.swatches || {}).filter(n => !named.has(n)).sort();
+  return out;
+}
+/** Delete the unused ones of the kinds asked for (default: all four). */
+function deleteUnusedStyles(kinds) {
+  const want = kinds && kinds.length ? kinds : ['text', 'object', 'cell', 'swatches'];
+  const un = unusedStyles();
+  const gone = {};
+  want.forEach(k => {
+    const store = STYLE_STORES[k] || (k === 'swatches' ? 'swatches' : null);
+    if (!store || !un[k] || !un[k].length) return;
+    const all = { ...(layout[store] || {}) };
+    un[k].forEach(n => { delete all[n]; });
+    if (Object.keys(all).length) layout[store] = all; else delete layout[store];
+    gone[k] = un[k];
+  });
+  return gone;
+}
+/** A copy of a style under a new name ("Body copy", "Body copy 2", …). */
+function duplicateStyle(scope, name, as) {
+  const store = STYLE_STORES[scope];
+  const all = (store && layout[store]) || {};
+  if (!all[name]) return null;
+  let nn = (as || '').trim() || `${name} copy`;
+  for (let i = 2; !as && all[nn]; i++) nn = `${name} copy ${i}`;
+  layout[store] = { ...all, [nn]: clone(all[name]) };
+  return nn;
+}
+
+// Default styles for new things (INDESIGN_PARITY.md 79): layout.defaultStyles
+// {text, box, shape, table}. A new text box wears the text style and the box
+// style, a new shape or table its kind's object style — written onto it as a
+// `use` when it is made, so the page reads nothing new and a report without
+// defaults makes exactly what it always made.
+const DEFAULT_STYLE_KINDS = ['text', 'box', 'shape', 'table'];
+const defaultStyles = () => layout.defaultStyles || {};
+function setDefaultStyle(kind, name) {
+  const ds = { ...defaultStyles() };
+  if (name) ds[kind] = name; else delete ds[kind];
+  if (Object.keys(ds).length) layout.defaultStyles = ds; else delete layout.defaultStyles;
+  return ds;
+}
+/** Drop a default whose style is gone or now dresses another kind. */
+function pruneDefaults() {
+  Object.entries(defaultStyles()).forEach(([k, n]) => {
+    const ok = k === 'text' ? !!textStyles()[n] : (objectStyles()[n] || {}).kind === k;
+    if (!ok) setDefaultStyle(k, null);
+  });
+}
+/** Dress something just made in the report's defaults. Its own keys that
+ *  the style also sets go, or the new thing would ignore the very style it
+ *  was given; keys the style leaves alone stay as the starting look. */
+const DRESSABLE_SHAPES = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'path'];
+function wearDefaults(kind, obj, keep = []) {
+  const ds = defaultStyles();
+  if (kind === 'shape' && !DRESSABLE_SHAPES.includes(obj.kind)) return obj;
+  const on = ds[kind];
+  if (on && (objectStyles()[on] || {}).kind === kind && !obj.use) {
+    Object.keys(resolvedObjStyle(on)).forEach(k => { if (!keep.includes(k) && k !== 'style') delete obj[k]; });
+    obj.use = on;
+  }
+  // The text style only where the new box has no type of its own: a Heading
+  // preset, or a pilot's explicit style, already said what its words are.
+  if (kind === 'box' && ds.text && textStyles()[ds.text] && !Object.keys(obj.style || {}).length)
+    obj.style = { use: ds.text };
+  return obj;
+}
+
+/** Text whose own keys differ from the named style it wears, as
+ *  [{key, style, keys}] — slots, text boxes and tables. */
+function styleOverrides() {
+  const out = [];
+  const one = (key, st) => {
+    if (!st || !st.use || !textStyles()[st.use]) return;
+    const base = resolvedStyle({ use: st.use });
+    const keys = Object.keys(bareStyle(st)).filter(k => JSON.stringify(st[k]) !== JSON.stringify(base[k]));
+    if (keys.length) out.push({ key, style: st.use, keys });
+  };
+  Object.entries(layout.text || {}).forEach(([k, st]) => one(k, st));
+  boxes().forEach(b => one('text.' + b.id, b.style));
+  tables().forEach(t => one('table.' + t.id, t.style));
+  return out;
+}
+const overrideStore = key => key.startsWith('text.') ? (boxOf(key) || {}).style
+  : key.startsWith('table.') ? (tableOf(key) || {}).style : (layout.text || {})[key];
+/** Take the own keys off text wearing a style, so it is the style again.
+ *  keys: one key, a list, or null for every override in the report. */
+function clearOverrides(keys) {
+  const want = keys == null ? null : new Set(Array.isArray(keys) ? keys : [keys]);
+  const done = [];
+  styleOverrides().forEach(o => {
+    if (want && !want.has(o.key)) return;
+    const st = overrideStore(o.key);
+    Object.keys(bareStyle(st)).forEach(k => { delete st[k]; });
+    done.push(o.key);
+  });
+  return done;
+}
+let showOverrides = false;
+try { showOverrides = localStorage.getItem('ds-overrides') === '1'; } catch (e) { /* file: */ }
+function toggleOverrides(on) {
+  showOverrides = on == null ? !showOverrides : !!on;
+  try { localStorage.setItem('ds-overrides', showOverrides ? '1' : '0'); } catch (e) { /* file: */ }
+  drawOverrides($('out').contentDocument);
+  const n = styleOverrides().length;
+  $('stat').textContent = showOverrides ? `${n} piece${n === 1 ? '' : 's'} of text differ${n === 1 ? 's' : ''} from ${n === 1 ? 'its' : 'their'} style — outlined` : 'override highlighter off';
+}
+/** Editor-only: a dashed outline on every piece of text that overrides its
+ *  style, redrawn after each render while the highlighter is on. */
+function drawOverrides(d) {
+  if (!d || !d.body) return;
+  d.querySelectorAll('.ds-override').forEach(n => { n.classList.remove('ds-override'); n.removeAttribute('data-override'); });
+  if (!showOverrides) return;
+  styleOverrides().forEach(o => {
+    const sel = /^(text|table)\./.test(o.key) ? `[data-el="${CSS.escape(o.key)}"]` : `[data-slot="${CSS.escape(o.key)}"]`;
+    d.querySelectorAll(sel).forEach(el => {
+      el.classList.add('ds-override');
+      el.setAttribute('data-override', `${o.style} + ${o.keys.join(', ')}`);
+    });
+  });
+}
+/** The housekeeping rows shared by the text and object style pops. */
+function styleHousekeeping(host, scope, name, after) {
+  const row = document.createElement('div');
+  row.className = 'tp-row';
+  host.appendChild(row);
+  const btn = (label, title, fn, dis) => {
+    const b = document.createElement('button');
+    b.className = 'tp-btn'; b.textContent = label; b.title = title; b.disabled = !!dis;
+    b.addEventListener('click', fn); row.appendChild(b); return b;
+  };
+  btn('Duplicate', 'A copy of this style under a new name, to change without moving the original', async () => {
+    const got = await dsForm(`Duplicate "${name}"`, [{ name: 'as', label: 'Name', value: `${name} copy`, required: true }],
+      { okLabel: 'Duplicate', validate: v => (layout[STYLE_STORES[scope]] || {})[v.as.trim()] ? 'that name is taken' : '' });
+    if (!got) return;
+    pushHistory(); const nn = duplicateStyle(scope, name, got.as.trim()); markDirty(); await render(); after();
+    $('stat').textContent = `"${nn}" made from "${name}"`;
+  }, !name);
+  btn('Delete unused…', 'Styles and swatches nothing in this report uses', () => deleteUnusedDialog().then(after));
+}
+async function deleteUnusedDialog() {
+  const un = unusedStyles();
+  const LAB = { text: 'Text styles', object: 'Object styles', cell: 'Cell styles', swatches: 'Swatches' };
+  const fields = Object.keys(LAB).filter(k => un[k].length).map(k => ({ name: k, type: 'select', value: 'delete',
+    label: `${LAB[k]}: ${un[k].slice(0, 5).join(', ')}${un[k].length > 5 ? ` and ${un[k].length - 5} more` : ''}`,
+    options: [{ value: 'delete', label: `Delete these ${un[k].length}` }, { value: 'keep', label: 'Keep them' }] }));
+  if (!fields.length) { $('stat').textContent = 'every style and swatch is in use'; return; }
+  const how = await dsForm('Delete unused styles', fields, { okLabel: 'Delete', danger: true });
+  if (!how) return;
+  const kinds = Object.keys(how).filter(k => how[k] === 'delete');
+  if (!kinds.length) return;
+  pushHistory();
+  const gone = deleteUnusedStyles(kinds);
+  markDirty(); await render();
+  const n = Object.values(gone).reduce((a, x) => a + x.length, 0);
+  $('stat').textContent = `deleted ${n} unused`;
 }
 
 // --------------------------------------------------------------- preflight
@@ -18544,9 +18823,10 @@ function _pilotApplyAddPath({ page, points, closed, fill, stroke, sw, z } = {}) 
   const pid = page != null ? page : visiblePageId();
   const id = freeShapeId('path');
   const geo = pathFromInches(points, closed);
-  layout.shapes.push({ id, page: pid, kind: 'path', ...geo,
+  layout.shapes.push(wearDefaults('shape', { id, page: pid, kind: 'path', ...geo,
     fill: fill || (closed ? '#6B9E78' : 'none'), stroke: stroke || (closed ? 'none' : '#52796F'),
-    sw: sw != null ? +sw : 0.03, z: z != null ? +z : nextZ(2, pid) });
+    sw: sw != null ? +sw : 0.03, z: z != null ? +z : nextZ(2, pid) },
+    Object.entries({ fill, stroke, sw }).filter(([, v]) => v != null).map(([k]) => k)));
   return { id, page: pid };
 }
 /** Pathfinder: the selected shapes become ONE compound. The back object
@@ -19104,6 +19384,7 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
                        fill: kind === 'line' ? 'none' : '#6B9E78',
                        stroke: kind === 'line' ? '#52796F' : 'none',
                        sw: 0.02, z: nextZ(2, page) });
+  wearDefaults('shape', layout.shapes[layout.shapes.length - 1]);
   setSel($('out').contentDocument, [id]);
   markDirty();
   await render();
@@ -22340,6 +22621,7 @@ function wire(roots) {
   schedulePreflight();         // the badge, a beat after the page settles
   drawNoteMarks(d);            // writers' notes (61), editor-only marks
   drawHidden(d);               // ¶ and thread lines, when shown (70)
+  drawOverrides(d);            // the style override highlighter (76)
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {
@@ -22661,6 +22943,8 @@ function wire(roots) {
     .ds-pilcrow { color:#5B9BD5; font:400 .85em/1 Georgia, serif; font-style:normal; opacity:.8; user-select:none; }
     .ds-show-hidden .ds-tab { outline:1px dotted rgba(91,155,213,.8); }
     .ds-show-hidden .ds-brk::before { content:'⇥ ' attr(data-brk) ' break'; color:#5B9BD5; font:9px system-ui, sans-serif; }
+    .ds-show-hidden .ds-brk[data-brk=span]::before { content:'⇔ span columns'; }
+    .ds-override { outline:1.5px dashed #D97706 !important; outline-offset:2px; }
     .ds-threadline { position:absolute; inset:0; pointer-events:none; z-index:9988; overflow:visible; }
     .ds-gd.v { top:0; width:1px; height:100%; margin-left:-4px; padding:0 4px;
                background:clip-content-box; cursor:ew-resize; }
@@ -28661,6 +28945,7 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
   if (h != null) box.h = +h;      // same field place()'s h writes — one call, not two
   if (style && Object.keys(style).length) box.style = { ...style };
   if (fill) { box.fill = fill; boxReadable(box, fill); }
+  wearDefaults('box', box, fill ? ['fill'] : []);
   boxes().push(box);
   return { id: 'text.' + id, page: pid };
 }
@@ -28690,6 +28975,7 @@ function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
   if (kind === 'qr') { sh.data = String(data || 'https://www.hiappleseed.org'); sh.fill = fill || '#000000'; sh.stroke = 'none'; if (h == null) sh.h = sh.w; }
   if (kind === 'polygon') sh.sides = 6;
   if (kind === 'star') { sh.points = 5; sh.inner = 0.5; }
+  wearDefaults('shape', sh, Object.entries({ fill, stroke, sw, rx }).filter(([, v]) => v != null).map(([k]) => k));
   layout.shapes.push(sh);
   return { id, page: pid };
 }
@@ -28930,6 +29216,7 @@ function _pilotApplyDropStyle(scope, name) {
   delete next[name];
   if (Object.keys(next).length) layout[key] = next;
   else delete layout[key];
+  pruneDefaults();                     // a default naming it would refuse at load
   return { scope, name, unlinked: wearers.length, runs,
            ids: wearers.map(w => w.id) };
 }
@@ -29130,6 +29417,35 @@ const PILOT_BATCH_VERBS = {
       if (f) st.flip = f; else delete st.flip;
       return { id, flip: f || null };
     } },
+  dropUnusedStyles: { validate: kinds => (kinds == null || (Array.isArray(kinds)
+        && kinds.every(k => ['text', 'object', 'cell', 'swatches'].includes(k)))) ? { ok: true }
+      : { ok: false, error: "dropUnusedStyles(['text' | 'object' | 'cell' | 'swatches', …]?) — none named means all four" },
+    apply: kinds => ({ deleted: deleteUnusedStyles(kinds) }) },
+  duplicateStyle: { validate: (sc, n, as) => {
+      if (!STYLE_STORES[sc]) return { ok: false, error: "duplicateStyle('text' | 'object' | 'cell', name, newName?)" };
+      if (!(layout[STYLE_STORES[sc]] || {})[n]) return { ok: false, error: `no ${sc} style '${n}'` };
+      if (as != null && (typeof as !== 'string' || !as.trim())) return { ok: false, error: 'newName must be a non-empty string' };
+      if (as != null && (layout[STYLE_STORES[sc]] || {})[as.trim()]) return { ok: false, error: `there is already a ${sc} style '${as.trim()}'` };
+      return { ok: true };
+    }, apply: (sc, n, as) => ({ scope: sc, from: n, name: duplicateStyle(sc, n, as) }) },
+  setDefaultStyle: { validate: (k, n) => {
+      if (!DEFAULT_STYLE_KINDS.includes(k)) return { ok: false, error: "setDefaultStyle('text' | 'box' | 'shape' | 'table', name | null)" };
+      if (n == null) return { ok: true };
+      if (k === 'text') return textStyles()[n] ? { ok: true } : { ok: false, error: `no text style '${n}'` };
+      const st = objectStyles()[n];
+      if (!st) return { ok: false, error: `no object style '${n}'` };
+      return st.kind === k ? { ok: true } : { ok: false, error: `'${n}' dresses a ${st.kind}, not a ${k}` };
+    }, apply: (k, n) => ({ defaults: clone(setDefaultStyle(k, n || null)) }) },
+  clearOverrides: { validate: keys => (keys == null || typeof keys === 'string'
+        || (Array.isArray(keys) && keys.every(k => typeof k === 'string'))) ? { ok: true }
+      : { ok: false, error: 'clearOverrides(key | [keys] | null) — null clears every override' },
+    apply: keys => ({ cleared: clearOverrides(keys) }) },
+  clearTransforms: { validate: ids => {
+      const list = Array.isArray(ids) ? ids : [ids];
+      if (!list.length || list.some(i => typeof i !== 'string')) return { ok: false, error: 'clearTransforms(id | [ids])' };
+      for (const i of list) { const v = _pilotValidateExists(i); if (!v.ok) return v; }
+      return { ok: true };
+    }, apply: ids => ({ cleared: clearTransforms(ids) }) },
   changeLink: { validate: (a, b) => (typeof a === 'string' && a && typeof b === 'string' && b) ? { ok: true }
       : { ok: false, error: 'changeLink(oldUrl, newUrl)' },
     apply: (a, b) => ({ changed: changeLink(a, b) }) },
@@ -29949,6 +30265,24 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async setNotes(k, notes) { return _pilotOne('setNotes', [k, notes]); },
   /** flip(id, 'h' | 'v' | 'hv' | null) — on shapes, boxes, tables, placed pieces. */
   async flip(id, f) { return _pilotOne('flip', [id, f]); },
+  /** Style housekeeping (76): unusedStyles() — {text, object, cell,
+   *  swatches} nothing uses; dropUnusedStyles(kinds?) deletes them;
+   *  duplicateStyle(scope, name, newName?); overrides() — text whose own keys
+   *  differ from its style; clearOverrides(key | [keys] | null);
+   *  highlightOverrides(on) outlines them in the editor (never published). */
+  unusedStyles() { return { ok: true, unused: unusedStyles() }; },
+  async dropUnusedStyles(kinds) { return _pilotOne('dropUnusedStyles', [kinds ?? null]); },
+  async duplicateStyle(sc, n, as) { return _pilotOne('duplicateStyle', [sc, n, as ?? null]); },
+  overrides() { return { ok: true, overrides: styleOverrides() }; },
+  async clearOverrides(keys) { return _pilotOne('clearOverrides', [keys ?? null]); },
+  highlightOverrides(on = true) { toggleOverrides(!!on); return { ok: true, on: showOverrides, overrides: styleOverrides().length }; },
+  /** Default styles for new things (79): defaultStyles() reads them;
+   *  setDefaultStyle('text' | 'box' | 'shape' | 'table', name | null). */
+  defaultStyles() { return { ok: true, defaults: clone(defaultStyles()) }; },
+  async setDefaultStyle(k, n) { return _pilotOne('setDefaultStyle', [k, n ?? null]); },
+  /** clearTransforms(id | [ids]) — rotation, skew, flip and scale back to
+   *  none; place and size kept. */
+  async clearTransforms(ids) { return _pilotOne('clearTransforms', [ids]); },
   /** Preflight: every problem at once — audit()'s kinds plus missing-image,
    *  low-res, no-alt, low-contrast (WCAG AA) and font-failed, each with a
    *  severity (error / warning). */

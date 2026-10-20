@@ -4511,6 +4511,44 @@ check_eq("68: a flip folds into the one transform a box, shape or table already 
 check_eq("68: an unknown flip is refused",
          "must be h, v or hv" in _layout_error({"boxes": [_tf(id="f", md="x", flip="x")]}), True)
 
+# --- span columns, default styles (INDESIGN_PARITY 78, 79) -------------------
+from docsync.layout import SPAN_CSS                                          # noqa: E402
+from docsync.content import uses_breaks as _ub, uses_vars as _uv            # noqa: E402
+
+check_eq("{span} is a hidden marker the paragraph's CSS reads",
+         _mdi("{span}Who pays"), '<span class="ds-brk" data-brk="span"></span>Who pays')
+check_eq("a span needs CSS and no variables runtime",
+         (_ub("{span}x"), _uv("{span}x")), ({"span"}, False))
+_sp = _layout({"boxes": [_tf(id="a", md="{span}Head\n\nx"), _tf(id="b", md="{span}More")]})
+_spl = _sp.layer(1) + _sp.layer(2)
+check_eq("SPAN_CSS rides once when a span is used, and BREAK_CSS does not ride with it",
+         (_spl.count(SPAN_CSS), BREAK_CSS in _spl), (1, False))
+_cb = _layout({"boxes": [_tf(id="a", md="x{break:column}y")]}).layer(1)
+check_eq("a column break alone emits exactly what it always did — no SPAN_CSS",
+         (f"<style>{BREAK_CSS}</style>" in _cb, SPAN_CSS in _cb), (True, False))
+_both = _layout({"boxes": [_tf(id="a", md="{span}x{break:column}y")]}).layer(1)
+check_eq("a break and a span together carry both rules, in one style tag",
+         f"<style>{BREAK_CSS}{SPAN_CSS}</style>" in _both, True)
+check_eq("{span} spans columns: column-span all on the paragraph holding it",
+         "{column-span:all}" in SPAN_CSS, True)
+
+_DS_OS = {"Card": {"kind": "box", "fill": "#EEEEEE"}, "Rule": {"kind": "shape", "stroke": "#000000"},
+          "Data": {"kind": "table", "headerFill": "#1E6194"}}
+_DS_TS = {"Body": {"size": 15}}
+_ds_ok = _layout({"textStyles": _DS_TS, "objectStyles": _DS_OS,
+                  "defaultStyles": {"text": "Body", "box": "Card", "shape": "Rule", "table": "Data"},
+                  "boxes": [_tf(id="a", md="x")]})
+_ds_no = _layout({"textStyles": _DS_TS, "objectStyles": _DS_OS, "boxes": [_tf(id="a", md="x")]})
+check_eq("defaultStyles loads, and draws nothing: the page is the same without it",
+         (_ds_ok.default_styles["box"], _ds_ok.layer(1) == _ds_no.layer(1)), ("Card", True))
+for _bad, _says in (({"defaultStyles": {"frame": "Body"}}, "one of text, box, shape, table"),
+                    ({"defaultStyles": {"text": "Nope"}}, "no text style called 'Nope'"),
+                    ({"defaultStyles": {"box": "Rule"}}, "'Rule' dresses a shape, not a box"),
+                    ({"defaultStyles": {"table": ""}}, "expected the name of a style"),
+                    ({"defaultStyles": ["Body"]}, "expected {text, box, shape, table")):
+    check_eq(f"defaultStyles is refused: {_says}",
+             _says in _layout_error(dict({"textStyles": _DS_TS, "objectStyles": _DS_OS}, **_bad)), True)
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

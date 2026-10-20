@@ -3313,6 +3313,30 @@ def _check_chart_style(st, where: str) -> None:
     _check_chart(probe, where)
 
 
+DEFAULT_STYLE_KINDS = ("text", "box", "shape", "table")
+
+
+def _check_default_styles(ds, text_styles: dict, object_styles: dict) -> None:
+    """layout.defaultStyles: {text: <text style>, box|shape|table: <object
+    style of that kind>} — each optional, each naming a style that exists."""
+    if not isinstance(ds, dict):
+        raise LayoutError("defaultStyles: expected {text, box, shape, table: style name}")
+    for k, name in ds.items():
+        where = f"defaultStyles.{k}"
+        if k not in DEFAULT_STYLE_KINDS:
+            raise LayoutError(f"{where}: one of {', '.join(DEFAULT_STYLE_KINDS)}")
+        if not isinstance(name, str) or not name:
+            raise LayoutError(f"{where}: expected the name of a style")
+        styles = text_styles if k == "text" else object_styles
+        if name not in styles:
+            what = "text style" if k == "text" else "object style"
+            known = ", ".join(sorted(styles)) or "none are defined"
+            raise LayoutError(f"{where}: no {what} called {name!r} — {known}")
+        if k != "text" and (styles[name] or {}).get("kind") != k:
+            raise LayoutError(f"{where}: '{name}' dresses a "
+                              f"{(styles[name] or {}).get('kind')}, not a {k}")
+
+
 def _check_uses(st: dict, styles: dict, where: str,
                 what: str = "text style") -> None:
     """A `use` has to name a style that exists. Refused at load rather than
@@ -3890,6 +3914,11 @@ def vars_js(sections=None) -> str:
 # THREAD_JS's — the paragraph holding it starts the next frame.
 BREAK_CSS = (":is(p,h1,h2,h3,h4,h5,h6,li):has(.ds-brk[data-brk=column])"
              "{break-before:column}.ds-brk{display:none}")
+# Span columns (INDESIGN_PARITY.md 78): `{span}` puts the paragraph holding it
+# across every column of its multi-column box. Its own rule, sent only when a
+# span is used, so a report with column breaks and no span keeps its bytes.
+SPAN_CSS = (":is(p,h1,h2,h3,h4,h5,h6,li):has(.ds-brk[data-brk=span])"
+            "{column-span:all}.ds-brk{display:none}")
 # Bleed and crop marks for ANY report (INDESIGN_PARITY.md 11). Only the export
 # chosen with "Bleed & crop marks" sets DOCSYNC_MARKS, so a normal build never
 # carries any of this. The engine cannot know a report's own page padding, so
@@ -4685,6 +4714,9 @@ class Layout:
         # any words is this text, written in at render like a caption.
         self.variables = raw.get("variables") or {}
         self.cell_styles = raw.get("cellStyles") or {}
+        # Default styles for new things (INDESIGN_PARITY.md 79); editor-only,
+        # checked in _validate().
+        self.default_styles = raw.get("defaultStyles") or {}
         self._ro_index = {el: i for ids in (self.reading_order.values()
                                             if isinstance(self.reading_order, dict) else [])
                           if isinstance(ids, list) for i, el in enumerate(ids)}
@@ -4845,6 +4877,13 @@ class Layout:
             else:
                 _check_table_look(look, w, 0, 0)
         _check_style_chain(self.object_styles, "objectStyle")
+        # Default styles for new things (INDESIGN_PARITY.md 79): the text style
+        # a new text box wears and the object style a new box, shape or table
+        # wears. Editor-only, like `locked` — the editor writes the `use` onto
+        # what it creates and nothing here reads this to draw — so a report
+        # that sets it publishes the same bytes. Validated so a default never
+        # names a style that is gone or dresses another kind of thing.
+        _check_default_styles(self.default_styles, self.text_styles, self.object_styles)
         for key, st in self.text.items():
             if not isinstance(st, dict):
                 raise LayoutError(f"text '{key}': expected a style object")
@@ -5379,17 +5418,20 @@ class Layout:
         return f"<style>{rules}</style>"
 
     def _breaks_once(self) -> str:
-        """BREAK_CSS, once, when some text holds a column or frame break."""
+        """BREAK_CSS, once, when some text holds a column or frame break;
+        SPAN_CSS, once, when some text spans columns."""
         if getattr(self, "_breaks_sent", False):
             return ""
         c = getattr(self, "_content", None)
         words = [str(b.get("md", "")) for b in self.all_boxes()]
         if c is not None:
             words += [v for v in getattr(c, "_raw", {}).values() if isinstance(v, str)]
-        if not any(uses_breaks(w) for w in words):
+        kinds = set().union(*(uses_breaks(w) for w in words)) if words else set()
+        if not kinds:
             return ""
         self._breaks_sent = True
-        return f"<style>{BREAK_CSS}</style>"
+        return ("<style>" + (BREAK_CSS if kinds - {"span"} else "")
+                + (SPAN_CSS if "span" in kinds else "") + "</style>")
 
     def _grid_once(self) -> str:
         """GRID_JS, once, when the layout has a grid AND some style sits on it."""

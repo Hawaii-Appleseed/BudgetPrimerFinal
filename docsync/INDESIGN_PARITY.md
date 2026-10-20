@@ -1178,8 +1178,9 @@ layout).
 (49), (54), (56) and (60) closed first, 2026-10-19 — each kept every
 bound report's published bytes identical — and then (47) and (52), which
 are the editor's alone and touch no published byte; then (59) and (53);
-then (61), (66), (68) and (70); then (80), (77) and (75). Next: (76),
-(79), (81) and (78), each small, then (57), (64) and (82). (48) and (62) are the large ones, worth
+then (61), (66), (68) and (70); then (80), (77) and (75); then (76),
+(79), (81) and (78), each keeping every published byte. Next: (57), (64)
+and (82). (48) and (62) are the large ones, worth
 it when a report asks for footnotes or a local review round.
 
 ## A fifth pass: InDesign's panel menus — scoped 2026-10-19
@@ -1201,11 +1202,25 @@ here by now; what is not, ranked the same way. Numbering continues from
     through the registry, so on the hub it is the vendored copy, not edits
     still only in the hub's store. Pilot `loadStyles(project, {kind:
     'add' | 'replace' | 'skip'})`.
-76. **Style housekeeping.** Select and delete unused styles (text, object,
-    cell, swatches), duplicate a style, and an **override highlighter**:
-    text whose own keys differ from the style it wears gets a dashed
-    outline, with Clear overrides — the way to find why one heading looks
-    off. **S.**
+76. **Style housekeeping. — CLOSED 2026-10-19.** **Delete unused…** (in
+    the Text style and Object style pops, and the Colours panel) lists the
+    text, object and cell styles and swatches nothing uses, per kind, and
+    deletes the ones asked for as one undo step. A style is in use when
+    anything wears it (a `use` anywhere in layout.json, a `[run]{.Name}` in
+    the words), when it is a default for new things (79), or when a style
+    in use is built `from` it, nests it or greps it — so a delete never
+    leaves a `use` the engine would refuse; a swatch when a colour that
+    stays names it (one named only by a style that goes, goes with it).
+    **Duplicate** copies a text or object style under a new name. The
+    **override highlighter** (Text style pop ▸ Highlight overrides) puts a
+    dashed outline, editor-only, on every slot, text box and table whose
+    own keys differ from the style it wears — a key set to the style's own
+    value is not counted — and **Clear overrides** takes them off the
+    selected text. Not built: Duplicate for a cell style in the table menu
+    (the pilot does it), and object-style overrides are not outlined (the
+    picker's + already marks them). Pilot `unusedStyles()`,
+    `dropUnusedStyles(kinds?)`, `duplicateStyle(scope, name, newName?)`,
+    `overrides()`, `clearOverrides(keys | null)`, `highlightOverrides(on)`.
 77. **Type from the keyboard. — CLOSED 2026-10-19.** While typing:
     ⇧⌘> / ⇧⌘< size (⌥ for five points), and, with words selected, ⌥← /
     ⌥→ tracking, ⌥↑ / ⌥↓ leading, ⌥⇧↑ / ⌥⇧↓ baseline shift — with
@@ -1214,12 +1229,30 @@ here by now; what is not, ranked the same way. Numbering continues from
     style belongs to the whole slot or box here, so the change does too,
     where InDesign would change only the selected characters. With a text
     object selected and nobody typing, ⇧⌘> / ⇧⌘< resize its text.
-78. **Span columns.** A heading over both columns of a two-column box:
-    `{span}` at the start of a paragraph sets `column-span: all` on it.
-    Today a multi-column box can only start its columns at the top. **S.**
-79. **Default styles for new things.** A report's default text style for
-    new text boxes, and its default object style for new boxes, shapes and
-    tables — so what is added already looks like the report. **S.**
+78. **Span columns. — CLOSED 2026-10-19.** `{span}` in a paragraph (at the
+    start of its words — after a heading's `##`) puts it across every
+    column of its multi-column box: `column-span: all`, from a hidden
+    marker the way `{break:column}` works, so the columns start under it.
+    `SPAN_CSS` rides once and only when a span is used, apart from
+    `BREAK_CSS`, so a report with column breaks keeps its bytes. While
+    typing it is a chip (⇔ spans columns), and Insert special offers it.
+    Like the column break it moves the whole paragraph; CSS spans only in
+    a box's own columns, not across threaded frames.
+79. **Default styles for new things. — CLOSED 2026-10-19.**
+    `layout.defaultStyles` `{text, box, shape, table}`, validated in
+    layout.py (each names a style that exists; an object style of the
+    right kind) and read by nothing that draws, so a report that sets it
+    publishes the same bytes. The editor writes the `use` onto what it
+    makes: a new text box (Text panel presets, the pilot) wears the box
+    style, and the text style when it has no type of its own (a Heading
+    preset keeps its size); a new shape (Shapes panel, pen, pilot — not a
+    chart, icon or QR code) and a new table (+ Table) wear theirs. Keys
+    the style sets come off the new thing, so the panel's stock green does
+    not hide the style, but keys a pilot call passed stay. Set from the
+    style pops (Use for new text boxes / boxes / shapes / tables); dropping
+    or replacing a default's style drops the default. Pasted, duplicated
+    and converted things keep the look they came with. Pilot
+    `defaultStyles()`, `setDefaultStyle(kind, name | null)`.
 80. **Colours in use. — CLOSED 2026-10-19.** A toolbar button lists every
     colour layout.json sets — fills, text, strokes, borders, header and
     band fills, chart series, gradient stops, page and element fills — by
@@ -1232,8 +1265,12 @@ here by now; what is not, ranked the same way. Numbering continues from
     look like a hex in a table cell are left alone. Colours a renderer
     draws in its own CSS are the renderer's and are not listed. Pilot
     `colours()`, `replaceColour(from, to)`, `nameAllColours()`.
-81. **Clear transformations.** One command that puts rotation, skew, flip
-    and scale back to none. **S.**
+81. **Clear transformations. — CLOSED 2026-10-19.** Right-click ▸ Rotate
+    and flip ▸ Clear transformations, on the selection or what was
+    right-clicked: `rot`, `skew`, `flip` and `scale` go, place and size
+    stay, one undo step. A designed element nobody turned is not pinned
+    into `positions` just to be cleared; locked objects are left alone.
+    Pilot `clearTransforms(id | [ids])`.
 82. **Internal links and cross-reference text.** Link words to another
     place in the report (a slot, a heading), clickable in the PDF and on
     the web; and `{titleof:<slot>}`, the heading's own words, so "see
