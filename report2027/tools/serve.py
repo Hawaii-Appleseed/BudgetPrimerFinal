@@ -690,6 +690,22 @@ def _library_change(req: dict) -> dict:
     return {"ok": True, "pieces": pieces}
 
 
+# One page alone for a PNG (INDESIGN_PARITY.md 71): every other sheet hidden
+# (_only_pages) and this one at the top-left of the window with nothing
+# above it. It used to lean on ?only=N, which only the Budget Primer's own
+# primer.js reads — every other report's "page 4" was a shot of the top of
+# the document.
+ISOLATE_CSS = ("<style>html,body{margin:0!important;padding:0!important;background:#fff!important}"
+               "body>:not(section.page):not(:has(section.page)){display:none!important}"
+               "section.page{margin:0!important;box-shadow:none!important}</style>")
+
+
+def _page_alone(html: str, n: int) -> str:
+    out = _only_pages(html, [n])
+    k = out.find("</head>")
+    return out[:k] + ISOLATE_CSS + out[k:] if k >= 0 else ISOLATE_CSS + out
+
+
 def _export_bad_args(req: dict) -> str | None:
     """The message for the first malformed /__export argument, or None if the
     request is worth building. Pure and side-effect free so both the real
@@ -2677,8 +2693,15 @@ class Handler(SimpleHTTPRequestHandler):
                     out_html.write_text(_only_pages(html, keep))
                 data = self._chrome_pdf(out_html)
                 return self._bytes(200, "application/pdf", data, f"{pid}.pdf")
-            npages = out_html.read_text().count('<section class="page')
-            base = out_html.resolve().as_uri()
+            html = out_html.read_text()
+            npages = html.count('<section class="page')
+
+            def page_uri(n):
+                f = out_html.with_name(f"{out_html.stem}-p{n}.html")
+                f.write_text(_page_alone(html, n))
+                page_files.append(f)
+                return f.resolve().as_uri()
+            page_files = []
             # ONE page, at whatever resolution was asked for: the cheap visual
             # check. A pilot deciding "does this look right" wants ~50KB at
             # scale 0.25, not a multi-megabyte zip of the whole document.
@@ -2687,20 +2710,21 @@ class Handler(SimpleHTTPRequestHandler):
                 if n > max(npages, 1):
                     return self._json(400, {"ok": False,
                         "error": f"page {n} is outside 1..{max(npages, 1)}"})
-                one = self._chrome_png_one(base, n, scale)
+                one = self._chrome_png_one(page_uri(n), n, scale)
                 if one is None:
                     return self._json(200, {"ok": False,
                         "error": "Chrome produced no PNG within the time limit."})
                 return self._bytes(200, "image/png", one, f"{pid}-page-{n:02d}.png")
-            data = self._chrome_png_zip(out_html, npages, pid, scale)
+            data = self._chrome_png_zip(page_uri, npages, pid, scale)
             return self._bytes(200, "application/zip", data, f"{pid}-pages.zip")
         except Exception as e:                        # noqa: BLE001 — report it
             return self._json(200, {"ok": False, "error": str(e)})
         finally:
-            try:
-                out_html.unlink()
-            except OSError:
-                pass
+            for f in [out_html, *locals().get("page_files", [])]:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
             shutil.rmtree(work, ignore_errors=True)
 
     def _chrome_capture(self, args, out_file, deadline=50.0, settle=2.0) -> bool:
@@ -2789,13 +2813,13 @@ class Handler(SimpleHTTPRequestHandler):
         finally:
             shutil.rmtree(prof, ignore_errors=True)
 
-    def _chrome_png_zip(self, out_html, npages, slug: str, scale: float = 2.0) -> bytes:
-        # One screenshot per page via primer.js's ?only=N isolation.
-        base = out_html.resolve().as_uri()
+    def _chrome_png_zip(self, page_uri, npages, slug: str, scale: float = 2.0) -> bytes:
+        # One screenshot per page, each from its own copy with the page alone
+        # (_page_alone; ?only=N still rides along for primer.js's toolbar).
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for i in range(1, max(npages, 1) + 1):
-                data = self._chrome_png_one(base, i, scale)
+                data = self._chrome_png_one(page_uri(i), i, scale)
                 if data:
                     z.writestr(f"{slug}-page-{i:02d}.png", data)
         return buf.getvalue()

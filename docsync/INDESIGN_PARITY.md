@@ -1213,9 +1213,17 @@ Google Doc import exist, and were never listed here.
     clear. Every bound report's published bytes unchanged (all 14 built
     before and after). Pilot `defineSwatch(name, gradient)`, `fade(id,
     {angle, from, to} | null)`.
-65. **Eyedropper for looks.** The colour eyedropper picks colour only, and
-    the format painter misses some keys (a shape's blend and glow, a box's
-    padding, radius and border) and never works on a run of text.
+65. **Eyedropper for looks. — CLOSED 2026-10-19.** The format painter
+    (⌘⌥C / ⌘⌥V, right-click Copy style / Paste style) now carries every key
+    an object style of that kind may set — the engine's own
+    `OBJECT_STYLE_KEYS`, so nothing the page draws is left behind (a
+    shape's blend, a box's padding, radius, border, columns, vertical
+    alignment) — plus the object style worn and the effects (glow, inner
+    shadow and glow, feather, fade); and it works on placed tables (their
+    look, header and footer rows, banding, inset). On words: ⌘⌥C while
+    typing takes the run's look where the caret is (its character style;
+    bold, italic, underline) and ⌘⌥V puts it on the selected words. The
+    colour eyedropper stays colour only.
 66. **Change case, placeholder text, paste without formatting. — CLOSED
     2026-10-19.** Right-click in the words ▸ Change case ▸ UPPERCASE,
     lowercase, Title Case (small words kept small) or Sentence case rewrites
@@ -1223,26 +1231,58 @@ Google Doc import exist, and were never listed here.
     typing over it would. Right-click a text box ▸ Fill with placeholder
     text, about enough to fill its frame. ⇧⌘V while typing pastes the
     clipboard's plain text, no bold, italic or links.
-67. A **Glyphs panel**: every character in a font, searchable, with the
-    recent ones kept — for arrows, fractions, ʻokina and kahakō letters.
+67. A **Glyphs panel. — CLOSED 2026-10-19.** Right-click in the words ▸
+    Insert special ▸ Glyphs…: the ʻokina and kahakō vowels first, then
+    quotes and dashes, arrows, fractions, maths, currency, marks and
+    super/subscripts, each named so a search finds it ("okina", "half",
+    "arrow"), and whole Unicode blocks below (Latin-1, Latin Extended,
+    punctuation, arrows, maths, shapes, symbols, dingbats) found by code
+    (U+2192 or 2192). The last 20 picks are kept in the browser. A click
+    puts the character at the caret and the words stay open for the next;
+    Enter takes the first match; Escape closes. Not "every character in a
+    font": a page cannot list a font's glyphs, so a character the report's
+    font lacks falls back to the system's, as typing it would.
 68. **Rotate and flip. — CLOSED 2026-10-19.** Right-click ▸ Rotate and
     flip ▸ 90° either way, 180°, flip horizontal or vertical, on the
     selection; one undo step; a quarter turn is what Transform Again
     repeats. `flip` (h, v, hv) is now a key on shapes, boxes and tables as
     well as placed pieces and images, folded into the one transform each
     already has (`css_turn`, `svg_turn`). Pilot `flip(id, f)`.
-69. An **undo history** list to jump back through, beside the version
-    history.
+69. An **undo history** list. **— CLOSED 2026-10-19.** The ⏱ button
+    beside ↶ ↷: every step that can be undone, newest first with its time,
+    and the steps undone so far, which can be redone. Each is named by what
+    it changed — worked out by comparing the state before it with the
+    state after (which slots' words; which shape, text box or table was
+    added, changed or deleted; placed pieces, colours, styles, swatches,
+    layers…) — so every edit in the editor is named without each having to
+    say so. A click goes there through undo / redo, so the steps passed over
+    become the redo list exactly as ⌘Z would leave them. Sixty steps, as
+    before. In a live session the steps live with the shared document and
+    the panel says to use ⌘Z.
 70. **Show hidden characters and text threads. — CLOSED 2026-10-19.** The
     ¶ button (⌥⌘I) puts a ¶ at the end of every paragraph (¤ in a table
     cell), outlines tabs, labels column and frame breaks, and draws a dashed
     line from each threaded frame to the next — "continues on page N" where
     the next frame is on another page. Editor-only marks, redrawn after each
     render while the view is on; remembered between sessions.
-71. **Export** JPEG as well as PNG, export only the selection, and a
-    package .zip that includes the fonts and the rendered pages.
-72. A **measure readout**: the distance to the next object while dragging
-    or hovering with ⌥, as Figma shows it.
+71. **Export. — CLOSED 2026-10-19.** File ▸ Download: **JPEG — every
+    page** (the server's PNGs re-encoded on white), **Just the selection**
+    as PNG or JPEG (its page rendered at 3×, cropped to the selection's box
+    with a hair round it), and a **Package** .zip — the PDF, every page as
+    PNG, the self-contained HTML, the font files the report loads with a
+    `fonts.css` pointing at them, and a README naming the fonts. Local
+    server only, like PNG. And a fix it needed: a page's PNG used to rely on
+    `?only=N`, which only the Budget Primer's own script reads, so every
+    other report's "page 4" was the top of the document; the server now
+    renders each page from its own copy with the other sheets hidden
+    (`_page_alone`). Checked with real Chrome on demo-report page 2.
+72. A **measure readout. — CLOSED 2026-10-19.** While dragging, a
+    dashed blue line and its length to the nearest thing on each side
+    (left, right, above, below, among what overlaps across that axis),
+    within 2in. With one thing selected, hold ⌥ and hover: the gaps to
+    what is under the pointer, or the four distances to its edges when it
+    holds the selection, or to the page's edges over empty page — in the
+    status line too. Editor-only marks, gone when ⌥ is let go.
 73. **Spell check for Hawaiian.** The browser checks spelling but flags
     every Hawaiian word; the browser takes no custom dictionary from a page,
     so this would be a project word list checked by the engine and drawn
