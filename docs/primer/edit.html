@@ -19115,21 +19115,19 @@ const H_TOP = { positions: 'placed', fill: 'colour', img: 'picture', textStyles:
   objectStyles: 'object styles', cellStyles: 'cell styles', swatches: 'swatches', layers: 'layers',
   groups: 'groups', locked: 'lock', hidden: 'hide', pages: 'pages', page: 'page size', margins: 'margins',
   readingOrder: 'reading order', variables: 'text variables', grid: 'baseline grid', masters: 'shared layouts' };
-function slotsOf(src) {
-  const out = {}, re = /^\[\[([A-Za-z0-9._-]+)\]\][ \t]*$/gm;
-  const marks = [...src.matchAll(re)];
-  marks.forEach((m, i) => { out[m[1]] = src.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : src.length).trim(); });
-  return out;
-}
-/** What changed from snapshot a to snapshot b, in a few words. */
+/** What changed from snapshot a to snapshot b, in a few words. The slots
+ *  come from slotsOf(), the suggestion mode's Map (below). This used to have
+ *  its own slotsOf returning a plain object, declared earlier under the same
+ *  name, so the later one replaced it and Object.keys() of a Map was always
+ *  empty: no history step ever said which slot's words had changed. */
 function historyLabel(aJson, bJson) {
   let a, b;
   try { a = JSON.parse(aJson); b = JSON.parse(bJson); } catch (e) { return 'a change'; }
   const bits = [];
   if (a.source !== b.source) {
     const sa = slotsOf(a.source), sb = slotsOf(b.source);
-    const keys = [...new Set([...Object.keys(sa), ...Object.keys(sb)])].filter(k => sa[k] !== sb[k]);
-    keys.slice(0, 2).forEach(k => bits.push(!(k in sa) ? `added ${k}` : !(k in sb) ? `removed ${k}` : `words of ${k}`));
+    const keys = [...new Set([...sa.keys(), ...sb.keys()])].filter(k => sa.get(k) !== sb.get(k));
+    keys.slice(0, 2).forEach(k => bits.push(!sa.has(k) ? `added ${k}` : !sb.has(k) ? `removed ${k}` : `words of ${k}`));
     if (keys.length > 2) bits.push(`${keys.length - 2} more slot${keys.length > 3 ? 's' : ''}`);
   }
   const la = a.layout || {}, lb = b.layout || {};
