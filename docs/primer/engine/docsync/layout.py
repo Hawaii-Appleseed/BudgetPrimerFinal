@@ -1444,7 +1444,7 @@ OBJECT_STYLE_KEYS = {
               "blend"),
     "box": ("fill", "pad", "radius", "border", "alpha", "shadow", "style",
             "blend", "cols", "gap", "vAlign", "firstBaseline"),
-    "table": ("border", "fill", "band", "headerFill", "headerColor", "header",
+    "table": ("border", "fill", "band", "headerFill", "headerColor", "header", "bandCols",
               "alpha", "style", "blend"),
 }
 # mix-blend-mode, the six people reach for plus the two that matter for
@@ -3758,6 +3758,7 @@ VARS_JS = (
 # and the contents list all follow; {pages} stays the number of sheets.
 PAGE_STYLES = ("decimal", "lower-roman", "upper-roman", "lower-alpha", "upper-alpha")
 VARNAME_RE = re.compile(r"[A-Za-z0-9_-]{1,30}")
+LINKED_RE = re.compile(r"\{text:([A-Za-z0-9._@-]+)\}")
 USERVAR_RE = re.compile(r"\{var:([A-Za-z0-9_-]{1,30})\}")
 
 
@@ -4273,6 +4274,12 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
         v = t.get(k)
         if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= nrows):
             raise LayoutError(f"{where}.{k}: a whole number of rows, 0 to {nrows}")
+    hc = t.get("headerCols")
+    if hc is not None and (not isinstance(hc, int) or isinstance(hc, bool) or not 0 <= hc <= ncols):
+        raise LayoutError(f"{where}.headerCols: a whole number of columns, 0 to {ncols}")
+    if t.get("bandCols"):
+        _hex(t["bandCols"], f"{where}.bandCols")
+    _check_band_stroke(t.get("bandColStroke"), f"{where}.bandColStroke")
     if (t.get("headerRows") or 0) + (t.get("footerRows") or 0) > nrows:
         raise LayoutError(f"{where}: header and footer rows are more than the table has")
     if t.get("footerFill"):
@@ -4287,16 +4294,7 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
         for i, v in enumerate(rh):
             if v is not None and not 0 < _num(v, f"{where}.rowh[{i}]") <= 11:
                 raise LayoutError(f"{where}.rowh[{i}]: inches, above 0")
-    bs = t.get("bandStroke")
-    if bs is not None:
-        if not isinstance(bs, dict) or set(bs) - {"w", "color", "style"}:
-            raise LayoutError(f"{where}.bandStroke: {{w, color, style}}")
-        if bs.get("w") is not None and not 0 <= _num(bs["w"], f"{where}.bandStroke.w") <= 10:
-            raise LayoutError(f"{where}.bandStroke.w: pixels, 0 to 10")
-        if bs.get("color"):
-            _hex(bs["color"], f"{where}.bandStroke.color")
-        if bs.get("style") is not None and bs["style"] not in TABLE_BORDER_STYLES:
-            raise LayoutError(f"{where}.bandStroke.style: {', '.join(TABLE_BORDER_STYLES)}")
+    _check_band_stroke(t.get("bandStroke"), f"{where}.bandStroke")
     table_merges(t, nrows, ncols, where)
     _check_blend(t.get("blend"), where)
     # band: tints every OTHER body row — the zebra half of a table style, as
@@ -4353,6 +4351,39 @@ def _check_table_look(t: dict, where: str, nrows: int, ncols: int) -> None:
 
 
 TABLE_VALIGNS = ("top", "middle", "bottom")
+# A named cell style (INDESIGN_PARITY.md 53): the look of a total row or a
+# highlighted figure, kept in layout.cellStyles and worn by `use` in a cell's
+# override — the cell's own keys still win, and a redefine moves every cell.
+CELL_STYLE_KEYS = ("fill", "color", "align", "valign", "bold", "italic", "inset")
+
+
+def _check_band_stroke(bs, where: str) -> None:
+    if bs is None:
+        return
+    if not isinstance(bs, dict) or set(bs) - {"w", "color", "style"}:
+        raise LayoutError(f"{where}: {{w, color, style}}")
+    if bs.get("w") is not None and not 0 <= _num(bs["w"], f"{where}.w") <= 10:
+        raise LayoutError(f"{where}.w: pixels, 0 to 10")
+    if bs.get("color"):
+        _hex(bs["color"], f"{where}.color")
+    if bs.get("style") is not None and bs["style"] not in TABLE_BORDER_STYLES:
+        raise LayoutError(f"{where}.style: {', '.join(TABLE_BORDER_STYLES)}")
+
+
+def check_cell_look(ov: dict, where: str) -> None:
+    """A cell's own look, or a cell style's: the same keys, the same rules."""
+    if ov.get("fill"):
+        _hex(ov["fill"], f"{where}.fill")
+    if ov.get("color"):
+        _hex(ov["color"], f"{where}.color")
+    if ov.get("align") and ov["align"] not in TABLE_ALIGNS:
+        raise LayoutError(f"{where}.align: expected one of {', '.join(TABLE_ALIGNS)}")
+    for flag in ("bold", "italic"):
+        if ov.get(flag) is not None and not isinstance(ov[flag], bool):
+            raise LayoutError(f"{where}.{flag}: expected true or false")
+    if ov.get("valign") is not None and ov["valign"] not in TABLE_VALIGNS:
+        raise LayoutError(f"{where}.valign: {', '.join(TABLE_VALIGNS)}")
+    _check_inset(ov.get("inset"), f"{where}.inset")
 
 
 def _check_inset(v, where: str) -> None:
@@ -4442,7 +4473,7 @@ def shape_shadow_css(sh: dict) -> str:
 # anything validates or draws it — so every renderer, chart and runtime sees
 # plain hex, and redefining a swatch recolours everything that names it.
 SWATCH_RE = re.compile(r"^@([A-Za-z0-9 _-]{1,30}?)(?:\s+(\d{1,3})%)?$")
-COLOR_KEYS = {"fill", "stroke", "color", "shade", "headerFill", "headerColor", "footerFill",
+COLOR_KEYS = {"fill", "stroke", "color", "shade", "headerFill", "headerColor", "footerFill", "bandCols",
               "band", "bg"}
 
 
@@ -4634,6 +4665,7 @@ class Layout:
         # Text variables of your own (INDESIGN_PARITY.md 60): {var:name} in
         # any words is this text, written in at render like a caption.
         self.variables = raw.get("variables") or {}
+        self.cell_styles = raw.get("cellStyles") or {}
         self._ro_index = {el: i for ids in (self.reading_order.values()
                                             if isinstance(self.reading_order, dict) else [])
                           if isinstance(ids, list) for i, el in enumerate(ids)}
@@ -4842,6 +4874,16 @@ class Layout:
                 _grouped.add(m)
         if self.margins:
             self._check_margins(self.margins, "margins")
+        if self.cell_styles:
+            if not isinstance(self.cell_styles, dict):
+                raise LayoutError("cellStyles: expected {name: {fill, color, align, valign, bold, italic, inset}}")
+            for n, cs_ in self.cell_styles.items():
+                w = f"cellStyles['{n}']"
+                if not VARNAME_RE.fullmatch(str(n).replace(" ", "_")):
+                    raise LayoutError(f"{w}: a name of letters, digits, spaces, - and _")
+                if not isinstance(cs_, dict) or set(cs_) - set(CELL_STYLE_KEYS):
+                    raise LayoutError(f"{w}: only {', '.join(CELL_STYLE_KEYS)}")
+                check_cell_look(cs_, w)
         if self.variables:
             if not isinstance(self.variables, dict):
                 raise LayoutError("variables: expected {name: text}")
@@ -5010,6 +5052,11 @@ class Layout:
                 _check_anchor(t["anchor"], where)
             _check_object_use(t, "table", self.object_styles, where)
             _check_table_look(self.dressed(t), where, len(rows), width)
+            for key, ov in (t.get("cells") or {}).items():
+                u = ov.get("use") if isinstance(ov, dict) else None
+                if u is not None and u not in self.cell_styles:
+                    known = ", ".join(sorted(self.cell_styles)) or "none are defined"
+                    raise LayoutError(f"{where}.cells['{key}'].use: no cell style {u!r} — {known}")
         # The DRESSED box or table: a text style named by the object style it
         # wears has to exist too, and the resolved size has to clear the floor.
         for i, b in enumerate(self.boxes):
@@ -5201,13 +5248,41 @@ class Layout:
         return CAPTION_RE.sub(lambda m: self.caption_of(m.group(1)), text)
 
     def resolve_text(self, text: str) -> str:
-        """Captions and variables written into words before they render. A
-        variable nobody defined is left as typed, so it shows on the page."""
+        """Captions, variables and linked text written into words before they
+        render. A variable or a link to nothing is left as typed, so it shows
+        on the page."""
+        if "{text:" in text:
+            text = LINKED_RE.sub(self._linked, text)
         if "{caption:" in text:
             text = self.resolve_captions(text)
         if "{var:" in text:
             text = USERVAR_RE.sub(lambda m: self.variables.get(m.group(1), m.group(0)), text)
         return text
+
+    def linked_source(self, ref: str):
+        """The words {text:<ref>} repeats (INDESIGN_PARITY.md 59): the first
+        paragraph of a content slot, or of a text box's markdown (`text.N`),
+        as one line. None when there is no such slot or box. A link inside
+        the source is not followed — no chains, so no loops."""
+        if ref.startswith("text."):
+            b = next((x for x in self.all_boxes() if x.get("id") == ref[5:]), None)
+            md = b.get("md") if b else None
+        else:
+            c = getattr(self, "_content", None)
+            md = getattr(c, "_raw", {}).get(ref) if c is not None else None
+        if not isinstance(md, str):
+            return None
+        first = re.split(r"\n\s*\n", md.strip(), maxsplit=1)[0]
+        return re.sub(r"\s*\n\s*", " ", first).strip()
+
+    def _linked(self, m) -> str:
+        src = self.linked_source(m.group(1))
+        if src is None:
+            return m.group(0)
+        # Edit mode marks the run (md_inline makes it span.ds-linked) so the
+        # editor can show the words are repeated from elsewhere; the published
+        # page carries the words alone.
+        return f"\x0e{m.group(1)}\x10{src}\x0f" if os.environ.get("DOCSYNC_EDIT") else src
 
     def conditions_used(self) -> set:
         c = getattr(self, "_content", None)
@@ -6396,7 +6471,7 @@ class Layout:
             out.append(f"<style>{FIT_CSS}</style>")
         for b in mine:
             b = self.dressed(b)
-            if "{caption:" in str(b.get("md", "")) or "{var:" in str(b.get("md", "")):
+            if any(t in str(b.get("md", "")) for t in ("{caption:", "{var:", "{text:")):
                 b = dict(b, md=self.resolve_text(str(b["md"])))
             act = b.get("act")
             an = anim_attrs(b.get("anim")) + anchor_attrs(b)
@@ -6654,6 +6729,8 @@ class Layout:
         # one header row, as it always was; headerRows / footerRows name how
         # many, and wrap them in <thead> / <tfoot> for a reader or a tagged PDF.
         hn = t["headerRows"] if t.get("headerRows") is not None else (1 if header else 0)
+        hcols = t.get("headerCols") or 0
+        bcols, bcstroke = t.get("bandCols"), t.get("bandColStroke")
         fn = t.get("footerRows") or 0
         sections = t.get("headerRows") is not None or t.get("footerRows") is not None
         merges = table_merges(t, len(rows), ncols)
@@ -6694,7 +6771,7 @@ class Layout:
             for ci, c in enumerate(row):
                 if (ri, ci) in covered:
                     continue
-                th = ri < hn
+                th = ri < hn or ci < hcols
                 rs, cspan = merges.get((ri, ci), (1, 1))
                 name = "th" if th else "td"
                 hook = f' data-cell="{ri},{ci}"' if edit else ""
@@ -6721,16 +6798,23 @@ class Layout:
                           f'border-right:{outer if ci + cspan - 1 == ncols - 1 else inner};'
                           f'border-bottom:{outer if ri + rs - 1 == len(rows) - 1 else inner}')
                 ov = over.get(f"{ri},{ci}") or {}
+                if ov.get("use"):
+                    ov = {**self.cell_styles.get(ov["use"], {}),
+                          **{k: v for k, v in ov.items() if k != "use"}}
                 # Zebra striping counts from the first BODY row, so a table
                 # stripes the same whether or not it has a header band.
                 band = None
                 banded = not th and not foot and (ri - hn) % 2 == 1
                 if t.get("band") and banded:
                     band = t["band"]
+                cbanded = not th and not foot and (bcols or bcstroke) and (ci - hcols) % 2 == 1
                 bg = ov.get("fill") or (t.get("headerFill") if th else None) \
                     or (t.get("footerFill") if foot else None) \
-                    or band or t.get("fill")
+                    or band or (bcols if cbanded else None) or t.get("fill")
                 bits = [cs] if cs else []
+                if bcstroke and cbanded:
+                    bits.append(f'border-right:{bcstroke.get("w", 1):g}px '
+                                f'{bcstroke.get("style", "solid")} {bcstroke.get("color", "#C9D6CD")}')
                 if bstroke and banded:
                     bits.append(f'border-bottom:{bstroke.get("w", 1):g}px '
                                 f'{bstroke.get("style", "solid")} {bstroke.get("color", "#C9D6CD")}')
@@ -6771,7 +6855,7 @@ class Layout:
                 # eighty columns, which is why md_inline itself leaves a
                 # newline alone and paragraphs() closes it up to a space.
                 body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
-                          else md_inline(self.resolve_text(str(c)) if "{var:" in str(c) else str(c))
+                          else md_inline(self.resolve_text(str(c)) if ("{var:" in str(c) or "{text:" in str(c)) else str(c))
                           .replace("\n", "<br>"))
                 cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
             hdr = ' class="ds-hdr"' if flow and ri < hn and ri == 0 else ""

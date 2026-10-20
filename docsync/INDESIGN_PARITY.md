@@ -1015,13 +1015,34 @@ Google Doc import exist, and were never listed here.
     alone. Pilot `hyperlinks()`, `checkLinks()`, `changeLink(old, new)`,
     `linkBareUrls()`. On the hub there is no check yet — it needs the
     hub's worker to do the fetching.
-53. **What tables still lack** after (33): split a merged cell back into a
-    grid of N (today: unmerge, then add a row), **header columns**,
-    alternating **column** fills and strokes, **even row heights**,
-    **table to text**, **named cell styles** (a redefinable look for a
-    total row or a highlighted cell, like text styles), and a **picture in
-    a cell** (untested — the cell is markdown, so `![]()` may already
-    work). **M.**
+53. **What tables still lacked. — CLOSED 2026-10-19.**
+    - **Split cell**, horizontally and vertically: a merged cell gives its
+      grid back; a plain one gains a row under it (or a column beside it,
+      half its width) while every other cell in its row (column) spans
+      both, so only this cell is seen to split — InDesign's behaviour.
+    - **Header columns**: `headerCols`, the first N cells of every row are
+      `th`, with the header fill and colour.
+    - **Alternating columns**: `bandCols` (a fill on every other body
+      column) and `bandColStroke {w, color, style}` (a rule down them), the
+      column twins of `band` and `bandStroke`.
+    - **Distribute rows evenly**: the selected rows (or all) get the average
+      of their measured heights as `rowh`, a minimum, so a row whose words
+      need more keeps it.
+    - **Table to text**: a text box of tab-separated lines in the table's
+      place — Text to table's inverse.
+    - **Named cell styles**: `layout.cellStyles {name: {fill, color, align,
+      valign, bold, italic, inset}}`, worn by `use` in a cell's override;
+      the cell's own keys still win, and a redefine moves every cell
+      wearing it. Dropping one writes its look into those cells first, so
+      nothing on the page changes.
+    - **A picture in a cell**: it already worked — a cell is markdown, and
+      `![…](…)` renders as an inline image; now tested.
+    Right-click a cell ▸ Split cell horizontally / vertically, Distribute
+    rows evenly, Cell style ▸ (a style, No cell style, Save this cell's
+    look as…), Convert table to text; Table options… gains header columns
+    and the alternating column fill and stroke. Pilot `splitCell`,
+    `tableToText`, `defineCellStyle`, `cellStyle`, and `setTable` takes
+    the new keys.
 54. **Page numbering sections. — CLOSED 2026-10-19.** `pages.sections:
     [{from, start, style, prefix}]`: from the `from`th sheet in reading
     order, pages count from `start` in decimal, lower- or upper-roman, or
@@ -1055,12 +1076,17 @@ Google Doc import exist, and were never listed here.
     ellipse, polygon, star or path: the shape becomes the mask (SVG
     `clipPath`, which Pathfinder already writes). Headshots in circles are
     drawn by CSS radius today, and nothing else is possible. **M.**
-59. **Linked text.** One block placed in two places and kept in step — a
-    key figure in the summary and again in the body. A token,
-    `{text:<slot>}`, that shows another slot's words (the variables
-    runtime, 18–19), editable at the source with a "linked" badge where it
-    is repeated. InDesign's Place and Link, without its out-of-date state.
-    **S–M.**
+59. **Linked text. — CLOSED 2026-10-19.** `{text:<slot key>}` or
+    `{text:text.N}` in any slot, box or table cell repeats that slot's or
+    box's first paragraph, as one line, written in at every render — so the
+    key figure in the summary and the body cannot drift apart. A link to
+    nothing stays as typed, so it shows; a link inside the repeated words
+    is not followed (no chains, so no loops). The published page carries
+    the words alone; in the editor they are marked (`span.ds-linked`,
+    a teal underline) and, while typing, the token is a chip showing the
+    start of the words it repeats. Right-click in the words ▸ Insert
+    variable ▸ Linked text…. Edit the words at their source; there is no
+    out-of-date state to manage, because there is no copy.
 60. **Text variables of your own. — CLOSED 2026-10-19.**
     `layout.variables: {name: text}` (a name of letters, digits, - and _;
     one line of text, up to 200 characters, no variable inside another) and
@@ -1134,6 +1160,6 @@ layout).
 
 (49), (54), (56) and (60) closed first, 2026-10-19 — each kept every
 bound report's published bytes identical — and then (47) and (52), which
-are the editor's alone and touch no published byte. Next (59), (61) and
-(53). (48) and (62) are the large ones, worth
+are the editor's alone and touch no published byte; then (59) and (53).
+Next (61), then the smaller wins. (48) and (62) are the large ones, worth
 it when a report asks for footnotes or a local review round.

@@ -4481,6 +4481,25 @@ check_eq("56: widows, orphans and word spacing are CSS, and checked",
           "widows" in _layout_error({"text": {"x": {"widows": 12}}})],
          ["widows:2;orphans:3;word-spacing:0.1em", True])
 
+# --- INDESIGN_PARITY.md 59 and 53 (continued) -------------------------------------
+_lk = _layout({"boxes": [_tf(id="s", md="Rents rose **12%**.\n\nNot this."),
+                         _tf(id="u", md="Said: {text:text.s} {text:nope}", y=4)]})
+check("59: linked text repeats the first paragraph, and a link to nothing stays as typed",
+      _lk.text_boxes(1), "Said: Rents rose <b>12%</b>. {text:nope}")
+check_eq("59: published, the words carry no marker", "ds-linked" in _lk.text_boxes(1), False)
+_t53 = {"id": "t", "page": 1, "x": 1, "y": 1, "w": 4,
+        "rows": [["", "Q1", "Q2"], ["Rent", "1", "2"], ["Total", "3", "4"]], "header": True,
+        "headerCols": 1, "bandCols": "#EEEEEE", "bandColStroke": {"w": 2, "color": "#333333"},
+        "cells": {"2,1": {"use": "Total"}, "2,2": {"use": "Total", "fill": "#FF0000"}}}
+_h53 = _layout({"cellStyles": {"Total": {"fill": "#DDEEFF", "bold": True}}, "tables": [_t53]}).tables_html(1)
+check_eq("53: header columns are th; alternate columns tinted and ruled; a cell style worn, the cell's own key winning",
+         ["<th>Rent</th>" in _h53, "border-right:2px solid #333333;background:#EEEEEE" in _h53,
+          "background:#DDEEFF;font-weight:700" in _h53, "background:#FF0000;font-weight:700" in _h53],
+         [True, True, True, True])
+check_eq("53: a cell style must exist, and holds only cell keys",
+         ["no cell style" in _layout_error({"tables": [dict(_t53)]}),
+          "only fill" in _layout_error({"cellStyles": {"T": {"wat": 1}}})], [True, True])
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

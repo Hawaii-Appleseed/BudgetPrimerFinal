@@ -248,6 +248,10 @@ def md_inline(s: str) -> str:
                        m.group(2)), s, flags=re.S)
     if "{" in s:
         s = VAR_RE.sub(var_span, s)
+    if "\x0e" in s:            # linked text, marked in edit mode only (layout._linked)
+        s = re.sub(r"\x0e([^\x10]*)\x10(.*?)\x0f",
+                   lambda m: f'<span class="ds-linked" data-link="{m.group(1)}">{m.group(2)}</span>',
+                   s, flags=re.S)
     return s
 
 
@@ -745,7 +749,7 @@ class Content:
         # Live captions (INDESIGN_PARITY.md 43): {caption:<image id>} is that
         # image's own description, resolved now, so a caption follows the
         # description it shows.
-        if ("{caption:" in v or "{var:" in v) and self._styles is not None:
+        if ("{caption:" in v or "{var:" in v or "{text:" in v) and self._styles is not None:
             v = self._styles.resolve_text(v)
         _served(key, v)
         return v

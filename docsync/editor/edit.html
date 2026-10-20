@@ -3312,7 +3312,7 @@ const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30})\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+)\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
@@ -3339,9 +3339,36 @@ const varChipHtml = (name, ref) =>
   + (ref ? ` data-ref="${escAttr(ref)}"` : '') + ` title="${escAttr(varToken(name, ref))}">`
   + `${escAttr(name.startsWith('caption:') ? 'caption of ' + name.slice(8)
              : name.startsWith('var:') ? userVarLabel(name.slice(4))
+             : name.startsWith('text:') ? '⇄ ' + linkedPreview(name.slice(5))
              : VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
 // A variable of your own (INDESIGN_PARITY.md 60) shows its text, so the chip
 // reads as the words it stands for; one nobody defined says so.
+// Linked text (INDESIGN_PARITY.md 59): {text:<slot key | text.N>} repeats
+// that slot's or box's first paragraph, kept in step at every render. The
+// chip shows the start of the words it repeats.
+function linkedSource(ref) {
+  const md = ref.startsWith('text.') ? (boxOf(ref) || {}).md : (slotRe(ref).test(source) ? readSlot(ref) : null);
+  if (typeof md !== 'string') return null;
+  return md.trim().split(/\n\s*\n/)[0].replace(/\s*\n\s*/g, ' ').trim();
+}
+function linkedPreview(ref) {
+  const t = linkedSource(ref);
+  if (t == null) return `${ref} (nothing there)`;
+  const plain = t.replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  return plain.length > 26 ? plain.slice(0, 25) + '…' : plain;
+}
+/** Insert linked text: pick the slot or box whose words to repeat here. */
+async function linkedTextDialog(d, host, range) {
+  const keys = [...source.matchAll(/^\[\[([A-Za-z0-9._-]+)\]\][ \t]*$/gm)].map(m => m[1])
+    .filter(k => k !== 'sources' && readSlot(k).trim());
+  const opts = [...keys, ...boxes().filter(b => (b.md || '').trim() && !/!\[/.test(b.md)).map(b => 'text.' + b.id)]
+    .map(k => ({ value: k, label: `${k} — ${linkedPreview(k)}` }));
+  if (!opts.length) { $('stat').textContent = 'nothing to link to yet'; return; }
+  const got = await dsForm('Insert linked text', [{ name: 'ref', type: 'select', value: opts[0].value, options: opts,
+    label: 'Repeat the first paragraph of — edit it there and it changes here too' }], { okLabel: 'Insert' });
+  if (got == null) return;
+  await insertNodeAt(d, host, range, makeVarChip(d, 'text:' + got.ref));
+}
 function userVarLabel(n) {
   const v = (layout.variables || {})[n];
   return v == null ? `${n} (not defined)` : v.length > 28 ? v.slice(0, 27) + '…' : v;
@@ -4546,6 +4573,10 @@ function buildVariableRows(d, m, host, range) {
       const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; sub.appendChild(sep);
     }
     const b = d.createElement('button');
+    const lk = d.createElement('button');
+    lk.textContent = 'Linked text…';
+    lk.addEventListener('click', () => { closeMenu(d); linkedTextDialog(d, host, range); });
+    sub.appendChild(lk);
     b.textContent = 'Define variables…';
     b.addEventListener('click', () => { closeMenu(d); variablesDialog(); });
     sub.appendChild(b);
@@ -8027,8 +8058,37 @@ function tableMenu(d, td, e) {
       else selectCell(idOf(tableEl), rg.r0, rg.c0);
     }, many);
     item('grid', 'Unmerge cells', '', () => tableUnmerge(t, ri, ci), !!mergeAt(t, ri, ci));
+    item('grid', 'Split cell horizontally', '', () => tableSplit(t, ri, ci, 'h'));
+    item('grid', 'Split cell vertically', '', () => tableSplit(t, ri, ci, 'v'));
+    item('fit', 'Distribute rows evenly', '', () => tableDistributeRows(t, tableEl,
+      many ? rg.r0 : 0, many ? rg.r1 : rows - 1), rows > 1);
+    // Cell styles: the selection (or this cell) wears one; Save as… makes
+    // one from this cell's own look.
+    submenuRow(d, m, 'Cell style ▸', sub => {
+      const keys = [];
+      for (let r = rg.r0; r <= rg.r1; r++) for (let c = rg.c0; c <= rg.c1; c++) keys.push(`${r},${c}`);
+      const cur = ((t.cells || {})[`${ri},${ci}`] || {}).use;
+      const row = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
+        b.addEventListener('click', async () => { closeMenu(d); pushHistory(); const ok = await fn(); if (ok === false) { past.pop(); return; }
+          markDirty(); await render(); paintCells($('out').contentDocument); }); sub.appendChild(b); };
+      Object.keys(cellStyles()).sort().forEach(n => row((cur === n ? '✓ ' : '') + n, () => applyCellStyle(t, keys, n)));
+      row('No cell style', () => applyCellStyle(t, keys, null));
+      row('Save this cell’s look as…', async () => {
+        const look = pick({ ...((t.cells || {})[`${ri},${ci}`] || {}) }, CELL_STYLE_KEYS);
+        if (!Object.keys(look).length) { $('stat').textContent = 'this cell has no look of its own to save — give it a fill or bold first'; return false; }
+        const got = await dsForm('New cell style', [{ name: 'name', label: 'Name', value: '' }], { okLabel: 'Save',
+          validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(v.name.trim()) ? '' : 'a name of letters, digits, spaces, - and _' });
+        if (got == null) return false;
+        defineCellStyle(got.name.trim(), look);
+        applyCellStyle(t, keys, got.name.trim());
+      });
+    });
   }
   item('sliders', 'Table options…', '', () => tableOptionsDialog(t, ri), true, true);
+  item('grid', 'Convert table to text', '', () => {
+    const r = tableToText('table.' + t.id);
+    if (r.error) $('stat').textContent = r.error;
+  }, !t.flow);
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
   d.body.appendChild(m);
@@ -8093,6 +8153,11 @@ function reindexMerges(t, kind, at, delta) {
     }).filter(x => x[2] >= 1 && x[3] >= 1 && x[2] * x[3] >= 2);
     if (!t.merges.length) delete t.merges;
   }
+  if (kind === 'col' && t.headerCols != null) {
+    const n = t.rows[0].length + delta;
+    if (at < t.headerCols) t.headerCols = Math.max(0, Math.min(n, t.headerCols + delta));   // a line inside the header columns
+    if (!t.headerCols) delete t.headerCols;
+  }
   if (kind === 'row') {
     if (t.rowh) { delta > 0 ? t.rowh.splice(at, 0, null) : t.rowh.splice(at, 1); if (!t.rowh.some(v => v != null)) delete t.rowh; }
     const n = t.rows.length + delta;
@@ -8144,6 +8209,7 @@ async function tableOptionsDialog(t, ri) {
   const got = await dsForm('Table options', [
     { name: 'headerRows', label: 'Header rows', value: String(t.headerRows ?? (t.header ? 1 : 0)) },
     { name: 'footerRows', label: 'Footer rows', value: String(t.footerRows || 0) },
+    { name: 'headerCols', label: 'Header columns', value: String(t.headerCols || 0) },
     { name: 'inset', label: 'Cell inset, inches (one, or top right bottom left)',
       value: t.inset == null ? '' : [].concat(t.inset).join(' ') },
     { name: 'valign', type: 'select', label: 'Vertical alignment', value: t.valign || '',
@@ -8152,7 +8218,14 @@ async function tableOptionsDialog(t, ri) {
     { name: 'rowh', label: `Row ${ri + 1} height, inches (blank: fits its words)`, value: t.rowh && t.rowh[ri] != null ? String(t.rowh[ri]) : '' },
     { name: 'stroke', label: 'Alternating row stroke: width in px and a colour (blank: none)',
       value: t.bandStroke ? `${bs.w ?? 1} ${bs.color || '#C9D6CD'}` : '', placeholder: '1 #9AA8A0' },
+    { name: 'bandCols', label: 'Alternating column fill (blank: none)', value: t.bandCols || '', placeholder: '#F2F5F1' },
+    { name: 'colStroke', label: 'Alternating column stroke: width in px and a colour (blank: none)',
+      value: t.bandColStroke ? `${t.bandColStroke.w ?? 1} ${t.bandColStroke.color || '#C9D6CD'}` : '', placeholder: '1 #9AA8A0' },
   ], { okLabel: 'Apply', validate: v => {
+    const hc = +v.headerCols || 0;
+    if (hc < 0 || hc > t.rows[0].length || !Number.isInteger(hc)) return `header columns: 0 to ${t.rows[0].length}`;
+    if (v.bandCols && !/^#[0-9a-f]{3,8}$/i.test(v.bandCols.trim())) return 'a column fill is a colour like #F2F5F1';
+    if (v.colStroke && !/^\s*\d+(\.\d+)?\s+#[0-9a-f]{3,8}\s*$/i.test(v.colStroke)) return 'a stroke is a width and a colour, like 1 #9AA8A0';
     const n = t.rows.length;
     const h = +v.headerRows || 0, f = +v.footerRows || 0;
     if (h < 0 || f < 0 || h + f > n) return `header and footer rows together: at most ${n}`;
@@ -8177,6 +8250,10 @@ async function tableOptionsDialog(t, ri) {
   if (rh.some(v => v != null)) t.rowh = rh; else delete t.rowh;
   if (got.stroke) { const [w, color] = got.stroke.trim().split(/\s+/); t.bandStroke = { w: +w, color }; }
   else delete t.bandStroke;
+  if (+got.headerCols) t.headerCols = Math.round(+got.headerCols); else delete t.headerCols;
+  if (got.bandCols.trim()) t.bandCols = got.bandCols.trim(); else delete t.bandCols;
+  if (got.colStroke) { const [w, color] = got.colStroke.trim().split(/\s+/); t.bandColStroke = { w: +w, color }; }
+  else delete t.bandColStroke;
   markDirty(); await render();
 }
 /** Text to table: a text box's lines become rows, split on tabs (or the
@@ -8195,6 +8272,89 @@ function textToTable(boxId, sep) {
   tables().push({ id, page: b.page, x: b.x, y: b.y, w: b.w, z: b.z ?? 2, header: true, rows });
   layout.boxes = boxes().filter(x => x !== b);
   return { id: 'table.' + id, rows: rows.length, cols: n };
+}
+/** Split a cell (InDesign's Split Cell Horizontally / Vertically): a merged
+ *  cell gives its grid back; a plain one gains a new row under it (or a
+ *  column beside it) while every other cell in its row (column) spans both,
+ *  so only this cell is seen to split. A split column halves its width. */
+function tableSplit(t, r, c, dir) {
+  if (mergeAt(t, r, c)) { tableUnmerge(t, r, c); return; }
+  t.merges = t.merges || [];
+  if (dir === 'h') {
+    tableInsertRow(t, r + 1);
+    t.merges = t.merges || [];
+    for (let j = 0; j < t.rows[0].length; j++) {
+      if (j === c) continue;
+      const m = mergeAt(t, r, j);
+      if (m) { if (j === m[1] && m[0] + m[2] - 1 === r) m[2] += 1; continue; }
+      t.merges.push([r, j, 2, 1]);
+    }
+  } else {
+    const w = t.colw ? t.colw[c] : null;
+    tableInsertCol(t, c + 1);
+    t.merges = t.merges || [];
+    if (w != null) { t.colw[c] = +(w / 2).toFixed(4); t.colw[c + 1] = +(w / 2).toFixed(4); }
+    for (let i = 0; i < t.rows.length; i++) {
+      if (i === r) continue;
+      const m = mergeAt(t, i, c);
+      if (m) { if (i === m[0] && m[1] + m[3] - 1 === c) m[3] += 1; continue; }
+      t.merges.push([i, c, 1, 2]);
+    }
+  }
+  if (!t.merges.length) delete t.merges;
+}
+/** Rows the same height: the average of the rows' measured heights, as a
+ *  minimum, so a row whose words need more keeps it. */
+function tableDistributeRows(t, tableEl, r0 = 0, r1 = t.rows.length - 1) {
+  const trs = [...tableEl.rows];
+  const pg = tableEl.closest('section.page');
+  const px = DPI * zoomOf(pg);
+  const hs = [];
+  for (let i = r0; i <= r1; i++) if (trs[i]) hs.push(trs[i].getBoundingClientRect().height / px);
+  if (!hs.length) return;
+  const avg = +(hs.reduce((a, b) => a + b, 0) / hs.length).toFixed(3);
+  const rh = t.rowh ? t.rowh.slice() : Array(t.rows.length).fill(null);
+  for (let i = r0; i <= r1; i++) rh[i] = avg;
+  t.rowh = rh;
+}
+/** Table to text: a text box in the table's place, one line a row, cells
+ *  separated by tabs — Text to table's inverse. */
+function tableToText(tid) {
+  const t = tableOfId(tid);
+  if (!t || t.flow) return { error: `no placed table '${tid}'` };
+  const md = t.rows.map(r => r.map(c => String(c ?? '').replace(/\s*\n\s*/g, ' ')).join('\t')).join('\n');
+  const id = freeBoxId();
+  boxes().push({ id, page: t.page, x: t.x, y: t.y, w: t.w, z: t.z ?? 2, md });
+  layout.tables = tables().filter(x => x !== t);
+  return { id: 'text.' + id };
+}
+// Cell styles (53): layout.cellStyles {name: look}; a cell wears one by `use`.
+const CELL_STYLE_KEYS = ['fill', 'color', 'align', 'valign', 'bold', 'italic', 'inset'];
+const cellStyles = () => layout.cellStyles || {};
+function applyCellStyle(t, keys, name) {
+  t.cells = t.cells || {};
+  keys.forEach(k => {
+    const ov = { ...(t.cells[k] || {}) };
+    if (name) { ov.use = name; CELL_STYLE_KEYS.forEach(x => delete ov[x]); } else delete ov.use;
+    if (Object.keys(ov).length) t.cells[k] = ov; else delete t.cells[k];
+  });
+  if (!Object.keys(t.cells).length) delete t.cells;
+}
+/** Define (or redefine) a cell style; null drops it, writing its look into
+ *  every cell that wore it first, so nothing changes on the page. */
+function defineCellStyle(name, look) {
+  const all = { ...cellStyles() };
+  if (look) all[name] = pick(look, CELL_STYLE_KEYS);
+  else {
+    const old = all[name];
+    [...tables(), ...Object.values(layout.masters || {}).flatMap(m => m.tables || [])].forEach(t =>
+      Object.entries(t.cells || {}).forEach(([k, ov]) => {
+        if (ov.use === name) { delete ov.use; t.cells[k] = { ...old, ...ov }; }
+      }));
+    delete all[name];
+  }
+  if (Object.keys(all).length) layout.cellStyles = all; else delete layout.cellStyles;
+  markDirty();
 }
 function tableInsertRow(t, at) {
   reindexCells(t, 'row', at, 1); cellSelShift(t, 'row', at, 1); reindexMerges(t, 'row', at, 1);
@@ -21920,6 +22080,7 @@ function wire(roots) {
     .ds-rule.l { left:0; top:0; width:.18in; height:100%; }
     .ds-rule:hover { background:rgba(107,158,120,.22); }
     .ds-gd { position:absolute; z-index:9991; }
+    .ds-linked { box-shadow:inset 0 -2px 0 rgba(18,181,165,.55); }
     .ds-gd.v { top:0; width:1px; height:100%; margin-left:-4px; padding:0 4px;
                background:clip-content-box; cursor:ew-resize; }
     .ds-gd.h { left:0; height:1px; width:100%; margin-top:-4px; padding:4px 0;
@@ -28338,6 +28499,7 @@ function _pilotApplyAddSection(page, slug, md) {
 // their own pushHistory+render internally, so they cannot join a batch's
 // single history/render without their own refactor — call them singly.
 const TABLE_PATCH_KEYS = ['header', 'headerRows', 'footerRows', 'footerFill', 'inset', 'valign', 'rowh',
+  'headerCols', 'bandCols', 'bandColStroke',
   'bandStroke', 'band', 'fill', 'headerFill', 'headerColor', 'border', 'colw', 'colAlign', 'cells', 'merges', 'style'];
 /** One batch verb on its own, its result unwrapped onto the status. */
 async function _pilotOne(verb, args) {
@@ -28385,6 +28547,30 @@ const PILOT_BATCH_VERBS = {
       Object.entries(patch).forEach(([k, v]) => { if (v == null) delete t[k]; else t[k] = clone(v); });
       return { id: 'table.' + t.id };
     } },
+  splitCell: { validate: (id, r, c, dir) => {
+      const t = tableOfId(String(id || ''));
+      if (!t) return { ok: false, error: `no table '${id}'` };
+      if (!(r >= 0 && c >= 0 && r < t.rows.length && c < t.rows[0].length)) return { ok: false, error: 'splitCell(id, row, col, "h" | "v") — no such cell' };
+      return ['h', 'v'].includes(dir) ? { ok: true } : { ok: false, error: 'dir: "h" adds a row under the cell, "v" a column beside it' };
+    }, apply: (id, r, c, dir) => { const t = tableOfId(id); tableSplit(t, r, c, dir);
+      return { rows: t.rows.length, cols: t.rows[0].length, merges: clone(t.merges || []) }; } },
+  tableToText: { validate: id => (tableOfId(String(id || '')) && !tableOfId(id).flow) ? { ok: true } : { ok: false, error: `no placed table '${id}'` },
+    apply: id => { const r = tableToText(id); if (r.error) throw new Error(r.error); return r; } },
+  defineCellStyle: { validate: (n, look) => {
+      if (!/^[A-Za-z0-9 _-]{1,30}$/.test(n || '')) return { ok: false, error: 'a cell style name: letters, digits, spaces, - and _' };
+      if (look != null && (typeof look !== 'object' || Object.keys(look).some(k => !CELL_STYLE_KEYS.includes(k))))
+        return { ok: false, error: `a cell style is ${CELL_STYLE_KEYS.join(', ')}` };
+      if (look == null && !cellStyles()[n]) return { ok: false, error: `no cell style '${n}'` };
+      return { ok: true };
+    }, apply: (n, look) => { defineCellStyle(n, look); return { cellStyles: clone(cellStyles()) }; } },
+  cellStyle: { validate: (id, cells, n) => {
+      const t = tableOfId(String(id || ''));
+      if (!t) return { ok: false, error: `no table '${id}'` };
+      if (!Array.isArray(cells) || cells.some(x => !Array.isArray(x) || !(x[0] >= 0 && x[0] < t.rows.length && x[1] >= 0 && x[1] < t.rows[0].length)))
+        return { ok: false, error: 'cellStyle(id, [[row, col], …], name | null)' };
+      if (n != null && !cellStyles()[n]) return { ok: false, error: `no cell style '${n}'` };
+      return { ok: true };
+    }, apply: (id, cells, n) => { applyCellStyle(tableOfId(id), cells.map(x => `${x[0]},${x[1]}`), n); return { id }; } },
   mergeCells: { validate: (id, r, c, rs, cs) => {
       const t = tableOfId(String(id || ''));
       if (!t) return { ok: false, error: `no table '${id}'` };
@@ -29156,6 +29342,15 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  in decimal / lower-roman / upper-roman / lower-alpha / upper-alpha. */
   async setPageSection(from, sec) { return _pilotOne('setPageSection', [from, sec]); },
   async setReadingOrder(pid, ids) { return _pilotOne('setReadingOrder', [pid, ids]); },
+  /** splitCell(id, row, col, 'h' | 'v') — a merged cell gives its grid
+   *  back; a plain one gains a row under it ('h') or a column beside it
+   *  ('v'). tableToText(id) — a text box of tab-separated lines in its
+   *  place. Cell styles: defineCellStyle(name, {fill, color, align, valign,
+   *  bold, italic, inset} | null) and cellStyle(id, [[r, c], …], name|null). */
+  async splitCell(id, r, c, dir) { return _pilotOne('splitCell', [id, r, c, dir]); },
+  async tableToText(id) { return _pilotOne('tableToText', [id]); },
+  async defineCellStyle(n, look) { return _pilotOne('defineCellStyle', [n, look]); },
+  async cellStyle(id, cells, n) { return _pilotOne('cellStyle', [id, cells, n]); },
   async setTable(id, patch) { return _pilotOne('setTable', [id, patch]); },
   async mergeCells(id, r, c, rs, cs) { return _pilotOne('mergeCells', [id, r, c, rs, cs]); },
   async unmergeCells(id, r, c) { return _pilotOne('unmergeCells', [id, r, c]); },
