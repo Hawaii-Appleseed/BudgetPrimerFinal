@@ -598,6 +598,52 @@ def _output_complete(path: Path) -> bool:
     return tail.rstrip().endswith(b"%%EOF") or tail.endswith(b"IEND\xaeB`\x82")
 
 
+PAGES_SPEC_RE = re.compile(r"^\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*$")
+
+
+def _parse_pages(spec, npages: int | None = None):
+    """A page range for a PDF of some pages (INDESIGN_PARITY.md 83): "3",
+    "3-5", "1,4-6" — the sheets in reading order, from 1. Returns the sorted
+    list of page numbers, or a message saying what is wrong. With `npages`,
+    every page must exist."""
+    spec = str(spec or "").strip()
+    if not PAGES_SPEC_RE.match(spec):
+        return "pages is a range like 3, 3-5 or 1,4-6"
+    keep = set()
+    for part in spec.split(","):
+        a, _, b = part.partition("-")
+        lo, hi = int(a), int(b or a)
+        if lo < 1 or hi < lo:
+            return f"pages: {part.strip()} is not a range from 1 upward"
+        keep.update(range(lo, hi + 1))
+    if npages is not None and max(keep) > npages:
+        return f"pages: the report has {npages} page{'s' if npages != 1 else ''}"
+    return sorted(keep)
+
+
+def _only_pages(html: str, keep: list) -> str:
+    """The export's HTML with every sheet not in `keep` taken out of the
+    print. Hidden, not removed: the sheets stay in the document, so {page},
+    {pages}, a page reference and a contents list count exactly as they do
+    in the whole report — page 4 sent alone still says 4."""
+    want = set(keep)
+    out, n, i = [], 0, 0
+    tag = '<section class="page'
+    while True:
+        j = html.find(tag, i)
+        if j < 0:
+            out.append(html[i:])
+            break
+        n += 1
+        out.append(html[i:j])
+        out.append(tag if n in want else '<section data-ds-skip class="page')
+        i = j + len(tag)
+    html = "".join(out)
+    rule = "<style>section.page[data-ds-skip]{display:none!important}</style>"
+    k = html.find("</head>")
+    return html[:k] + rule + html[k:] if k >= 0 else rule + html
+
+
 def _export_bad_args(req: dict) -> str | None:
     """The message for the first malformed /__export argument, or None if the
     request is worth building. Pure and side-effect free so both the real
@@ -616,6 +662,12 @@ def _export_bad_args(req: dict) -> str | None:
             return "page must be a number"
         if want_page < 1:
             return "page starts at 1"
+    if req.get("pages") not in (None, ""):
+        if (req.get("fmt") or "pdf").lower() != "pdf":
+            return "pages is for a PDF; a PNG takes one page"
+        got = _parse_pages(req["pages"])
+        if isinstance(got, str):
+            return got
     return None
 
 
@@ -2567,6 +2619,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"ok": False,
                                         "error": "the draft does not build:\n" + tail})
             if fmt == "pdf":
+                if req.get("pages") not in (None, ""):
+                    html = out_html.read_text()
+                    keep = _parse_pages(req["pages"], html.count('<section class="page'))
+                    if isinstance(keep, str):
+                        return self._json(400, {"ok": False, "error": keep})
+                    out_html.write_text(_only_pages(html, keep))
                 data = self._chrome_pdf(out_html)
                 return self._bytes(200, "application/pdf", data, f"{pid}.pdf")
             npages = out_html.read_text().count('<section class="page')

@@ -1215,8 +1215,7 @@ are the editor's alone and touch no published byte; then (59) and (53);
 then (61), (66), (68) and (70); then (80), (77) and (75); then (76),
 (79), (81) and (78), each keeping every published byte; then (57),
 which is the editor's alone; then (64) and (82), each keeping every
-published byte. Next: (83) and (85), the small ones, then (51) Quick
-Apply. (48) and (62) are the large ones, worth
+published byte; then (83) and (85). Next: (51) Quick Apply. (48) and (62) are the large ones, worth
 it when a report asks for footnotes or a local review round.
 
 ## A fifth pass: InDesign's panel menus — scoped 2026-10-19
@@ -1323,16 +1322,29 @@ here by now; what is not, ranked the same way. Numbering continues from
     words ▸** beside Page reference ▸; the token is a chip showing the
     words. The Hyperlinks panel counts a link to a slot or box as found.
     Published bytes unchanged for every bound report.
-83. **Export some pages.** A PDF of a page range or the current page, for
-    sending one section; the export takes one page as PNG today, not a
-    range as PDF. **S.**
+83. **Export some pages. — CLOSED 2026-10-19.** File ▸ Download ▸ PDF
+    pages: `3`, `3-5` or `1,4-6`, in reading order (empty is the whole
+    report), and **this page** fills in the sheet in view; the file is
+    named for the range (`…-p3-5.pdf`). `/__export` takes `pages` (PDF
+    only; checked before the build, and against the page count after it):
+    the sheets left out are HIDDEN in the export's HTML, not removed, so
+    `{page}`, `{pages}`, a page reference and a contents list count as they
+    do in the whole report — page 4 sent alone still says 4. Without a
+    local server the browser's print hides the same sheets for the print
+    and shows them again. Checked with real Chrome: a two-page report with
+    page 2 kept prints one page, the endnotes.
 84. **Tabs and slides for the web.** InDesign's Object States: one frame
     holding several states, switched by buttons — a tabbed explainer on the
     web, the states one after another in print. RxKids' tabbed page was
     built by hand in its renderer; this would make it a thing any report can
     have. **M–L.**
-85. **Layer housekeeping.** Merge layers, delete unused layers, select
-    everything on a layer. **S.**
+85. **Layer housekeeping. — CLOSED 2026-10-19.** In the Layers panel,
+    per layer: **◎** selects everything on it that is drawn (refused, and
+    said, for a locked or hidden layer), **⤓** merges it into another —
+    what is on it moves there, the target keeps its place, visibility and
+    lock — and below the list **Delete N unused layers** drops the ones
+    nothing is on. Each one undo step. Pilot `mergeLayers([names], into)`,
+    `dropUnusedLayers()`, `selectLayer(name)`.
 
 ### Not worth doing here
 

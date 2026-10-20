@@ -1473,6 +1473,9 @@
      and inset to the same optical axis as their labels. */
   .pop.menu .menu-opt { margin:6px 4px 2px; padding:9px 6px 2px;
         border-top:1px solid #E8EEEA; font-size:12px; color:#5B6E66; }
+  .pop.menu .dl-pages { display:flex; align-items:center; gap:6px; }
+  .pop.menu .dl-pages input { width:72px; font:12px system-ui; padding:3px 6px; }
+  .pop.menu .dl-pages button { font:11.5px system-ui; padding:3px 8px; }
   #open-list { gap:1px; }
   /* The report you are in, marked even when the pointer is elsewhere — bold
      weight alone is easy to miss in a list of similar-length names. */
@@ -2298,6 +2301,9 @@
         d="M2.7 5.4h10.6v7.2a1 1 0 0 1-1 1H3.7a1 1 0 0 1-1-1z"/><path d="M6.5 8.4h3"
       /></svg><span class="shp-t">Source — files &amp; images (.zip)</span></button>
     <label class="menu-opt"><input type="checkbox" id="dl-marks">Bleed &amp; crop marks (PDF)</label>
+    <div class="menu-opt dl-pages" title="A PDF of some pages: 3, 3-5 or 1,4-6, in reading order. Empty is the whole report. Page numbers stay what they are in the whole report.">
+      PDF pages <input id="dl-pages" type="text" placeholder="all" autocomplete="off" spellcheck="false">
+      <button id="dl-thispage" type="button">this page</button></div>
   </div>
   <div class="pop" id="textpop" hidden>
     <p class="pop-h">Add text to the page in view</p>
@@ -15692,6 +15698,45 @@ function _dropLayer(name) {
   layout.layers = docLayers().filter(x => x.name !== name);
   if (!layout.layers.length) delete layout.layers;
 }
+// Layer housekeeping (INDESIGN_PARITY.md 85). Merge: everything on `names`
+// goes onto `into`, which keeps its own place, visibility and lock, and the
+// others go. Unused: a layer nothing is on. What is on a layer: the ids the
+// page knows those objects by.
+function _mergeLayers(names, into) {
+  const from = names.filter(n => n !== into);
+  _allLayered().forEach(o => { if (from.includes(o.layer)) o.layer = into; });
+  layout.layers = docLayers().filter(x => !from.includes(x.name));
+  return { into, merged: from };
+}
+const _layerCount = name => _allLayered().filter(o => o.layer === name).length;
+const _unusedLayers = () => docLayers().filter(L => !_layerCount(L.name)).map(L => L.name);
+function _dropUnusedLayers() {
+  const gone = _unusedLayers();
+  layout.layers = docLayers().filter(x => !gone.includes(x.name));
+  if (!layout.layers.length) delete layout.layers;
+  return gone;
+}
+function _layerIds(name) {
+  const ids = [];
+  (layout.shapes || []).forEach(s => { if (s.layer === name) ids.push(s.id); });
+  boxes().forEach(b => { if (b.layer === name) ids.push('text.' + b.id); });
+  tables().forEach(t => { if (t.layer === name) ids.push('table.' + t.id); });
+  Object.entries(layout.positions || {}).forEach(([id, p]) => { if (p && p.layer === name) ids.push(id); });
+  return ids;
+}
+/** Select everything on a layer that is on the page — InDesign's
+ *  Select Item(s) on Layer. A locked or hidden layer has nothing to hand. */
+function selectLayer(name) {
+  const L = docLayers().find(x => x.name === name);
+  if (!L) return { ok: false, error: `no layer called '${name}'` };
+  if (L.locked) return { ok: false, error: `'${name}' is locked — unlock it to select what is on it` };
+  if (L.hidden) return { ok: false, error: `'${name}' is hidden — show it to select what is on it` };
+  const d = $('out').contentDocument;
+  const ids = _layerIds(name).filter(id =>
+    d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`));
+  setSel(d, ids);
+  return { ok: true, selected: ids };
+}
 async function layerWrite(fn) {
   pushHistory(); fn(); markDirty(); await render();
   docLayersRender(); if (!$('layerspop').hidden) layersRender();
@@ -15723,6 +15768,19 @@ function docLayersRender() {
         if (!selIds.size) { $('stat').textContent = 'select something first'; return; }
         layerWrite(() => _toLayer([...selIds], L.name));
       }),
+      btn('◎', 'Select everything on this layer', () => {
+        const r = selectLayer(L.name);
+        $('stat').textContent = r.ok ? `${r.selected.length} selected on ${L.name}` : r.error;
+      }),
+      btn('⤓', 'Merge this layer into another — what is on it moves there', async () => {
+        const others = docLayers().filter(x => x.name !== L.name);
+        if (!others.length) { $('stat').textContent = 'there is no other layer to merge into'; return; }
+        const got = await dsForm(`Merge “${L.name}” into`, [{ name: 'into', type: 'select', value: others[others.length - 1].name,
+          label: `${count} thing${count === 1 ? '' : 's'} move there, and “${L.name}” goes`,
+          options: [...others].reverse().map(x => ({ value: x.name, label: x.name })) }], { okLabel: 'Merge' });
+        if (got == null) return;
+        layerWrite(() => _mergeLayers([L.name], got.into));
+      }),
       btn('✕', 'Delete the layer (what is on it stays, on no layer)', () => layerWrite(() => _dropLayer(L.name))));
     host.appendChild(r);
   });
@@ -15736,6 +15794,15 @@ function docLayersRender() {
     layerWrite(() => _defineLayer(got.name.trim()));
   });
   host.appendChild(add);
+  const unused = _unusedLayers();
+  if (unused.length) {
+    const du = document.createElement('button');
+    du.className = 'sw-default'; du.id = 'layers-dropunused';
+    du.textContent = `Delete ${unused.length} unused layer${unused.length === 1 ? '' : 's'}`;
+    du.title = unused.join(', ');
+    du.addEventListener('click', () => layerWrite(() => _dropUnusedLayers()));
+    host.appendChild(du);
+  }
 }
 
 function layersRender() {
@@ -28612,6 +28679,29 @@ $('download').onclick = () => {
   togglePop($('downloadpop'), $('download'));
 };
 $('dl-pdf').onclick = () => doExport('pdf');
+/** The sheet in view, as its place in reading order (what the PDF counts). */
+function pageNumberInView() {
+  const id = visibleSheetId();
+  const i = docSheets().findIndex(s => s.id === id);
+  return i < 0 ? 1 : i + 1;
+}
+$('dl-thispage').onclick = () => { $('dl-pages').value = String(pageNumberInView()); };
+/** The PDF pages field, checked the way the server checks it (serve.py
+ *  _parse_pages): the sorted page numbers, null for all, or a message. */
+function exportPages() {
+  const v = $('dl-pages').value.trim();
+  if (!v) return null;
+  if (!/^\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*$/.test(v)) return 'pages is a range like 3, 3-5 or 1,4-6';
+  const n = docSheets().length, keep = new Set();
+  for (const part of v.split(',')) {
+    const [a, b] = part.split('-').map(x => +x.trim());
+    const hi = b ?? a;
+    if (a < 1 || hi < a) return `pages: ${part.trim()} is not a range from 1 upward`;
+    for (let k = a; k <= hi; k++) keep.add(k);
+  }
+  if (Math.max(...keep) > n) return `pages: the report has ${n} page${n === 1 ? '' : 's'}`;
+  return [...keep].sort((a, b) => a - b);
+}
 // A report's own on-page "Download PDF" button (docsync.blocks.pdf_button)
 // stays live on the canvas: it cannot window.print() there — that would print
 // the artboard iframe, edit affordances and all — so in edit mode it posts up
@@ -29082,19 +29172,31 @@ function exportBasename() {
 }
 
 async function doExport(fmt) {
+  // A PDF of some pages (INDESIGN_PARITY 83). Checked before anything runs.
+  const pages = fmt === 'pdf' ? exportPages() : null;
+  if (typeof pages === 'string') { $('stat').textContent = pages; return; }
+  const spec = pages ? $('dl-pages').value.replace(/\s+/g, '') : '';
   $('downloadpop').hidden = true;
   if (!local) {                        // GitHub mode: browser print-to-PDF only
-    if (fmt === 'pdf') $('out').contentWindow.print();
+    if (fmt !== 'pdf') return;
+    // The pages left out are hidden for the print and shown again after —
+    // hidden, not removed, so page numbers count as in the whole report.
+    const d = $('out').contentDocument, w = $('out').contentWindow;
+    const skip = pages ? [...d.querySelectorAll('section.page')].filter((pg, i) => !pages.includes(i + 1)) : [];
+    skip.forEach(pg => pg.setAttribute('data-ds-skip', ''));
+    const st = d.createElement('style'); st.textContent = 'section.page[data-ds-skip]{display:none!important}';
+    if (skip.length) d.head.appendChild(st);
+    try { w.print(); } finally { skip.forEach(pg => pg.removeAttribute('data-ds-skip')); st.remove(); }
     return;
   }
   const marks = $('dl-marks').checked;
   const slug = exportBasename();
-  const name = fmt === 'pdf' ? `${slug}.pdf` : `${slug}-pages.zip`;
+  const name = fmt === 'pdf' ? `${slug}${spec ? '-p' + spec.replace(/,/g, '_') : ''}.pdf` : `${slug}-pages.zip`;
   $('stat').textContent = `rendering the ${fmt.toUpperCase()}… (a full report takes a moment)`;
   try {
     const r = await fetch('/__export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fmt, marks, project: M.id,
+      body: JSON.stringify({ fmt, marks, project: M.id, ...(spec ? { pages: spec } : {}),
         content: source, layout: JSON.stringify(layout, null, 2) + '\n' }),
     });
     if ((r.headers.get('Content-Type') || '').includes('application/json')) {
@@ -29968,6 +30070,13 @@ const PILOT_BATCH_VERBS = {
              apply: (ids, n) => ({ ids: _toLayer(ids, n), layer: n || null }) },
   dropLayer: { validate: n => docLayers().some(x => x.name === n) ? { ok: true } : { ok: false, error: `no layer called '${n}'` },
                apply: n => { _dropLayer(n); return { dropped: n }; } },
+  mergeLayers: { validate: (names, into) => {
+      const list = Array.isArray(names) ? names : [names];
+      const missing = [...list, into].find(n => !docLayers().some(x => x.name === n));
+      if (!list.length || missing !== undefined) return { ok: false, error: missing !== undefined ? `no layer called '${missing}'` : 'mergeLayers([names], into)' };
+      return { ok: true };
+    }, apply: (names, into) => _mergeLayers(Array.isArray(names) ? names : [names], into) },
+  dropUnusedLayers: { validate: () => ({ ok: true }), apply: () => ({ dropped: _dropUnusedLayers() }) },
   skew: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplySkew(id, deg) },
   // Existence only — place()'s validate also refuses LOCKED elements, which
   // here would make unlocking impossible.
@@ -30726,6 +30835,13 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async defineLayer(name, opts) { return docsync.api.batch([{ verb: 'defineLayer', args: [name, opts || {}] }]); },
   async toLayer(ids, name) { return docsync.api.batch([{ verb: 'toLayer', args: [ids, name] }]); },
   async dropLayer(name) { return docsync.api.batch([{ verb: 'dropLayer', args: [name] }]); },
+  /** Layer housekeeping (85): mergeLayers([names], into) moves what is on
+   *  them onto `into` and drops them; dropUnusedLayers() drops the layers
+   *  nothing is on; selectLayer(name) selects what is on one (not locked or
+   *  hidden). */
+  async mergeLayers(names, into) { return docsync.api.batch([{ verb: 'mergeLayers', args: [names, into] }]); },
+  async dropUnusedLayers() { return docsync.api.batch([{ verb: 'dropUnusedLayers', args: [] }]); },
+  selectLayer(name) { const r = selectLayer(name); if (r.ok) arrangeBar($('out').contentDocument); return r; },
 
   /** Skew (Shear) along x about the centre, degrees ±60; 0 clears. */
   async skew(id, deg) {
