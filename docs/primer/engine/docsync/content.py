@@ -100,6 +100,8 @@ _DEST = r"(?:[^()\s]+|\([^()\s]*\))+"
 #   {section}  the last heading at or before this page (a running header)
 #   {title}  the document's <title>  {date}  the build date
 #   {pageof:<slot>}  the page a slot is on ("see page {pageof:whopays.h1}")
+#   ({titleof:<slot>}, the heading's words, is resolved at build like linked
+#   text — layout.TITLEOF_RE — so it is not a runtime token here.)
 #   {contents}  a contents list of every heading after this page
 #
 # Only these names, so a brace in prose ("{fy}" in a renderer's own template)
@@ -170,6 +172,19 @@ def page_refs(text: str) -> set:
     return {m.group(2) for m in VAR_RE.finditer(text or "") if m.group(2)}
 
 
+# Internal links (INDESIGN_PARITY.md 82): `[words](#<slot key>)` links to
+# another place in the report — a slot (a heading, a paragraph) or a text box
+# (`#text.N`). The target is hooked on the published page the way a
+# {pageof:…} target is (data-anc-host), and layout.XREF_JS gives it the id the
+# link names, so the link works on the web and in the printed PDF alike.
+XREF_RE = re.compile(r"\[([^\]^\[][^\]\[]*)\]\(#([A-Za-z0-9._@-]+)\)")
+
+
+def link_refs(text: str) -> set:
+    """The places a text links to with [words](#key)."""
+    return {m.group(2) for m in XREF_RE.finditer(text or "")} if "](#" in (text or "") else set()
+
+
 # A character style: `[words]{.Name}` puts the named text style on a run of
 # words inside a paragraph (INDESIGN_PARITY.md 17). The span names the style
 # and carries no CSS of its own — Layout._char_once emits one rule per style
@@ -200,6 +215,10 @@ def md_inline(s: str) -> str:
         urls.append(m.group(2))
         return f"\x00LINK{len(urls) - 1}\x00{m.group(1)}\x01"
 
+    def stash_xref(m):
+        urls.append("#" + m.group(2))
+        return f"\x00LINK{len(urls) - 1}\x00{m.group(1)}\x01"
+
     def stash_img(m):
         imgs.append((m.group(2), m.group(1)))
         return f"\x00IMG{len(imgs) - 1}\x00"
@@ -211,6 +230,8 @@ def md_inline(s: str) -> str:
     # Link text holds no `[`: otherwise "[the [GET](url) now]{.Pull}" — a link
     # inside a character-style run — started the link at the RUN's bracket.
     s = re.sub(r"\[([^\]^\[][^\]\[]*)\]\((https?://" + _DEST + r")\)", stash, s)
+    if "](#" in s:
+        s = XREF_RE.sub(stash_xref, s)
     # Conditional text (INDESIGN_PARITY.md 45): `[words]{?print}` shows only
     # in print, `{?web}` only on screen, `{?<name>}` unless layout.conditions
     # hides that name. A span naming the condition; Layout emits the rules.
@@ -240,7 +261,9 @@ def md_inline(s: str) -> str:
     s = re.sub(r"__(.+?)__", r"<u>\1</u>", s, flags=re.S)
     s = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<i>\1</i>", s, flags=re.S)
     s = re.sub(r"\x00LINK(\d+)\x00(.*?)\x01",
-               lambda m: f'<a href="{urls[int(m.group(1))]}">{m.group(2)}</a>', s, flags=re.S)
+               lambda m: (f'<a class="ds-xref" href="{urls[int(m.group(1))]}">{m.group(2)}</a>'
+                          if urls[int(m.group(1))].startswith("#")
+                          else f'<a href="{urls[int(m.group(1))]}">{m.group(2)}</a>'), s, flags=re.S)
     s = re.sub(r"\x00IMG(\d+)\x00",
                lambda m: '<img class="inline-img" src="{}" alt="{}">'.format(*imgs[int(m.group(1))]),
                s)
@@ -756,7 +779,7 @@ class Content:
         # Live captions (INDESIGN_PARITY.md 43): {caption:<image id>} is that
         # image's own description, resolved now, so a caption follows the
         # description it shows.
-        if ("{caption:" in v or "{var:" in v or "{text:" in v) and self._styles is not None:
+        if ("{caption:" in v or "{var:" in v or "{text:" in v or "{titleof:" in v) and self._styles is not None:
             v = self._styles.resolve_text(v)
         _served(key, v)
         return v
@@ -815,17 +838,18 @@ class Content:
         return out
 
     def page_ref_hosts(self) -> set:
-        """Every slot key a {pageof:…} anywhere in the document names — in a
-        slot's words or in a text box's. Worked out once."""
+        """Every slot key a {pageof:…} or an internal link [words](#key)
+        anywhere in the document names — in a slot's words or in a text
+        box's. Worked out once."""
         if getattr(self, "_ref_hosts", None) is None:
             refs = set()
             for v in self._raw.values():
                 if isinstance(v, str):
-                    refs |= page_refs(v)
+                    refs |= page_refs(v) | link_refs(v)
             L = self._styles
             if L is not None:
                 for b in L.all_boxes():
-                    refs |= page_refs(str(b.get("md", "")))
+                    refs |= page_refs(str(b.get("md", ""))) | link_refs(str(b.get("md", "")))
             self._ref_hosts = refs
         return self._ref_hosts
 

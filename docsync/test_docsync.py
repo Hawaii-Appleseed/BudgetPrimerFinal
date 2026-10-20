@@ -237,7 +237,7 @@ else:
 # blank canvas: the renderer's design is the default, data only overrides it.
 # With nothing overridden the published HTML must be untouched.
 import json, tempfile                                          # noqa: E402
-from docsync.layout import (Layout, LayoutError, shadow_css,   # noqa: E402
+from docsync.layout import (Layout, LayoutError, shadow_css, feather_css,   # noqa: E402
                             fill_css, fill_repr, fill_svg_paint)
 
 
@@ -4368,6 +4368,45 @@ check_eq("40: a swatch reference resolves at load, tint and all",
          (_sw.boxes[0]["fill"], _sw.boxes[0]["style"]["color"]), ("#D2DFEA", "#1E6194"))
 check_eq("40: a reference to no swatch is refused",
          "swatch" in _layout_error({"boxes": [_tf(id="s", md="x", fill="@Nope")]}).lower(), True)
+_GR = {"type": "linear", "angle": 90, "stops": [{"color": "@Blue", "at": 0}, {"color": "#FFFFFF00", "at": 1}]}
+_gs = _layout({"swatches": {"Blue": "#1E6194", "Sky": _GR},
+               "boxes": [_tf(id="a", md="x", fill="@Sky"), _tf(id="b", md="x", fill="@Sky 50%")],
+               "shapes": [{"id": "s1", "kind": "rect", "page": 1, "x": 1, "y": 1, "w": 1, "h": 1, "fill": "@Sky"}]})
+check_eq("64: a gradient swatch resolves to the gradient, its stops' own swatches too",
+         (_gs.boxes[0]["fill"]["stops"][0]["color"], _gs.shapes[0]["fill"]["type"]), ("#1E6194", "linear"))
+check_eq("64: a tint of a gradient swatch tints every stop and keeps a stop's alpha",
+         [st["color"] for st in _gs.boxes[1]["fill"]["stops"]], [tint_hex("#1E6194", 50), "#FFFFFF00"])
+check_eq("64: a gradient swatch draws as a gradient",
+         "linear-gradient(90deg, #1E6194 0%" in _gs.text_boxes(1), True)
+check_eq("64: a gradient swatch named where only a colour goes is refused, and says why",
+         "is a gradient" in _layout_error({"swatches": {"Sky": _GR, "Blue": "#1E6194"},
+                                           "boxes": [_tf(id="a", md="x", style={"color": "@Sky"})]}), True)
+check_eq("64: so is one on a table's fill",
+         "is a gradient" in _layout_error({"swatches": {"Sky": _GR, "Blue": "#1E6194"},
+                                           "tables": [{"id": "t", "page": 1, "x": 1, "y": 1, "w": 3,
+                                                       "rows": [["a"]], "fill": "@Sky"}]}), True)
+check_eq("64: a broken gradient swatch is refused at load",
+         "two or more stops" in _layout_error({"swatches": {"G": {"type": "linear", "stops": [{"color": "#000", "at": 0}]}}}),
+         True)
+_fd = _layout({"boxes": [_tf(id="f", md="x", fade={"angle": 180, "from": 0.3, "to": 0.9})]}).text_boxes(1)
+check_eq("64: a fade is a mask from opaque to clear along its angle",
+         "mask-image:linear-gradient(180deg,#000 30%,transparent 90%)" in _fd, True)
+_ff = _layout({"boxes": [_tf(id="f", md="x", feather=0.2, fade={})]}).text_boxes(1)
+check_eq("64: a fade with a feather intersects three masks",
+         _ff.count("linear-gradient(") >= 3 and "mask-composite:intersect" in _ff, True)
+check_eq("64: a feather alone draws exactly what it did",
+         feather_css({"feather": 0.2}),
+         ";-webkit-mask-image:linear-gradient(to right,transparent,#000 0.2in,#000 calc(100% - 0.2in),transparent),"
+         "linear-gradient(to bottom,transparent,#000 0.2in,#000 calc(100% - 0.2in),transparent);"
+         "-webkit-mask-composite:source-in;mask-image:linear-gradient(to right,transparent,#000 0.2in,#000 calc(100% - 0.2in),transparent),"
+         "linear-gradient(to bottom,transparent,#000 0.2in,#000 calc(100% - 0.2in),transparent);mask-composite:intersect")
+for _bad, _says in (({"from": 0.8, "to": 0.5}, "past 'from'"), ({"size": 1}, "unknown size"),
+                    ({"to": 2}, "fraction between 0 and 1")):
+    check_eq(f"64: a fade is refused: {_says}",
+             _says in _layout_error({"boxes": [_tf(id="f", md="x", fade=_bad)]}), True)
+check_eq("64: a drawn shape does not fade — its fill does",
+         "fades through its fill" in _layout_error({"shapes": [{"id": "s", "kind": "rect", "page": 1, "x": 1, "y": 1,
+                                                                 "w": 1, "h": 1, "fill": "#000", "fade": {}}]}), True)
 check_eq("39: an outer glow is a box-shadow, a feather a mask",
          [x in _layout({"boxes": [_tf(id="g", md="x", glow={"size": 0.1, "color": "#FFCC00"},
                                       feather=0.2)]}).text_boxes(1)
@@ -4499,6 +4538,27 @@ check_eq("53: header columns are th; alternate columns tinted and ruled; a cell 
 check_eq("53: a cell style must exist, and holds only cell keys",
          ["no cell style" in _layout_error({"tables": [dict(_t53)]}),
           "only fill" in _layout_error({"cellStyles": {"T": {"wat": 1}}})], [True, True])
+
+# --- INDESIGN_PARITY.md 82: internal links and cross-reference text ------------------
+from docsync.content import md_inline as _mdx, link_refs as _lrefs   # noqa: E402
+check_eq("82: [words](#key) is an internal link; a web link is untouched",
+         _mdx("see [Who pays](#whopays.h1) or [it](https://a.gov/x?a=1&b=2)"),
+         'see <a class="ds-xref" href="#whopays.h1">Who pays</a> or <a href="https://a.gov/x?a=1&b=2">it</a>')
+check_eq("82: link_refs finds the places linked to", _lrefs("[a](#x.y) [b](#text.3) [c](https://q)"),
+         {"x.y", "text.3"})
+_xl = _layout({"boxes": [_tf(id="h", md="## Who *pays*[^n1]\n\nBody."),
+                         _tf(id="r", md="See {titleof:text.h}, {titleof:nope}; [jump](#text.h)", y=4)]})
+_xh = _xl.text_boxes(1)
+check_eq("82: {titleof:} is the heading's words without its markup; one to nothing stays as typed",
+         "See Who <i>pays</i>, {titleof:nope};" in _xh, True)
+_xs = _xl.layer(1)
+check_eq("82: a page with an internal link carries the link runtime, once",
+         (_xs.count("a.ds-xref"), _xl.layer(1).count("a.ds-xref")), (1, 0))
+check_eq("82: a report without one carries no runtime",
+         "ds-xref" in _layout({"boxes": [_tf(id="a", md="x [y](https://a.gov)")]}).layer(1), False)
+_xc = _content(_layout({}), body="[[a.h]]\n## Who pays\n\n[[a.p]]\nSee [it](#a.h).\n\n[[sources]]\n[x]: A. — https://a.gov\n")
+check_eq("82: a slot an internal link names is hooked on the published page",
+         'data-anc-host="a.h"' in _xc._style("a.h") and "data-anc-host" not in _xc._style("a.p"), True)
 
 # --- INDESIGN_PARITY.md 68: flip on shapes, boxes and tables ----------------------
 _fl = _layout({"boxes": [_tf(id="f", md="x", flip="h", skew=10)],

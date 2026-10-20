@@ -34,7 +34,7 @@ from pathlib import Path
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
 from .content import (CAPTION_RE, COND_RE, Footnotes, block_html, char_styles_used,
-                      md_inline, paragraph, uses_breaks, uses_vars)
+                      link_refs, md_inline, paragraph, uses_breaks, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
 # different page passes its own size in — this is a default, not a law. It is
@@ -3802,6 +3802,26 @@ VARS_JS = (
 PAGE_STYLES = ("decimal", "lower-roman", "upper-roman", "lower-alpha", "upper-alpha")
 VARNAME_RE = re.compile(r"[A-Za-z0-9_-]{1,30}")
 LINKED_RE = re.compile(r"\{text:([A-Za-z0-9._@-]+)\}")
+# Cross-reference text (INDESIGN_PARITY.md 82): {titleof:<slot key | text.N>}
+# is that heading's own words — the first paragraph with its `##`, a {span}
+# and any footnote marker taken off — written in at every render, so "see
+# *{titleof:whopays.h1}* on page {pageof:whopays.h1}" follows a renamed
+# heading as well as a moved one.
+TITLEOF_RE = re.compile(r"\{titleof:([A-Za-z0-9._@-]+)\}")
+# Words that resolve_text() rewrites; a text holding none is left alone.
+RESOLVE_TOKENS = ("{caption:", "{var:", "{text:", "{titleof:")
+# The ids an internal link [words](#key) names (content.XREF_RE): the target
+# is hooked with data-anc-host (or is a text box's data-el), and this gives it
+# the id the link points at — or points the link at the id it already has —
+# so the link jumps on the web and is a live link in the printed PDF.
+XREF_JS = (
+    "(function(){function go(){var as=document.querySelectorAll('a.ds-xref');"
+    "for(var i=0;i<as.length;i++){var a=as[i],k=decodeURIComponent((a.getAttribute('href')||'').slice(1));"
+    "if(!k||document.getElementById(k))continue;var q=CSS.escape(k);"
+    "var h=document.querySelector('[data-anc-host=\"'+q+'\"],[data-el=\"'+q+'\"],[data-slot=\"'+q+'\"]');"
+    "if(!h)continue;if(!h.id)h.id=k;else a.setAttribute('href','#'+h.id);}}"
+    "window.__dsXref=go;go();addEventListener('load',go);})();"
+)
 USERVAR_RE = re.compile(r"\{var:([A-Za-z0-9_-]{1,30})\}")
 
 
@@ -4202,7 +4222,7 @@ def box_border_css(b: dict) -> str:
 # a second would replace the first) and a mask that fades each edge; an SVG
 # shape takes the glow only, as a drop-shadow() filter beside its shadow,
 # because the inset effects there would need an SVG filter of their own.
-EFFECT_KEYS = ("glow", "innerShadow", "innerGlow", "feather")
+EFFECT_KEYS = ("glow", "innerShadow", "innerGlow", "feather", "fade")
 
 
 def effect_shadows(o: dict) -> list:
@@ -4223,14 +4243,25 @@ def effect_shadows(o: dict) -> list:
 
 
 def feather_css(o: dict) -> str:
-    f = o.get("feather")
-    if not f:
+    """The masks: `feather` (soft edges) and `fade` (64, InDesign's gradient
+    feather — opaque up to `from`, clear by `to`, along `angle` the CSS way:
+    180 fades toward the bottom). Both intersect when both are set."""
+    f, fade = o.get("feather"), o.get("fade")
+    if not f and not fade:
         return ""
-    f = f"{float(f):g}in"
-    g1 = f"linear-gradient(to right,transparent,#000 {f},#000 calc(100% - {f}),transparent)"
-    g2 = f"linear-gradient(to bottom,transparent,#000 {f},#000 calc(100% - {f}),transparent)"
-    return (f";-webkit-mask-image:{g1},{g2};-webkit-mask-composite:source-in;"
-            f"mask-image:{g1},{g2};mask-composite:intersect")
+    gs = []
+    if f:
+        f = f"{float(f):g}in"
+        gs.append(f"linear-gradient(to right,transparent,#000 {f},#000 calc(100% - {f}),transparent)")
+        gs.append(f"linear-gradient(to bottom,transparent,#000 {f},#000 calc(100% - {f}),transparent)")
+    if fade:
+        a = float(fade.get("angle", 180))
+        lo = round(float(fade.get("from", 0.4)) * 100, 2)
+        hi = round(float(fade.get("to", 1)) * 100, 2)
+        gs.append(f"linear-gradient({a:g}deg,#000 {lo:g}%,transparent {hi:g}%)")
+    m = ",".join(gs)
+    return (f";-webkit-mask-image:{m};-webkit-mask-composite:source-in;"
+            f"mask-image:{m};mask-composite:intersect")
 
 
 def _check_effects(o: dict, where: str, svg: bool = False) -> None:
@@ -4248,6 +4279,22 @@ def _check_effects(o: dict, where: str, svg: bool = False) -> None:
             raise LayoutError(f"{where}.{k}.size is inches, 0 to 1")
         if e.get("alpha") is not None:
             _alpha(e["alpha"], f"{where}.{k}.alpha")
+    fade = o.get("fade")
+    if fade is not None:
+        if svg:
+            raise LayoutError(f"{where}.fade: a drawn shape fades through its fill — "
+                              "a gradient whose last stop is clear")
+        if not isinstance(fade, dict):
+            raise LayoutError(f"{where}.fade: expected {{angle, from, to}}")
+        bad = [k for k in fade if k not in ("angle", "from", "to")]
+        if bad:
+            raise LayoutError(f"{where}.fade: unknown {', '.join(bad)} — angle, from, to")
+        if fade.get("angle") is not None:
+            _num(fade["angle"], f"{where}.fade.angle")
+        lo = _alpha(fade.get("from", 0.4), f"{where}.fade.from")
+        hi = _alpha(fade.get("to", 1), f"{where}.fade.to")
+        if float(hi) <= float(lo):
+            raise LayoutError(f"{where}.fade: 'to' must be past 'from'")
     if o.get("feather") is not None:
         if svg:
             raise LayoutError(f"{where}.feather: a drawn shape cannot feather")
@@ -4520,6 +4567,10 @@ def shape_shadow_css(sh: dict) -> str:
 # white, InDesign's tint). Resolved ONCE, when the layout is read, before
 # anything validates or draws it — so every renderer, chart and runtime sees
 # plain hex, and redefining a swatch recolours everything that names it.
+# A swatch may also be a GRADIENT (64) — the same {type, angle, stops} a fill
+# takes, its stops plain hex or "@Solid" swatches — and then only a fill that
+# can be a gradient (a shape's, a text box's, a page's or placed element's)
+# may name it; "@Name 40%" tints every stop.
 SWATCH_RE = re.compile(r"^@([A-Za-z0-9 _-]{1,30}?)(?:\s+(\d{1,3})%)?$")
 COLOR_KEYS = {"fill", "stroke", "color", "shade", "headerFill", "headerColor", "footerFill", "bandCols",
               "band", "bg"}
@@ -4535,27 +4586,73 @@ def tint_hex(hx: str, pct: float) -> str:
     return "#" + "".join(f"{round(255 - (255 - c) * t):02X}" for c in rgb)
 
 
+def _tint_stop(hx: str, pct: float) -> str:
+    """tint_hex that keeps an 8-digit colour's own alpha."""
+    h = hx.lstrip("#")
+    a = h[6:8] if len(h) == 8 else (h[3] * 2 if len(h) == 4 else "")
+    return tint_hex("#" + (h[:3] if len(h) == 4 else h[:6]), pct) + a.upper()
+
+
+def _gradient_fill_path(where: str) -> bool:
+    """Is this colour field a fill that may be a gradient? A table's and a
+    cell's fills are hex only (layout._check_table)."""
+    return (where.endswith(".fill") or where.startswith("fill.")) \
+        and not re.search(r"(^|\.)(tables|cellStyles)\b|\.cells?\b|\.overrides\b", where)
+
+
 def resolve_swatches(raw: dict) -> dict:
-    """A copy of raw with every swatch reference in a colour field made hex."""
+    """A copy of raw with every swatch reference in a colour field made hex
+    (or, for a gradient swatch in a fill, the gradient)."""
     sw = raw.get("swatches") or {}
     if not isinstance(sw, dict):
         raise LayoutError("swatches: expected an object of name: hex")
     for n, v in sw.items():
         if not re.fullmatch(r"[A-Za-z0-9 _-]{1,30}", str(n)):
             raise LayoutError(f"swatch {n!r}: a name of letters, digits, spaces, - and _")
-        _hex(v, f"swatch '{n}'")
+        if not isinstance(v, dict):
+            _hex(v, f"swatch '{n}'")
     if not sw and "@" not in json.dumps(raw):
         return raw
+    solid = {n: v for n, v in sw.items() if not isinstance(v, dict)}
 
-    def one(v, where):
+    def ref(v, where, table):
         m = SWATCH_RE.match(v.strip())
         if not m:
-            return v
+            return None
         name, pct = m.group(1).strip(), m.group(2)
-        if name not in sw:
-            known = ", ".join(sorted(sw)) or "none are defined"
+        if name not in table:
+            if name in sw:
+                raise LayoutError(f"{where}: swatch {name!r} is a gradient — only a fill "
+                                  "of a shape, a text box, a page or a placed piece takes one")
+            known = ", ".join(sorted(table)) or "none are defined"
             raise LayoutError(f"{where}: no swatch called {name!r} — {known}")
-        return tint_hex(sw[name], float(pct)) if pct else sw[name]
+        return table[name], pct
+
+    # A gradient swatch's stops may name solid swatches; resolve them first,
+    # then check it as any fill is checked.
+    grads = {}
+    for n, v in sw.items():
+        if isinstance(v, dict):
+            g = json.loads(json.dumps(v))
+            for j, st in enumerate(g.get("stops") or []):
+                if isinstance(st, dict) and isinstance(st.get("color"), str):
+                    r = ref(st["color"], f"swatch '{n}'.stops[{j}].color", solid)
+                    if r:
+                        st["color"] = tint_hex(r[0], float(r[1])) if r[1] else r[0]
+            grads[n] = _fill(g, f"swatch '{n}'")
+
+    def one(v, where):
+        r = ref(v, where, {**solid, **grads} if _gradient_fill_path(where) else solid)
+        if not r:
+            return v
+        val, pct = r
+        if isinstance(val, dict):
+            g = json.loads(json.dumps(val))
+            if pct:
+                for st in g["stops"]:
+                    st["color"] = _tint_stop(st["color"], float(pct))
+            return g
+        return tint_hex(val, float(pct)) if pct else val
 
     def walk(o, where, key=None):
         if isinstance(o, dict):
@@ -5311,6 +5408,8 @@ class Layout:
         on the page."""
         if "{text:" in text:
             text = LINKED_RE.sub(self._linked, text)
+        if "{titleof:" in text:
+            text = TITLEOF_RE.sub(self._titleof, text)
         if "{caption:" in text:
             text = self.resolve_captions(text)
         if "{var:" in text:
@@ -5332,6 +5431,37 @@ class Layout:
             return None
         first = re.split(r"\n\s*\n", md.strip(), maxsplit=1)[0]
         return re.sub(r"\s*\n\s*", " ", first).strip()
+
+    def title_source(self, ref: str):
+        """The words {titleof:<ref>} shows: linked_source() without the
+        heading's own markup. None when there is nothing there."""
+        src = self.linked_source(ref)
+        if src is None:
+            return None
+        src = re.sub(r"^#{1,6}\s+", "", src)
+        src = re.sub(r"\{span\}\s*", "", src)
+        src = re.sub(r"\[\^[^\]]+\]", "", src)
+        return src.strip()
+
+    def _titleof(self, m) -> str:
+        src = self.title_source(m.group(1))
+        if src is None:
+            return m.group(0)
+        return f"\x0e{m.group(1)}\x10{src}\x0f" if os.environ.get("DOCSYNC_EDIT") else src
+
+    def _xref_once(self) -> str:
+        """XREF_JS, once, when some words link to a place in the report — a
+        report with no internal link keeps its bytes."""
+        if getattr(self, "_xref_sent", False):
+            return ""
+        c = getattr(self, "_content", None)
+        words = [str(b.get("md", "")) for b in self.all_boxes()]
+        if c is not None:
+            words += [v for v in getattr(c, "_raw", {}).values() if isinstance(v, str)]
+        if not any(link_refs(w) for w in words):
+            return ""
+        self._xref_sent = True
+        return f"<script>{XREF_JS}</script>"
 
     def _linked(self, m) -> str:
         src = self.linked_source(m.group(1))
@@ -6532,7 +6662,7 @@ class Layout:
             out.append(f"<style>{FIT_CSS}</style>")
         for b in mine:
             b = self.dressed(b)
-            if any(t in str(b.get("md", "")) for t in ("{caption:", "{var:", "{text:")):
+            if any(t in str(b.get("md", "")) for t in RESOLVE_TOKENS):
                 b = dict(b, md=self.resolve_text(str(b["md"])))
             act = b.get("act")
             an = anim_attrs(b.get("anim")) + anchor_attrs(b)
@@ -6914,7 +7044,7 @@ class Layout:
                 # eighty columns, which is why md_inline itself leaves a
                 # newline alone and paragraphs() closes it up to a space.
                 body_c = (decimal_cell(c, tails.get(ci, 0)) if dec and not ov.get("align")
-                          else md_inline(self.resolve_text(str(c)) if ("{var:" in str(c) or "{text:" in str(c)) else str(c))
+                          else md_inline(self.resolve_text(str(c)) if any(t in str(c) for t in RESOLVE_TOKENS[1:]) else str(c))
                           .replace("\n", "<br>"))
                 cells += f'<{name}{hook}{sty}>{body_c}</{name}>'
             hdr = ' class="ds-hdr"' if flow and ri < hn and ri == 0 else ""
@@ -7196,7 +7326,8 @@ class Layout:
                 + self._chart_tip_once() + self._anchor_once() + self._type_once()
                 + self._vars_once() + self._breaks_once() + self._char_once()
                 + self._bleed_once() + self._grid_once() + self._wrapshape_once()
-                + self._cond_once() + self._tabs_once() + self._order_once())
+                + self._cond_once() + self._tabs_once() + self._order_once()
+                + self._xref_once())
         # A blank page that is a COPY of a designed one draws that page's
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.
