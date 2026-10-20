@@ -1482,7 +1482,18 @@
         border-top:1px solid #E8EEEA; border-radius:8px 8px 0 0; }
   /* the layers panel: this page's objects, top of the stack first */
   #layerspop { min-width:230px; max-height:420px; overflow-y:auto; }
-  #preflight { position:relative; }
+  #preflight, #notes { position:relative; }
+  #notes-count { position:absolute; top:-4px; right:-5px; min-width:15px; height:15px; padding:0 3px;
+                 box-sizing:border-box; border-radius:8px; background:#8E6BBF; color:#fff;
+                 font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
+  #hiddenchars { font:600 13px/1 Georgia, serif; }
+  #hiddenchars.on { background:rgba(91,155,213,.18); }
+  #notespop { min-width:300px; max-width:400px; max-height:460px; overflow-y:auto; }
+  .nt-row { padding:6px 2px; border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
+  .nt-key { font-size:11px; color:#6b7280; }
+  .nt-text { white-space:pre-wrap; margin:2px 0 4px; }
+  .nt-acts { display:flex; gap:4px; }
+  .nt-acts button { font-size:11px; padding:2px 6px; }
   #pf-count { position:absolute; top:-4px; right:-5px; min-width:15px; height:15px; padding:0 3px;
               box-sizing:border-box; border-radius:8px; background:#B42318; color:#fff;
               font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
@@ -2183,6 +2194,14 @@
       stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" rx="1"/>
       <path d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"
         stroke-linecap="round"/></svg></button>
+  <button id="notes" aria-label="Notes — the writers' notes in this report, never published">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+      stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 2h9v6.5L8.5 11.5h-6z"/><path d="M8.5 11.5V8.5h3"/></svg><span id="notes-count" hidden></span></button>
+  <div class="pop" id="notespop" hidden>
+    <p class="pop-h">Notes</p>
+    <div id="notes-list"></div>
+  </div>
+  <button id="hiddenchars" aria-label="Show hidden characters and text threads (⌥⌘I)">¶</button>
   <button id="preflight" aria-label="Preflight — every problem in the report, in one list">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="5.5"/>
@@ -4191,11 +4210,16 @@ function normaliseForeign(root) {
       .forEach(unwrap);
 }
 
+// ⇧⌘V while typing: Paste without formatting (66) — the next paste takes the
+// clipboard's plain text and nothing else. Set by keydown, spent by paste.
+let plainPasteNext = false;
 function pasteClean(d, host, e, { allowLists = false, inline = false, allowMd = true } = {}) {
   const cb = e.clipboardData;
   if (!cb) return;                       // no clipboard access: let the browser try
   e.preventDefault();
-  const html = allowMd ? cb.getData('text/html') : '';
+  const plain = plainPasteNext;
+  plainPasteNext = false;
+  const html = allowMd && !plain ? cb.getData('text/html') : '';
   const text = cb.getData('text/plain') || '';
 
   let md;
@@ -4483,6 +4507,21 @@ function textMenu(d, host, e) {
   item('Italic', () => { restoreRange(d, range); toggleMark(d, host, 'i'); },
        hasRange && !boldItalicBlocked(d, 'italic'));
   item('Link…', () => { restoreRange(d, range); return link(d, host); }, hasRange);
+  // Change case (66): rewrites the selected words themselves; the `case`
+  // style key only changes how they look. Formatting inside the selection
+  // is not kept — the run becomes plain text, as typing over it would.
+  submenuRow(d, m, 'Change case ▸', sub => {
+    [['UPPERCASE', 'upper'], ['lowercase', 'lower'], ['Title Case', 'title'], ['Sentence case', 'sentence']]
+      .forEach(([label, how]) => {
+        const b = d.createElement('button'); b.textContent = label; b.disabled = !hasRange;
+        b.addEventListener('click', () => {
+          closeMenu(d); restoreRange(d, range);
+          const t = d.getSelection().toString();
+          if (t) d.execCommand('insertText', false, changeCase(t, how));
+        });
+        sub.appendChild(b);
+      });
+  });
   sep();
   buildEndnoteRows(d, m, host, range);
   sep();
@@ -5998,6 +6037,27 @@ function layerMenu(d, el, e) {
     item('Backward',       () => layerStep(d, -1, false, [el]));
     item('Send to back',   () => layerStep(d, -1, true, [el]));
     item('Select next above', () => { setSel(d, [id]); selectNextObject(d, 1); });
+    // Rotate and flip (68): on what is selected, or what was right-clicked.
+    const turnIds = selIds.has(id) ? [...selIds] : [id];
+    submenuRow(d, m, 'Rotate and flip ▸', sub => {
+      [['Rotate 90° clockwise', o => turnObjects(d, turnIds, { rot: 90 })],
+       ['Rotate 90° counter-clockwise', o => turnObjects(d, turnIds, { rot: -90 })],
+       ['Rotate 180°', o => turnObjects(d, turnIds, { rot: 180 })],
+       ['Flip horizontal', o => turnObjects(d, turnIds, { flip: 'h' })],
+       ['Flip vertical', o => turnObjects(d, turnIds, { flip: 'v' })]].forEach(([label, fn]) => {
+        const b = d.createElement('button'); b.textContent = label;
+        b.addEventListener('click', () => { closeMenu(d); fn(); }); sub.appendChild(b);
+      });
+    });
+    const noteKey = el && (el.dataset.slot || (el.querySelector('[data-slot]') || {}).dataset?.slot);
+    if (noteKey) item('Add a note…', () => addNoteDialog(noteKey));
+    if (boxOf(id) && !/!\[/.test(boxOf(id).md || ''))
+      item('Fill with placeholder text', async () => {
+        pushHistory();
+        const b = boxOf(id);
+        b.md = placeholderText(b.w || 3, b.h || boxHeightIn(id) || 2);
+        markDirty(); await render();
+      });
     item('Select next below', () => { setSel(d, [id]); selectNextObject(d, -1); });
     item(isLocked(id) ? 'Unlock' : 'Lock', () => {
       pushHistory();
@@ -13560,6 +13620,11 @@ function keysFor(d) {
   d.addEventListener('keydown', e => {
     // Before the `editing` guard too — see the top-level listener.
     if (zoomKey(e)) return;
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyV') {
+      plainPasteNext = true;                 // the paste event that follows spends it
+      setTimeout(() => { plainPasteNext = false; }, 800);
+    }
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyI') { e.preventDefault(); toggleHidden(); return; }
     if (editing) return;
     const t = e.target;
     if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT'
@@ -15571,6 +15636,198 @@ $('layers').addEventListener('click', () => {
   if (pop.hidden) { layersRender(); docLayersRender(); }
   togglePop(pop, $('layers'));
 });
+
+// ------------------------------------------------------------------ notes
+// Writers' notes (INDESIGN_PARITY.md 61). content.md already drops HTML
+// comments before it renders and the editor keeps a slot's comments through
+// an edit (slotNotes); they were simply invisible. A note is one comment in
+// a slot's block: listed here, marked on the page in the editor (never in
+// print or on the web), added from the right-click menu, edited, deleted.
+// Comments above the first slot are the document's own and are listed too.
+const NOTE_BODY = c => c.replace(/^<!--/, '').replace(/-->$/, '').trim();
+const slotKeysAll = () => [...source.matchAll(/^\[\[([A-Za-z0-9._-]+)\]\][ \t]*$/gm)].map(m => m[1]);
+function notesList() {
+  const out = [];
+  const head = source.split(/^\[\[[A-Za-z0-9._-]+\]\][ \t]*$/m)[0];
+  (head.match(COMMENT_RE) || []).forEach(c => out.push({ key: null, text: NOTE_BODY(c) }));
+  slotKeysAll().forEach(k => slotNotes(k).forEach(c => out.push({ key: k, text: NOTE_BODY(c) })));
+  return out;
+}
+/** A slot's notes, replaced whole: its words stay exactly as they are. */
+function setSlotNotes(k, notes) {
+  if (!slotRe(k).test(source)) return false;
+  const words = readSlot(k);
+  const clean = notes.map(n => String(n).trim().replace(/--+>?/g, '—')).filter(Boolean);
+  const body = [words, ...clean.map(n => `<!-- ${n} -->`)].filter(Boolean).join('\n\n');
+  source = source.replace(slotRe(k), (m, head) => head + body + '\n');
+  markDirty();
+  return true;
+}
+async function addNoteDialog(k, i = null) {
+  const cur = slotNotes(k).map(NOTE_BODY);
+  const got = await dsForm(i == null ? `Note on ${k}` : `Edit note on ${k}`, [{ name: 'text', type: 'textarea',
+    label: 'Only the editor shows it — never the page, the PDF or the web', value: i == null ? '' : cur[i] }], { okLabel: 'Save' });
+  if (got == null) return;
+  pushHistory();
+  if (i == null) cur.push(got.text); else cur[i] = got.text;
+  setSlotNotes(k, cur);
+  await render();
+  if (!$('notespop').hidden) notesRender();
+}
+function drawNoteMarks(d) {
+  d.querySelectorAll('.ds-notemark').forEach(n => n.remove());
+  const by = new Map();
+  notesList().forEach(n => { if (n.key) by.set(n.key, (by.get(n.key) || []).concat(n.text)); });
+  const count = notesList().length;
+  $('notes-count').hidden = !count; $('notes-count').textContent = String(count);
+  by.forEach((texts, k) => {
+    const el = d.querySelector(`[data-slot="${CSS.escape(k)}"]`);
+    const pg = el && el.closest('section.page');
+    if (!pg) return;
+    const b = inchBox(el, pg);
+    const mk = d.createElement('div');
+    mk.className = 'ds-notemark';
+    mk.textContent = texts.length > 1 ? String(texts.length) : '✎';
+    mk.title = texts.join('\n—\n');
+    mk.style.left = (b.x + b.w) + 'in'; mk.style.top = b.y + 'in';
+    mk.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
+    mk.addEventListener('click', e => { e.stopPropagation(); const pop = $('notespop'); if (pop.hidden) { notesRender(); togglePop(pop, $('notes')); } });
+    pg.appendChild(mk);
+  });
+}
+function notesRender() {
+  const box = $('notes-list');
+  box.textContent = '';
+  const list = notesList();
+  if (!list.length) { box.textContent = 'No notes. Right-click any text ▸ Add a note…'; return; }
+  const perKey = new Map();
+  list.forEach(n => {
+    const i = perKey.get(n.key) || 0; perKey.set(n.key, i + 1);
+    const row = document.createElement('div'); row.className = 'nt-row';
+    const k = document.createElement('div'); k.className = 'nt-key'; k.textContent = n.key || 'the document (above the first section)';
+    const t = document.createElement('div'); t.className = 'nt-text'; t.textContent = n.text;
+    row.append(k, t);
+    if (n.key) {
+      const acts = document.createElement('div'); acts.className = 'nt-acts';
+      const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); acts.appendChild(b); };
+      btn('Go to', () => { const el = $('out').contentDocument.querySelector(`[data-slot="${CSS.escape(n.key)}"]`); if (el) el.scrollIntoView({ block: 'center' }); });
+      btn('Edit…', () => addNoteDialog(n.key, i));
+      btn('Delete', async () => { pushHistory(); const cur = slotNotes(n.key).map(NOTE_BODY); cur.splice(i, 1); setSlotNotes(n.key, cur); await render(); notesRender(); });
+      row.appendChild(acts);
+    }
+    box.appendChild(row);
+  });
+}
+$('notes').addEventListener('click', () => { const pop = $('notespop'); if (pop.hidden) notesRender(); togglePop(pop, $('notes')); });
+
+// ------------------------------------------------- change case, placeholder
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'so', 'the', 'to', 'up', 'yet', 'vs']);
+function changeCase(t, how) {
+  if (how === 'upper') return t.toUpperCase();
+  if (how === 'lower') return t.toLowerCase();
+  if (how === 'sentence') return t.toLowerCase().replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+  let first = true;
+  return t.toLowerCase().replace(/[\p{L}\p{N}ʻ'’-]+/gu, w => {
+    const keep = !first && SMALL_WORDS.has(w);
+    first = false;
+    return keep ? w : w.charAt(0).toUpperCase() + w.slice(1);
+  });
+}
+const LOREM = ['Lorem ipsum dolor sit amet, consectetur adipiscing elit.', 'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+  'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.', 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum.',
+  'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia.', 'Nisi ut aliquip ex ea commodo consequat.'];
+/** About enough words to fill a w × h inch frame at body size. */
+function placeholderText(w, h) {
+  const chars = Math.max(60, Math.round(w * h * 150));
+  const paras = []; let p = [], n = 0, i = 0;
+  while (n < chars) { const s2 = LOREM[i++ % LOREM.length]; p.push(s2); n += s2.length + 1;
+    if (p.length === 4) { paras.push(p.join(' ')); p = []; } }
+  if (p.length) paras.push(p.join(' '));
+  return paras.join('\n\n');
+}
+
+// -------------------------------------------------------- rotate and flip
+/** Rotate by a step (90, -90, 180) or toggle a flip ('h' / 'v') on shapes,
+ *  boxes, tables and placed pieces — one undo step for the lot. */
+async function turnObjects(d, ids, { rot = 0, flip = null }) {
+  const els = ids.map(i => d.querySelector(`[data-el="${CSS.escape(i)}"], [data-shape="${CSS.escape(i)}"]`)).filter(Boolean)
+    .filter(el => !isLocked(idOf(el)));
+  if (!els.length) return;
+  pushHistory();
+  els.forEach(el => {
+    const st = _pilotStoreOf(idOf(el)) || ensureStore(d, el);
+    if (rot) {
+      let v = (((st.rot || 0) + rot) % 360 + 360) % 360;
+      if (v > 180) v -= 360;
+      if (v) st.rot = v; else delete st.rot;
+    }
+    if (flip) {
+      const cur = new Set((st.flip || '').split(''));
+      cur.has(flip) ? cur.delete(flip) : cur.add(flip);
+      const f = ['h', 'v'].filter(x => cur.has(x)).join('');
+      if (f) st.flip = f; else delete st.flip;
+    }
+  });
+  if (rot) lastXform = { kind: 'rot', deg: rot };
+  markDirty();
+  await render();
+}
+
+// ---------------------------------------- hidden characters, text threads
+// InDesign's Show Hidden Characters and Show Text Threads (70), as one view
+// toggle (⌥⌘I): a ¶ at the end of every paragraph, tabs and breaks outlined,
+// and a line from each threaded frame to the next. Editor-only marks, drawn
+// after every render while it is on.
+let showHidden = false;
+try { showHidden = localStorage.getItem('ds-hidden') === '1'; } catch (e) { /* file: */ }
+function toggleHidden() {
+  showHidden = !showHidden;
+  try { localStorage.setItem('ds-hidden', showHidden ? '1' : '0'); } catch (e) { /* file: */ }
+  $('hiddenchars').classList.toggle('on', showHidden);
+  drawHidden($('out').contentDocument);
+  $('stat').textContent = showHidden ? 'showing hidden characters and text threads (⌥⌘I)' : 'hidden characters off';
+}
+function drawHidden(d) {
+  if (!d || !d.body) return;
+  d.querySelectorAll('.ds-pilcrow, .ds-threadline').forEach(n => n.remove());
+  d.body.classList.toggle('ds-show-hidden', showHidden);
+  $('hiddenchars').classList.toggle('on', showHidden);
+  if (!showHidden) return;
+  d.querySelectorAll('section.page p, section.page li, section.page h1, section.page h2, section.page h3, section.page h4, section.page td, section.page th')
+    .forEach(el => {
+      if (el.closest('.ds-menu, .ds-edit, [contenteditable="true"]') || el.querySelector('p, li')) return;
+      const sp = d.createElement('span'); sp.className = 'ds-pilcrow'; sp.setAttribute('aria-hidden', 'true');
+      sp.textContent = el.tagName === 'TD' || el.tagName === 'TH' ? '¤' : '¶';
+      el.appendChild(sp);
+    });
+  const heads = boxes().filter(b => b.next && !threadPrev()[b.id]);
+  heads.forEach(h => {
+    const chain = threadChain(h);
+    for (let i = 0; i + 1 < chain.length; i++) {
+      const a = d.querySelector(`[data-el="text.${CSS.escape(chain[i].id)}"]`);
+      const b = d.querySelector(`[data-el="text.${CSS.escape(chain[i + 1].id)}"]`);
+      if (!a || !b) continue;
+      const pa = a.closest('section.page'), pb = b.closest('section.page');
+      if (!pa) continue;
+      const A = inchBox(a, pa);
+      const svg = d.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'ds-threadline');
+      svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%');
+      if (pa === pb) {
+        const B = inchBox(b, pb);
+        svg.innerHTML = `<path d="M${(A.x + A.w) * 96} ${(A.y + A.h) * 96} L${B.x * 96} ${B.y * 96}" `
+          + 'stroke="#5B9BD5" stroke-width="1.5" stroke-dasharray="4 3" fill="none"/>'
+          + `<circle cx="${B.x * 96}" cy="${B.y * 96}" r="3" fill="#5B9BD5"/>`;
+      } else {
+        const pid = (docSheets().find(sh => sh.pg === pb) || {}).id;
+        svg.innerHTML = `<text x="${(A.x + A.w) * 96 - 4}" y="${(A.y + A.h) * 96 + 12}" text-anchor="end" `
+          + `font-size="10" font-family="system-ui" fill="#5B9BD5">→ continues on page ${pid != null ? pageLabel(pid) : '?'}</text>`;
+      }
+      pa.appendChild(svg);
+    }
+  });
+}
+$('hiddenchars').addEventListener('click', toggleHidden);
 
 // --------------------------------------------------------------- preflight
 // One list of everything wrong (INDESIGN_PARITY.md 47): audit()'s layout
@@ -21790,6 +22047,8 @@ function wire(roots) {
   renderNotices(d);
   checkImmovable(d);           // text that types but cannot move: say so
   schedulePreflight();         // the badge, a beat after the page settles
+  drawNoteMarks(d);            // writers' notes (61), editor-only marks
+  drawHidden(d);               // ¶ and thread lines, when shown (70)
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {
@@ -22105,6 +22364,13 @@ function wire(roots) {
     .ds-rule:hover { background:rgba(107,158,120,.22); }
     .ds-gd { position:absolute; z-index:9991; }
     .ds-linked { box-shadow:inset 0 -2px 0 rgba(18,181,165,.55); }
+    .ds-notemark { position:absolute; z-index:9989; width:16px; height:16px; margin:-6px 0 0 -10px;
+                   border-radius:3px 3px 3px 0; background:#8E6BBF; color:#fff; cursor:pointer;
+                   font:700 11px/16px system-ui, sans-serif; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    .ds-pilcrow { color:#5B9BD5; font:400 .85em/1 Georgia, serif; font-style:normal; opacity:.8; user-select:none; }
+    .ds-show-hidden .ds-tab { outline:1px dotted rgba(91,155,213,.8); }
+    .ds-show-hidden .ds-brk::before { content:'⇥ ' attr(data-brk) ' break'; color:#5B9BD5; font:9px system-ui, sans-serif; }
+    .ds-threadline { position:absolute; inset:0; pointer-events:none; z-index:9988; overflow:visible; }
     .ds-gd.v { top:0; width:1px; height:100%; margin-left:-4px; padding:0 4px;
                background:clip-content-box; cursor:ew-resize; }
     .ds-gd.h { left:0; height:1px; width:100%; margin-top:-4px; padding:4px 0;
@@ -22126,6 +22392,7 @@ function wire(roots) {
     .ds-present-doc section.page { display:none !important; }
     .ds-present-doc section.page.ds-present-on { display:block !important;
         margin:0 auto !important; box-shadow:none !important; }
+    .ds-present-doc .ds-notemark, .ds-present-doc .ds-threadline, .ds-present-doc .ds-pilcrow,
     .ds-present-doc .ds-cut, .ds-present-doc .ds-gd, .ds-present-doc .ds-mg, .ds-present-doc .ds-mgc, .ds-present-doc .ds-sec-grip,
     .ds-present-doc .ds-handles, .ds-present-doc .ds-mini,
     .ds-present-doc .ds-selbox { display:none !important; }
@@ -28538,7 +28805,11 @@ const PILOT_BATCH_VERBS = {
   place: { validate: id => _pilotValidatePlace(id), apply: (id, o) => _pilotApplyPlace(id, o) },
   recolor: { validate: () => ({ ok: true }), apply: (id, fill) => _pilotApplyRecolor(id, fill) },
   setChart: { validate: (id, p) => _pilotValidateSetChart(id, p), apply: (id, p) => _pilotApplySetChart(id, p) },
-  addTextBox: { validate: () => ({ ok: true }), apply: o => _pilotApplyAddTextBox(o) },
+  // An empty md is refused here: the engine refuses a box with no words at
+  // the next render, so accepting one left the draft unable to build.
+  addTextBox: { validate: o => (o && typeof o.md === 'string' && !o.md.trim())
+      ? { ok: false, error: 'a text box needs words — md is empty' } : { ok: true },
+    apply: o => _pilotApplyAddTextBox(o) },
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
   setMargins: { validate: (mg, master) => {
       if (master && !(layout.masters || {})[master]) return { ok: false, error: `no shared layout called '${master}'` };
@@ -28546,6 +28817,20 @@ const PILOT_BATCH_VERBS = {
         return { ok: false, error: 'setMargins({top, bottom, left, right, columns, gutter} | null, master?)' };
       return { ok: true };
     }, apply: (mg, master) => { setMargins(mg, master || null); return { margins: master ? layout.masters[master].margins || null : layout.margins || null }; } },
+  setNotes: { validate: (k, notes) => (slotRe(k || '').test(source) && Array.isArray(notes) && notes.every(n => typeof n === 'string'))
+      ? { ok: true } : { ok: false, error: 'setNotes(slotKey, [note text, …]) — a slot that exists' },
+    apply: (k, notes) => { setSlotNotes(k, notes); return { key: k, notes: slotNotes(k).map(NOTE_BODY) }; } },
+  flip: { validate: (id, f) => {
+      const v = _pilotValidatePlace(id);
+      if (!v.ok) return v;
+      return [null, 'h', 'v', 'hv'].includes(f ?? null) ? { ok: true } : { ok: false, error: "flip(id, 'h' | 'v' | 'hv' | null)" };
+    }, apply: (id, f) => {
+      const d = $('out').contentDocument;
+      const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
+      const st = _pilotStoreOf(id) || ensureStore(d, el);
+      if (f) st.flip = f; else delete st.flip;
+      return { id, flip: f || null };
+    } },
   changeLink: { validate: (a, b) => (typeof a === 'string' && a && typeof b === 'string' && b) ? { ok: true }
       : { ok: false, error: 'changeLink(oldUrl, newUrl)' },
     apply: (a, b) => ({ changed: changeLink(a, b) }) },
@@ -28942,6 +29227,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   /** A new text box; returns its element id ('text.<n>') for place()/edit. */
   async addTextBox(opts = {}) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const v = PILOT_BATCH_VERBS.addTextBox.validate(opts);
+    if (!v.ok) return v;
     pushHistory();
     const { id, page } = _pilotApplyAddTextBox(opts);
     markDirty();
@@ -29343,6 +29630,13 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  textToTable(boxId, sep?) turns a text box's lines into a table. */
   /** Reading order: setReadingOrder(page, [ids] | null) — the order a screen
    *  reader and the tagged PDF read the page's objects in. */
+  /** Writers' notes: notes() lists them ({key, text}; key null for the
+   *  document's own, above the first slot); setNotes(key, [texts]) replaces
+   *  a slot's notes. Never published. */
+  notes() { return { ok: true, notes: notesList() }; },
+  async setNotes(k, notes) { return _pilotOne('setNotes', [k, notes]); },
+  /** flip(id, 'h' | 'v' | 'hv' | null) — on shapes, boxes, tables, placed pieces. */
+  async flip(id, f) { return _pilotOne('flip', [id, f]); },
   /** Preflight: every problem at once — audit()'s kinds plus missing-image,
    *  low-res, no-alt, low-contrast (WCAG AA) and font-failed, each with a
    *  severity (error / warning). */

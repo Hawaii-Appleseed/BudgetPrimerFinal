@@ -4500,6 +4500,17 @@ check_eq("53: a cell style must exist, and holds only cell keys",
          ["no cell style" in _layout_error({"tables": [dict(_t53)]}),
           "only fill" in _layout_error({"cellStyles": {"T": {"wat": 1}}})], [True, True])
 
+# --- INDESIGN_PARITY.md 68: flip on shapes, boxes and tables ----------------------
+_fl = _layout({"boxes": [_tf(id="f", md="x", flip="h", skew=10)],
+               "shapes": [{"id": "s", "page": 1, "kind": "rect", "x": 1, "y": 1, "w": 2, "h": 1, "flip": "v"}],
+               "tables": [{"id": "t", "page": 1, "x": 1, "y": 4, "w": 3, "rows": [["a", "b"]], "flip": "hv"}]})
+check_eq("68: a flip folds into the one transform a box, shape or table already has",
+         ["transform:scale(-1,1) skewX(10deg)" in _fl.text_boxes(1),
+          'transform="translate(2.0 1.5) scale(1 -1) translate(-2.0 -1.5)"' in _fl.layer(1),
+          "transform:scale(-1,-1)" in _fl.tables_html(1)], [True, True, True])
+check_eq("68: an unknown flip is refused",
+         "must be h, v or hv" in _layout_error({"boxes": [_tf(id="f", md="x", flip="x")]}), True)
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

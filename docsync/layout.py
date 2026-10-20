@@ -3499,6 +3499,23 @@ def _check_skew(obj: dict, where: str) -> None:
         v = _num(obj["skew"], f"{where}.skew")
         if not -SKEW_MAX <= v <= SKEW_MAX:
             raise LayoutError(f"{where}.skew: {v:g}° is outside ±{SKEW_MAX}°")
+    # Flip (INDESIGN_PARITY.md 68) rides with skew everywhere skew goes:
+    # h, v or hv, folded into the one transform the object already has.
+    if obj.get("flip") is not None and obj["flip"] not in ("h", "v", "hv"):
+        raise LayoutError(f"{where}: flip {obj['flip']!r} must be h, v or hv")
+
+
+def flip_scale(obj: dict) -> str:
+    """CSS / SVG scale() for an object's flip, or ""."""
+    f = obj.get("flip")
+    return f'scale({-1 if "h" in f else 1},{-1 if "v" in f else 1})' if f else ""
+
+
+def css_turn(obj: dict) -> str:
+    """A box's or table's flip and skew as ONE transform declaration (a
+    second would replace the first), or "". Rotation is its own property."""
+    tf = [x for x in (flip_scale(obj), f'skewX({float(obj["skew"]):g}deg)' if obj.get("skew") else "") if x]
+    return f';transform:{" ".join(tf)}' if tf else ""
 
 
 def svg_turn(s: dict, x, y, w, h) -> str:
@@ -3510,6 +3527,8 @@ def svg_turn(s: dict, x, y, w, h) -> str:
         parts.append(f"rotate({s['rot']} {cx} {cy})")
     if s.get("skew"):
         parts.append(f"translate({cx} {cy}) skewX({float(s['skew']):g}) translate({-cx} {-cy})")
+    if s.get("flip"):
+        parts.append(f"translate({cx} {cy}) {flip_scale(s).replace(',', ' ')} translate({-cx} {-cy})")
     return f' transform="{" ".join(parts)}"' if parts else ""
 
 
@@ -6513,8 +6532,7 @@ class Layout:
                 css += ';padding:.08in .12in;border-radius:8px'
             if b.get("rot"):
                 css += f';rotate:{b["rot"]}deg'      # own property — see _style
-            if b.get("skew"):
-                css += f';transform:skewX({float(b["skew"]):g}deg)'
+            css += css_turn(b)
             if b.get("alpha") is not None:
                 css += f';opacity:{b["alpha"]:g}'
             sh = ([shadow_css(b["shadow"])] if b.get("shadow") else []) + effect_shadows(b)
@@ -6710,8 +6728,7 @@ class Layout:
                    f'width:{t["w"]}in;z-index:{int(t.get("z", 2)) + self.layer_lift(t)}')
         if t.get("rot"):
             css += f';rotate:{t["rot"]}deg'      # own property — see _style
-        if t.get("skew"):
-            css += f';transform:skewX({float(t["skew"]):g}deg)'
+        css += css_turn(t)
         if t.get("alpha") is not None:
             css += f';opacity:{t["alpha"]:g}'
         if t.get("blend") and t["blend"] != "normal":

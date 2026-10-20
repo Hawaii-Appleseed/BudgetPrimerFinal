@@ -1097,12 +1097,18 @@ Google Doc import exist, and were never listed here.
     Define variables…, one per line, "name = text"); pilot
     `setVariable(name, text | null)`. Not done: `{file}` and `{modified}` —
     the engine runs in the browser too, where a file's date means nothing.
-61. **Editorial notes in the text.** content.md already drops HTML
-    comments before rendering, and writers use them — but the editor hides
-    them completely. Show each as a note chip in the words (InDesign's
-    Notes), editable, never published, listed in a Notes panel. The hub's
-    comments stay the conversation; notes are what the writer leaves in
-    the file. **S–M.**
+61. **Editorial notes. — CLOSED 2026-10-19.** A note is an HTML comment in
+    a slot's block of content.md — what writers already leave there, which
+    the renderer strips and the editor already kept through edits; they were
+    only invisible. A **Notes** button (with a count) lists every note by
+    slot, plus the document's own above the first slot; Go to, Edit…,
+    Delete. Each slot with notes carries a small mark in the editor (its
+    notes as the tooltip; a click opens the list) — never in print, on the
+    web or while presenting. Right-click any text ▸ Add a note…. A note's
+    slot words are untouched by adding, editing or deleting it. Pilot
+    `notes()`, `setNotes(key, [texts])`. Not done: a note anchored to a
+    word inside the slot (the comment sits after the words), and notes on
+    text boxes, whose words live in layout.json.
 62. **Track changes in local mode.** Suggesting (35) needs the hub's store.
     Locally: a change recorded as `{++inserted++}` / `{--deleted--}` marks
     in content.md (CriticMarkup), drawn as insert and strike, Accept and
@@ -1120,18 +1126,29 @@ Google Doc import exist, and were never listed here.
 65. **Eyedropper for looks.** The colour eyedropper picks colour only, and
     the format painter misses some keys (a shape's blend and glow, a box's
     padding, radius and border) and never works on a run of text.
-66. **Change case** that rewrites the words (UPPERCASE, lowercase, Title,
-    Sentence — the `case` key only changes how they look), **Fill with
-    placeholder text**, and **Paste without formatting** (⇧⌘V; paste
-    always keeps bold, italic and links today).
+66. **Change case, placeholder text, paste without formatting. — CLOSED
+    2026-10-19.** Right-click in the words ▸ Change case ▸ UPPERCASE,
+    lowercase, Title Case (small words kept small) or Sentence case rewrites
+    the selected words themselves; formatting inside the selection goes, as
+    typing over it would. Right-click a text box ▸ Fill with placeholder
+    text, about enough to fill its frame. ⇧⌘V while typing pastes the
+    clipboard's plain text, no bold, italic or links.
 67. A **Glyphs panel**: every character in a font, searchable, with the
     recent ones kept — for arrows, fractions, ʻokina and kahakō letters.
-68. **Rotate 90° / 180°** commands, and **flip** for shapes and boxes (it
-    is images only).
+68. **Rotate and flip. — CLOSED 2026-10-19.** Right-click ▸ Rotate and
+    flip ▸ 90° either way, 180°, flip horizontal or vertical, on the
+    selection; one undo step; a quarter turn is what Transform Again
+    repeats. `flip` (h, v, hv) is now a key on shapes, boxes and tables as
+    well as placed pieces and images, folded into the one transform each
+    already has (`css_turn`, `svg_turn`). Pilot `flip(id, f)`.
 69. An **undo history** list to jump back through, beside the version
     history.
-70. **Show hidden characters** as a toggle, and **text threads** drawn as
-    lines between frames (today a thread shows only while linking).
+70. **Show hidden characters and text threads. — CLOSED 2026-10-19.** The
+    ¶ button (⌥⌘I) puts a ¶ at the end of every paragraph (¤ in a table
+    cell), outlines tabs, labels column and frame breaks, and draws a dashed
+    line from each threaded frame to the next — "continues on page N" where
+    the next frame is on another page. Editor-only marks, redrawn after each
+    render while the view is on; remembered between sessions.
 71. **Export** JPEG as well as PNG, export only the selection, and a
     package .zip that includes the fonts and the rendered pages.
 72. A **measure readout**: the distance to the next object while dragging
@@ -1160,6 +1177,66 @@ layout).
 
 (49), (54), (56) and (60) closed first, 2026-10-19 — each kept every
 bound report's published bytes identical — and then (47) and (52), which
-are the editor's alone and touch no published byte; then (59) and (53).
-Next (61), then the smaller wins. (48) and (62) are the large ones, worth
+are the editor's alone and touch no published byte; then (59) and (53);
+then (61), (66), (68) and (70). Next: (80), (77) and (75) from the pass
+below, then (57), (64) and (82). (48) and (62) are the large ones, worth
 it when a report asks for footnotes or a local review round.
+
+## A fifth pass: InDesign's panel menus — scoped 2026-10-19
+
+The 766 panel-menu commands (paragraph, character, object, table and cell
+styles, swatches, pages, layers, links, hyperlinks, align, transform,
+library), each checked against the code. Most of InDesign's panel work is
+here by now; what is not, ranked the same way. Numbering continues from
+(74).
+
+### Worth building
+
+75. **Load styles from another report.** Every report re-makes the house
+    look by hand. Load text styles, character styles, object styles, cell
+    styles, swatches and variables from another project (pick which), with
+    a clash shown before anything is overwritten. The staff hub makes this
+    a list of the reports you can open. **S–M.**
+76. **Style housekeeping.** Select and delete unused styles (text, object,
+    cell, swatches), duplicate a style, and an **override highlighter**:
+    text whose own keys differ from the style it wears gets a dashed
+    outline, with Clear overrides — the way to find why one heading looks
+    off. **S.**
+77. **Type from the keyboard.** ⇧⌘> / ⇧⌘< size, ⌥← / ⌥→ tracking, ⌥↑ / ⌥↓
+    leading, ⌥⇧↑ / ⌥⇧↓ baseline shift, on the selected text — InDesign's
+    muscle memory, and much faster than the panel for fitting copy. **S.**
+78. **Span columns.** A heading over both columns of a two-column box:
+    `{span}` at the start of a paragraph sets `column-span: all` on it.
+    Today a multi-column box can only start its columns at the top. **S.**
+79. **Default styles for new things.** A report's default text style for
+    new text boxes, and its default object style for new boxes, shapes and
+    tables — so what is added already looks like the report. **S.**
+80. **Colours in use.** List every colour the report uses (fills, text,
+    strokes, borders, charts); make swatches from the unnamed ones in one
+    go (Add Unnamed Colors); select everything wearing a colour (Find this
+    Color); and replace one colour with another everywhere (Merge
+    Swatches). The brand-cleanup pass. **S–M.**
+81. **Clear transformations.** One command that puts rotation, skew, flip
+    and scale back to none. **S.**
+82. **Internal links and cross-reference text.** Link words to another
+    place in the report (a slot, a heading), clickable in the PDF and on
+    the web; and `{titleof:<slot>}`, the heading's own words, so "see
+    *Who pays* on page {pageof:…}" follows a renamed heading too. **S–M.**
+83. **Export some pages.** A PDF of a page range or the current page, for
+    sending one section; the export takes one page as PNG today, not a
+    range as PDF. **S.**
+84. **Tabs and slides for the web.** InDesign's Object States: one frame
+    holding several states, switched by buttons — a tabbed explainer on the
+    web, the states one after another in print. RxKids' tabbed page was
+    built by hand in its renderer; this would make it a thing any report can
+    have. **M–L.**
+85. **Layer housekeeping.** Merge layers, delete unused layers, select
+    everything on a layer. **S.**
+
+### Not worth doing here
+
+Style groups and style packs (a report has a dozen styles, not hundreds);
+export tags (the HTML is already semantic); Book, Index, Data Merge (a
+renderer loop makes a set of district fact sheets better than a merge
+would); InCopy assignments; page transitions; ink manager and trapping;
+alternate and liquid layouts (the phone reflow is the alternate layout).
