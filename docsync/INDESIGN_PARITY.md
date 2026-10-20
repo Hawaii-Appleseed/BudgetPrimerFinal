@@ -1178,8 +1178,8 @@ layout).
 (49), (54), (56) and (60) closed first, 2026-10-19 — each kept every
 bound report's published bytes identical — and then (47) and (52), which
 are the editor's alone and touch no published byte; then (59) and (53);
-then (61), (66), (68) and (70). Next: (80), (77) and (75) from the pass
-below, then (57), (64) and (82). (48) and (62) are the large ones, worth
+then (61), (66), (68) and (70); then (80), (77) and (75). Next: (76),
+(79), (81) and (78), each small, then (57), (64) and (82). (48) and (62) are the large ones, worth
 it when a report asks for footnotes or a local review round.
 
 ## A fifth pass: InDesign's panel menus — scoped 2026-10-19
@@ -1192,30 +1192,46 @@ here by now; what is not, ranked the same way. Numbering continues from
 
 ### Worth building
 
-75. **Load styles from another report.** Every report re-makes the house
-    look by hand. Load text styles, character styles, object styles, cell
-    styles, swatches and variables from another project (pick which), with
-    a clash shown before anything is overwritten. The staff hub makes this
-    a list of the reports you can open. **S–M.**
+75. **Load styles from another report. — CLOSED 2026-10-19.** File ▸ Load
+    styles from another report…: pick a report this editor can open, then
+    per kind — text and character styles, object styles, cell styles,
+    swatches, text variables — add the ones this report lacks, also replace
+    same-named ones (the clashes are listed before anything changes), or
+    leave the kind alone. It reads that report's committed layout.json
+    through the registry, so on the hub it is the vendored copy, not edits
+    still only in the hub's store. Pilot `loadStyles(project, {kind:
+    'add' | 'replace' | 'skip'})`.
 76. **Style housekeeping.** Select and delete unused styles (text, object,
     cell, swatches), duplicate a style, and an **override highlighter**:
     text whose own keys differ from the style it wears gets a dashed
     outline, with Clear overrides — the way to find why one heading looks
     off. **S.**
-77. **Type from the keyboard.** ⇧⌘> / ⇧⌘< size, ⌥← / ⌥→ tracking, ⌥↑ / ⌥↓
-    leading, ⌥⇧↑ / ⌥⇧↓ baseline shift, on the selected text — InDesign's
-    muscle memory, and much faster than the panel for fitting copy. **S.**
+77. **Type from the keyboard. — CLOSED 2026-10-19.** While typing:
+    ⇧⌘> / ⇧⌘< size (⌥ for five points), and, with words selected, ⌥← /
+    ⌥→ tracking, ⌥↑ / ⌥↓ leading, ⌥⇧↑ / ⌥⇧↓ baseline shift — with
+    nothing selected those keys keep moving the caret by word and
+    paragraph, as the Mac does. Painted live, one undo step a burst. A
+    style belongs to the whole slot or box here, so the change does too,
+    where InDesign would change only the selected characters. With a text
+    object selected and nobody typing, ⇧⌘> / ⇧⌘< resize its text.
 78. **Span columns.** A heading over both columns of a two-column box:
     `{span}` at the start of a paragraph sets `column-span: all` on it.
     Today a multi-column box can only start its columns at the top. **S.**
 79. **Default styles for new things.** A report's default text style for
     new text boxes, and its default object style for new boxes, shapes and
     tables — so what is added already looks like the report. **S.**
-80. **Colours in use.** List every colour the report uses (fills, text,
-    strokes, borders, charts); make swatches from the unnamed ones in one
-    go (Add Unnamed Colors); select everything wearing a colour (Find this
-    Color); and replace one colour with another everywhere (Merge
-    Swatches). The brand-cleanup pass. **S–M.**
+80. **Colours in use. — CLOSED 2026-10-19.** A toolbar button lists every
+    colour layout.json sets — fills, text, strokes, borders, header and
+    band fills, chart series, gradient stops, page and element fills — by
+    value, with how many places use it, where, and which swatch it is.
+    **Name unnamed as swatches** makes a swatch of each raw colour (reusing
+    one of the same value) and points every use at it, so the page renders
+    the same and a redefine moves them all. **Select** selects what wears a
+    colour on the page; **Replace…** swaps it for another colour or a
+    swatch everywhere. Only values under a colour key count, so words that
+    look like a hex in a table cell are left alone. Colours a renderer
+    draws in its own CSS are the renderer's and are not listed. Pilot
+    `colours()`, `replaceColour(from, to)`, `nameAllColours()`.
 81. **Clear transformations.** One command that puts rotation, skew, flip
     and scale back to none. **S.**
 82. **Internal links and cross-reference text.** Link words to another

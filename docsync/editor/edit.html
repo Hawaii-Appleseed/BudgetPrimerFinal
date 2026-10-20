@@ -1488,6 +1488,14 @@
                  font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
   #hiddenchars { font:600 13px/1 Georgia, serif; }
   #hiddenchars.on { background:rgba(91,155,213,.18); }
+  #colourspop { min-width:300px; max-width:380px; max-height:460px; overflow-y:auto; }
+  .cl-row { display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:center; padding:5px 2px;
+            border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
+  .cl-chip { width:20px; height:20px; border-radius:4px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.15); }
+  .cl-meta { color:#6b7280; font-size:11px; }
+  .cl-acts { display:flex; gap:4px; }
+  .cl-acts button, #cl-tools button { font-size:11px; padding:2px 6px; }
+  #cl-tools { display:flex; gap:6px; margin:2px 0 6px; }
   #notespop { min-width:300px; max-width:400px; max-height:460px; overflow-y:auto; }
   .nt-row { padding:6px 2px; border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
   .nt-key { font-size:11px; color:#6b7280; }
@@ -2035,6 +2043,9 @@
       ><path d="M8 2.4v7"/><path d="M5.1 6.5 8 9.4l2.9-2.9"/><path
         d="M2.9 11.4v1.2a1 1 0 0 0 1 1h8.2a1 1 0 0 0 1-1v-1.2"/></svg
       ><span class="shp-t">Import text from the Doc…</span></button>
+    <button class="shp" id="file-loadstyles"><svg class="shp-i" viewBox="0 0 16 16"
+      ><path d="M3 3.5h7M3 6.5h5M3 9.5h7"/><path d="M11.5 8.5v5M9 11l2.5 2.5L14 11"/></svg
+      ><span class="shp-t">Load styles from another report…</span></button>
     <!-- Download and Token MOVED here from the bar. Same ids and the same
          handlers: nothing about either flow changed, only where it is
          reached from. -->
@@ -2194,6 +2205,16 @@
       stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" rx="1"/>
       <path d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"
         stroke-linecap="round"/></svg></button>
+  <button id="colours" aria-label="Colours in use — every colour the report sets; name them, find them, replace one everywhere">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+      <path d="M7 1.5a5.5 5.5 0 1 0 0 11c.9 0 1.2-.7.9-1.3-.4-.8.1-1.7 1-1.7H10a2.5 2.5 0 0 0 2.5-2.5C12.5 3.9 10.1 1.5 7 1.5z"/>
+      <circle cx="4.5" cy="6" r=".8" fill="currentColor"/><circle cx="7" cy="4.2" r=".8" fill="currentColor"/>
+      <circle cx="9.5" cy="6" r=".8" fill="currentColor"/></svg></button>
+  <div class="pop" id="colourspop" hidden>
+    <p class="pop-h">Colours in use</p>
+    <div id="cl-tools"></div>
+    <div id="cl-list"></div>
+  </div>
   <button id="notes" aria-label="Notes — the writers' notes in this report, never published">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
       stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 2h9v6.5L8.5 11.5h-6z"/><path d="M8.5 11.5V8.5h3"/></svg><span id="notes-count" hidden></span></button>
@@ -10168,6 +10189,7 @@ function editBox(d, el, at) {
       if (indentListItem(d, e.shiftKey ? -1 : 1)) { e.preventDefault(); e.stopPropagation(); }
       else tabKey(d, e, resolvedStyle(b.style));
     }
+    typeKey(d, e, 'text.' + b.id);
   });
   host.addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -13625,6 +13647,7 @@ function keysFor(d) {
       setTimeout(() => { plainPasteNext = false; }, 800);
     }
     if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyI') { e.preventDefault(); toggleHidden(); return; }
+    if (!editing && selIds.size && typeKeyObjects(d, e)) return;
     if (editing) return;
     const t = e.target;
     if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT'
@@ -15828,6 +15851,274 @@ function drawHidden(d) {
   });
 }
 $('hiddenchars').addEventListener('click', toggleHidden);
+
+// ------------------------------------------------------- type from keys
+// InDesign's type shortcuts (INDESIGN_PARITY.md 77), on the text being
+// edited: ⇧⌘> / ⇧⌘< size (⌥ for five times the step), and — with words
+// selected, so ⌥-arrows keep moving the caret by word and paragraph when
+// nothing is — ⌥← / ⌥→ tracking, ⌥↑ / ⌥↓ leading, ⌥⇧↑ / ⌥⇧↓ baseline
+// shift. A style here belongs to the whole slot or box, so the change does
+// too. Painted live; the page catches up when the edit closes. With a text
+// object selected and nobody typing, ⇧⌘> / ⇧⌘< resize its text.
+let typeKeySeq = -1, typeKeyAt = 0;
+function typeStep(d, e) {
+  const mod = e.metaKey || e.ctrlKey;
+  const sel = d.getSelection();
+  const ranged = !!(sel && sel.rangeCount && !sel.getRangeAt(0).collapsed);
+  const big = e.altKey && mod ? 5 : 1;
+  if (mod && e.shiftKey && (e.code === 'Period' || e.code === 'Comma'))
+    return { size: (e.code === 'Period' ? 1 : -1) * (e.altKey ? 5 : 1) };
+  if (!ranged || !e.altKey) return null;
+  if (!e.shiftKey && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))
+    return { tracking: (e.key === 'ArrowRight' ? 0.25 : -0.25) };
+  if (!e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown'))
+    return { leading: (e.key === 'ArrowUp' ? -0.05 : 0.05) * big };
+  if (e.shiftKey && !mod && (e.key === 'ArrowUp' || e.key === 'ArrowDown'))
+    return { shift: e.key === 'ArrowUp' ? 1 : -1 };
+  return null;
+}
+function applyTypeStep(key, step) {
+  const now = Date.now();
+  if (now - typeKeyAt > 900 || typeKeySeq !== historySeq) { pushHistory(); typeKeySeq = historySeq; }
+  typeKeyAt = now;
+  const cur = { ...computedType(key), ...resolvedStyle(styleOf(key)) };
+  const patch = {};
+  if (step.size) patch.size = Math.max(6, Math.min(200, Math.round((+cur.size || 16) + step.size)));
+  if (step.tracking) patch.tracking = +Math.max(-5, Math.min(20, (+cur.tracking || 0) + step.tracking)).toFixed(2);
+  if (step.leading) patch.leading = +Math.max(0.7, Math.min(3, (+cur.leading || 1.45) + step.leading)).toFixed(2);
+  if (step.shift) { const v = Math.max(-24, Math.min(24, (+cur.shift || 0) + step.shift)); patch.shift = v || null; }
+  setStyle(key, patch);
+  markDirty();
+  const k = Object.keys(patch)[0];
+  $('stat').textContent = `${k} ${patch[k] ?? 0}${k === 'size' || k === 'tracking' ? 'px' : k === 'shift' ? 'pt' : ''}`;
+  return patch;
+}
+function typeKey(d, e, key) {
+  const step = typeStep(d, e);
+  if (!step || !key) return false;
+  e.preventDefault(); e.stopPropagation();
+  applyTypeStep(key, step);
+  try { paintText(key); } catch (err) { /* the close renders it */ }
+  return true;
+}
+function typeKeyObjects(d, e) {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!(mod && e.shiftKey && (e.code === 'Period' || e.code === 'Comma'))) return false;
+  const keys = [...selIds].map(id => boxOf(id) ? id : (d.querySelector(`[data-el="${CSS.escape(id)}"]`) || {}).dataset?.slot
+    || (d.querySelector(`[data-el="${CSS.escape(id)}"] [data-slot]`) || {}).dataset?.slot).filter(Boolean);
+  if (!keys.length) return false;
+  e.preventDefault();
+  const step = typeStep(d, e);
+  keys.forEach(k => applyTypeStep(k, step));
+  render();
+  return true;
+}
+
+// -------------------------------------------------------- colours in use
+// InDesign's Add Unnamed Colors, Find this Color and Merge Swatches
+// (INDESIGN_PARITY.md 80): every colour layout.json sets — fills, text,
+// strokes, borders, charts, gradients — by value, with how many places use
+// it and which swatch, if any, it is. Name them as swatches in one go (the
+// uses become "@Name", so a redefine moves them all), select what wears
+// one, or replace one colour with another everywhere. Colours a renderer
+// draws in its own CSS are the renderer's, not listed.
+const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const COLOUR_KEY_RE = /^(fill|stroke|color|colour|shade|bg|band|bandCols|headerFill|headerColor|footerFill|colors|stops)$/;
+const normHex = h => { h = h.trim().toUpperCase(); return h.length === 4 ? '#' + [...h.slice(1)].map(c => c + c).join('') : h; };
+function colourOwner(path) {
+  const [top, i] = path;
+  const arr = { boxes: o => 'text.' + o.id, shapes: o => o.id, tables: o => 'table.' + o.id };
+  if (arr[top] && layout[top] && layout[top][i]) return arr[top](layout[top][i]);
+  if (['positions', 'fill', 'charts', 'img'].includes(top)) return i;
+  if (top === 'text') return i;
+  if (top === 'textStyles') return 'style ' + i;
+  if (top === 'objectStyles') return 'object style ' + i;
+  if (top === 'cellStyles') return 'cell style ' + i;
+  return top;
+}
+/** Visit every colour value layout.json sets — a string under a colour key
+ *  (or in the page/element fill map), never a table cell or a word that
+ *  happens to look like a hex. fn(value, path) may return a replacement. */
+function walkColours(fn) {
+  const walk = (o, path, colourish) => {
+    if (Array.isArray(o)) { o.forEach((v, i) => visit(o, i, v, path.concat(i), colourish)); return; }
+    if (o && typeof o === 'object') Object.keys(o).forEach(k => {
+      if (path.length === 0 && k === 'swatches') return;
+      visit(o, k, o[k], path.concat(k), colourish || COLOUR_KEY_RE.test(k) || (path.length === 0 && k === 'fill'));
+    });
+  };
+  const visit = (holder, k, v, path, colourish) => {
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (colourish && (HEX_RE.test(t) || /^@/.test(t))) {
+        const r = fn(t, path);
+        if (r !== undefined && r !== t) holder[k] = r;
+      }
+      return;
+    }
+    walk(v, path, colourish);
+  };
+  walk(layout, [], false);
+}
+function coloursInUse() {
+  const by = new Map();
+  const sw = layout.swatches || {};
+  walkColours((v, path) => {
+    let hex, swatch = null;
+    if (v.startsWith('@')) {
+      const m = v.match(/^@(.+?)(?:\s+(\d{1,3})%)?$/);
+      if (!m || !sw[m[1].trim()]) return;
+      swatch = m[1].trim() + (m[2] ? ` ${m[2]}%` : '');
+      hex = m[2] ? null : normHex(sw[m[1].trim()]);
+      if (!hex) hex = '@' + swatch;
+    } else hex = normHex(v);
+    const e = by.get(hex) || { hex, swatch: null, uses: [] };
+    e.uses.push(colourOwner(path));
+    if (swatch) e.swatch = swatch;
+    else if (!e.swatch) e.swatch = Object.keys(sw).find(n => normHex(sw[n]) === hex) || null;
+    by.set(hex, e);
+  });
+  return [...by.values()].map(e => ({ ...e, named: !!e.swatch, raw: !e.hex.startsWith('@') }))
+    .sort((a, b) => b.uses.length - a.uses.length);
+}
+/** Replace one colour with another everywhere layout.json sets it (a swatch
+ *  reference to it too, when `from` is a swatch's own value). */
+function replaceColour(from, to) {
+  const f = normHex(from);
+  const sw = layout.swatches || {};
+  const fromNames = Object.keys(sw).filter(n => normHex(sw[n]) === f);
+  let n = 0;
+  walkColours(v => {
+    if ((HEX_RE.test(v) && normHex(v) === f) || fromNames.some(nm => v === '@' + nm)) { n++; return to; }
+  });
+  return n;
+}
+/** Every raw colour becomes a swatch (an existing one of the same value is
+ *  reused) and its uses point at it, so the report renders the same. */
+function nameAllColours() {
+  layout.swatches = layout.swatches || {};
+  const sw = layout.swatches;
+  let made = 0, linked = 0;
+  walkColours(v => {
+    if (!HEX_RE.test(v)) return;
+    const hx = normHex(v);
+    let name = Object.keys(sw).find(nm => normHex(sw[nm]) === hx);
+    if (!name) { name = hx.slice(1); sw[name] = hx; made++; }
+    linked++;
+    return '@' + name;
+  });
+  if (!Object.keys(sw).length) delete layout.swatches;
+  return { made, linked };
+}
+function coloursRender() {
+  const tools = $('cl-tools'), list = $('cl-list');
+  tools.textContent = ''; list.textContent = '';
+  const cs = coloursInUse();
+  const unnamed = cs.filter(c => c.raw && !c.named).length;
+  const b = document.createElement('button');
+  b.textContent = `Name ${unnamed} unnamed as swatches`;
+  b.disabled = !cs.some(c => c.raw);
+  b.addEventListener('click', async () => {
+    pushHistory(); const r = nameAllColours(); markDirty(); await render(); coloursRender();
+    $('stat').textContent = `${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`;
+  });
+  tools.appendChild(b);
+  if (!cs.length) { list.textContent = 'This report sets no colours of its own yet.'; return; }
+  cs.forEach(c => {
+    const row = document.createElement('div'); row.className = 'cl-row'; row.dataset.hex = c.hex;
+    const chip = document.createElement('div'); chip.className = 'cl-chip';
+    chip.style.background = c.hex.startsWith('@') ? tintOfRef(c.hex) : c.hex;
+    const mid = document.createElement('div');
+    const t = document.createElement('div'); t.textContent = c.swatch ? `${c.swatch}${c.raw ? ' · ' + c.hex : ''}` : c.hex;
+    const meta = document.createElement('div'); meta.className = 'cl-meta';
+    const u = [...new Set(c.uses)];
+    meta.textContent = `${c.uses.length} use${c.uses.length === 1 ? '' : 's'}: ${u.slice(0, 4).join(', ')}${u.length > 4 ? '…' : ''}`;
+    mid.append(t, meta);
+    const acts = document.createElement('div'); acts.className = 'cl-acts';
+    const sel = document.createElement('button'); sel.textContent = 'Select';
+    sel.addEventListener('click', () => {
+      const d = $('out').contentDocument;
+      const ids = u.filter(i => d.querySelector(`[data-el="${CSS.escape(i)}"], [data-shape="${CSS.escape(i)}"]`));
+      if (ids.length) setSel(d, ids);
+      $('stat').textContent = ids.length ? `${ids.length} selected` : 'nothing on the page to select — it is a style or a page colour';
+    });
+    const rp = document.createElement('button'); rp.textContent = 'Replace…'; rp.disabled = !c.raw;
+    rp.addEventListener('click', async () => {
+      const got = await dsForm(`Replace ${c.hex} everywhere`, [{ name: 'to', label: 'With (a #hex, or @Swatch)', value: c.hex }], {
+        okLabel: 'Replace', validate: v => (HEX_RE.test(v.to.trim()) || (/^@/.test(v.to.trim()) && (layout.swatches || {})[v.to.trim().slice(1)])) ? '' : 'a colour like #1E6194, or @ and a swatch name' });
+      if (got == null) return;
+      pushHistory(); const n = replaceColour(c.hex, got.to.trim()); markDirty(); await render(); coloursRender();
+      $('stat').textContent = `replaced in ${n} place${n === 1 ? '' : 's'}`;
+    });
+    acts.append(sel, rp);
+    row.append(chip, mid, acts);
+    list.appendChild(row);
+  });
+}
+const tintOfRef = ref => { const m = ref.match(/^@(.+?)(?:\s+(\d{1,3})%)?$/); const hx = m && (layout.swatches || {})[m[1].trim()];
+  if (!hx) return '#ccc'; if (!m[2]) return hx; const p = +m[2] / 100, v = [1, 3, 5].map(i => parseInt(normHex(hx).slice(i, i + 2), 16));
+  return '#' + v.map(x => Math.round(255 - (255 - x) * p).toString(16).padStart(2, '0')).join(''); };
+$('file-loadstyles').addEventListener('click', () => {
+  document.querySelectorAll('.pop:not(.docked)').forEach(p => { p.hidden = true; });
+  loadStylesDialog();
+});
+$('colours').addEventListener('click', () => { const pop = $('colourspop'); if (pop.hidden) coloursRender(); togglePop(pop, $('colours')); });
+
+// ---------------------------------------------- styles from another report
+// InDesign's Load Styles (INDESIGN_PARITY.md 75): take text styles, object
+// styles, cell styles, swatches and text variables from another report this
+// editor can open — its committed layout.json, the house look the report
+// was saved with. Per kind: add the ones this report lacks, also replace the
+// ones it has under the same name, or leave the kind alone.
+const STYLE_KINDS = [['textStyles', 'Text and character styles'], ['objectStyles', 'Object styles'],
+  ['cellStyles', 'Cell styles'], ['swatches', 'Swatches'], ['variables', 'Text variables']];
+async function otherLayout(pid) {
+  const base = (REGISTRY && REGISTRY[pid] && REGISTRY[pid].base) || pid;
+  const m = JSON.parse(await get(base.replace(/\/+$/, '') + '/engine/manifest.json'));
+  if (!m.layout) return {};
+  return JSON.parse(await get(base.replace(/\/+$/, '') + '/engine/' + m.layout));
+}
+function mergeStyles(src, how) {
+  const out = {};
+  STYLE_KINDS.forEach(([k]) => {
+    const mode = how[k] || 'skip';
+    const theirs = src[k] || {};
+    if (mode === 'skip' || !Object.keys(theirs).length) return;
+    const mine = layout[k] || {};
+    const added = [], replaced = [];
+    Object.entries(theirs).forEach(([n, v]) => {
+      if (!(n in mine)) { mine[n] = clone(v); added.push(n); }
+      else if (mode === 'replace' && JSON.stringify(mine[n]) !== JSON.stringify(v)) { mine[n] = clone(v); replaced.push(n); }
+    });
+    if (Object.keys(mine).length) layout[k] = mine;
+    out[k] = { added, replaced };
+  });
+  return out;
+}
+async function loadStylesDialog() {
+  const ids = Object.keys(REGISTRY || {}).filter(id => id !== PROJECT);
+  if (!ids.length) { $('stat').textContent = 'no other report to load from'; return; }
+  const name = id => (REGISTRY[id] && REGISTRY[id].name) || id;
+  const pick = await dsForm('Load styles from another report', [{ name: 'pid', type: 'select', label: 'From', value: ids[0],
+    options: ids.map(id => ({ value: id, label: name(id) })) }], { okLabel: 'Next' });
+  if (pick == null) return;
+  let src;
+  try { src = await otherLayout(pick.pid); } catch (e) { $('stat').textContent = `could not read ${name(pick.pid)}'s layout: ${e.message}`; return; }
+  const fields = STYLE_KINDS.filter(([k]) => Object.keys(src[k] || {}).length).map(([k, label]) => {
+    const theirs = Object.keys(src[k]), clash = theirs.filter(n => n in (layout[k] || {}));
+    return { name: k, type: 'select', label: `${label}: ${theirs.length}${clash.length ? ` (${clash.length} also here: ${clash.slice(0, 3).join(', ')}${clash.length > 3 ? '…' : ''})` : ''}`,
+      value: 'add', options: [{ value: 'add', label: 'Add the ones this report lacks' },
+        { value: 'replace', label: 'Add, and replace same-named ones' }, { value: 'skip', label: 'Leave alone' }] };
+  });
+  if (!fields.length) { $('stat').textContent = `${name(pick.pid)} has no styles to load`; return; }
+  const how = await dsForm(`Load from ${name(pick.pid)}`, fields, { okLabel: 'Load' });
+  if (how == null) return;
+  pushHistory();
+  const r = mergeStyles(src, how);
+  markDirty(); await render();
+  const n = Object.values(r).reduce((a, x) => a + x.added.length + x.replaced.length, 0);
+  $('stat').textContent = `loaded ${n} from ${name(pick.pid)}`;
+}
 
 // --------------------------------------------------------------- preflight
 // One list of everything wrong (INDESIGN_PARITY.md 47): audit()'s layout
@@ -23538,6 +23829,7 @@ function edit(d, key, clicked, at) {
     }
     if (!e.defaultPrevented && e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey)
       tabKey(d, e, resolvedStyle(styleOf(key)));
+    typeKey(d, e, key);
   });
   // Right-click in the prose to drop an endnote at the caret — the intuitive
   // path, without hunting for the Cite button. (Inline single-line fields — a
@@ -28817,6 +29109,13 @@ const PILOT_BATCH_VERBS = {
         return { ok: false, error: 'setMargins({top, bottom, left, right, columns, gutter} | null, master?)' };
       return { ok: true };
     }, apply: (mg, master) => { setMargins(mg, master || null); return { margins: master ? layout.masters[master].margins || null : layout.margins || null }; } },
+  replaceColour: { validate: (a, b) => (typeof a === 'string' && HEX_RE.test(a.trim()) && typeof b === 'string'
+        && (HEX_RE.test(b.trim()) || (/^@/.test(b.trim()) && (layout.swatches || {})[b.trim().slice(1)])))
+      ? { ok: true } : { ok: false, error: 'replaceColour("#from", "#to" | "@Swatch")' },
+    apply: (a, b) => ({ replaced: replaceColour(a, b.trim()) }) },
+  nameAllColours: { validate: () => ({ ok: true }), apply: () => nameAllColours() },
+  loadStylesFrom: { validate: (src, how) => (src && typeof src === 'object') ? { ok: true } : { ok: false, error: 'internal' },
+    apply: (src, how) => ({ loaded: mergeStyles(src, how || {}) }) },
   setNotes: { validate: (k, notes) => (slotRe(k || '').test(source) && Array.isArray(notes) && notes.every(n => typeof n === 'string'))
       ? { ok: true } : { ok: false, error: 'setNotes(slotKey, [note text, …]) — a slot that exists' },
     apply: (k, notes) => { setSlotNotes(k, notes); return { key: k, notes: slotNotes(k).map(NOTE_BODY) }; } },
@@ -29630,6 +29929,19 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  textToTable(boxId, sep?) turns a text box's lines into a table. */
   /** Reading order: setReadingOrder(page, [ids] | null) — the order a screen
    *  reader and the tagged PDF read the page's objects in. */
+  /** Colours in use: colours() — every colour layout.json sets, by value,
+   *  with its uses and swatch; replaceColour(from, to) everywhere;
+   *  nameAllColours() makes swatches of the unnamed ones and links the uses. */
+  colours() { return { ok: true, colours: coloursInUse() }; },
+  async replaceColour(a, b) { return _pilotOne('replaceColour', [a, b]); },
+  async nameAllColours() { return _pilotOne('nameAllColours', []); },
+  /** loadStyles(projectId, {textStyles, objectStyles, cellStyles, swatches,
+   *  variables}: 'add' | 'replace' | 'skip') — from that report's layout.json. */
+  async loadStyles(pid, how = {}) {
+    let src;
+    try { src = await otherLayout(pid); } catch (e) { return { ok: false, error: `could not read '${pid}': ${e.message}` }; }
+    return _pilotOne('loadStylesFrom', [src, Object.fromEntries(STYLE_KINDS.map(([k]) => [k, how[k] || 'add']))]);
+  },
   /** Writers' notes: notes() lists them ({key, text}; key null for the
    *  document's own, above the first slot); setNotes(key, [texts]) replaces
    *  a slot's notes. Never published. */
