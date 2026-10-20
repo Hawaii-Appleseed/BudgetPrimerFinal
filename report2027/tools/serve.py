@@ -644,6 +644,52 @@ def _only_pages(html: str, keep: list) -> str:
     return html[:k] + rule + html[k:] if k >= 0 else rule + html
 
 
+# The library of reusable pieces (INDESIGN_PARITY.md 50): one JSON file every
+# report this machine opens shares — ~/.cider/library.json, or CIDER_LIBRARY.
+# Under the test suite (PRIMER_TEST_SAFE) a throwaway file instead, so a spec
+# never writes into the real one.
+LIBRARY_LOCK = threading.Lock()
+LIBRARY_MAX = 4 * 1024 * 1024
+
+
+def _library_path() -> Path:
+    if os.environ.get("PRIMER_TEST_SAFE") == "1":
+        return Path(tempfile.gettempdir()) / f"cider-library-test-{os.getpid()}.json"
+    return Path(os.environ.get("CIDER_LIBRARY") or Path.home() / ".cider" / "library.json")
+
+
+def _library_read() -> list:
+    try:
+        data = json.loads(_library_path().read_text())
+        return data.get("pieces", []) if isinstance(data, dict) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _library_change(req: dict) -> dict:
+    """add (replacing a piece of the same name) or delete; the whole list back."""
+    op, name = req.get("op"), str((req.get("piece") or {}).get("name") or req.get("name") or "").strip()
+    if not name or len(name) > 80:
+        return {"ok": False, "error": "a piece needs a name, up to 80 characters"}
+    with LIBRARY_LOCK:
+        pieces = [p for p in _library_read() if p.get("name") != name]
+        if op == "add":
+            piece = req.get("piece")
+            if not isinstance(piece, dict) or not isinstance(piece.get("items"), list) or not piece["items"]:
+                return {"ok": False, "error": "a piece is {name, items: [...]}"}
+            if len(json.dumps(piece)) > LIBRARY_MAX:
+                return {"ok": False, "error": "that piece is too big for the library (4 MB)"}
+            pieces.append(dict(piece, name=name))
+        elif op != "delete":
+            return {"ok": False, "error": "op is add or delete"}
+        path = _library_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"pieces": pieces}, indent=1))
+        tmp.replace(path)
+    return {"ok": True, "pieces": pieces}
+
+
 def _export_bad_args(req: dict) -> str | None:
     """The message for the first malformed /__export argument, or None if the
     request is worth building. Pure and side-effect free so both the real
@@ -1288,6 +1334,8 @@ class Handler(SimpleHTTPRequestHandler):
         pid = (parse_qs(parsed.query).get("project") or [None])[0]
         if clean == "/__ping":
             return self._json(200, self._ping_payload(pid))
+        if clean == "/__library":
+            return self._json(200, {"ok": True, "pieces": _library_read()})
         if clean == "/__templates":
             # What "+ New report" can start from, beyond the blank canvas.
             # Read via the same sys.path dance _scaffold uses, so the answer
@@ -1708,7 +1756,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path not in ("/__save", "/__push", "/__export", "/__upload",
                         "/__update", "/__rollback", "/__window", "/__quit",
                         "/__scaffold", "/__adopt", "/__connect", "/__pull",
-                        "/__doc", "/__doc/import", "/__linkcheck",
+                        "/__doc", "/__doc/import", "/__linkcheck", "/__library",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
                         "/__agent/change", "/__agent/undo", "/__agent/seen",
                         "/__oauth/device/code", "/__oauth/device/token",
@@ -1803,6 +1851,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._rollback()                  # writes its own response
         if path == "/__export":
             return self._export(req)                 # writes its own response
+        if path == "/__library":
+            return self._json(200, _library_change(req))
         if path == "/__pilot":
             return self._pilot(req)
         if path == "/__pilot/claim":

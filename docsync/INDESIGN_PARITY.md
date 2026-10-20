@@ -992,15 +992,39 @@ Google Doc import exist, and were never listed here.
     ascender, cap height or x-height with `text-box`. A box's `h` is still
     a minimum, so these need a box with room to spare. In the box's style
     pop. Not done: a fixed first-baseline offset in inches.
-50. **A library of reusable pieces** (was 26). Select a callout, stat card
-    or figure frame ▸ Save to library; drop it into any report from the
-    library panel, with its text styles and swatches brought along. Lives
-    beside the templates (a library project the editor reads), so the hub
-    and local mode share it. **M.**
-51. **Quick Apply.** One box (⌘↩) that finds any text style, character
-    style, swatch, command or pilot verb by typing a few letters and applies
-    it to the selection — InDesign's fastest path, and the editor's menus
-    are deep. **M.**
+50. **A library of reusable pieces** (was 26). **— CLOSED 2026-10-19.**
+    Right-click ▸ **Save to library…** (or File ▸ Library… ▸ Save the
+    selection): the selected shapes, text boxes and placed tables, at
+    their places relative to each other, a group kept a group, with the
+    text, object and cell styles and swatches they wear — followed through
+    `from`, an object style's text style, nested and GREP styles, and a
+    gradient swatch's stops. File ▸ **Library…** lists the pieces (how
+    many objects and styles, which report they came from); **Place** drops
+    one on the page in view with fresh ids, adding only the styles this
+    report lacks (a same-named style here wins), one undo step. Where it
+    lives, changed from the sketch above: with the local server, one file
+    every report on the computer shares (`~/.cider/library.json`, or
+    `CIDER_LIBRARY`; `GET`/`POST /__library`) — not beside the templates,
+    because those are engine files that vendor into every consumer, and a
+    consumer's engine must stay clean; without a server (the hub) it is
+    kept in that browser. So the hub's library and a computer's are
+    separate. Pictures are named, not carried: a piece that shows
+    `assets/…` says so on saving, and a report without the file shows it
+    missing. Pilot `library()`, `saveToLibrary(name)`,
+    `placeFromLibrary(name, {x, y}?)`, `dropFromLibrary(name)`.
+51. **Quick Apply. — CLOSED 2026-10-19.** ⌘↩ (Ctrl+Enter) anywhere —
+    on the page, in the chrome, or while typing in words — opens one box:
+    a few letters, ↑/↓, Enter. It offers what fits the selection: text
+    styles for the selected slots and text boxes, character styles for the
+    selected words while typing (the words stay open, as a dialog keeps
+    them), object styles when the selection is all one kind, swatches as a
+    fill (a gradient swatch included) or as a text colour, and every
+    command an editor button carries, by its own words, pressed as a click
+    would. Letters match in order, a run and a word start counting most.
+    Each apply is one undo step, through the writes the panels use. A
+    dialog and a comment box keep their own ⌘↩. Pilot verbs are not listed
+    (they take arguments); `quickApplyItems(q)` and `quickApply(q)` are
+    the pilot's own way in.
 52. **Hyperlinks panel. — CLOSED 2026-10-19.** Every link in the report —
     in slots, boxes and table cells, and the sources list — by address, with
     where each is used and its words. **Check links** sends the addresses to
@@ -1056,11 +1080,21 @@ Google Doc import exist, and were never listed here.
     a page ▸ Numbering and section…; pilot `setPageSection(sheet,
     {start, style, prefix} | null)`. A section is pinned to a sheet number,
     not to a page, so moving the page it starts on does not move it.
-55. **Numbered lists past one paragraph block.** Restart or continue
-    numbering, a list continuing across boxes that are not threaded, and
-    multi-level numbering (1, 1.1, a.) — recommendations lists in policy
-    reports are numbered and often split by a chart. `list.marker` already
-    has decimal, alpha and roman. **M.**
+55. **Numbered lists past one paragraph block. — CLOSED 2026-10-19.**
+    A numbered list starts where its first item says: `4.` writes
+    `<ol start="4">` (and editing it keeps the 4), so a list split by a
+    chart picks up by hand; `1.` writes what it always did. A text style's
+    `list.continue: "<name>"` (Paragraph ▸ Numbering continues) makes every
+    numbered list wearing that name count on through the report in reading
+    order — two boxes that are not threaded, or a slot either side of a
+    chart, read 1–2 then 3: one CSS counter per name, reset once on the
+    body, so print and web agree. `list.levels`: `nested` numbers
+    sub-lists 1.1, 1.1.1 (`counters(list-item)`); `outline` letters them
+    a, then i (Paragraph ▸ Sub-levels). Only what a style uses is emitted.
+    Checked with real Chrome: "1. one 2. two 2.1. two-a", then "3. three"
+    in a second box. Not done: restarting part-way through a continued
+    list (use a second name), and a continued list with nested levels
+    numbers its sub-items from the item's own place in its box.
 56. **Widows, orphans and word spacing. — CLOSED 2026-10-19.** Text-style
     keys `widows` and `orphans` (1–9 lines; CSS honours them across columns,
     threaded frames and PDF pages) and `wordSpacing` (em added between
@@ -1086,10 +1120,24 @@ Google Doc import exist, and were never listed here.
     Neighbours are siblings — a card's title is not a neighbour of the
     card beside it. Pilot `align(ids, mode, {to, key})`,
     `distribute(ids, axis, {gap, key})`, `keyObject(id)`, `alignTo(v)`.
-58. **Paste Into — a picture inside a shape.** An image framed by an
-    ellipse, polygon, star or path: the shape becomes the mask (SVG
-    `clipPath`, which Pathfinder already writes). Headshots in circles are
-    drawn by CSS radius today, and nothing else is possible. **M.**
+58. **Paste Into — a picture inside a shape. — CLOSED 2026-10-19.**
+    `image: {src, fit, align}` on a closed shape — rect, ellipse,
+    triangle, arrow, polygon, star, or a closed Pen path. One `<g>`
+    carries the shape's id, turn, opacity and effects; inside it the
+    outline is drawn three times: as the `clipPath`, filled under the
+    picture, and stroked over it — so the frame's stroke sits on the photo
+    and a turn turns both. `fit` cover (fill the shape, the default) or
+    contain (the whole picture); `align` center, top, bottom, left,
+    right. Right-click a shape ▸ **Picture inside ▸** lists the project's
+    pictures, Upload a picture…, Fill the shape / Show the whole picture,
+    Remove the picture; with a picture box (Insert image's) and a shape
+    both selected, **Put the picture inside this shape** moves the picture
+    in and the box goes. The Links panel lists it on the shape and Relink
+    swaps it; the HTML export inlines it. A shape without a picture draws
+    what it did. Not done: moving or scaling the picture inside its frame
+    (InDesign's content grabber) — fit and align only. Pilot
+    `shapeImage(id, {src, fit, align} | null)`, `pasteInto(shapeId,
+    pictureBoxId)`.
 59. **Linked text. — CLOSED 2026-10-19.** `{text:<slot key>}` or
     `{text:text.N}` in any slot, box or table cell repeats that slot's or
     box's first paragraph, as one line, written in at every render — so the
@@ -1128,10 +1176,18 @@ Google Doc import exist, and were never listed here.
     in content.md (CriticMarkup), drawn as insert and strike, Accept and
     Reject per change and for all, and refused at build so a marked draft
     cannot publish by accident. **L.**
-63. **Story editor.** Every slot and box of a report as one plain column of
-    markdown in reading order (34), edited fast without the page — for the
-    rewrite pass where layout is a distraction. Writes back through
-    `writeSlot` and box `md`. **M.**
+63. **Story editor. — CLOSED 2026-10-19.** File ▸ Story editor (or
+    Quick Apply): every slot and text box as plain markdown, one column,
+    page by page as the sheets run — on a page, what its reading order
+    (34) lists first, then the page's own order. Each piece is labelled by
+    what it is (heading, words, label, text box; its key on hover) with a
+    "show on the page" link, and writes back when you leave it — through
+    `writeSlot` or the box's `md`, one undo step each, the same refusals as
+    typing on the page (a slot marker on its own line, a malformed source
+    line), marked red when refused. A slot the document has not got yet
+    and a picture box are left out; a slot shown twice is listed once.
+    The Budget Primer fixture: 97 pieces on 12 pages, open in ~12 ms.
+    Pilot `stories()`.
 
 ### Smaller wins
 
@@ -1333,11 +1389,21 @@ here by now; what is not, ranked the same way. Numbering continues from
     local server the browser's print hides the same sheets for the print
     and shows them again. Checked with real Chrome: a two-page report with
     page 2 kept prints one page, the endnotes.
-84. **Tabs and slides for the web.** InDesign's Object States: one frame
-    holding several states, switched by buttons — a tabbed explainer on the
-    web, the states one after another in print. RxKids' tabbed page was
-    built by hand in its renderer; this would make it a thing any report can
-    have. **M–L.**
+84. **Tabs and slides for the web. — CLOSED 2026-10-19.** In a text
+    box, a line that is only `{state:<label>}` starts a state; words before
+    the first one are an intro above the tabs. Published, the box is a
+    tablist (`role=tab`, `aria-selected`, ←/→, Home, End) showing one panel
+    at a time — or, with `states: "slides"`, ‹ › and a dot per state; in
+    print every state, one after another under its own label; in the
+    editor every state stacked, each marker a chip ("⇥ tab: Evidence"), so
+    the words are typed like any box's. Right-click in a box's words ▸
+    Insert ▸ **A new tab here…**; right-click the box ▸ **Show the states
+    as slides / tabs**. CSS and runtime are emitted once, only when a box
+    has states; a `{state:}` that is not on a line of its own shows in the
+    editor and stands for nothing when published. Not done: states of
+    placed objects (a whole layout per tab, as InDesign's Object States
+    allow) — a state here is words, pictures and lists, which is what
+    RxKids' tabs hold.
 85. **Layer housekeeping. — CLOSED 2026-10-19.** In the Layers panel,
     per layer: **◎** selects everything on it that is drawn (refused, and
     said, for a locked or hidden layer), **⤓** merges it into another —

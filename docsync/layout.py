@@ -34,7 +34,7 @@ from pathlib import Path
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
 from .content import (CAPTION_RE, COND_RE, Footnotes, block_html, char_styles_used,
-                      link_refs, md_inline, paragraph, uses_breaks, uses_vars)
+                      link_refs, md_inline, paragraph, split_states, uses_breaks, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
 # different page passes its own size in — this is a default, not a law. It is
@@ -966,7 +966,14 @@ LIST_MARKERS = {"disc": "disc", "circle": "circle", "square": "square",
                 "lower-alpha": "lower-alpha", "upper-alpha": "upper-alpha",
                 "lower-roman": "lower-roman", "upper-roman": "upper-roman",
                 "none": "none"}
-LIST_KEYS = ("marker", "color", "indent")
+LIST_KEYS = ("marker", "color", "indent", "continue", "levels")
+# Numbered lists past one block (INDESIGN_PARITY.md 55). `continue: <name>`
+# — every numbered list wearing a style with that name counts on through the
+# report in reading order, so a recommendations list split by a chart (or
+# set in two boxes that are not threaded) reads 1–4, then 5–7. `levels`:
+# "nested" numbers a sub-list 1.1, 1.1.1; "outline" letters it a, then i.
+LIST_LEVELS = ("nested", "outline")
+LIST_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{0,29}")
 # Paragraph spacing and indents (INDESIGN_PARITY.md 14), in inches. They act
 # on PARAGRAPHS: the slot when it is one (C.html's <p>), the paragraphs inside
 # it when it is a wrapper (a text box, a card), a heading's span made a block.
@@ -1267,6 +1274,34 @@ TYPE_CSS = (
     "[style*='--ds-li:'] ul,[style*='--ds-li:'] ol,"
     "ul[style*='--ds-li:'],ol[style*='--ds-li:']{padding-left:var(--ds-li)}"
 )
+
+
+def list_css(dicts) -> str:
+    """The rules `list.continue` and `list.levels` need (55), only for what
+    the styles use — a report using neither keeps TYPE_CSS's bytes."""
+    names = sorted({(st.get("list") or {}).get("continue") for st in dicts} - {None, ""})
+    levels = {(st.get("list") or {}).get("levels") for st in dicts}
+    out = ""
+    if names:
+        # One counter per name, reset once for the whole document: CSS
+        # counters run in document order across every container, which is
+        # reading order here — so two lists in two boxes count as one.
+        out += "body{counter-reset:" + " ".join(f"ds-lc-{n}" for n in names) + "}"
+        for n in names:
+            sel = (f"[style*='--ds-lc:[{n}]'] ol:not(ol ol)>li,"
+                   f"ol[style*='--ds-lc:[{n}]']>li")
+            out += (f"{sel}{{counter-increment:ds-lc-{n}}}"
+                    + ",".join(x + "::marker" for x in sel.split(","))
+                    + f"{{content:counter(ds-lc-{n},var(--ds-lt,decimal)) '. '}}")
+    if "nested" in levels:
+        out += ("[style*='--ds-lv:nested'] ol ol>li::marker,"
+                "ol[style*='--ds-lv:nested'] ol>li::marker{content:counters(list-item,'.') '. '}")
+    if "outline" in levels:
+        out += ("[style*='--ds-lv:outline'] ol ol,ol[style*='--ds-lv:outline'] ol{list-style-type:lower-alpha}"
+                "[style*='--ds-lv:outline'] ol ol ol,ol[style*='--ds-lv:outline'] ol ol{list-style-type:lower-roman}")
+    return out
+
+
 # What a CHARACTER style may set — a run of words inside a paragraph has a
 # face, a size, a colour and letterforms, but no alignment, line breaking,
 # leading, keep, drop cap or list of its own; those belong to the paragraph.
@@ -1387,6 +1422,10 @@ def text_css(st: dict) -> str:
         out.append(f'--ds-mk:{lst["color"]}')
     if lst.get("indent") is not None:
         out.append(f'--ds-li:{float(lst["indent"]):g}in')
+    if lst.get("continue"):
+        out.append(f'--ds-lc:[{lst["continue"]}]')
+    if lst.get("levels"):
+        out.append(f'--ds-lv:{lst["levels"]}')
     if st.get("spaceBefore") is not None:
         out.append(f'--ds-sb:{float(st["spaceBefore"]):g}in')
     if st.get("spaceAfter") is not None:
@@ -1567,6 +1606,12 @@ def _check_text(st: dict, where: str) -> None:
             v = _num(lst["indent"], f"{where}.list.indent")
             if not 0 <= v <= 2:
                 raise LayoutError(f"{where}.list.indent is inches, 0 to 2 — {v} is not")
+        if lst.get("continue") is not None and not (
+                isinstance(lst["continue"], str) and LIST_NAME_RE.fullmatch(lst["continue"])):
+            raise LayoutError(f"{where}.list.continue names the list that numbers on — "
+                              "a letter, then letters, digits and -, up to 30")
+        if lst.get("levels") is not None and lst["levels"] not in LIST_LEVELS:
+            raise LayoutError(f"{where}.list.levels must be one of {', '.join(LIST_LEVELS)}")
     for k in ("size", "tracking", "leading"):
         if st.get(k) is not None:
             _num(st[k], f"{where}.{k}")
@@ -3414,6 +3459,35 @@ def _check_blend(v, where: str) -> None:
         raise LayoutError(f"{where}.blend: {v!r} must be one of {', '.join(BLENDS)}")
 
 
+# A picture inside a shape (INDESIGN_PARITY.md 58, InDesign's Paste Into):
+# `image: {src, fit, align}` on a closed shape. The shape's own outline is the
+# frame — its fill under the picture, its stroke over it — so a headshot in a
+# circle, a photo in a star or in a path drawn with the Pen is one object.
+IMAGE_SHAPE_KINDS = ("rect", "ellipse", "triangle", "arrow", "polygon", "star", "path")
+IMAGE_FITS = {"cover": "slice", "contain": "meet"}
+IMAGE_ALIGNS = ("center", "top", "bottom", "left", "right")
+_SVG_ALIGN = {"center": "xMidYMid", "top": "xMidYMin", "bottom": "xMidYMax",
+              "left": "xMinYMid", "right": "xMaxYMid"}
+
+
+def _check_shape_image(s: dict, where: str) -> None:
+    im = s["image"]
+    if s.get("kind") not in IMAGE_SHAPE_KINDS or (s.get("kind") == "path" and not s.get("closed")):
+        raise LayoutError(f"{where}.image: a picture goes inside a closed shape — "
+                          f"{', '.join(IMAGE_SHAPE_KINDS)} (a path when it is closed)")
+    if not isinstance(im, dict) or not isinstance(im.get("src"), str) or not im["src"].strip():
+        raise LayoutError(f"{where}.image: expected {{src, fit, align}} with the picture's src")
+    if re.search(r'["<>]|^\s*javascript:', im["src"], re.I):
+        raise LayoutError(f"{where}.image.src: not a picture's address")
+    bad = [k for k in im if k not in ("src", "fit", "align")]
+    if bad:
+        raise LayoutError(f"{where}.image: unknown {', '.join(bad)} — src, fit, align")
+    if im.get("fit") is not None and im["fit"] not in IMAGE_FITS:
+        raise LayoutError(f"{where}.image.fit must be one of {', '.join(IMAGE_FITS)}")
+    if im.get("align") is not None and im["align"] not in IMAGE_ALIGNS:
+        raise LayoutError(f"{where}.image.align must be one of {', '.join(IMAGE_ALIGNS)}")
+
+
 def _check_shape_look(s: dict, where: str) -> None:
     """The presentation half of a shape — everything an object style may set.
     Run on the RESOLVED shape, so a style cannot hand a shape a value the
@@ -3505,6 +3579,8 @@ def _check_box_look(b: dict, where: str) -> None:
                               f"columns, 1 to 4")
     if b.get("gap") is not None and not 0 <= _num(b["gap"], f"{where}.gap") <= 2:
         raise LayoutError(f"{where}.gap: {b['gap']} is outside 0–2in")
+    if b.get("states") is not None and b["states"] not in STATE_KINDS:
+        raise LayoutError(f"{where}.states must be one of {', '.join(STATE_KINDS)}")
     if b.get("vAlign") is not None and b["vAlign"] not in BOX_VALIGNS:
         raise LayoutError(f"{where}.vAlign: {', '.join(BOX_VALIGNS)}")
     if b.get("firstBaseline") is not None and b["firstBaseline"] not in FIRST_BASELINES:
@@ -3808,6 +3884,78 @@ LINKED_RE = re.compile(r"\{text:([A-Za-z0-9._@-]+)\}")
 # *{titleof:whopays.h1}* on page {pageof:whopays.h1}" follows a renamed
 # heading as well as a moved one.
 TITLEOF_RE = re.compile(r"\{titleof:([A-Za-z0-9._@-]+)\}")
+# Tabs and slides (INDESIGN_PARITY.md 84). A text box whose words hold
+# {state:<label>} lines (content.split_states) is a set of states: tabs by
+# default, `states: "slides"` for ‹ › and dots. On screen one state shows; in
+# print every state, one after another, under its own label; in the editor
+# every state stacked, so the words are typed like any box's.
+STATE_KINDS = ("tabs", "slides")
+STATES_CSS = (
+    ".ds-states .ds-st-bar{display:flex;align-items:center;gap:.2em;margin:0 0 .6em;"
+    "border-bottom:1px solid color-mix(in srgb,currentColor 22%,transparent)}"
+    ".ds-states [role=tab]{font:inherit;font-weight:600;color:inherit;background:none;border:0;"
+    "border-bottom:2px solid transparent;margin-bottom:-1px;padding:.35em .7em;cursor:pointer;opacity:.7}"
+    ".ds-states [role=tab][aria-selected=true]{opacity:1;border-bottom-color:currentColor}"
+    ".ds-states [role=tab]:focus-visible{outline:2px solid currentColor;outline-offset:1px}"
+    ".ds-st-slides .ds-st-bar{border:0;justify-content:center;order:2;margin:.6em 0 0}"
+    ".ds-st-slides{display:flex;flex-direction:column}"
+    ".ds-st-slides [role=tab]{width:.6em;height:.6em;padding:0;border-radius:50%;border:0;"
+    "background:currentColor;opacity:.25;margin:0 .2em}"
+    ".ds-st-slides [role=tab][aria-selected=true]{opacity:.85}"
+    ".ds-st-slides [role=tab] span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}"
+    ".ds-st-step{font:inherit;font-size:1.2em;line-height:1;color:inherit;background:none;border:0;"
+    "padding:.1em .5em;cursor:pointer;opacity:.7}"
+    ".ds-st-plabel{display:none;font-weight:700;margin:.8em 0 .3em}"
+    "@media print{.ds-st-bar{display:none!important}.ds-st-panel[hidden]{display:block!important}"
+    ".ds-st-plabel{display:block}}"
+)
+STATES_JS = (
+    "(function(){function sel(r,i,f){var t=r.querySelectorAll('[role=tab]'),p=r.querySelectorAll('.ds-st-panel');"
+    "if(!t.length)return;i=(i+t.length)%t.length;for(var k=0;k<t.length;k++){var on=k===i;"
+    "t[k].setAttribute('aria-selected',on?'true':'false');t[k].tabIndex=on?0:-1;"
+    "if(on)p[k].removeAttribute('hidden');else p[k].setAttribute('hidden','');}"
+    "r.setAttribute('data-at',i);if(f)t[i].focus();}"
+    "document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest("
+    "'.ds-states [role=tab],.ds-states .ds-st-step');if(!b)return;var r=b.closest('.ds-states');"
+    "if(b.getAttribute('role')==='tab')sel(r,[].indexOf.call(r.querySelectorAll('[role=tab]'),b));"
+    "else sel(r,(+r.getAttribute('data-at')||0)+(b.getAttribute('data-step')==='1'?1:-1));});"
+    "document.addEventListener('keydown',function(e){var b=e.target;if(!b.closest||b.getAttribute('role')!=='tab')return;"
+    "var r=b.closest('.ds-states');if(!r)return;var t=r.querySelectorAll('[role=tab]'),i=[].indexOf.call(t,b),"
+    "k={ArrowRight:i+1,ArrowLeft:i-1,Home:0,End:t.length-1}[e.key];if(k===undefined)return;"
+    "e.preventDefault();sel(r,k,1);});})();"
+)
+STATES_EDIT_CSS = (
+    ".ds-statemark{display:inline-block;font:600 11px/1.6 system-ui,sans-serif;letter-spacing:.03em;"
+    "color:#52796F;background:#EEF4F0;border:1px dashed #9DBBA8;border-radius:4px;padding:0 .6em}"
+    ".ds-statemark::before{content:'\\25B8  tab: '}"
+)
+
+
+def states_html(bid: str, kind: str, intro: str, states: list) -> str:
+    """A set of states, published (84). Panel 0 shows; the rest are hidden
+    until a tab or a step shows them, and all of them print."""
+    tabs = "".join(
+        f'<button type="button" role="tab" id="ds-st-{bid}-t{i}" aria-controls="ds-st-{bid}-p{i}" '
+        f'aria-selected="{"true" if i == 0 else "false"}" tabindex="{0 if i == 0 else -1}"'
+        + (f' aria-label="{html_attr(lab)}"><span>{md_inline(lab)}</span>' if kind == "slides"
+           else f'>{md_inline(lab)}') + "</button>"
+        for i, (lab, _) in enumerate(states))
+    if kind == "slides":
+        tabs = ('<button type="button" class="ds-st-step" data-step="-1" aria-label="Previous">\u2039</button>'
+                + tabs + '<button type="button" class="ds-st-step" data-step="1" aria-label="Next">\u203a</button>')
+    panels = "".join(
+        f'<div class="ds-st-panel" role="tabpanel" id="ds-st-{bid}-p{i}" aria-labelledby="ds-st-{bid}-t{i}"'
+        f'{" hidden" if i else ""}><p class="ds-st-plabel">{md_inline(lab)}</p>{block_html(md)}</div>'
+        for i, (lab, md) in enumerate(states))
+    return ((block_html(intro) if intro else "")
+            + f'<div class="ds-states ds-st-{kind}" data-at="0"><div class="ds-st-bar" role="tablist">{tabs}</div>'
+            + f'{panels}</div>')
+
+
+def html_attr(s: str) -> str:
+    return str(s).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+
+
 # Words that resolve_text() rewrites; a text holding none is left alone.
 RESOLVE_TOKENS = ("{caption:", "{var:", "{text:", "{titleof:")
 # The ids an internal link [words](#key) names (content.XREF_RE): the target
@@ -5449,6 +5597,19 @@ class Layout:
             return m.group(0)
         return f"\x0e{m.group(1)}\x10{src}\x0f" if os.environ.get("DOCSYNC_EDIT") else src
 
+    def _states_once(self) -> str:
+        """The tabs' CSS and runtime (84), once, when some text box has
+        states — and in the editor only the marker's look."""
+        if getattr(self, "_states_sent", False):
+            return ""
+        if not any("{state:" in str(b.get("md", "")) and split_states(str(b.get("md", "")))
+                   for b in self.all_boxes()):
+            return ""
+        self._states_sent = True
+        if os.environ.get("DOCSYNC_EDIT"):
+            return f"<style>{STATES_EDIT_CSS}</style>"
+        return f"<style>{STATES_CSS}</style><script>{STATES_JS}</script>"
+
     def _xref_once(self) -> str:
         """XREF_JS, once, when some words link to a place in the report — a
         report with no internal link keeps its bytes."""
@@ -5602,7 +5763,7 @@ class Layout:
         if not (typ or spc or par or aut):
             return ""
         self._type_sent = True
-        return (f"<style>{TYPE_CSS if typ else ''}{SPACE_CSS if spc else ''}"
+        return (f"<style>{TYPE_CSS + list_css(dicts) if typ else ''}{SPACE_CSS if spc else ''}"
                 f"{PARA_CSS if par else ''}</style>"
                 + (f"<script>{GREP_JS}</script>" if aut else ""))
 
@@ -5950,6 +6111,8 @@ class Layout:
         # carry; the style's own keys were checked where it is defined.
         _check_object_use(s, "shape", self.object_styles, where)
         _check_shape_look(self.dressed(s), where)
+        if s.get("image") is not None:
+            _check_shape_image(s, where)
         if s.get("rot") is not None:
             _num(s["rot"], f"{where}.rot")
         _check_skew(s, where)
@@ -6832,9 +6995,12 @@ class Layout:
             if thr is not None:
                 klass += " ds-thread"
                 extra += f' data-thread="{thr[0]}" data-thread-i="{thr[1]}"'
+            sts = None if edit else split_states(b["md"])
+            words = (states_html(b["id"], b.get("states") or "tabs", sts[0], sts[1])
+                     if sts else block_html(b["md"]))
             out.append(f'<div class="{klass}"{extra}{tag}{an}{PLACED} '
                        f'style="{tglFull}">'
-                       f'{block_html(b["md"])}{arrow}</div>')
+                       f'{words}{arrow}</div>')
         return "".join(out)
 
     def box(self, box_id: str) -> dict | None:
@@ -7327,7 +7493,7 @@ class Layout:
                 + self._vars_once() + self._breaks_once() + self._char_once()
                 + self._bleed_once() + self._grid_once() + self._wrapshape_once()
                 + self._cond_once() + self._tabs_once() + self._order_once()
-                + self._xref_once())
+                + self._xref_once() + self._states_once())
         # A blank page that is a COPY of a designed one draws that page's
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.
@@ -7370,6 +7536,42 @@ class Layout:
 
     def _shape(self, s: dict) -> str:
         s = self.dressed(s)
+        if s.get("image") and s.get("kind") in IMAGE_SHAPE_KINDS:
+            return self._image_shape(s)
+        return self._shape_plain(s)
+
+    def _image_shape(self, s: dict) -> str:
+        """A shape with a picture inside (58): one <g> carrying the shape's
+        id, turn, opacity and effects, holding its outline three times — as
+        the clip, filled under the picture, and stroked over it."""
+        x, y, w, h = (float(s[k]) for k in ("x", "y", "w", "h"))
+        bare = dict(s, id=s["id"], fill="none", stroke="none", alpha=None,
+                    shadow=None, glow=None, blend=None, rot=None, skew=None, flip=None,
+                    anim=None, image=None, dash=None)
+        bare.pop("_master", None)
+        geom = self._shape_plain(bare)
+        # The outline alone: its own attributes off, so the three copies can
+        # each be painted differently, and only the group carries the id.
+        geom = re.sub(r'\s(fill|stroke|stroke-width|data-shape|data-ox|data-oy|data-ow|data-oh|id|class)="[^"]*"',
+                      "", geom)
+        geom = geom.replace("/>", " />", 1) if geom.endswith("/>") else geom
+        sid = s["id"]
+        im = s["image"]
+        par = f'{_SVG_ALIGN[im.get("align") or "center"]} {IMAGE_FITS[im.get("fit") or "cover"]}'
+        src = im["src"].replace("&", "&amp;")
+        # The group is the shape: the id, the transform, the opacity and the
+        # effects ride it, exactly as on a plain shape's one node. Stamped
+        # with its box, so the editor moves it as a transform until it redraws.
+        outer = self._shape_plain(dict(s, kind="rect", r=0, corner=None, image=None))
+        attrs = re.match(r"<rect [^>]*?(fill=.*?)/>$", outer).group(1).strip()
+        o = f'data-ox="{x}" data-oy="{y}" data-ow="{w}" data-oh="{h}"'
+        under = geom.replace(" />", ' stroke="none"/>', 1)
+        over = geom.replace(" />", ' fill="none"/>', 1)
+        return (f'<g {o} {attrs}><clipPath id="ds-pi-{sid}">{geom.replace(" />", "/>")}</clipPath>'
+                f'{under}<image href="{src}" x="{x}" y="{y}" width="{w}" height="{h}" '
+                f'preserveAspectRatio="{par}" clip-path="url(#ds-pi-{sid})"/>{over}</g>')
+
+    def _shape_plain(self, s: dict) -> str:
         x, y, w, h = (float(s[k]) for k in ("x", "y", "w", "h"))
         # Publish-mode hook for a shape some toggle reveals — on the same one
         # node that carries data-shape, whatever kind it is. .ds-tglable's

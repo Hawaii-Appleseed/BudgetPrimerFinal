@@ -4560,6 +4560,69 @@ _xc = _content(_layout({}), body="[[a.h]]\n## Who pays\n\n[[a.p]]\nSee [it](#a.h
 check_eq("82: a slot an internal link names is hooked on the published page",
          'data-anc-host="a.h"' in _xc._style("a.h") and "data-anc-host" not in _xc._style("a.p"), True)
 
+# --- INDESIGN_PARITY.md 55: numbered lists past one block ------------------------
+from docsync.content import block_html as _bh55   # noqa: E402
+from docsync.layout import list_css as _lcss      # noqa: E402
+check_eq("55: a numbered list starts where its first item says",
+         ('<ol class="extra-numbers" start="4">' in _bh55("4. four\n5. five"),
+          "start=" in _bh55("1. one\n2. two")), (True, False))
+check_eq("55: a nested numbered list keeps its own start",
+         '<ol start="3">' in _bh55("1. one\n  3. three\n  4. four"), True)
+_l55 = _layout({"textStyles": {"Recs": {"list": {"continue": "recs", "levels": "nested"}}},
+                "boxes": [_tf(id="a", md="1. one\n2. two", style={"use": "Recs"}),
+                          _tf(id="b", md="1. three", style={"use": "Recs"}, y=5)]})
+_h55 = _l55.layer(1) + _l55.text_boxes(1)
+check_eq("55: list.continue counts every list wearing it on, one counter for the document",
+         ["--ds-lc:[recs]" in _h55, "body{counter-reset:ds-lc-recs}" in _h55,
+          "counter-increment:ds-lc-recs" in _h55, "counters(list-item,'.')" in _h55], [True] * 4)
+check_eq("55: a report with lists but neither key keeps TYPE_CSS's bytes",
+         _lcss([{"list": {"marker": "decimal"}}]), "")
+for _bad, _says in (({"continue": "9x"}, "names the list"), ({"levels": "deep"}, "one of nested, outline")):
+    check_eq(f"55: list is refused: {_says}",
+             _says in _layout_error({"text": {"x": {"list": _bad}}}), True)
+
+# --- INDESIGN_PARITY.md 58: a picture inside a shape ------------------------------
+_S58 = {"id": "s", "page": 1, "kind": "ellipse", "x": 1, "y": 1, "w": 2, "h": 2, "fill": "#EEEEEE",
+        "stroke": "#000000", "image": {"src": "assets/a.jpg"}}
+_h58 = _layout({"shapes": [_S58]}).layer(1)
+check_eq("58: the picture is clipped to the shape's own outline, fill under and stroke over, one node",
+         ['<clipPath id="ds-pi-s"><ellipse' in _h58, 'clip-path="url(#ds-pi-s)"' in _h58,
+          _h58.count('data-shape="s"'), 'preserveAspectRatio="xMidYMid slice"' in _h58,
+          _h58.index('stroke="none"') < _h58.index("<image") < _h58.index('fill="none"')],
+         [True, True, 1, True, True])
+check_eq("58: fit contain, aligned to the top",
+         'preserveAspectRatio="xMidYMin meet"' in _layout({"shapes": [dict(_S58, image={"src": "a.png", "fit": "contain", "align": "top"})]}).layer(1),
+         True)
+check_eq("58: a shape without a picture draws what it did",
+         _layout({"shapes": [dict(_S58, image=None)]}).layer(1),
+         _layout({"shapes": [{k: v for k, v in _S58.items() if k != "image"}]}).layer(1))
+for _bad, _says in (({"kind": "line"}, "closed shape"), ({"image": {"src": ""}}, "src"),
+                    ({"image": {"src": "a.png", "fit": "stretch"}}, "fit must be"),
+                    ({"image": {"src": 'a" onload="x'}}, "not a picture"),
+                    ({"kind": "path", "points": [{"x": 0, "y": 0}, {"x": 1, "y": 1}]}, "closed shape")):
+    check_eq(f"58: refused: {_says}", _says in _layout_error({"shapes": [dict(_S58, **_bad)]}), True)
+
+# --- INDESIGN_PARITY.md 84: tabs and slides ---------------------------------------
+from docsync.content import split_states as _ss   # noqa: E402
+check_eq("84: {state:} lines split a box's words; what comes first is an intro",
+         _ss("## Why\n\n{state:Home}\nOne.\n\n{state:The *bill*}\nTwo.\n"),
+         ("## Why", [("Home", "One."), ("The *bill*", "Two.")]))
+check_eq("84: words with no state line are not states", _ss("Just words {state:x} inline"), None)
+_MD84 = "{state:Home}\nOne.\n\n{state:Evidence}\nTwo."
+_h84 = _layout({"boxes": [_tf(id="t", md=_MD84)]})
+_p84 = _h84.layer(1) + _h84.text_boxes(1)
+check_eq("84: published, tabs: a tablist, the first panel shown, the rest hidden, all printable",
+         ['role="tablist"' in _p84, 'aria-selected="true"' in _p84, '<div class="ds-st-panel" role="tabpanel" id="ds-st-t-p1" aria-labelledby="ds-st-t-t1" hidden>' in _p84,
+          ".ds-st-panel[hidden]{display:block!important}" in _p84, _p84.count("<script>") == 1],
+         [True] * 5)
+_s84 = _layout({"boxes": [_tf(id="t", md=_MD84, states="slides")]}).text_boxes(1)
+check_eq("84: slides: previous and next, and a dot per state named for screen readers",
+         ['data-step="-1"' in _s84, 'aria-label="Evidence"' in _s84, "ds-st-slides" in _s84], [True] * 3)
+check_eq("84: a box without states draws what it did, and carries no runtime",
+         "ds-states" in _layout({"boxes": [_tf(id="t", md="One.")]}).layer(1), False)
+check_eq("84: states is tabs or slides",
+         "states must be one of" in _layout_error({"boxes": [_tf(id="t", md=_MD84, states="carousel")]}), True)
+
 # --- INDESIGN_PARITY.md 68: flip on shapes, boxes and tables ----------------------
 _fl = _layout({"boxes": [_tf(id="f", md="x", flip="h", skew=10)],
                "shapes": [{"id": "s", "page": 1, "kind": "rect", "x": 1, "y": 1, "w": 2, "h": 1, "flip": "v"}],

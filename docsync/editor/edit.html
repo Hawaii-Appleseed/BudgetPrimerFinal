@@ -1573,6 +1573,47 @@
         font:11.5px system-ui; color:var(--dim); }
   .ar-pos input { width:58px !important; }
   .ar-pos select { font:11.5px system-ui; }
+  /* Story editor (INDESIGN_PARITY 63): the words, without the page. */
+  #story { position:fixed; inset:0; z-index:99990; background:rgba(20,30,35,.25); }
+  #story .st-card { position:absolute; left:50%; top:3vh; bottom:3vh; transform:translateX(-50%);
+        width:min(760px, calc(100vw - 32px)); background:#fff; border-radius:var(--r-card, 12px);
+        box-shadow:0 24px 60px rgba(20,30,35,.35); display:flex; flex-direction:column; font:13px system-ui; color:#2F3E46; }
+  #story .st-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #E8EEEA; }
+  #story .st-head b { flex:1; font-size:14px; }
+  #story .st-list { overflow:auto; padding:6px 16px 24px; }
+  #story .st-page { margin:16px 0 4px; font:600 11px system-ui; letter-spacing:.06em; text-transform:uppercase; color:#7A8B84; }
+  #story .st-item { margin:8px 0; }
+  #story .st-lab { display:flex; gap:8px; font-size:11px; color:#7A8B84; margin-bottom:2px; }
+  #story .st-lab button { border:0; background:none; color:#52796F; font:11px system-ui; padding:0; cursor:pointer; }
+  #story textarea { width:100%; box-sizing:border-box; resize:vertical; border:1px solid #DCE5DF; border-radius:6px;
+        padding:8px 10px; font:14px/1.5 ui-serif, Georgia, serif; color:#1E2A30; min-height:2.4em; }
+  #story textarea:focus { outline:2px solid #6B9E78; outline-offset:0; border-color:transparent; }
+  #story .st-item.bad textarea { outline:2px solid #C0392B; }
+  #library { position:fixed; inset:0; z-index:99990; background:rgba(20,30,35,.25); }
+  #library .lib-card { position:absolute; left:50%; top:10vh; max-height:76vh; transform:translateX(-50%);
+        width:min(560px, calc(100vw - 32px)); background:#fff; border-radius:var(--r-card, 12px);
+        box-shadow:0 24px 60px rgba(20,30,35,.35); display:flex; flex-direction:column; font:13px system-ui; color:#2F3E46; }
+  #library .st-head { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #E8EEEA; }
+  #library .st-head b { font-size:14px; }
+  #library .st-note { flex:1; font-size:11.5px; color:#7A8B84; }
+  #library .st-list { overflow:auto; padding:8px 16px 16px; }
+  #library .lib-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid #F0F4F1; }
+  #library .lib-n { flex:1; min-width:0; font-weight:600; }
+  #library .lib-meta { font-weight:400; font-size:11.5px; color:#7A8B84; }
+  /* Quick Apply (INDESIGN_PARITY 51): one box, ⌘↩, everything by name. */
+  #qa { position:fixed; inset:0; z-index:100000; background:rgba(20,30,35,.18); }
+  #qa .qa-card { position:absolute; left:50%; top:14%; transform:translateX(-50%);
+        width:min(480px, calc(100vw - 32px)); background:#fff; border-radius:var(--r-card, 12px);
+        box-shadow:0 24px 60px rgba(20,30,35,.35); overflow:hidden; font:13px system-ui; color:#2F3E46; }
+  #qa input { width:100%; box-sizing:border-box; border:0; border-bottom:1px solid #E8EEEA;
+        padding:13px 16px; font:15px system-ui; outline:none; }
+  #qa ul { list-style:none; margin:0; padding:4px 0; max-height:min(360px, 55vh); overflow:auto; }
+  #qa li { display:flex; gap:10px; align-items:baseline; padding:7px 16px; cursor:pointer; }
+  #qa li.on { background:#EEF4F0; }
+  #qa li .qa-k { flex:none; width:92px; font-size:11px; color:#7A8B84; text-transform:uppercase; letter-spacing:.03em; }
+  #qa li .qa-n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #qa li .qa-chip { flex:none; width:14px; height:14px; border-radius:3px; border:1px solid rgba(0,0,0,.15); }
+  #qa .qa-none { padding:12px 16px; color:#7A8B84; }
   /* modal dialogs (native <dialog>): replace prompt()/confirm()/alert() with a
      focus-trapped modal that can gather several fields at once. */
   .dsdlg { border:0; border-radius:12px; padding:0; width:min(440px, 92vw);
@@ -2047,6 +2088,12 @@
       ><path d="M8 2.4v7"/><path d="M5.1 6.5 8 9.4l2.9-2.9"/><path
         d="M2.9 11.4v1.2a1 1 0 0 0 1 1h8.2a1 1 0 0 0 1-1v-1.2"/></svg
       ><span class="shp-t">Import text from the Doc…</span></button>
+    <button class="shp" id="file-story" aria-label="Story editor — every slot and text box as plain words, in reading order"><svg class="shp-i" viewBox="0 0 16 16"
+      ><path d="M4 2.5h8M4 5.5h8M4 8.5h8M4 11.5h5"/></svg
+      ><span class="shp-t">Story editor</span></button>
+    <button class="shp" id="file-library" aria-label="Library — pieces saved from any report, to drop into this one"><svg class="shp-i" viewBox="0 0 16 16"
+      ><rect x="2.5" y="2.5" width="4.5" height="11" rx=".8"/><rect x="9" y="2.5" width="4.5" height="5" rx=".8"/><rect x="9" y="9" width="4.5" height="4.5" rx=".8"/></svg
+      ><span class="shp-t">Library…</span></button>
     <button class="shp" id="file-loadstyles"><svg class="shp-i" viewBox="0 0 16 16"
       ><path d="M3 3.5h7M3 6.5h5M3 9.5h7"/><path d="M11.5 8.5v5M9 11l2.5 2.5L14 11"/></svg
       ><span class="shp-t">Load styles from another report…</span></button>
@@ -2538,6 +2585,11 @@
     <label><span>Marker colour</span><select id="ty-lcol"></select></label>
     <label><span>List indent</span><input id="ty-lind" type="number" step="0.05" min="0" max="2"
       placeholder="in"></label>
+    <label title="Sub-lists numbered 1.1, 1.1.1 — or lettered a, then i"><span>Sub-levels</span><select id="ty-llev">
+      <option value="">as marked</option><option value="nested">1.1, 1.1.1</option>
+      <option value="outline">1, a, i</option></select></label>
+    <label title="Every numbered list wearing this name counts on from the last — a list split by a chart, or set in two boxes. Empty: each list starts again. (A list's first item typed as 4. starts it at 4.)"><span>Numbering continues</span><input id="ty-lcont" type="text"
+      placeholder="list name" spellcheck="false" autocomplete="off"></label>
     <p class="pop-h">Rules, border and shading</p>
     <label><span>Rule above</span><select id="ty-raw" class="ty-w"></select><select id="ty-rac"></select></label>
     <label><span>…gap, length</span><input id="ty-rao" type="number" step="0.02" min="0" max="1"
@@ -3363,7 +3415,7 @@ const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+)\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|state:[^{}\n]{1,40})\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
@@ -3393,6 +3445,7 @@ const varChipHtml = (name, ref) =>
              : name.startsWith('var:') ? userVarLabel(name.slice(4))
              : name.startsWith('text:') ? '⇄ ' + linkedPreview(name.slice(5))
              : name.startsWith('titleof:') ? '“' + titlePreview(name.slice(8)) + '”'
+             : name.startsWith('state:') ? '⇥ tab: ' + name.slice(6).trim()
 
              : VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
 // A variable of your own (INDESIGN_PARITY.md 60) shows its text, so the chip
@@ -3744,7 +3797,8 @@ function indentListItem(d, dir) {
 function listToMd(el, depth) {
   const lines = [];
   const ordered = el.tagName === 'OL';
-  let n = 0;
+  // A list that starts past 1 keeps its start (INDESIGN_PARITY 55).
+  let n = ordered && +el.getAttribute('start') > 1 ? +el.getAttribute('start') - 1 : 0;
   [...el.children].forEach(li => {
     if (li.tagName !== 'LI') return;
     n++;
@@ -4645,6 +4699,20 @@ function buildVarRows(d, m, host, range) {
         b.addEventListener('click', () => put(k));
         sub.appendChild(b);
       });
+    // Tabs and slides (84): a new state starts here, on a line of its own —
+    // in a text box, which then shows tabs on the web.
+    if ((host.closest('[data-el]') || {}).dataset && /^text\./.test(host.closest('[data-el]').dataset.el || '')) {
+      const b = d.createElement('button');
+      b.textContent = 'A new tab here…';
+      b.addEventListener('click', async () => {
+        closeMenu(d);
+        const got = await dsForm('A new tab', [{ name: 'label', type: 'text', label: 'The tab says', value: '' }],
+          { okLabel: 'Insert', validate: v => /^[^{}\n]{1,40}$/.test(v.label.trim()) ? '' : 'a short label, up to 40 characters' });
+        if (got == null) return;
+        await insertNodeAt(d, host, range, makeVarChip(d, 'state:' + got.label.trim()));
+      });
+      sub.appendChild(b);
+    }
   });
   // Its own row, not nested in Insert: a submenu of a submenu closes the
   // moment the pointer leaves the first one for the second.
@@ -5002,6 +5070,11 @@ function showLocalImages(d, roots) {
   within(d, roots, 'img[src^="assets/"]').forEach(img => {
     const local = localImages.get(img.getAttribute('src'));
     if (local) { img.dataset.dsSrc = img.getAttribute('src'); img.src = local; }
+  });
+  // A picture inside a shape (58) is an SVG <image>.
+  within(d, roots, 'image[href^="assets/"]').forEach(img => {
+    const local = localImages.get(img.getAttribute('href'));
+    if (local) { img.dataset.dsSrc = img.getAttribute('href'); img.setAttribute('href', local); }
   });
 }
 
@@ -6153,6 +6226,19 @@ function layerMenu(d, el, e) {
     if (clonable || (tableOf(id) && !tableOf(id).flow))
       item('Step and repeat…', () => { if (!selIds.has(id)) setSel(d, [id]); stepRepeatDialog(d); });
     if (lastXform) item('Transform again', () => { if (!selIds.has(id)) setSel(d, [id]); transformAgain(d); });
+    // Tabs and slides (84): a box whose words have {state:} lines.
+    if (boxOf(id) && /^[ \t]*\{state:[^{}\n]{1,40}\}[ \t]*$/m.test(boxOf(id).md || '')) {
+      const bx = boxOf(id);
+      item(bx.states === 'slides' ? 'Show the states as tabs' : 'Show the states as slides', async () => {
+        pushHistory();
+        if (bx.states === 'slides') delete bx.states; else bx.states = 'slides';
+        markDirty(); await render();
+        $('stat').textContent = `on the web this box shows ${bx.states === 'slides' ? 'slides' : 'tabs'}; in print, every state`;
+      });
+    }
+    // The library (50): keep this — and whatever else is selected with it.
+    if (clonable || (tableOf(id) && !tableOf(id).flow))
+      item('Save to library…', () => { closeMenu(d); if (!selIds.has(id)) setSel(d, [id]); return saveToLibraryDialog(); });
     item('Copy style', () => { setSel(d, [id]); copyStyle(d); }, !!styleType(d, id));
     if (styleClip) item('Paste style',
       () => { if (!selIds.has(id)) setSel(d, [id]); pasteStyle(d); },
@@ -6478,6 +6564,29 @@ function layerMenu(d, el, e) {
       closeMenu(d);
       pathPointEdit(d, one, d.querySelector(`[data-shape="${CSS.escape(id)}"]`));
     });
+    // A picture inside the shape (INDESIGN_PARITY 58, Paste Into).
+    if (one && shapeTakesImage(one)) {
+      const pic = [...selIds].map(i => boxPictureSrc(i) && i).find(Boolean);
+      if (pic && selIds.size === 2) item('Put the picture inside this shape', async () => {
+        closeMenu(d); pushHistory();
+        const r = _pasteIntoApply(id, pic);
+        markDirty(); await render(); setSel($('out').contentDocument, [r.id]);
+        $('stat').textContent = 'the picture is inside the shape — right-click it for Fill or Fit';
+      });
+      submenuRow(d, m, 'Picture inside ▸', sub => {
+        const btn = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
+          b.addEventListener('click', async () => { closeMenu(d); await fn(); }); sub.appendChild(b); };
+        const put = async im => { pushHistory(); _shapeImageApply(id, im); markDirty(); await render(); };
+        projectImages().slice(0, 30).forEach(n => btn(n, () => put({ ...(one.image || {}), src: 'assets/' + n })));
+        btn('Upload a picture…', () => uploadImageFile($('out').contentDocument, path => put({ ...(one.image || {}), src: path })));
+        if (one.image) {
+          const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; sub.appendChild(sep);
+          btn((one.image.fit || 'cover') === 'cover' ? '✓ Fill the shape' : 'Fill the shape', () => put({ ...one.image, fit: 'cover' }));
+          btn(one.image.fit === 'contain' ? '✓ Show the whole picture' : 'Show the whole picture', () => put({ ...one.image, fit: 'contain' }));
+          btn('Remove the picture', () => put(null));
+        }
+      });
+    }
   }
   if (fitKind(id)) item('Add a caption', async () => {
     // A live caption (INDESIGN_PARITY.md 43): a box under the picture whose
@@ -10982,6 +11091,8 @@ function fillParaPop(key) {
     .forEach(([id, key]) => { $(id).value = eff[key] ?? ''; });
   const lst = eff.list || {};
   $('ty-lmark').value = lst.marker || '';
+  $('ty-llev').value = lst.levels || '';
+  $('ty-lcont').value = lst.continue || '';
   const col = $('ty-lcol');
   col.textContent = '';
   const opts = [['', "text's own"], ...(M.palette || []).map(c => [c.toUpperCase(), c.toUpperCase()])];
@@ -12362,6 +12473,12 @@ function wireType() {
   };
   $('ty-lmark').addEventListener('change', () => listSet('marker', $('ty-lmark').value));
   $('ty-lcol').addEventListener('change', () => listSet('color', $('ty-lcol').value));
+  $('ty-llev').addEventListener('change', () => listSet('levels', $('ty-llev').value));
+  $('ty-lcont').addEventListener('change', () => {
+    const v = $('ty-lcont').value.trim().replace(/\s+/g, '-');
+    if (v && !/^[A-Za-z][A-Za-z0-9-]{0,29}$/.test(v)) { $('stat').textContent = 'a list name: a letter, then letters, digits and -'; return; }
+    listSet('continue', v);
+  });
   $('ty-lind').addEventListener('change', () =>
     listSet('indent', $('ty-lind').value === '' ? '' : Math.max(0, Math.min(2, +$('ty-lind').value))));
   // A rule or a border is one object; each control rewrites the whole of it,
@@ -15698,6 +15815,464 @@ function _dropLayer(name) {
   layout.layers = docLayers().filter(x => x.name !== name);
   if (!layout.layers.length) delete layout.layers;
 }
+// ------------------------------------------------------------- library
+// A library of reusable pieces (INDESIGN_PARITY.md 50): a callout, a stat
+// card, a figure frame — the selection's shapes, text boxes and tables saved
+// under a name, with the text, object and cell styles and swatches they wear
+// brought along, and dropped into any report on the page in view with fresh
+// ids. With the local server the library is one file every report on this
+// machine shares (serve.py /__library); without one (the hub) it lives in
+// this browser. A dropped piece adds only the styles this report lacks — a
+// same-named style here is this report's, and wins.
+const LIB_KEY = 'cider-library';
+async function libraryList() {
+  if (local) { const r = JSON.parse(await get('/__library')); return r.pieces || []; }
+  try { return JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); } catch (e) { return []; }
+}
+async function libraryChange(op, piece, name) {
+  if (local) {
+    const r = await postLocal('/__library', { op, piece, name });
+    if (!r.ok) throw new Error(r.error || 'the library refused that');
+    return r.pieces;
+  }
+  let all = await libraryList();
+  const n = (piece && piece.name) || name;
+  all = all.filter(p => p.name !== n);
+  if (op === 'add') all.push(piece);
+  try { localStorage.setItem(LIB_KEY, JSON.stringify(all)); }
+  catch (e) { throw new Error('this browser would not keep it (storage full?)'); }
+  return all;
+}
+/** The text, object and cell styles and swatches `items` wear — followed
+ *  through `from`, an object style's text style, nested and GREP styles,
+ *  and the swatches every one of those names (a gradient swatch's stops too). */
+function stylesWornBy(items) {
+  const text = new Set(), object = new Set(), cell = new Set(), sw = new Set();
+  const walk = (o, key, above) => {
+    if (Array.isArray(o)) { o.forEach(v => walk(v, key, above)); return; }
+    if (!o || typeof o !== 'object') return;
+    if (typeof o.use === 'string')
+      (key === 'style' || above === 'text' ? text : above === 'cells' ? cell : object).add(o.use);
+    Object.entries(o).forEach(([k, v]) => { if (v && typeof v === 'object') walk(v, k, key); });
+  };
+  items.forEach(it => walk(it.data, it.kind, null));
+  for (const m of JSON.stringify(items).matchAll(CHAR_STYLE_RE_G)) text.add(m[2].trim());
+  const close = (set, all, more) => {
+    const q = [...set];
+    while (q.length) {
+      const st = all[q.pop()];
+      if (!st) continue;
+      [st.from, ...more(st)].forEach(n => { if (n && !set.has(n)) { set.add(n); q.push(n); } });
+    }
+  };
+  close(object, objectStyles(), () => []);
+  object.forEach(n => { const u = ((objectStyles()[n] || {}).style || {}).use; if (u) text.add(u); });
+  close(text, textStyles(), st => [...(st.grep || []), ...(st.nested || [])].map(r => r && r.style));
+  close(cell, layout.cellStyles || {}, () => []);
+  const pick = (all, names) => Object.fromEntries([...names].filter(n => all[n]).map(n => [n, clone(all[n])]));
+  const styles = { textStyles: pick(textStyles(), text), objectStyles: pick(objectStyles(), object),
+                   cellStyles: pick(layout.cellStyles || {}, cell) };
+  const scanSw = o => {
+    if (typeof o === 'string') { const m = o.trim().match(SWATCH_REF_RE); if (m && swatches()[m[1].trim()] && !sw.has(m[1].trim())) { sw.add(m[1].trim()); scanSw(swatches()[m[1].trim()]); } }
+    else if (o && typeof o === 'object') Object.values(o).forEach(scanSw);
+  };
+  scanSw(items); scanSw(styles);
+  styles.swatches = pick(swatches(), sw);
+  Object.keys(styles).forEach(k => { if (!Object.keys(styles[k]).length) delete styles[k]; });
+  return styles;
+}
+/** The selection as a piece: its objects at their own place, the styles
+ *  they wear, and the pictures they point at (named, not carried). */
+function pieceFromSelection(name) {
+  const items = [];
+  [...selIds].forEach(id => {
+    const sh = shapeOf(id), b = boxOf(id), t = tableOf(id);
+    if (sh) items.push({ kind: 'shape', data: clone(sh) });
+    else if (b) items.push({ kind: 'box', data: standaloneCopy(b) });
+    else if (t && !t.flow) items.push({ kind: 'table', data: clone(t) });
+  });
+  if (!items.length) return null;
+  const x0 = Math.min(...items.map(i => +i.data.x || 0)), y0 = Math.min(...items.map(i => +i.data.y || 0));
+  items.forEach(i => { i.data.x = +((+i.data.x || 0) - x0).toFixed(3); i.data.y = +((+i.data.y || 0) - y0).toFixed(3);
+    delete i.data.page; delete i.data.anchor; delete i.data.wrap; delete i.data.layer; delete i.data.thread; delete i.data.next; });
+  const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
+    && selGroups()[0].every(id => selIds.has(id));
+  const pictures = [...new Set([...JSON.stringify(items).matchAll(/assets\/[^"')\s]+/g)].map(m => m[0]))];
+  return { name, made: new Date().toISOString().slice(0, 10), from: M.id, items, wasGroup,
+           styles: stylesWornBy(items), pictures,
+           w: +Math.max(...items.map(i => (+i.data.x || 0) + (+i.data.w || 0))).toFixed(2),
+           h: +Math.max(...items.map(i => (+i.data.y || 0) + (+i.data.h || 0.5))).toFixed(2) };
+}
+/** Drop a piece on the page in view at (x, y) inches: the styles this
+ *  report lacks first, then the objects with fresh ids — one undo step. */
+async function placePiece(piece, at) {
+  const d = $('out').contentDocument;
+  pushHistory();
+  const merged = mergeStyles(piece.styles || {}, { textStyles: 'add', objectStyles: 'add', cellStyles: 'add', swatches: 'add' });
+  const page = visiblePageId();
+  const ox = at && at.x != null ? +at.x : Math.max(0, (PAGE_W_IN - (piece.w || 0)) / 2);
+  const oy = at && at.y != null ? +at.y : 1;
+  const ids = [];
+  piece.items.forEach(it => {
+    const x = +Math.min(Math.max(0, ox + it.data.x), PAGE_W_IN - Math.min(+it.data.w || 0.5, PAGE_W_IN)).toFixed(3);
+    const y = +Math.min(Math.max(0, oy + it.data.y), PAGE_H_IN - Math.min(+it.data.h || 0.4, PAGE_H_IN)).toFixed(3);
+    if (it.kind === 'shape') {
+      const nid = freeShapeId(it.data.kind);
+      layout.shapes = layout.shapes || [];
+      layout.shapes.push({ ...clone(it.data), id: nid, page, x, y });
+      ids.push(nid);
+    } else if (it.kind === 'box') {
+      const nid = freeBoxId();
+      boxes().push({ ...clone(it.data), id: nid, page, x, y });
+      ids.push('text.' + nid);
+    } else if (it.kind === 'table') {
+      const nid = freeTableId();
+      tables().push({ ...clone(it.data), id: nid, page, x, y });
+      ids.push('table.' + nid);
+    }
+  });
+  if (piece.wasGroup && ids.length > 1) { layout.groups = layout.groups || []; layout.groups.push(ids); }
+  markDirty();
+  await render();
+  setSel($('out').contentDocument, ids);
+  const added = Object.values(merged).reduce((n, v) => n + v.added.length, 0);
+  $('stat').textContent = `${piece.name} placed — ${ids.length} object${ids.length === 1 ? '' : 's'}`
+    + (added ? `, ${added} style${added === 1 ? '' : 's'} and swatch${added === 1 ? '' : 'es'} brought along` : '');
+  return { ids, styles: merged };
+}
+async function saveToLibraryDialog() {
+  if (!selIds.size) { $('stat').textContent = 'select the pieces to save first'; return; }
+  const got = await dsForm('Save to library', [{ name: 'name', type: 'text', label: 'Name it — a stat card, a pull quote…', value: '' }],
+    { okLabel: 'Save', validate: v => v.name.trim() ? '' : 'a name, so you can find it' });
+  if (got == null) return;
+  const piece = pieceFromSelection(got.name.trim());
+  if (!piece) { $('stat').textContent = 'nothing here can go in the library — shapes, text boxes and placed tables can'; return; }
+  try {
+    await libraryChange('add', piece);
+    $('stat').textContent = `"${piece.name}" is in the library` + (piece.pictures.length
+      ? ` — its picture${piece.pictures.length === 1 ? ' stays' : 's stay'} linked (${piece.pictures.join(', ')}); a report without the file shows it missing` : '');
+  } catch (e) { $('stat').textContent = 'not saved: ' + e.message; }
+}
+async function libraryDialog() {
+  document.querySelectorAll('.pop:not(.docked)').forEach(p => { p.hidden = true; });
+  let pieces;
+  try { pieces = await libraryList(); } catch (e) { $('stat').textContent = 'the library could not be read: ' + e.message; return; }
+  const wrap = document.createElement('div'); wrap.id = 'library';
+  wrap.innerHTML = '<div class="st-card lib-card" role="dialog" aria-label="Library"><div class="st-head"><b>Library</b>'
+    + `<span class="st-note">${local ? 'shared by every report on this computer' : 'kept in this browser'}</span>`
+    + '<button id="lib-save" class="sw-default">Save the selection…</button><button id="lib-close" class="sw-default">Done</button></div>'
+    + '<div class="st-list" id="lib-list"></div></div>';
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  const draw = () => {
+    const list = $('lib-list'); list.textContent = '';
+    if (!pieces.length) { list.textContent = 'Nothing saved yet. Select a callout, a stat card or a figure frame, then Save the selection.'; return; }
+    pieces.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
+      const row = document.createElement('div'); row.className = 'lib-row';
+      const n = document.createElement('div'); n.className = 'lib-n';
+      n.textContent = p.name;
+      const meta = document.createElement('div'); meta.className = 'lib-meta';
+      const nst = Object.values(p.styles || {}).reduce((k, v) => k + Object.keys(v).length, 0);
+      meta.textContent = `${p.items.length} object${p.items.length === 1 ? '' : 's'}`
+        + (nst ? ` · ${nst} style${nst === 1 ? '' : 's'} and swatches` : '') + (p.from ? ` · from ${p.from}` : '');
+      n.appendChild(meta);
+      const put = document.createElement('button'); put.className = 'sw-default'; put.textContent = 'Place';
+      put.addEventListener('click', async () => { close(); await placePiece(p); });
+      const del = document.createElement('button'); del.className = 'sw-default'; del.textContent = '✕'; del.title = 'Take it out of the library';
+      del.addEventListener('click', async () => { pieces = await libraryChange('delete', null, p.name); draw(); });
+      row.append(n, put, del); list.appendChild(row);
+    });
+  };
+  draw();
+  $('lib-close').addEventListener('click', close);
+  $('lib-save').addEventListener('click', async () => { close(); await saveToLibraryDialog(); });
+  wrap.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
+}
+$('file-library').addEventListener('click', () => { $('filepop').hidden = true; libraryDialog(); });
+
+// ---------------------------------------------------------- Story editor
+// Every slot and text box of the report as one plain column of markdown, in
+// reading order (INDESIGN_PARITY.md 63) — for the rewrite pass where the
+// layout is in the way. Page by page as the sheets run; on a page, what its
+// reading order (34) lists first, then the rest as the page has it. Each
+// piece writes back when you leave it: writeSlot for a slot, `md` for a text
+// box — one undo step each, the same validation as typing on the page.
+
+/** [{page, pid, items: [{kind, key, label, md}]}] for every sheet. */
+function storyPieces() {
+  const d = $('out').contentDocument;
+  if (!d) return [];
+  const seen = new Set(), out = [];
+  docSheets().forEach(({ pg, id: pid }, i) => {
+    const ro = (layout.readingOrder || {})[String(pid)] || [];
+    const hits = [];
+    pg.querySelectorAll('[data-slot], [data-el^="text."]').forEach(el => {
+      let key, kind;
+      if (el.dataset.slot) {
+        if (el.closest('[data-el^="text."]') && boxOf(idOf(el.closest('[data-el^="text."]')))) return;
+        key = el.dataset.slot;
+        if (!slotRe(key).test(source)) return;     // a renderer default with no slot yet
+        kind = el.closest('svg') ? 'label' : /^H[1-6]$/.test(el.tagName) || el.querySelector('h1,h2,h3') ? 'heading' : 'words';
+      } else {
+        key = el.dataset.el;
+        if (!boxOf(key) || boxPictureSrc(key)) return;
+        kind = 'text box';
+      }
+      if (seen.has(key)) return;
+      seen.add(key);
+      const host = el.closest('[data-el]');
+      const r = host ? ro.indexOf(host.dataset.el) : -1;
+      hits.push({ key, kind, el, rank: r < 0 ? Infinity : r });
+    });
+    // Reading order first, then the page's own order (DOM order is stable).
+    hits.sort((a, b) => a.rank - b.rank || (a.el.compareDocumentPosition(b.el) & 4 ? -1 : 1));
+    out.push({ page: i + 1, pid, items: hits.map(h => ({ kind: h.kind, key: h.key,
+      md: h.key.startsWith('text.') ? (boxOf(h.key).md || '') : readSlot(h.key) })) });
+  });
+  return out.filter(p => p.items.length);
+}
+/** Write one piece back. True when it landed; false when the write refused
+ *  it (a slot marker, a malformed source line — the status line says why). */
+function storyWrite(key, md) {
+  if (key.startsWith('text.')) {
+    const b = boxOf(key);
+    if (!b) return false;
+    if (!md.trim()) { $('stat').textContent = 'a text box needs words — delete it on the page instead'; return false; }
+    b.md = md; return true;
+  }
+  writeSlot(key, md);
+  return readSlot(key) === md.replace(/\n{3,}/g, '\n\n').trim();
+}
+function openStoryEditor() {
+  if ($('story')) return;
+  document.querySelectorAll('.pop:not(.docked)').forEach(p => { p.hidden = true; });
+  const wrap = document.createElement('div'); wrap.id = 'story';
+  wrap.innerHTML = '<div class="st-card" role="dialog" aria-label="Story editor"><div class="st-head">'
+    + '<b>Story editor</b><span class="st-note">the words, in reading order — each one saves when you leave it</span>'
+    + '<button id="story-close" class="sw-default">Done</button></div><div class="st-list" id="story-list"></div></div>';
+  document.body.appendChild(wrap);
+  const list = $('story-list');
+  const size = ta => { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; };
+  storyPieces().forEach(p => {
+    const h = document.createElement('div'); h.className = 'st-page'; h.textContent = `Page ${p.page}`;
+    list.appendChild(h);
+    p.items.forEach(it => {
+      const box = document.createElement('div'); box.className = 'st-item'; box.dataset.key = it.key;
+      const lab = document.createElement('div'); lab.className = 'st-lab';
+      const k = document.createElement('span'); k.textContent = it.kind; k.title = it.key;
+      const go = document.createElement('button'); go.textContent = 'show on the page';
+      go.addEventListener('click', () => {
+        closeStoryEditor();
+        const d = $('out').contentDocument;
+        const el = d.querySelector(`[data-el="${CSS.escape(it.key)}"], [data-slot="${CSS.escape(it.key)}"]`);
+        if (el) { el.scrollIntoView({ block: 'center' }); const host = el.closest('[data-el]'); if (host) setSel(d, [idOf(host)]); }
+      });
+      lab.append(k, go);
+      const ta = document.createElement('textarea');
+      ta.value = it.md; ta.spellcheck = true; ta.dataset.key = it.key; ta.dataset.was = it.md;
+      ta.addEventListener('input', () => size(ta));
+      ta.addEventListener('change', async () => {
+        if (ta.value === ta.dataset.was) return;
+        pushHistory();
+        if (!storyWrite(it.key, ta.value)) { past.pop(); box.classList.add('bad'); return; }
+        box.classList.remove('bad');
+        ta.dataset.was = ta.value;
+        markDirty(); await render();
+      });
+      box.append(lab, ta);
+      list.appendChild(box);
+      requestAnimationFrame(() => size(ta));
+    });
+  });
+  if (!list.children.length) list.textContent = 'This report has no words of its own to edit here.';
+  $('story-close').addEventListener('click', closeStoryEditor);
+  wrap.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); closeStoryEditor(); } });
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) closeStoryEditor(); });
+  const first = list.querySelector('textarea'); if (first) first.focus();
+}
+/** Close it — committing the piece being typed in first, as leaving it would. */
+function closeStoryEditor() {
+  const w = $('story'); if (!w) return;
+  const ta = document.activeElement;
+  if (ta && ta.tagName === 'TEXTAREA' && w.contains(ta) && ta.value !== ta.dataset.was) ta.dispatchEvent(new Event('change'));
+  w.remove();
+}
+$('file-story').addEventListener('click', () => { $('filepop').hidden = true; openStoryEditor(); });
+
+// ---------------------------------------------------------- Quick Apply
+// InDesign's fastest path (INDESIGN_PARITY.md 51): ⌘↩ opens one box that
+// finds, by a few letters, any text style, character style (while typing in
+// words), object style or swatch — applied to what is selected — or any
+// command the editor's own buttons carry, pressed as a click would. Every
+// apply is one undo step, through the same writes the panels use.
+
+/** What Quick Apply would act on: the slots / text boxes (as style keys),
+ *  the objects that can wear an object style, every selected thing with a
+ *  fill, and the words being typed in, if any. */
+function qaTargets() {
+  const d = $('out').contentDocument;
+  const ae = d && d.activeElement;
+  const host = editing && ae && ae.isContentEditable ? ae.closest('[contenteditable="true"]') || ae : null;
+  const textKeys = [];
+  if (selected) textKeys.push(selected);
+  else if (d) selEls(d).forEach(el => {
+    const id = idOf(el);
+    if (boxOf(id)) { textKeys.push(id); return; }
+    const keys = new Set([...el.querySelectorAll('[data-slot]')].map(x => x.dataset.slot));
+    if (el.dataset.slot) keys.add(el.dataset.slot);
+    if (keys.size === 1) textKeys.push([...keys][0]);
+  });
+  const ids = [...selIds].filter(id => !isLocked(id));
+  return { d, host, textKeys: [...new Set(textKeys)],
+           objIds: ids.filter(id => objKindOf(id)), fillIds: ids };
+}
+/** Every editor command a button carries: its words, its id, a click. */
+function qaCommands() {
+  const seen = new Set(), out = [];
+  document.querySelectorAll('button[id]').forEach(b => {
+    if (b.closest('#qa, dialog') || b.disabled) return;
+    const label = (b.getAttribute('aria-label') || b.title || b.textContent || '')
+      .replace(/\s+/g, ' ').trim();
+    if (label.length < 2 || label.length > 80 || seen.has(label.toLowerCase())) return;
+    seen.add(label.toLowerCase());
+    out.push({ kind: 'command', label, id: b.id, run: () => b.click() });
+  });
+  return out;
+}
+function qaItems() {
+  const t = qaTargets(), out = [];
+  const textNames = Object.keys(layout.textStyles || {}).sort();
+  if (t.host && t.d.getSelection() && !t.d.getSelection().isCollapsed)
+    textNames.forEach(n => out.push({ kind: 'character style', label: n,
+      run: () => { applyCharStyle(t.d, t.host, n); t.host.dispatchEvent(new Event('input', { bubbles: true })); } }));
+  if (t.textKeys.length && !t.host)
+    textNames.forEach(n => out.push({ kind: 'text style', label: n, run: async () => {
+      pushHistory();
+      t.textKeys.forEach(k => {
+        const st = styleOf(k) || {};
+        setStyle(k, Object.fromEntries(Object.keys(bareStyle(st)).map(x => [x, null])));
+        setStyle(k, { use: n });
+      });
+      markDirty(); await render(); if (selected) showType(selected);
+    } }));
+  const kinds = [...new Set(t.objIds.map(objKindOf))];
+  if (kinds.length === 1)
+    objStyleNames(kinds[0]).forEach(n => out.push({ kind: 'object style', label: n, run: async () => {
+      pushHistory();
+      t.objIds.forEach(id => { const o = objOf(id); stripLook(o, kinds[0]); o.use = n; });
+      markDirty(); await render(); paintSel($('out').contentDocument);
+    } }));
+  Object.keys(swatches()).sort().forEach(n => {
+    const grad = isGradSwatch(n);
+    if (t.fillIds.length && !t.host) out.push({ kind: 'swatch', label: `${n} — fill`, chip: cssFill(`@${n}`),
+      run: async () => {
+        pushHistory();
+        t.fillIds.forEach(id => { const f = fillTargets(id); f.set(`@${n}`); });
+        markDirty(); await render(); paintSel($('out').contentDocument);
+      } });
+    if (!grad && t.textKeys.length && !t.fillIds.length && !t.host) out.push({ kind: 'swatch', label: `${n} — text colour`,
+      chip: swatchHex(`@${n}`), run: async () => {
+        pushHistory(); t.textKeys.forEach(k => setStyle(k, { color: `@${n}` }));
+        markDirty(); await render(); if (selected) showType(selected);
+      } });
+  });
+  return out.concat(qaCommands());
+}
+/** Letters in order, scored: a run of them, and at a word's start, counts
+ *  for more. null when the letters are not all there. */
+function qaScore(q, label) {
+  const s = label.toLowerCase();
+  if (!q) return 0;
+  let i = 0, score = 0, run = 0, last = -2;
+  for (const ch of q) {
+    const j = s.indexOf(ch, i);
+    if (j < 0) return null;
+    run = j === last + 1 ? run + 1 : 0;
+    score += 1 + run * 2 + (j === 0 || /[\s—·(/-]/.test(s[j - 1]) ? 3 : 0);
+    last = j; i = j + 1;
+  }
+  return score - s.length * 0.01;
+}
+function qaFilter(items, q) {
+  q = q.trim().toLowerCase().replace(/\s+/g, ' ');
+  return items.map(it => ({ it, sc: qaScore(q, `${it.label} ${it.kind}`) }))
+    .filter(x => x.sc !== null)
+    .sort((a, b) => b.sc - a.sc || (a.it.kind === 'command') - (b.it.kind === 'command'))
+    .map(x => x.it);
+}
+let qaState = null;
+function quickApply() {
+  if ($('qa')) { closeQuickApply(); return; }
+  const items = qaItems();
+  const wrap = document.createElement('div'); wrap.id = 'qa';
+  wrap.innerHTML = '<div class="qa-card" role="dialog" aria-label="Quick Apply">'
+    + '<input id="qa-in" type="text" placeholder="Apply a style, swatch or command…" autocomplete="off" spellcheck="false">'
+    + '<ul id="qa-list" role="listbox"></ul></div>';
+  document.body.appendChild(wrap);
+  // Opened from inside words: the words stay open (modalOpen keeps their
+  // blur from committing them), as a dialog keeps them.
+  qaState = { items, shown: [], on: 0, range: null, modal: !!editing && !modalOpen };
+  if (qaState.modal) modalOpen = true;
+  // Typing in words: keep the selection, so a character style lands on it.
+  const d = $('out').contentDocument, sel = d && d.getSelection();
+  if (sel && sel.rangeCount) qaState.range = sel.getRangeAt(0).cloneRange();
+  const input = $('qa-in');
+  const draw = () => {
+    const ul = $('qa-list');
+    qaState.shown = qaFilter(qaState.items, input.value).slice(0, 60);
+    qaState.on = Math.min(qaState.on, Math.max(0, qaState.shown.length - 1));
+    ul.textContent = '';
+    if (!qaState.shown.length) { const li = document.createElement('li'); li.className = 'qa-none'; li.textContent = 'nothing by that name'; ul.appendChild(li); return; }
+    qaState.shown.forEach((it, i) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.className = i === qaState.on ? 'on' : '';
+      const k = document.createElement('span'); k.className = 'qa-k'; k.textContent = it.kind;
+      const n = document.createElement('span'); n.className = 'qa-n'; n.textContent = it.label;
+      li.append(k, n);
+      if (it.chip) { const c = document.createElement('span'); c.className = 'qa-chip'; c.style.background = it.chip; li.appendChild(c); }
+      li.addEventListener('mousedown', e => { e.preventDefault(); qaRun(it); });
+      ul.appendChild(li);
+    });
+    const on = ul.children[qaState.on]; if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  };
+  input.addEventListener('input', () => { qaState.on = 0; draw(); });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); qaState.on = Math.min(qaState.on + 1, qaState.shown.length - 1); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); qaState.on = Math.max(qaState.on - 1, 0); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); const it = qaState.shown[qaState.on]; if (it) qaRun(it); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeQuickApply(); }
+  });
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) closeQuickApply(); });
+  draw();
+  input.focus();
+}
+function closeQuickApply(refocus = true) {
+  const w = $('qa'); if (!w) return;
+  const r = qaState && qaState.range, modal = qaState && qaState.modal;
+  w.remove();
+  if (refocus && r) {
+    const d = $('out').contentDocument, n = r.startContainer.nodeType === 3 ? r.startContainer.parentElement : r.startContainer;
+    const host = n && n.closest && n.closest('[contenteditable]:not([contenteditable="false"])');
+    if (host) { host.focus(); const s2 = d.getSelection(); s2.removeAllRanges(); s2.addRange(r); }
+  }
+  if (modal) modalOpen = false;
+  qaState = null;
+}
+async function qaRun(it) {
+  closeQuickApply(true);
+  try { await it.run(); $('stat').textContent = `applied ${it.kind}: ${it.label}`; }
+  catch (e) { $('stat').textContent = `${it.label}: ${e.message}`; }
+}
+const qaKey = e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === 'Enter';
+window.addEventListener('keydown', e => {
+  if (!qaKey(e) || $('qa') || document.querySelector('dialog[open]')) return;
+  // A comment box and a dialog keep their own ⌘↩ (send, OK).
+  if (e.target && e.target.closest && e.target.closest('textarea, #cpanel, dialog')) return;
+  e.preventDefault(); quickApply();
+});
+
 // Layer housekeeping (INDESIGN_PARITY.md 85). Merge: everything on `names`
 // goes onto `into`, which keeps its own place, visibility and lock, and the
 // others go. Unused: a layer nothing is on. What is on a layer: the ids the
@@ -17003,6 +17578,14 @@ function linksList(d) {
       }
       by.set(src, e);
     });
+    // A picture inside a shape (58): its file, and the shape it is in.
+    pg.querySelectorAll('[data-shape] > image[href]').forEach(img => {
+      const src = img.dataset.dsSrc || img.getAttribute('href');
+      if (!src || src.startsWith('data:')) return;
+      const e = by.get(src) || { src, uses: [], missing: false, ppi: null, size: null };
+      e.uses.push({ page: pid, id: idOf(img.parentElement) });
+      by.set(src, e);
+    });
   });
   return [...by.values()];
 }
@@ -17012,6 +17595,7 @@ function relinkSource(d, oldSrc, newSrc) {
   const re = new RegExp(`\\]\\(${rxEsc(oldSrc)}(?=[\\s)])`, 'g');
   const swap = md => md.replace(re, `](${newSrc}`);
   Object.values(layout.img || {}).forEach(g => { if (g.src === oldSrc) { g.src = newSrc; n++; } });
+  (layout.shapes || []).forEach(sh => { if (sh.image && sh.image.src === oldSrc) { sh.image.src = newSrc; n++; } });
   [...boxes(), ...Object.values(layout.masters || {}).flatMap(m => m.boxes || [])].forEach(b => {
     if (typeof b.md === 'string' && swap(b.md) !== b.md) { b.md = swap(b.md); n++; }
   });
@@ -17088,6 +17672,33 @@ $('ar-back').addEventListener('click', () => layerStep($('out').contentDocument,
 
 $('ar-dup').addEventListener('click', () => duplicateSel($('out').contentDocument));
 $('ar-del').addEventListener('click', () => deleteSel($('out').contentDocument));
+// A picture inside a shape (INDESIGN_PARITY 58). layout.py's IMAGE_SHAPE_KINDS.
+const IMAGE_SHAPE_KINDS = ['rect', 'ellipse', 'triangle', 'arrow', 'polygon', 'star', 'path'];
+const shapeTakesImage = sh => !!sh && IMAGE_SHAPE_KINDS.includes(sh.kind) && (sh.kind !== 'path' || !!sh.closed);
+/** The picture a text box IS, when its words are one picture and nothing
+ *  else — what Insert image places. */
+function boxPictureSrc(id) {
+  const b = boxOf(id);
+  const m = b && /^\s*!\[[^\]]*\]\(([^)\s]+)\)\s*$/.exec(b.md || '');
+  return m ? m[1] : null;
+}
+function _shapeImageApply(id, im) {
+  const sh = shapeOf(id);
+  if (im && im.src) sh.image = { src: im.src, ...(im.fit && im.fit !== 'cover' ? { fit: im.fit } : {}),
+                                 ...(im.align && im.align !== 'center' ? { align: im.align } : {}) };
+  else delete sh.image;
+  return { id, image: sh.image || null };
+}
+/** Paste Into: the picture box's picture goes inside the shape, and the box
+ *  goes — one object, as InDesign leaves it. */
+function _pasteIntoApply(shapeId, boxId) {
+  const src = boxPictureSrc(boxId);
+  _shapeImageApply(shapeId, { ...(shapeOf(shapeId).image || {}), src });
+  unlinkFrame(boxId);
+  layout.boxes = boxes().filter(b => b.id !== boxId.replace(/^text\./, ''));
+  return { id: shapeId, image: shapeOf(shapeId).image, removed: boxId };
+}
+
 // Insert image: one upload flow (uploadImageFile — local disk or GitHub,
 // mode-appropriate), then the image lands as a floating BOX whose markdown
 // is just the image. A box is already movable, resizable, layerable and
@@ -25837,6 +26448,11 @@ function hubCommentsBind(d) {
   }, true);
   d.addEventListener('selectionchange', () => hubCommentPlus(d));
   d.addEventListener('keydown', e => { if (hubCommentKey(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
+  // Quick Apply from inside the page, words being typed included (51).
+  d.addEventListener('keydown', e => {
+    if (!qaKey(e) || $('qa')) return;
+    e.preventDefault(); e.stopPropagation(); quickApply();
+  }, true);
   // The cards in the margin ride with the page: repositioned, not rebuilt.
   if (d.defaultView) d.defaultView.addEventListener('scroll', () => hubMarginQueue(false), { passive: true });
   // The stage scrolls too - the clearance band under the last page (up to
@@ -28775,6 +29391,12 @@ async function inlineEverything(doc) {
       img.setAttribute('src', localImages.get(src) || await asDataUrl(withBase(src)));
     } catch (e) { /* keep the relative path rather than lose the image tag */ }
   }
+  for (const img of [...doc.querySelectorAll('image[href]')]) {     // a picture in a shape (58)
+    const src = img.getAttribute('href') || '';
+    if (/^(data:|https?:|#)/i.test(src)) continue;
+    try { img.setAttribute('href', localImages.get(src) || await asDataUrl(withBase(src))); }
+    catch (e) { /* keep the relative path */ }
+  }
 }
 
 /** Resolve a single @media feature against the design viewport.
@@ -29926,6 +30548,19 @@ const PILOT_BATCH_VERBS = {
       else o.fade = { angle: f.angle ?? 180, from: f.from ?? 0.4, to: f.to ?? 1 };
       return { id, fade: o.fade || null };
     } },
+  // A picture inside a shape (58): shapeImage(id, {src, fit, align} | null);
+  // pasteInto(shapeId, pictureBoxId) moves a picture box's picture inside.
+  shapeImage: { validate: (id, im) => {
+      if (!shapeTakesImage(shapeOf(id))) return { ok: false, error: `'${id}' is not a closed shape — ${IMAGE_SHAPE_KINDS.join(', ')} (a path when closed)` };
+      if (im == null) return { ok: true };
+      if (typeof im !== 'object' || typeof im.src !== 'string' || !im.src.trim()) return { ok: false, error: 'shapeImage(id, {src, fit: "cover" | "contain", align} | null)' };
+      if (im.fit != null && !['cover', 'contain'].includes(im.fit)) return { ok: false, error: 'fit: cover or contain' };
+      if (im.align != null && !['center', 'top', 'bottom', 'left', 'right'].includes(im.align)) return { ok: false, error: 'align: center, top, bottom, left or right' };
+      return { ok: true };
+    }, apply: (id, im) => _shapeImageApply(id, im) },
+  pasteInto: { validate: (sid, bid) => !shapeTakesImage(shapeOf(sid)) ? { ok: false, error: `'${sid}' is not a closed shape` }
+      : !boxPictureSrc(bid) ? { ok: false, error: `'${bid}' is not a picture box (a text box holding one picture)` } : { ok: true },
+    apply: (sid, bid) => _pasteIntoApply(sid, bid) },
   clearTransforms: { validate: ids => {
       const list = Array.isArray(ids) ? ids : [ids];
       if (!list.length || list.some(i => typeof i !== 'string')) return { ok: false, error: 'clearTransforms(id | [ids])' };
@@ -30779,6 +31414,10 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   /** clearTransforms(id | [ids]) — rotation, skew, flip and scale back to
    *  none; place and size kept. */
   async clearTransforms(ids) { return _pilotOne('clearTransforms', [ids]); },
+  /** A picture inside a shape (58): shapeImage(id, {src, fit, align} | null);
+   *  pasteInto(shapeId, pictureBoxId) — Paste Into, the box goes. */
+  async shapeImage(id, im) { return _pilotOne('shapeImage', [id, im ?? null]); },
+  async pasteInto(sid, bid) { return _pilotOne('pasteInto', [sid, bid]); },
   /** fade(id, {angle, from, to} | null) — InDesign's gradient feather: opaque
    *  up to `from`, clear by `to` (0..1 along `angle`, 180 = toward the
    *  bottom). A text box, a table or a placed piece. */
@@ -30835,6 +31474,42 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async defineLayer(name, opts) { return docsync.api.batch([{ verb: 'defineLayer', args: [name, opts || {}] }]); },
   async toLayer(ids, name) { return docsync.api.batch([{ verb: 'toLayer', args: [ids, name] }]); },
   async dropLayer(name) { return docsync.api.batch([{ verb: 'dropLayer', args: [name] }]); },
+  /** Library (50): library() lists the saved pieces; saveToLibrary(name)
+   *  saves the selection (with the styles and swatches it wears);
+   *  placeFromLibrary(name, {x, y}?) drops one on the page in view, one
+   *  undo step; dropFromLibrary(name) takes one out. */
+  async library() { return { ok: true, pieces: (await libraryList()).map(p => ({ name: p.name, items: p.items.length,
+      styles: Object.fromEntries(Object.entries(p.styles || {}).map(([k, v]) => [k, Object.keys(v)])), pictures: p.pictures || [] })) }; },
+  async saveToLibrary(name) {
+    if (!name || !String(name).trim()) return { ok: false, error: 'saveToLibrary(name) — with the pieces selected' };
+    const piece = pieceFromSelection(String(name).trim());
+    if (!piece) return { ok: false, error: 'select shapes, text boxes or placed tables first' };
+    try { await libraryChange('add', piece); } catch (e) { return { ok: false, error: e.message }; }
+    return { ok: true, name: piece.name, items: piece.items.length, styles: piece.styles, pictures: piece.pictures };
+  },
+  async placeFromLibrary(name, at) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const p = (await libraryList()).find(x => x.name === name);
+    if (!p) return { ok: false, error: `no piece called '${name}' in the library` };
+    const r = await placePiece(p, at);
+    return { ...docsync.api.status(), ...r };
+  },
+  async dropFromLibrary(name) { try { await libraryChange('delete', null, name); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; } },
+  /** Story editor (63): stories() lists every slot and text box, page by
+   *  page in reading order, with its markdown — what File ▸ Story editor
+   *  shows. Writing one back is setSlot / setBoxText. */
+  stories() { return { ok: true, pages: storyPieces() }; },
+  /** Quick Apply (51): quickApplyItems(query?) lists what the box would offer
+   *  for the current selection, best match first ({kind, label}); quickApply
+   *  (query) applies the best match, as Enter in the box would. */
+  quickApplyItems(q = '') { return { ok: true, items: qaFilter(qaItems(), q).map(({ kind, label }) => ({ kind, label })) }; },
+  async quickApply(q) {
+    if (!q) return { ok: false, error: 'quickApply(query) — a few letters of a style, swatch or command' };
+    const it = qaFilter(qaItems(), q)[0];
+    if (!it) return { ok: false, error: `nothing matches '${q}'` };
+    await it.run();
+    return { ...docsync.api.status(), applied: { kind: it.kind, label: it.label } };
+  },
   /** Layer housekeeping (85): mergeLayers([names], into) moves what is on
    *  them onto `into` and drops them; dropUnusedLayers() drops the layers
    *  nothing is on; selectLayer(name) selects what is on one (not locked or
