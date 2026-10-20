@@ -4833,6 +4833,10 @@ _page = into_shell(_shell, "<p>new</p>")
 check_eq("into_shell keeps the shell's head and body tag and replaces what is between",
          ('href="../assets/site.css"' in _page, '<body class="ha-est">' in _page, "<p>new</p>" in _page, "old" in _page),
          (True, True, True, False))
+from docsync.publish_page import semantic_tags  # noqa: E402
+check_eq("semantic_tags writes <b>/<i> as <strong>/<em> and leaves <br>, <body>, <i class=..> alone",
+         semantic_tags('<p><b>x</b> <i>y</i><br><i class="ic"></i></p><body>'),
+         '<p><strong>x</strong> <em>y</em><br><i class="ic"></i></p><body>')
 try:
     sheet_inner("<html><body><p>no sheet</p></body></html>")
     FAILS.append("a render with no sheet must be refused")

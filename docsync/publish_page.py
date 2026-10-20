@@ -24,6 +24,8 @@ and it has no idea which site it is writing to.
                        editor can show it; write FILE's bytes' data URI back as
                        URL (repeatable)
     --replace OLD=>NEW  a plain text swap on the result (repeatable)
+    --no-fidelity      skip docsync.fidelity, which renders the result next to the
+                       page it replaces and refuses a change in how it looks
 
 Without --write it only says whether the result differs from --out.
 """
@@ -53,6 +55,21 @@ def sheet_inner(built: str) -> str:
     if not m:
         raise ValueError('the render has no <section class="page"> to take the page from')
     return _SHEET_CSS.sub("", m.group(1))
+
+
+# The text engine writes **bold** / *italic* as <b>/<i>; a site's own stylesheet
+# nearly always styles <strong>/<em> (the page this came from used them), so the
+# published page says what the site's CSS expects.
+# Matched as pairs, so the close of an <i class="icon"> is never mistaken for one.
+_TAGS = [(re.compile(r"<b>(.*?)</b>", re.S), r"<strong>\1</strong>"),
+         (re.compile(r"<i>(.*?)</i>", re.S), r"<em>\1</em>")]
+
+
+def semantic_tags(html: str) -> str:
+    """<b>/<i> (no attributes) -> <strong>/<em>."""
+    for rx, new in _TAGS:
+        html = rx.sub(new, html)
+    return html
 
 
 def swap_asset(html: str, data: bytes, url: str) -> str:
@@ -106,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--swap-asset", action="append", default=[], metavar="FILE=>URL")
     ap.add_argument("--replace", action="append", default=[], metavar="OLD=>NEW")
     ap.add_argument("--write", action="store_true")
+    ap.add_argument("--no-fidelity", action="store_true",
+                    help="skip the look-alike check against the page being replaced")
     a = ap.parse_args(argv)
 
     sys.path.insert(0, str(ROOT))
@@ -113,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     b = get(a.id)
     shell_path = a.shell or (b.editor.render.parent / "original.html")
     out_path = a.out or shell_path
-    inner = sheet_inner(render(b, dict(_pairs(a.env, "--env"))))
+    inner = semantic_tags(sheet_inner(render(b, dict(_pairs(a.env, "--env")))))
     for f, url in _pairs(a.swap_asset, "--swap-asset"):
         inner = swap_asset(inner, Path(f).read_bytes(), url)
     page = into_shell(shell_path.read_text(encoding="utf-8"), inner)
@@ -124,6 +143,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no change: {out_path} already matches the project")
         return 0
     print(f"{out_path}: {len(current or ''):,} -> {len(page):,} bytes")
+    if current is not None and not a.no_fidelity:
+        from docsync import fidelity
+        problems = fidelity.check(out_path, page)
+        if problems:
+            print("the published page would not look like the one it replaces:", file=sys.stderr)
+            for p in problems:
+                print("  " + p, file=sys.stderr)
+            print("fix the cause, or pass --no-fidelity if the change is deliberate", file=sys.stderr)
+            return 1
+        print("fidelity: looks like the page it replaces" if problems == [] else "fidelity: not checked")
     if a.write:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(page, encoding="utf-8")
