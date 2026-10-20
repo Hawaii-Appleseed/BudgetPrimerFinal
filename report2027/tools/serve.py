@@ -1769,7 +1769,7 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 CLIENTS.pop(cid, None)
             return self._json(200, {"ok": True, "clients": len(CLIENTS)})
-        if path not in ("/__save", "/__push", "/__export", "/__upload",
+        if path not in ("/__save", "/__push", "/__publish", "/__export", "/__upload",
                         "/__update", "/__rollback", "/__window", "/__quit",
                         "/__scaffold", "/__adopt", "/__connect", "/__pull",
                         "/__doc", "/__doc/import", "/__linkcheck", "/__library",
@@ -1805,6 +1805,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ("/__save", "/__push"):
                 return self._json(200, {"ok": True, "ahead": 0, "message":
                     "blocked in tests — no real save/push happens here"})
+            if path == "/__publish":
+                return self._json(200, {"ok": True, "message":
+                    "blocked in tests — nothing is published here"})
             # A spec that built its OWN throwaway origin and clone is exactly
             # what /__pull is for, and blocking it blocks the only test there
             # is of the real endpoint. content-update.spec.js used to opt out
@@ -1886,10 +1889,26 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:                   # noqa: BLE001 — report it
                 return self._json(200, {"ok": False, "error": str(e)})
         try:
-            msg = (self._push(pid, bool(req.get("deploy")))
-                   if path == "/__push" else self._save(pid, req))
+            if path == "/__publish":
+                pub = _publish_site(pid, None)
+                if pub is None:
+                    return self._json(200, {"ok": False, "project": pid, "error":
+                        "this project has no publish: block in docsync.yml"})
+                return self._json(200, {"ok": pub.ok, "project": pid, "message": pub.message,
+                                         "publish": _publish_json(pub)})
+            trigger = "push" if path == "/__push" else "save"
+            msg = self._push(pid, bool(req.get("deploy"))) if path == "/__push" else self._save(pid, req)
+            # A site in another repo that this project publishes to: updated after
+            # the local work is safe, and never able to undo it.
+            pub = _publish_site(pid, trigger)
+            extra = {}
+            if pub is not None:
+                msg += (" · public site: " + pub.message + (
+                    f" — live in about a minute at {pub.url}" if pub.changed and pub.url else "")
+                    if pub.ok else " · the public site was NOT updated: " + pub.message)
+                extra["publish"] = _publish_json(pub)
             return self._json(200, {"ok": True, "message": msg, "v": STATE[pid].version,
-                                     "project": pid,
+                                     "project": pid, **extra,
                                      "ahead": _ahead(PROJECTS[pid]["root"])})
         except Exception as e:                       # noqa: BLE001 — report it
             # A push that needs the person to SEE where it lands is not a
@@ -2992,6 +3011,38 @@ class Handler(SimpleHTTPRequestHandler):
         PUSH_HEALTH.pop(str(root), None)
         where = f" — '{branch}' now matches '{here}'" if here and here != branch else ""
         return f"pushed{where} — GitHub Pages deploys in about a minute"
+
+
+def _publish_site(pid: str, trigger):
+    """Update the public site this project publishes to (docsync/publish.py), if
+    its binding has a `publish:` block set to this trigger. `trigger=None` means
+    "now, whatever the block says" — the /__publish endpoint. Returns a Result,
+    or None when there is nothing to do."""
+    p = PROJECTS[pid]
+    cfg = getattr(p["binding"], "publish", None)
+    if not cfg or (trigger is not None and cfg.when != trigger):
+        return None
+    sys.path.insert(0, str(SELF_ROOT))
+    try:
+        from docsync import publish as _pub
+    finally:
+        sys.path.remove(str(SELF_ROOT))
+    if cfg.home != "local":
+        # One editing home per page: two routes publishing different copies of
+        # the same page would just overwrite each other.
+        return _pub.Result(True, False, "not published from here: this page is edited on the staff hub "
+                           "(home: hub in its publish: block)", url=cfg.url)
+    # The same token the editor's Push uses (File > Connect GitHub), passed inline
+    # so nothing is persisted and a machine whose keychain already works is untouched.
+    auth = []
+    tok = _gh_token().get("token")
+    if tok:
+        auth = ["-c", "url.https://x-access-token:" + tok + "@github.com/.insteadOf=https://github.com/"]
+    return _pub.run(cfg, p["root"], pid, trigger or cfg.when, auth=auth, path_env=_tool_path())
+
+
+def _publish_json(r) -> dict:
+    return {"ok": r.ok, "changed": r.changed, "message": r.message, "sha": r.sha, "url": r.url}
 
 
 def _assets_dir(b) -> Path:

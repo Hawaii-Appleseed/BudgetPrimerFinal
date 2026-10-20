@@ -4672,6 +4672,173 @@ for _bad, _says in (({"defaultStyles": {"frame": "Body"}}, "one of text, box, sh
     check_eq(f"defaultStyles is refused: {_says}",
              _says in _layout_error(dict({"textStyles": _DS_TS, "objectStyles": _DS_OS}, **_bad)), True)
 
+# ------------------------------------------------- publish: a public site in another repo
+import shlex  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+from docsync import publish as _pub  # noqa: E402
+from docsync.registry import Publish  # noqa: E402
+
+with tempfile.TemporaryDirectory() as _td:
+    _reg = Path(_td) / "docsync.yml"
+    _body = ("bindings:\n  - id: t-site\n    content: content.md\n    publish:\n"
+             "      repo: Hawaii-Appleseed/Some-Site\n"
+             "      command: make-the-page\n"
+             "      paths: [site/page.html]\n")
+    _reg.write_text(_body)
+    _p = load_registry(_reg)[0].publish
+    check_eq("publish parses with its defaults",
+             (_p.repo, _p.branch, _p.when, _p.paths, _p.url), ("Hawaii-Appleseed/Some-Site", "main", "push", ["site/page.html"], ""))
+    _reg.write_text(_body + "      when: save\n      branch: gh-pages\n")
+    _p = load_registry(_reg)[0].publish
+    check_eq("publish takes when and branch", (_p.when, _p.branch), ("save", "gh-pages"))
+    check_eq("publish home defaults to local", _p.home, "local")
+    _reg.write_text(_body + "      home: hub\n")
+    check_eq("publish takes home: hub", load_registry(_reg)[0].publish.home, "hub")
+    _reg.write_text(_body + "      home: both\n")
+    try:
+        load_registry(_reg)
+        FAILS.append("publish home: both must not load")
+    except RegistryError as e:
+        check("publish home must be local or hub", str(e), "must be local or hub")
+    check_eq("a binding with no publish block has none", (
+        _reg.write_text("bindings:\n  - id: t-plain\n    content: c.md\n"), load_registry(_reg)[0].publish)[1], None)
+    for _bad, _says in (("      when: always\n", "must be save or push"),
+                        ("      paths: [../outside.html]\n", "must be inside the site repo"),
+                        ("      paths: [/etc/passwd]\n", "must be inside the site repo"),
+                        ("      paths: []\n", "paths must be a list")):
+        _reg.write_text(_body.replace("      paths: [site/page.html]\n", "") + _bad
+                        if "paths" in _bad else _body + _bad)
+        try:
+            load_registry(_reg)
+            FAILS.append(f"publish {_bad.strip()!r} must not load")
+        except RegistryError as e:
+            check(f"publish refuses {_bad.strip()!r}", str(e), _says)
+    _reg.write_text(_body.replace("      command: make-the-page\n", ""))
+    try:
+        load_registry(_reg)
+        FAILS.append("publish without a command must not load")
+    except RegistryError as e:
+        check("publish without a command names it", str(e), "missing required key 'command'")
+
+with tempfile.TemporaryDirectory() as _td:
+    _td = Path(_td)
+
+    def _sh(*a, cwd=None):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
+                              capture_output=True, text=True, check=True).stdout
+
+    _origin, _seed = _td / "origin.git", _td / "seed"
+    _sh("init", "-q", "--bare", "-b", "main", str(_origin))
+    _sh("clone", "-q", str(_origin), str(_seed))
+    (_seed / "site").mkdir()
+    (_seed / "site" / "page.html").write_text("old")
+    (_seed / "site" / "keep.txt").write_text("someone else's file")
+    _sh("add", "-A", cwd=_seed)
+    _sh("commit", "-q", "-m", "seed", cwd=_seed)
+    _sh("push", "-q", "origin", "HEAD:main", cwd=_seed)
+    os.environ["CIDER_PUBLISH_HOME"] = str(_td / "clones")
+
+    def _remote(path):
+        return _sh("show", f"main:{path}", cwd=_origin).strip()
+
+    def _publish(cmd, paths=("site/page.html",)):
+        return _pub.run(Publish(repo=str(_origin), command=cmd, paths=list(paths), url="https://x.test/p/"),
+                        _td, "t-site", "save")
+
+    _r = _publish('printf new > "$CIDER_SITE/site/page.html"; printf junk > "$CIDER_SITE/site/stray.txt"')
+    check_eq("a publish commits the page to the site repo and pushes it",
+             (_r.ok, _r.changed, _remote("site/page.html")), (True, True, "new"))
+    check_eq("a publish takes ONLY the declared paths: a stray file is not committed",
+             _sh("ls-tree", "--name-only", "-r", "main", cwd=_origin).split(), ["site/keep.txt", "site/page.html"])
+    _n = len(_sh("rev-list", "main", cwd=_origin).split())
+    _r = _publish('printf new > "$CIDER_SITE/site/page.html"')
+    check_eq("publishing an unchanged page commits nothing",
+             (_r.ok, _r.changed, len(_sh("rev-list", "main", cwd=_origin).split())), (True, False, _n))
+    _sh("pull", "-q", "--rebase", "origin", "main", cwd=_seed)
+    (_seed / "site" / "keep.txt").write_text("edited elsewhere")
+    _sh("commit", "-q", "-am", "someone else pushed", cwd=_seed)
+    _sh("push", "-q", "origin", "HEAD:main", cwd=_seed)
+    _r = _publish('printf newer > "$CIDER_SITE/site/page.html"')
+    check_eq("a publish builds on what the remote has gained since the last one",
+             (_r.ok, _remote("site/page.html"), _remote("site/keep.txt")), (True, "newer", "edited elsewhere"))
+    _r = _publish("exit 3")
+    check_eq("a failing command is reported and publishes nothing",
+             (_r.ok, "the publish command failed" in _r.message, _remote("site/page.html")), (False, True, "newer"))
+    _r = _publish("true", paths=("site/never-made.html",))
+    check_eq("a command that did not write a declared path is refused",
+             (_r.ok, "did not write" in _r.message), (False, True))
+    del os.environ["CIDER_PUBLISH_HOME"]
+
+# ------------------------------------------------- publish: the hub route takes only a project's own files
+from types import SimpleNamespace as _NS  # noqa: E402
+
+with tempfile.TemporaryDirectory() as _td:
+    _td = Path(_td)
+
+    def _g(*a):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(_td), *a],
+                              capture_output=True, text=True, check=True).stdout
+
+    _g("init", "-q", "-b", "main")
+    (_td / "projects" / "p").mkdir(parents=True)
+    (_td / "projects" / "p" / "content.md").write_text("main words")
+    (_td / "docsync.yml").write_text("command: trusted")
+    _g("add", "-A")
+    _g("commit", "-q", "-m", "main")
+    _g("checkout", "-q", "-b", "hub/p")
+    (_td / "projects" / "p" / "content.md").write_text("hub words")
+    (_td / "docsync.yml").write_text("command: rm -rf /")           # what a hub branch must never get to run
+    _g("commit", "-q", "-am", "hub version")
+    _g("checkout", "-q", "main")
+    _bind = _NS(id="p", content=_td / "projects" / "p" / "content.md", editor=None)
+    _took = _pub._overlay(_td, _bind, "hub/p")
+    check_eq("the hub route takes the project's content from the hub branch",
+             (_took, (_td / "projects" / "p" / "content.md").read_text()), (["projects/p/content.md"], "hub words"))
+    check_eq("and nothing else: the registry stays the trusted branch's",
+             (_td / "docsync.yml").read_text(), "command: trusted")
+
+# ------------------------------------------------- publish: any GitHub repo, one token minted per target
+for _repo, _want in (("Hawaii-Appleseed/Census-Forecaster", ("Hawaii-Appleseed", "Census-Forecaster")),
+                     ("https://github.com/Hawaii-Appleseed/Some.Site.git", ("Hawaii-Appleseed", "Some.Site")),
+                     ("dtomkatsu/personal-site", ("dtomkatsu", "personal-site")),
+                     ("git@example.com:team/site.git", ("", "")),
+                     ("/tmp/not-github", ("", ""))):
+    check_eq(f"github_target({_repo!r})", _pub.github_target(_repo), _want)
+with tempfile.TemporaryDirectory() as _wd:
+    _dest = _pub.init_workflow(Path(_wd))
+    check_eq("init_workflow writes the caller into .github/workflows/",
+             (_dest.relative_to(_wd).as_posix(), "uses: Hawaii-Appleseed/Cider/.github/workflows/publish-sites.yml@main" in _dest.read_text(),
+              "secrets: inherit" in _dest.read_text()),
+             (".github/workflows/publish-sites.yml", True, True))
+
+# ------------------------------------------------- publish_page: a project back into its page
+import base64 as _b64  # noqa: E402
+from docsync.publish_page import into_shell, sheet_inner, swap_asset  # noqa: E402
+
+_png = b"\x89PNG-bytes"
+_uri = "data:image/png;base64," + _b64.b64encode(_png).decode()
+_built = ('<html><head><style>.page{width:12.5in}</style></head><body>'
+          '<section class="page" data-page="1"><header><img src="' + _uri + '"></header><p>Words</p>'
+          '<style>@media screen and (max-width:12.5in){[data-placed]{position:static}}</style>'
+          '</section>\n</body></html>')
+_inner = sheet_inner(_built)
+check_eq("sheet_inner takes what is inside the sheet and drops the engine's mobile rules",
+         ("<p>Words</p>" in _inner, "max-width" in _inner), (True, False))
+check_eq("swap_asset writes an inline image back as its URL",
+         swap_asset(_inner, _png, "../assets/logo.png").count('src="../assets/logo.png"'), 1)
+_shell = ('<!doctype html><html><head><link rel="stylesheet" href="../assets/site.css"></head>'
+          '<body class="ha-est"><p>old</p></body></html>')
+_page = into_shell(_shell, "<p>new</p>")
+check_eq("into_shell keeps the shell's head and body tag and replaces what is between",
+         ('href="../assets/site.css"' in _page, '<body class="ha-est">' in _page, "<p>new</p>" in _page, "old" in _page),
+         (True, True, True, False))
+try:
+    sheet_inner("<html><body><p>no sheet</p></body></html>")
+    FAILS.append("a render with no sheet must be refused")
+except ValueError as e:
+    check("a render with no sheet says so", str(e), "no <section class=\"page\">")
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")

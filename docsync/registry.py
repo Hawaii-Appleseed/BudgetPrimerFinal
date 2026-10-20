@@ -49,6 +49,20 @@ class Editor:
 
 
 @dataclass
+class Publish:
+    """Where a project's page is published when it is not in this repo — see
+    docsync/publish.py for what happens, and why it uses its own clone."""
+    repo: str                  # owner/name, a git URL, or a local path
+    command: str               # makes the page(s) inside $CIDER_SITE
+    paths: list[str]           # the only files a publish may change, relative to the repo
+    branch: str = "main"       # the branch the site deploys from
+    when: str = "push"         # "save": every Save publishes; "push": the editor's Push does
+    message: str = ""          # commit message in the site repo
+    url: str = ""              # the live page, said back to the person after a publish
+    home: str = "local"        # where this page is EDITED: "local" (the editor app) or "hub" (the staff hub)
+
+
+@dataclass
 class Binding:
     id: str
     content: Path              # the committed source the report reads
@@ -80,6 +94,8 @@ class Binding:
     # (page-number chrome, a data-frozen label). Each entry is a reviewable
     # decision in the diff; anything not listed still fails.
     editability_ok: list[str] = field(default_factory=list)
+    # A public site in another repo that Save/Push also updates (publish.py).
+    publish: Publish | None = None
 
     @property
     def state_file(self) -> Path:
@@ -150,8 +166,39 @@ def load_registry(path: Path = REGISTRY) -> list[Binding]:
             editor=_editor(b.get("editor"), where),
             editability=edi,
             editability_ok=[str(s) for s in edi_ok],
+            publish=_publish(b.get("publish"), where),
         ))
     return out
+
+
+def _publish(p: dict | None, where: str) -> Publish | None:
+    if not p:
+        return None
+    where += " publish"
+    # `when`, not `on`: YAML 1.1 reads a bare `on:` key as the boolean true.
+    when = str(p.get("when", "push"))
+    if when not in ("save", "push"):
+        raise RegistryError(f"{where}: when '{when}' must be save or push")
+    paths = p.get("paths")
+    if not isinstance(paths, list) or not paths or not all(isinstance(x, str) and x for x in paths):
+        raise RegistryError(f"{where}: paths must be a list of the files a publish may change")
+    for x in paths:
+        parts = Path(x).parts
+        if Path(x).is_absolute() or ".." in parts or ".git" in parts:
+            raise RegistryError(f"{where}: path '{x}' must be inside the site repo")
+    home = str(p.get("home", "local"))
+    if home not in ("local", "hub"):
+        raise RegistryError(f"{where}: home '{home}' must be local or hub")
+    return Publish(
+        repo=str(_require(p, "repo", where)),
+        command=str(_require(p, "command", where)),
+        paths=[str(x) for x in paths],
+        branch=str(p.get("branch") or "main"),
+        when=when,
+        message=str(p.get("message") or ""),
+        url=str(p.get("url") or ""),
+        home=home,
+    )
 
 
 def _pages(raw, where: str) -> list:
