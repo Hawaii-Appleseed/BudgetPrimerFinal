@@ -359,7 +359,7 @@ def _nice_min(v: float) -> float:
     return -_nice_max(-v) if v < 0 else 0.0
 
 
-def _axis_bounds(c: dict, vals) -> tuple:
+def _axis_bounds(c: dict, vals, share=None) -> tuple:
     """The value axis a chart is drawn against: (lo, hi, ticks).
 
     Two things this fixes at once. A chart whose data goes below zero used to
@@ -394,6 +394,30 @@ def _axis_bounds(c: dict, vals) -> tuple:
     # the default 5: the existing scale (0 … 1.5x10^k in quarters) is what
     # every published report is drawn against, and moving it would redraw
     # them all.
+    if share is not None and share != 5 and not (isinstance(want, int) and not isinstance(want, bool)):
+        # A secondary axis divides as many times as the primary one (see
+        # _axis2_bounds); when the primary was re-divided below, this one is
+        # snapped to the same count.
+        want = ticks = share
+    elif share is None and want is None and c.get("axisMin") is None \
+            and c.get("axisMax") is None and lo_data < 0:
+        # An axis that crosses zero, left to the default five ticks, was
+        # divided in quarters from a lower end nobody rounded: -60 / 5 / 70 /
+        # 135 / 200, or -$0.2B / $2.3B / $4.9B — numbers no reader can add up,
+        # and zero, the line every bar grows from, not among them. Round steps
+        # instead, with zero on a tick, at most eight. Only here: an axis that
+        # stays above zero keeps the scale every published chart has.
+        step = _nice_step((max(hi_data, 0.0) - lo_data) / 6)
+        for _ in range(8):
+            lo = math.floor(lo_data / step + 1e-9) * step
+            hi = math.ceil(max(hi_data, 0.0) / step - 1e-9) * step
+            if hi <= lo:
+                hi = lo + step
+            n = int(round((hi - lo) / step)) + 1
+            if n <= 8:
+                break
+            step = _nice_step(step * 1.0001)        # the next round step up
+        return float(lo), float(hi), max(3, n)
     if isinstance(want, int) and not isinstance(want, bool):
         step = _nice_step((hi - lo) / max(1, ticks - 1))
         if c.get("axisMin") is None:
@@ -439,6 +463,22 @@ def _tick_labels(vmin: float, vmax: float, nticks: int, fmt: dict) -> list:
         bumped = dict(fmt, decimals=fmt["decimals"] + extra)
         out = [_fmt_val(v, bumped) for v in vals]
     return out
+
+
+def _value_gutter(ticks, fs: float, base: float) -> float:
+    """How wide the strip beside a vertical value axis must be for its tick
+    labels. Charts set it at a fixed 2.6 label-heights, so a long label —
+    "$15,000M", "$11.2B" — ran out of the strip: into the axis title beside
+    it, or off the chart's own edge, where an inline chart's viewBox cut it
+    ("$8,000M" drawn as "$8,000I" on a right-hand axis). It grows only for a
+    label that would reach more than a fifth of a label-height past the
+    strip, so a chart whose ticks always fitted is drawn exactly as before."""
+    sz = _lfs(fs * 0.8)
+    # 0.62 em a character, not _EM_W's 0.58: measured, figures and $ , M B
+    # run 0.50 (Source Sans) to 0.63 (system-ui, the editor's own face) —
+    # the strip is sized for the widest face a chart is likely drawn in.
+    need = max((len(str(t)) for t in ticks), default=0) * 0.62 * sz + fs * 0.3
+    return need + fs * 0.1 if need > base + fs * 0.2 else base
 
 
 # Scale suffixes, largest first — "auto" picks the first one the number clears.
@@ -2366,13 +2406,15 @@ def _stack_totals(group, n):
     return tot
 
 
-def _axis2_bounds(c, vals):
+def _axis2_bounds(c, vals, ticks=5):
     """The secondary axis. Reads its own min and max but shares the tick
     COUNT, because two scales drawn against one set of gridlines have to
-    have the same number of divisions or neither can be read off them."""
+    have the same number of divisions or neither can be read off them —
+    `ticks` is the primary axis's count, which a zero-crossing primary may
+    have changed from five."""
     shim = {"axisMin": c.get("axis2Min"), "axisMax": c.get("axis2Max"),
             "axisTicks": c.get("axisTicks")}
-    return _axis_bounds(shim, vals)
+    return _axis_bounds(shim, vals, share=ticks)
 
 
 def _bar_gap(c) -> float:
@@ -2471,7 +2513,7 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     vmin2 = vmax2 = None
     if two_ax:
         right = _bounds("right")
-        vmin2, vmax2, _ = _axis2_bounds(c, right[1] if right else [0])
+        vmin2, vmax2, _ = _axis2_bounds(c, right[1] if right else [0], nticks)
     grid = c.get("grid") is not False
     show_vals = bool(c.get("values"))
     afmt = _num_format(c)
@@ -2482,6 +2524,11 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     # Room for the tick labels along the value axis and the category names.
     pad_l = (fs * 2.6) if not horizontal else (fs * 3.4)
     pad_r = (fs * 2.6) if two_ax else (fs * 0.4)
+    if not horizontal and grid:
+        pad_l = _value_gutter(_tick_labels(vmin, vmax, nticks, afmt), fs, pad_l)
+        if two_ax:
+            pad_r = _value_gutter(_tick_labels(vmin2, vmax2, nticks,
+                                               _num_format(c, "axis2Format")), fs, pad_r)
     if horizontal and grid:
         # The value axis runs sideways, and its last tick label is centred on
         # the plot's right edge — half of it past the drawing, where it was cut
@@ -2839,6 +2886,13 @@ def _area_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     if stacked and c.get("stackPct"):
         series = _stack_pct(series, n)
     pad_l, pad_b = fs * 2.6, fs * 1.6
+    afmt = _num_format(c)
+    lfmt = _num_format(c, "labelFormat")
+    vals = _stack_totals(series, n) if stacked else \
+        [v for s in series for j, v in enumerate(s["data"]) if j not in s["gaps"]]
+    vmin, vmax, nticks = _axis_bounds(c, vals or [0])
+    if c.get("grid") is not False:
+        pad_l = _value_gutter(_tick_labels(vmin, vmax, nticks, afmt), fs, pad_l)
     # Turned names (the panel's Labels: Tilted / Vertical), the bar chart's
     # rule: a year of months has no room to lie flat. The first point sits ON
     # the plot's left edge, so the gutter is all the room its label leans into.
@@ -2847,11 +2901,6 @@ def _area_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         rot_sz, pad_b = _rot_label_band(labels, fs, pad_l, angle)
     px, py = x + pad_l, y
     pw, ph = max(0.1, w - pad_l - fs * 0.4), max(0.1, h - pad_b)
-    afmt = _num_format(c)
-    lfmt = _num_format(c, "labelFormat")
-    vals = _stack_totals(series, n) if stacked else \
-        [v for s in series for j, v in enumerate(s["data"]) if j not in s["gaps"]]
-    vmin, vmax, nticks = _axis_bounds(c, vals or [0])
     span = (vmax - vmin) or 1.0
     parts = [_plot_frame(px, py, pw, ph, vmin, vmax, ink, fs,
                          c.get("grid") is not False,
@@ -2946,6 +2995,11 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         if xmax == xmin:
             xmax = xmin + 1
         ymin, ymax, nticks = _axis_bounds(c, ys[:n])
+        if grid:
+            g = _value_gutter(_tick_labels(ymin, ymax, nticks, afmt), fs, pad_l)
+            if g != pad_l:
+                pad_l, px = g, x + g
+                pw = max(0.1, w - g - fs * 0.4)
         yspan = (ymax - ymin) or 1.0
         parts.append(_plot_frame(px, py, pw, ph, ymin, ymax, ink, fs, grid,
                                  xmin=xmin, xmax=xmax, nticks=nticks, fmt=afmt))
@@ -2962,13 +3016,18 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     n = max(len(labels), max((len(s["data"]) for s in series), default=0))
     if not n:
         return ""
+    vmin, vmax, nticks = _axis_bounds(c, [v for s in series for j, v in enumerate(s["data"])
+                                          if j not in s["gaps"]] or [0])
+    if grid:
+        g = _value_gutter(_tick_labels(vmin, vmax, nticks, afmt), fs, pad_l)
+        if g != pad_l:
+            pad_l, px = g, x + g
+            pw = max(0.1, w - g - fs * 0.4)
     # Turned names, as the bar and area charts turn theirs (Labels: Tilted).
     angle, rot_sz = _label_angle(c), None
     if angle:
         rot_sz, pad_b = _rot_label_band(labels, fs, pad_l + pw / n / 2, angle)
         ph = max(0.1, h - pad_b)
-    vmin, vmax, nticks = _axis_bounds(c, [v for s in series for j, v in enumerate(s["data"])
-                                          if j not in s["gaps"]] or [0])
     span = (vmax - vmin) or 1.0
     parts.append(_plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid,
                              xlabels=[labels[i] if i < len(labels) else "" for i in range(n)],
@@ -3120,8 +3179,12 @@ def _funnel_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         name = labels[i] if i < len(labels) else ""
         txt = f"{_xml(name)}" + (f"  {_fmt_num(v)}" if c.get("values") else "")
         if name or c.get("values"):
+            # Reversed out of the band — unless the band is pale, where white
+            # is unreadable (the default palette's fifth colour is). The pie's
+            # rule.
+            ink_t = "#2F3E46" if _is_light(_slice_color(c, i)) else "#fff"
             parts.append(f'<text x="{cx:.4f}" y="{(y0 + y1) / 2 + fs * 0.3:.4f}" '
-                         f'text-anchor="middle" font-size="{_lfs(fs * 0.8):.4f}" fill="#fff" '
+                         f'text-anchor="middle" font-size="{_lfs(fs * 0.8):.4f}" fill="{ink_t}" '
                          f'font-weight="600"{_ch_hook(c, f"label:{i}")}>{txt}</text>')
     return "".join(parts)
 
@@ -3200,9 +3263,20 @@ def _treemap_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
                      f'height="{max(0, bh2 - 0.012):.4f}" fill="{_slice_color(c, i)}" rx="0.02"/>')
         name = labels[i] if i < len(labels) else ""
         if name and bw2 > fs * 2 and bh2 > fs * 1.2:
-            parts.append(f'<text x="{bx + fs * 0.35:.4f}" y="{by + fs * 1.0:.4f}" '
-                         f'font-size="{_lfs(fs * 0.78):.4f}" fill="#fff" font-weight="600"'
-                         f'{_ch_hook(c, f"label:{i}")}>{_xml(name)}</text>')
+            # A name wider than its block ran out over the next one. It
+            # shrinks to fit, never under the legibility floor, and a block
+            # too small even for that is left unlabelled (the legend, or a
+            # hover, names it) rather than overprinted.
+            sz = _lfs(fs * 0.78)
+            room = bw2 - fs * 0.6
+            wide = len(name) * _EM_W * sz
+            if wide > room:
+                sz = _lfs(sz * room / wide)
+            if len(name) * _EM_W * sz <= room:
+                ink_t = "#2F3E46" if _is_light(_slice_color(c, i)) else "#fff"
+                parts.append(f'<text x="{bx + fs * 0.35:.4f}" y="{by + fs * 1.0:.4f}" '
+                             f'font-size="{sz:.4f}" fill="{ink_t}" font-weight="600"'
+                             f'{_ch_hook(c, f"label:{i}")}>{_xml(name)}</text>')
         rest -= v
         idx += 1
     return "".join(parts)

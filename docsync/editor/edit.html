@@ -10490,18 +10490,41 @@ function editChartText(d, node) {
   });
 }
 
+/** A new chart in the REPORT's colours. The engine's own set is sage, so a
+ *  chart drawn into a tax-blue report came out green until somebody found the
+ *  palette swatches in the panel. Only what the chart does not say already is
+ *  filled — a caller's colours stand — and near-white swatches are skipped (a
+ *  white bar on a white page). A palette shorter than the chart repeats as
+ *  tints, so neighbours never share a colour. No palette: the engine's. */
+function dressNewChart(ch) {
+  const pal = (M.palette || []).filter(c => {
+    if (!/^#[0-9a-f]{6}$/i.test(c)) return false;
+    const n = parseInt(c.slice(1), 16);
+    return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255 < 0.9;
+  });
+  if (!pal.length) return ch;
+  const pick = i => i < pal.length ? pal[i] : tint(pal[i % pal.length], 0.45);
+  if (CHART_BY_ITEM.includes(ch.type)) {
+    const n = Math.max((ch.labels || []).length, ((ch.series || [])[0] || {}).data?.length || 0);
+    if (!ch.colors && n) ch.colors = Array.from({ length: n }, (_, i) => pick(i));
+  } else {
+    (ch.series || []).forEach((se, i) => { if (!se.color) se.color = pick(i); });
+  }
+  return ch;
+}
+
 $('chart').onclick = async () => {
   const page = visiblePageId();
   pushHistory();
   const id = freeShapeId('chart');
   layout.shapes.push({
     id, page, kind: 'chart', x: placeX(4), y: 1.6, w: 4, h: 2.8, z: nextZ(2, page), fill: 'none',
-    chart: {
+    chart: dressNewChart({
       type: 'bar',
       labels: ['First', 'Second', 'Third'],
       series: [{ name: 'Series 1', data: [12, 19, 8] }],
       legend: false, values: true, grid: true,
-    },
+    }),
   });
   setSel($('out').contentDocument, [id]);
   markDirty();
@@ -30861,9 +30884,17 @@ function _pilotApplyAddChart({ page, x, y, w = 4, h = 2.8, chart, fill } = {}) {
     : { labels: ['First', 'Second', 'Third'], series: [{ name: 'Series 1', data: [12, 19, 8] }],
         legend: false, values: true, grid: true };
   spec.type = spec.type || 'bar';
+  dressNewChart(spec);
   layout.shapes.push({ id, page: pid, kind: 'chart', x: x != null ? +x : placeX(+w), y: y != null ? +y : 1.6,
                        w: +w, h: +h, z: nextZ(2, pid), fill: fill || 'none', chart: spec });
-  return { id, page: pid };
+  // A histogram BINS raw observations. Handed one count per named range —
+  // what a "distribution" usually arrives as — it bins the counts themselves
+  // and draws nonsense, so say what draws it instead.
+  const n0 = ((spec.series || [])[0] || {}).data?.length || 0;
+  const note = spec.type === 'histogram' && (spec.labels || []).length && (spec.labels || []).length === n0
+    ? 'a histogram bins raw observations; for counts already binned (one per labelled range) use type "bar" with barGap: 0'
+    : null;
+  return { id, page: pid, ...(note ? { note } : {}) };
 }
 // Everything setTable takes may come with the table, plus where it goes. A
 // function, not a const: TABLE_PATCH_KEYS is declared further down the file.
@@ -30899,6 +30930,44 @@ function _pilotApplyAddTable(o) {
   own.forEach(k => { t[k] = clone(o[k]); });
   tables().push(wearDefaults('table', t, own));
   return { id: 'table.' + id, page: pid, rows: rows.length, cols: n };
+}
+
+/** What a chart DRAWS and what a table HOLDS, for inventory(): the series
+ *  and numbers, the rows and cells. Without them a pilot that cannot see the
+ *  page — the hub's connector, a person's own Claude — could add a chart and
+ *  never read one back, and had no way to know what setChart's `points` or a
+ *  table's cells say now. Read-only on purpose: tableOf() SEEDS a renderer's
+ *  unseeded flow table, so an unseeded one is read from its seed instead. */
+const PILOT_DATA_ROWS = 60, PILOT_DATA_COLS = 20, PILOT_DATA_POINTS = 200;
+function _pilotObjData(base, el) {
+  if (base.startsWith('table.')) {
+    const key = base.slice(6);
+    const mi = masterItemOf(base);
+    let t = mi ? (mi.kind === 'tables' ? mi.item : null) : tables().find(x => x.id === key);
+    if (!t) {
+      const n = el.matches('table[data-table-seed]') ? el : el.querySelector('table[data-table-seed]');
+      try { t = n ? JSON.parse(n.dataset.tableSeed) : null; } catch (e) { t = null; }
+    }
+    if (!t || !Array.isArray(t.rows)) return {};
+    const cut = t.rows.length - PILOT_DATA_ROWS;
+    const look = {};
+    ['headerRows', 'footerRows', 'headerCols', 'merges', 'colAlign'].forEach(k => {
+      if (t[k] != null) look[k] = clone(t[k]);
+    });
+    return { table: { rows: t.rows.slice(0, PILOT_DATA_ROWS)
+                        .map(r => r.slice(0, PILOT_DATA_COLS).map(c => String(c ?? '').slice(0, 200))),
+                      ...(cut > 0 ? { moreRows: cut } : {}),
+                      header: t.header !== false, ...look, ...(t.flow ? { flow: true } : {}) } };
+  }
+  const c = chartOf(base);
+  if (!c || !c.chart) return {};
+  const ch = clone(c.chart);
+  if (Array.isArray(ch.labels)) ch.labels = ch.labels.slice(0, PILOT_DATA_POINTS);
+  (ch.series || []).forEach(se => { if (Array.isArray(se.data)) se.data = se.data.slice(0, PILOT_DATA_POINTS); });
+  // An inline chart is the renderer's spec with the person's overrides laid
+  // over it: setChart writes an override, and the numbers stay the renderer's
+  // until somebody retypes one.
+  return { chart: ch, ...(c.inline ? { inline: true } : {}) };
 }
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
@@ -31697,9 +31766,11 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         // A copied page's ids wear copy.<page>. in front; the kind is the
         // original's.
         const base = id.replace(/^copy\.[^.]+\./, '');
+        const data = _pilotObjData(base, el);
         elements.push({
           id,
           kind: sh ? (sh.kind || 'shape')
+            : data.chart ? 'chart'
             : base.startsWith('text.') ? 'textbox'
             : base.startsWith('table.') ? 'table'
             : base.startsWith('endnote.') ? 'endnote'
@@ -31712,6 +31783,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           ...(store && store.style && store.style.use
               ? { textStyle: store.style.use } : {}),
           text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+          ...data,
         });
       });
       const slotSeen = new Set();

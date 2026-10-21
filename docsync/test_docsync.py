@@ -5123,6 +5123,43 @@ finally:
     else:
         os.environ["DOCSYNC_EDIT"] = _was_edit
 
+# Chart polish (2026-10-20): an axis that crosses zero divides in round steps
+# with zero on a tick; a tick label too long for its strip widens the strip;
+# text on a pale funnel band or treemap block is dark; a name too long for its
+# block shrinks or is left off. Every bound report renders byte-identically.
+from docsync.layout import (_axis_bounds as _ab2, _tick_labels as _tl2,  # noqa: E402
+                            _value_gutter as _vg2)
+check_eq("a zero-crossing axis takes round steps, zero among them",
+         (lambda b: (b, "0" in _tl2(b[0], b[1], b[2], {})))(_ab2({}, [178, -60, 82, -30])),
+         ((-100.0, 200.0, 7), True))
+check_eq("...billions with one small negative too",
+         _tl2(*_ab2({}, [9.7, -0.2, 8.3]), {}), ["-2", "0", "2", "4", "6", "8", "10"])
+check_eq("an axis above zero keeps the scale every published chart has",
+         _ab2({}, [1, 2, 3]), (0.0, 3.0, 5))
+check_eq("...and a pinned end is left alone", _ab2({"axisMin": -50}, [120, -45]), (-50.0, 150.0, 5))
+_cmb = _cs2({"type": "bar", "labels": ["a", "b", "c"], "grid": True,
+             "series": [{"name": "s", "data": [120, -45, 60]},
+                        {"name": "t", "data": [1, 2, 3], "type": "line", "axis": "right"}]}, 0, 0, 5, 3)
+from docsync.layout import _axis2_bounds as _a2b                    # noqa: E402
+check_eq("a second axis divides as many times as a re-divided first one",
+         (_a2b({}, [1, 2, 3], 7)[2], _a2b({}, [1, 2, 3], 5)), (7, (0.0, 3.0, 5)))
+_cmb2 = _cs2({"type": "bar", "labels": ["a", "b", "c"], "grid": True,
+              "series": [{"name": "s", "data": [178, -60, 82]},
+                         {"name": "t", "data": [1, 2, 3], "type": "line", "axis": "right"}]}, 0, 0, 5, 3)
+check_eq("...so a combo chart whose left axis crosses zero draws both scales",
+         len(re.findall(r'stroke-width="0.006"', _cmb2)), 7)
+check_eq("a short tick label keeps the strip it always had", _vg2(["$6B", "$12B"], 0.2, 0.52), 0.52)
+check_eq("a long one widens it", _vg2(["$0M", "$15,000M"], 0.2, 0.52) > 0.52, True)
+_fun = _cs2({"type": "funnel", "labels": list("ABCDE"), "values": True,
+             "series": [{"name": "p", "data": [100, 72, 51, 43, 39]}]}, 0, 0, 3.5, 3)
+check_eq("a funnel's pale band gets dark words, its dark ones stay white",
+         re.findall(r'fill="(#2F3E46|#fff)" font-weight="600"', _fun), ["#2F3E46", "#fff", "#2F3E46", "#fff", "#2F3E46"])
+_tm = _cs2({"type": "treemap", "labels": ["GET exemptions", "Income tax credits for working families", "P"],
+            "series": [{"name": "c", "data": [640, 60, 30]}]}, 0, 0, 3.5, 3)
+check_eq("a treemap name too long for its block is not drawn across the next one",
+         "Income tax credits for working families" in _tm, False)
+check("...while one that fits is", _tm, "GET exemptions")
+
 # A scaffolded report links its citation markers to the endnotes.
 from docsync import new as _new                                   # noqa: E402
 check("the scaffold renderer linkifies its citation markers",

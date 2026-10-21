@@ -236,3 +236,42 @@ each one as a person would.
   No bound report draws a line, area or scatter chart or sets `labelAngle`;
   the Budget Primer's one stacked area (fixed costs) has neither, so no
   published page moved.
+
+## Chart polish: round steps across zero, a strip as wide as its labels, words that read on pale fills (2026-10-20)
+
+Found in the same build-out, by drawing complicated charts at report sizes:
+
+- **An axis that crosses zero divides in round steps, zero among them.** Left
+  to the default five ticks, its lower end was never rounded, so the axis was
+  cut in quarters of an odd span: -60 / 5 / 70 / 135 / 200, or -$0.2B / $2.3B /
+  $4.9B / $7.4B / $10B — nothing a reader can add up, and no tick at zero, the
+  line every bar grows from. `_axis_bounds()` now picks a round step with zero
+  on a tick, at most eight ticks (-100 … 200 in 50s; -2 … 10 in 2s). Only an
+  axis that goes below zero with neither end pinned and no `axisTicks`; an axis
+  that stays above zero keeps the scale every published chart is drawn
+  against. A combo chart's right axis shares the count (`_axis2_bounds(…,
+  ticks)`) — two scales on one set of gridlines must divide alike, and a
+  right axis left at five would have indexed past its own labels.
+- **The strip beside a vertical value axis is as wide as its labels.** It was
+  a fixed 2.6 label-heights, so "$15,000M" ran into the axis title and a
+  right-hand "$8,000M" was cut by the chart's own edge ("$8,000I").
+  `_value_gutter()` widens it only for a label more than a fifth of a
+  label-height past the strip (measured 0.50–0.63 em a character across the
+  report faces; 0.62 is used), on bar, line, area and scatter charts.
+- **Words on a pale funnel band or treemap block are dark**, by the pie's
+  rule (`_is_light`), and a treemap name too long for its block shrinks to
+  the legibility floor and is left off if it still does not fit, rather than
+  printed across the next block.
+- **A histogram handed counts already binned** is unchanged (it bins raw
+  observations, by design); `addChart` now answers with a note saying to use
+  a bar chart with `barGap: 0`. New charts made by the Chart tool or
+  `addChart` start in the report's own palette (`dressNewChart`, editor only).
+
+The sweep gained `DATA["skew"]` (9.7, -0.2, 8.3), so the zero-crossing case
+is watched from here on. Against HEAD: 37,009 renders, 9,149 differ, every
+one **the fix** — zero-crossing axes 2,016 (all the new skew set), the
+widened strip 2,672 (long money labels: the `big` set and the formatted
+flags), both together 144, funnel and treemap ink and fit 4,313, and their 4
+animated twins. **No bound report moved:** all fifteen in docsync.yml, and
+the live Budget Primer in ~/BudgetPrimerFinal, were rendered with HEAD's
+engine and this one, publish and edit mode, and every file is byte-identical.

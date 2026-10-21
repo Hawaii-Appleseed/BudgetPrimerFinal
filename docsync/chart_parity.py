@@ -49,6 +49,9 @@ DATA = {
     "wide": [{"name": "x", "data": [1, 2, 3, 4, 5, 6, 7, 8]}],
     # A month not reported: null, which the schema has always accepted.
     "gap": [{"name": "g", "data": [4, None, 7]}, {"name": "h", "data": [2, 5, None]}],
+    # A small negative beside big positives: the axis that used to read
+    # -0.2 / 2.3 / 4.9 / 7.4 / 10.
+    "skew": [{"name": "k", "data": [9.7, -0.2, 8.3]}],
 }
 LABELS = {
     "short": ["A", "B", "C"],
