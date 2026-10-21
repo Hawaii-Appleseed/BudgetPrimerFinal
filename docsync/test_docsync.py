@@ -3307,6 +3307,46 @@ with _tempfile.TemporaryDirectory() as _d:
     _hub_vendor(_hub, [], dry=False)
     check_eq("and it is the same for the same editor (no change, no notice)",
              (_hub / "primer" / "editor-version.txt").read_text().strip(), _ver)
+    # A report from a repo this run did not read (the Budget Primer, from a
+    # worktree with no consumers configured) is not "gone": it is kept, and so
+    # is its registry entry. Deleting it took a live report off the hub.
+    (_hub / "primer" / "bp" / "engine").mkdir(parents=True)
+    (_hub / "primer" / "bp" / "engine" / "manifest.json").write_text("{}")
+    (_hub / "primer" / "projects.json").write_text('{"bp": {"name": "Budget Primer", "repo": "Hawaii-Appleseed/BudgetPrimerFinal"}}')
+    _hub_vendor(_hub, [], dry=False)
+    check_eq("a report from a repo this run did not read keeps its folder",
+             (_hub / "primer" / "bp" / "engine" / "manifest.json").is_file(), True)
+    check_eq("and its place on the hub's list",
+             json.loads((_hub / "primer" / "projects.json").read_text()).get("bp", {}).get("name"), "Budget Primer")
+# ---- the hub: a ship that would hide words people typed is refused ----------
+# A renderer that renames or drops a slot does not delete what was typed into
+# it — the room keeps it — it just stops drawing it, and nobody is told.
+from docsync.hub import hidden_text as _hidden_text, is_ship as _is_ship  # noqa: E402
+
+with _tempfile.TemporaryDirectory() as _d:
+    _root = Path(_d)
+    _hubd = _root / "hub"
+    _src = _root / "src"
+    _old = _hubd / "primer" / "r" / "engine" / "projects" / "r"
+    _new = _src / "engine" / "projects" / "r"
+    for _p in (_old, _new):
+        _p.mkdir(parents=True)
+    (_src / "engine" / "manifest.json").write_text('{"content": "projects/r/content.md"}')
+    (_old / "content.md").write_text("[[a]]\nkept\n\n[[b]]\nseed words\n\n[[c]]\n\n[[sources]]\n- x: y\n")
+    (_new / "content.md").write_text("[[a]]\nkept\n\n[[sources]]\n- x: y\n")
+    _proj = [{"id": "r", "dir": _src, "repo": "O/R"}]
+    check_eq("a dropped slot that holds live words is named, with the words",
+             _hidden_text(_hubd, _proj, live=lambda p: {"a": "x", "b": "typed by staff", "c": ""}),
+             [("r", "b", "typed by staff")])
+    check_eq("an empty one is not (nothing to lose)",
+             _hidden_text(_hubd, _proj, live=lambda p: {"a": "x", "b": "  ", "c": ""}), [])
+    check_eq("a report never saved holds its seed, so the seed's words count",
+             _hidden_text(_hubd, _proj, live=lambda p: None), [("r", "b", "seed words")])
+    (_new / "content.md").write_text((_old / "content.md").read_text())
+    check_eq("nothing dropped, nothing asked of the live store",
+             _hidden_text(_hubd, _proj, live=lambda p: (_ for _ in ()).throw(AssertionError("asked"))), [])
+    check_eq("a test rig's copy of the hub is not a ship", _is_ship(_hubd), False)
+
 _edit_src = _EDITOR.read_text()
 check("the editor polls that file on the hub", _edit_src, "new URL('editor-version.txt', location.href)")
 check("past the service worker", _edit_src, "fetch(new URL('editor-version.txt', location.href), { cache: 'no-store' })")

@@ -46,9 +46,13 @@ spellings (`assets/collab.js` allowedRepos), so a manifest still saying
 be a DIFFERENT ROOM from the one a colleague is in.
 
 Nothing here commits. The hub is a website: a push there is a deploy, and that
-stays a person's explicit act. The engine's post-commit hook runs this after
-`docsync.vendor` so the hub's working tree is always current; review it and
-commit there when it is time to ship.
+stays a person's explicit act. It runs when the editor SHIPS, into a clean
+checkout of the hub's origin/main (`--into <worktree>`), and the hub commit
+takes only the files that change owns — a run writes every project, and a
+project waiting on its own go-ahead must not ride along. The post-commit hook
+runs it only where vendor.local.yml names a hub, and Devin's machine names
+none on purpose (2026-10-21): the hub's own folder is shared and usually on
+somebody's branch, and a hook writing primer/** there put Cider work into it.
 """
 from __future__ import annotations
 
@@ -410,10 +414,24 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
     # A project that left the registry leaves the hub. Only directories this
     # script made (they hold an engine/manifest.json) — never index.html or
     # anything else the hub keeps beside them.
+    #
+    # And only when it left the registry of a repo THIS run vendored. A run
+    # from a worktree, or on a machine with no consumers configured, never
+    # read BudgetPrimerFinal at all — so the Budget Primer is not "gone", it
+    # was not asked about, and deleting it took a live report off the hub
+    # for whoever committed that run (found 2026-10-21). Such a project, and
+    # its registry entry, are carried as they are.
+    asked = {p["repo"] for p in projects}
     if primer.is_dir():
         for d in sorted(primer.iterdir()):
             if (d.is_dir() and d.name not in registry and d.name not in NAMELESS
                     and (d / "engine" / "manifest.json").is_file()):
+                prev = prev_registry.get(d.name) if isinstance(prev_registry, dict) else None
+                if not prev or prev.get("repo") not in asked:
+                    if prev:
+                        registry[d.name] = prev
+                    print(f"  {d.name}: from {(prev or {}).get('repo', 'a repo this run did not read')} — kept as it is")
+                    continue
                 changed.append(f"- {d}/")
                 if not dry:
                     shutil.rmtree(d)
@@ -424,16 +442,98 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
     return changed
 
 
+# --------------------------------------------------- words a ship would hide
+
+class LiveUnknown(RuntimeError):
+    """The live documents could not be read, so nothing can be promised."""
+
+
+def _keys(path: Path) -> dict:
+    from docsync.content import parse_content       # noqa: PLC0415
+    return {k: v for k, v in parse_content(path).items() if k != "sources"}
+
+
+def _wrangler() -> list[str]:
+    local = Path.home() / "primer-editor" / "collab" / "node_modules" / ".bin" / "wrangler"
+    return [str(local)] if local.is_file() else ["npx", "--yes", "wrangler@4"]
+
+
+def live_text(p: dict) -> dict | None:
+    """The words a report holds on the hub right now: its saved content.md in
+    the hub's store (R2 `primer-docs`, `docs/<room>/content.md`). None when
+    the store has none — a report nobody has saved, whose room holds the seed
+    it was opened with. Raises LiveUnknown when the store cannot be asked."""
+    import tempfile                                    # noqa: PLC0415
+    owner, repo = str(p["repo"]).split("/", 1)
+    key = f"primer-docs/docs/{owner}~{repo}~{p['id']}/content.md"
+    r = subprocess.run([*_wrangler(), "r2", "object", "get", key, "--remote", "--pipe"],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        if re.search(r"not found|does not exist|NoSuchKey|10007", r.stderr + r.stdout, re.I):
+            return None
+        raise LiveUnknown(f"{p['id']}: {(r.stderr or r.stdout).strip()[:200]}")
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
+        f.write(r.stdout)
+    try:
+        return _keys(Path(f.name))
+    finally:
+        Path(f.name).unlink(missing_ok=True)
+
+
+def hidden_text(hub: Path, projects: list[dict], live=live_text) -> list[tuple[str, str, str]]:
+    """Slots this ship stops drawing while a live report still holds words in
+    them: (report, key, the words). A renderer that renames or drops a slot
+    does not delete what was typed into it — the room keeps it — it just
+    stops putting it on the page, and nobody is told. So: every key the hub's
+    current copy of a report's content.md has and the new one has not, looked
+    up in the live document (or, for a report never saved, in that same old
+    seed, which is what its room holds)."""
+    out = []
+    for p in projects:
+        sdir = p["dir"]
+        try:
+            rel = json.loads((sdir / "engine" / "manifest.json").read_text())["content"]
+        except Exception:                                # noqa: BLE001 - no manifest: nothing to compare
+            continue
+        old, new = hub / "primer" / p["id"] / "engine" / rel, sdir / "engine" / rel
+        if not old.is_file() or not new.is_file():      # a new report has nothing live to hide
+            continue
+        gone = sorted(set(_keys(old)) - set(_keys(new)))
+        if not gone:
+            continue
+        held = live(p)
+        if held is None:
+            held = _keys(old)
+        for k in gone:
+            words = (held.get(k) or "").strip()
+            if words:
+                out.append((p["id"], k, words))
+    return out
+
+
+def is_ship(hub: Path) -> bool:
+    """A git checkout of the real hub — not a test rig's temporary copy,
+    which has no history and no live documents behind it."""
+    r = subprocess.run(["git", "-C", str(hub), "remote", "get-url", "origin"],
+                       capture_output=True, text=True)
+    return r.returncode == 0 and "staff-updates-internal" in r.stdout
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Vendor the editor into the staff hub.")
     ap.add_argument("--into", help="the hub checkout (default: `hub:` in vendor.local.yml)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--allow-hidden", action="append", default=[], metavar="REPORT[:KEY]",
+                    help="ship even though this report (or this one slot of it) holds live "
+                         "words the new renderer no longer draws — say so only when that is the point")
+    ap.add_argument("--no-live-check", action="store_true",
+                    help="skip reading the live documents (when the hub's store cannot be reached)")
     a = ap.parse_args()
 
     hub = hub_dir(a.into)
     if hub is None:
-        print("no hub configured (add `hub: ~/staff-updates-internal` to "
-              "vendor.local.yml, or pass --into) — nothing to do")
+        print("no hub configured — the hub gets the editor when it ships: "
+              "pass --into <a clean checkout of the hub's origin/main>")
         return 0
     if not (hub / "functions" / "api" / "collab").is_dir():
         print(f"{hub} has no functions/api/collab — not the staff hub?", file=sys.stderr)
@@ -447,6 +547,31 @@ def main() -> int:
     if not projects:
         print("no projects to vendor", file=sys.stderr)
         return 1
+
+    # Before anything is written: would this ship hide words people typed?
+    # Only for a real hub checkout (a test rig's copy has nothing live), and
+    # refused rather than warned, because a warning scrolls past and the words
+    # do not come back by themselves.
+    if is_ship(hub) and not a.no_live_check:
+        try:
+            hidden = hidden_text(hub, projects)
+        except LiveUnknown as err:
+            print(f"could not read the live documents ({err}).\n"
+                  "Sign wrangler in (`npx wrangler login`), or pass --no-live-check to ship without "
+                  "knowing whether a renamed or dropped slot hides anybody's words.", file=sys.stderr)
+            return 3
+        allowed = set(a.allow_hidden)
+        hidden = [h for h in hidden if h[0] not in allowed and f"{h[0]}:{h[1]}" not in allowed]
+        if hidden:
+            print("REFUSED — these reports hold words in slots the new renderer no longer draws.\n"
+                  "Shipping would take them off the page (the room keeps them, nobody sees them):\n",
+                  file=sys.stderr)
+            for pid, key, words in hidden:
+                print(f"  {pid}  [[{key}]]  {words[:70]!r}", file=sys.stderr)
+            print("\nKeep the key, move the words to a slot that is drawn (edit_report), or, if "
+                  "hiding them is the point, pass --allow-hidden <report>[:<key>] for each.",
+                  file=sys.stderr)
+            return 3
 
     missing: list[str] = []
     changed = vendor(hub, projects, dry=a.dry_run, missing=missing)

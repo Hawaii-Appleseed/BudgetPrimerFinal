@@ -23338,6 +23338,42 @@ async function checkBuildFresh() {
   if (await buildChangedOnDisk()) offerEditorReload();
 }
 
+// On the hub, an error in this editor goes to the people who ship it
+// (the hub's /api/client-errors, the same door its other pages report
+// through), so a change that breaks the editor for a colleague is seen
+// without their having to say so. Only there: https and under /primer/,
+// which no local server and no other host is. At most five a page load,
+// each message once, and not the noise that is nobody's bug — the
+// cross-origin "Script error.", an extension's own, ResizeObserver's
+// loop note, a dropped network. Sending never throws.
+(() => {
+  if (location.protocol !== 'https:' || !/^\/primer\//.test(location.pathname)) return;
+  const NOISE = /^Script error\.?$|ResizeObserver loop|^(TypeError: )?(Failed to fetch|NetworkError|Load failed)|AbortError|The (user|operation) aborted/;
+  let sent = 0;
+  const said = new Set();
+  const report = (message, source, stack) => {
+    message = String(message || '').slice(0, 300);
+    if (!message || sent >= 5 || said.has(message) || NOISE.test(message)) return;
+    if (/^(chrome|moz|safari(-web)?)-extension:/.test(String(source || ''))) return;
+    said.add(message); sent++;
+    try {
+      fetch('/api/client-errors', {
+        method: 'POST', keepalive: true, headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message, source: String(source || '').slice(0, 200),
+                               page: location.pathname + (PROJECT ? '?project=' + PROJECT : ''),
+                               stack: String(stack || '').slice(0, 1200) }),
+      }).catch(() => {});
+    } catch (e) { /* nowhere to say it */ }
+  };
+  addEventListener('error', e => {
+    if (e && e.message) report(e.message, (e.filename || '') + ':' + (e.lineno || 0) + ':' + (e.colno || 0), e.error && e.error.stack);
+  });
+  addEventListener('unhandledrejection', e => {
+    const r = e && e.reason;
+    report(r && r.message ? r.message : String(r), '', r && r.stack);
+  });
+})();
+
 /** The server's file watcher is what turns an edit on disk into a reload here.
  *  When that thread dies the server keeps serving perfectly — so nothing looks
  *  wrong while every edit silently stops arriving, and the first symptom shows
