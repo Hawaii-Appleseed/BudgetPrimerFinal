@@ -4987,33 +4987,46 @@ check_eq("website: script dependencies an import map or an import names are foun
 # The recipe, end to end, on a real project: the address is claimed, and a second
 # project cannot take it.
 from docsync.registry import get as _get  # noqa: E402
+from docsync.registry import RegistryError as _RegErr  # noqa: E402
 
-with _tf.TemporaryDirectory() as _site:
-    _site = Path(_site)
-    _real = _web.read_layout
-    _web.read_layout = lambda b: {**(_real(b) or {}), "website": {"site": "reports", "slug": "shared-address"}}
-    try:
-        check("website: a Cider report publishes as a page at its address",
-              _web.publish(_get("retitc"), _site, write=True, sites=_sites), "wrote https://org.github.io/reports/shared-address/")
-        check_eq("website: the page and its claim are written",
-                 ((_site / "shared-address" / "index.html").is_file(), (_site / "shared-address" / _web.MARKER).read_text()),
-                 (True, "retitc\n"))
-        check("website: publishing again is no change", _web.publish(_get("retitc"), _site, write=True, sites=_sites), "no change")
+# retitc and dotax-itep are bound in Cider's own docsync.yml. A consumer repo
+# runs this file too (BudgetPrimerFinal's build self-tests its vendored
+# engine) and binds neither, so the end-to-end half is skipped there, said so.
+try:
+    _get("retitc"), _get("dotax-itep")
+    _web_e2e = True
+except _RegErr:
+    _web_e2e = False
+    print("note: retitc/dotax-itep are not bound here — skipped the website end-to-end checks")
+
+if _web_e2e:
+
+    with _tf.TemporaryDirectory() as _site:
+        _site = Path(_site)
+        _real = _web.read_layout
+        _web.read_layout = lambda b: {**(_real(b) or {}), "website": {"site": "reports", "slug": "shared-address"}}
         try:
-            _web.publish(_get("dotax-itep"), _site, write=True, sites=_sites)
-            FAILS.append("website: a second project must not take an address another holds")
-        except _web.WebsiteError as e:
-            check("website: a second project is refused the address", str(e), "already retitc's")
-        (_site / "foreign").mkdir()
-        (_site / "foreign" / "index.html").write_text("someone else's")
-        _web.read_layout = lambda b: {**(_real(b) or {}), "website": {"site": "reports", "slug": "foreign"}}
-        try:
-            _web.publish(_get("retitc"), _site, write=True, sites=_sites)
-            FAILS.append("website: a folder Cider did not make must not be overwritten")
-        except _web.WebsiteError as e:
-            check("website: a folder Cider did not make is refused", str(e), "Cider did not put there")
-    finally:
-        _web.read_layout = _real
+            check("website: a Cider report publishes as a page at its address",
+                  _web.publish(_get("retitc"), _site, write=True, sites=_sites), "wrote https://org.github.io/reports/shared-address/")
+            check_eq("website: the page and its claim are written",
+                     ((_site / "shared-address" / "index.html").is_file(), (_site / "shared-address" / _web.MARKER).read_text()),
+                     (True, "retitc\n"))
+            check("website: publishing again is no change", _web.publish(_get("retitc"), _site, write=True, sites=_sites), "no change")
+            try:
+                _web.publish(_get("dotax-itep"), _site, write=True, sites=_sites)
+                FAILS.append("website: a second project must not take an address another holds")
+            except _web.WebsiteError as e:
+                check("website: a second project is refused the address", str(e), "already retitc's")
+            (_site / "foreign").mkdir()
+            (_site / "foreign" / "index.html").write_text("someone else's")
+            _web.read_layout = lambda b: {**(_real(b) or {}), "website": {"site": "reports", "slug": "foreign"}}
+            try:
+                _web.publish(_get("retitc"), _site, write=True, sites=_sites)
+                FAILS.append("website: a folder Cider did not make must not be overwritten")
+            except _web.WebsiteError as e:
+                check("website: a folder Cider did not make is refused", str(e), "Cider did not put there")
+        finally:
+            _web.read_layout = _real
 
 # ------------------------------------------- what Claude builds stays editable
 # Found 2026-10-20 by having Claude build complicated charts and tables through
