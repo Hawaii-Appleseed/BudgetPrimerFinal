@@ -1576,6 +1576,74 @@ def outputs_for(binding) -> list[Path]:
     return out
 
 
+# --- the ratchet: a binding that is not yet strict may not get WORSE ----------
+#
+# A strict binding fails on any editability finding. A warn/wip one used to
+# say its findings and pass whatever they were — so a renderer edit (Claude's
+# or anyone's) could add a dozen uneditable strings to the Budget Primer
+# fixture or to a half-wired page and nothing stopped it. Each such binding's
+# findings are counted, per kind, into docsync/editability-baseline.json; a
+# count above its baseline, or a kind the baseline does not have, is an ERROR.
+# Fewer is progress: --write-baseline records it. Raising a count needs
+# --allow-raise as well, so it is a visible, reviewable decision in the diff.
+BASELINE = ROOT / "docsync" / "editability-baseline.json"
+
+
+def _ratchet_key(pr: "Problem") -> tuple[str, int]:
+    """(kind, count) for one editability-pass finding: the detail's leading
+    number is the count; the words up to the first colon name the kind."""
+    m = re.match(r"\s*(\d+)\s+(.*)", pr.detail)
+    n, rest = (int(m.group(1)), m.group(2)) if m else (1, pr.detail)
+    kind = re.sub(r"\d+", "#", rest.split(":")[0]).strip()
+    return f"[{pr.check}] {kind}", n
+
+
+def ratchet_counts(eprobs: list) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for pr in eprobs:
+        if pr.level != "warn":
+            continue
+        k, n = _ratchet_key(pr)
+        out[k] = out.get(k, 0) + n
+    return out
+
+
+def _load_baseline() -> dict:
+    import json
+    try:
+        return json.loads(BASELINE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+
+
+def ratchet(binding, eprobs: list, baseline: dict) -> list:
+    """ERRORs for a non-strict binding whose findings grew past its baseline."""
+    if binding.editability == "strict":
+        return []
+    if binding.id not in baseline:
+        # A new non-strict binding (a fresh scaffold is `wip`) is uncapped
+        # until its starting point is written down, and it must be written
+        # down in the same change that binds it.
+        return [Problem("editability-ratchet",
+            f"'{binding.id}' is not strict and has no editability baseline, so "
+            f"nothing stops it getting worse — record its starting point: "
+            f"python3 -m docsync.check --id {binding.id} --write-baseline", "error")]
+    base, now = baseline[binding.id], ratchet_counts(eprobs)
+    out = []
+    for k, n in sorted(now.items()):
+        b = base.get(k, 0)
+        if n > b:
+            out.append(Problem("editability-ratchet",
+                f"{k}: {n}, up from {b} — this change made something on the page "
+                f"uneditable. Give it a handle (the report-editor skill), do not "
+                f"raise the baseline", "error"))
+    if any(now.get(k, 0) < n for k, n in base.items()):
+        out.append(Problem("editability-ratchet",
+            "fewer findings than the baseline — record the progress: "
+            f"python3 -m docsync.check --id {binding.id} --write-baseline", "note"))
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="python3 -m docsync.check",
@@ -1584,6 +1652,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="only this binding (repeatable); default: all")
     ap.add_argument("--build", action="store_true",
                     help="run each binding's build command first")
+    ap.add_argument("--write-baseline", action="store_true",
+                    help="record the non-strict bindings' editability counts "
+                         "(lowering only, unless --allow-raise)")
+    ap.add_argument("--allow-raise", action="store_true",
+                    help="with --write-baseline: let a count go UP")
     args = ap.parse_args(argv)
 
     try:
@@ -1603,6 +1676,8 @@ def main(argv: list[str] | None = None) -> int:
 
     failed = warned = checked = 0
     dupes: dict[str, int] = {}
+    baseline = _load_baseline()
+    new_base = dict(baseline)
     for b in bindings:
         if args.build and b.build:
             r = subprocess.run(b.build, shell=True, cwd=ROOT,
@@ -1655,6 +1730,17 @@ def main(argv: list[str] | None = None) -> int:
         if b.editor is not None and b.editor.render:
             checked += 1
             eprobs = check_editability(b)
+            if b.editability != "strict":
+                now = ratchet_counts(eprobs)
+                if args.write_baseline:
+                    old = baseline.get(b.id)
+                    up = old is not None and any(n > old.get(k, 0) for k, n in now.items())
+                    if up and not args.allow_raise:
+                        print(f"docsync.check: {b.id} would RAISE its baseline — "
+                              f"fix the new findings, or pass --allow-raise", file=sys.stderr)
+                        return 2
+                    new_base[b.id] = now
+                eprobs = eprobs + ratchet(b, eprobs, baseline)
             if any(pr.is_error for pr in eprobs):
                 failed += 1
                 strict = any(pr.is_error and pr.check == "editability" for pr in eprobs)
@@ -1668,6 +1754,11 @@ def main(argv: list[str] | None = None) -> int:
             for pr in eprobs:
                 print(f"     {pr}")
 
+    if args.write_baseline:
+        import json
+        BASELINE.write_text(json.dumps(new_base, indent=2, sort_keys=True,
+                                       ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"wrote {BASELINE.relative_to(ROOT)}")
     tail = f", {warned} with warnings" if warned else ""
     print(f"\n{checked} file(s) checked, {failed} failing{tail}")
     # Warnings never fail the run: they describe pages that still reach a

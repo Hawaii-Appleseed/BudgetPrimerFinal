@@ -1181,6 +1181,9 @@
      underneath clickable everywhere the card itself is not. */
   #context { position:absolute; z-index:6; top:4px; left:var(--rail-w); right:0;
           display:flex; justify-content:center; pointer-events:none; }
+  /* dropped to the foot while the selection sits under its home at the top
+     (contextDodge); clear of the page strip along the bottom edge */
+  #context.low { top:auto; bottom:104px; }
   #type, #arrange { display:flex; gap:6px; align-items:center;
           justify-content:safe center;   /* Canva's centered strip */
           flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden;
@@ -6993,6 +6996,11 @@ function handlesFor(el) {
   // The toggle chevron sizes itself off its button's type (1em) and cannot be
   // positioned, so it has nothing to drag — colour is the whole of it.
   if (el.classList && el.classList.contains('ds-tgl-svg')) return [];
+  // An endnote entry is a line in a list: dragging it REORDERS the list
+  // (reorderEndnote), and a width makes no sense on it. Its east handle used
+  // to pin the entry absolutely at the width of its first line fragment
+  // plus the drag — a 7in entry became a 1.25in box over the page's corner.
+  if ((el.dataset.el || '').startsWith('endnote.')) return [];
   // Shapes and text boxes resize from every edge and corner. Graphics scale
   // uniformly, so their handles are the four corners (each drives the one
   // scale factor). A designed prose slot reflows on width alone — no height to
@@ -13013,7 +13021,11 @@ function pageLabel(pid) {
  *  never disagree about where a shape is. */
 function shapeBox(el, page) {
   const s = el.dataset.shape && shapeOf(el.dataset.shape);
-  if (s && s.kind === 'chart' && s.x !== undefined)
+  // A chart's declared box is the truth (its labels paint outside it); so
+  // is an icon's: the glyph sits inset in its square, and measuring the
+  // glyph put inventory() and place() in different coordinates — a pilot
+  // asking for x+0.25 from the box it was shown moved the icon 0.3.
+  if (s && (s.kind === 'chart' || s.kind === 'icon') && s.x !== undefined && +s.w > 0 && +s.h > 0)
     return { x: +s.x, y: +s.y, w: +s.w, h: +s.h };
   return inchBox(el, page);
 }
@@ -13070,7 +13082,38 @@ function paintSel(d) {
   }
   showMini(d, els);
   arrangeBar(d);
+  contextDodge(d);
   if (!$('layerspop').hidden) setTimeout(layersRender, 0);   // highlight tracks selection
+}
+
+/** The contextual card floats over the top of the work area — over the
+ *  first half inch of page 1, which cannot scroll up out from under it. An
+ *  object selected there (an eyebrow, a cover pill) had its words and its
+ *  handles under the very card that describes it. When the selection, with
+ *  room for its handles, lies under the card, the card drops to the foot of
+ *  the work area instead (#context.low). Re-judged on every selection paint
+ *  and every scroll of the report. */
+function contextDodge(d) {
+  const ctx = $('context'), fr = $('out');
+  if (!ctx || !fr || !d) return;
+  const card = [...ctx.children].find(c => !c.hidden && c.offsetHeight);
+  const els = card ? selEls(d) : [];
+  if (!els.length) { ctx.classList.remove('low'); return; }
+  const fb = fr.getBoundingClientRect(), k = fb.width / fr.offsetWidth || 1;
+  const cb = card.getBoundingClientRect();
+  const pad = 12;                                 // a handle and its ring
+  const under = els.some(el => {
+    const r = el.getBoundingClientRect();
+    if (!r.width && !r.height) return false;
+    const top = fb.top + r.top * k - pad, bottom = fb.top + r.bottom * k + pad;
+    const left = fb.left + r.left * k - pad, right = fb.left + r.right * k + pad;
+    return top < cb.bottom && bottom > cb.top && left < cb.right && right > cb.left;
+  });
+  // Only move it when the selection is near the TOP: a tall selection that
+  // also reaches the foot would be under it either way, and the top is home.
+  const low = under && !ctx.classList.contains('low');
+  const stay = under && ctx.classList.contains('low');
+  ctx.classList.toggle('low', low || stay);
 }
 
 // ------------------------------------------------------------ mini toolbar
@@ -13084,16 +13127,21 @@ function showMini(d, els) {
   const page = els[0].closest('section.page') || d.querySelector('section.page');
   const mine = els.filter(el => (el.closest('section.page')) === page);
   if (!mine.length) return;
-  let x1 = 1e9, y1 = 1e9, x2 = -1e9;
+  let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
   mine.forEach(el => {
     const b = shapeBox(el, page);
     x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w);
+    y2 = Math.max(y2, b.y + b.h);
   });
   const bar = d.createElement('div');
   bar.className = 'ds-mini';
+  // Above the selection; when that is off the top of the page, BELOW it —
+  // never over it. Dropped 0.12in into the box instead, the bar lay across
+  // a small element near the top (a cover's pill) and over its east and west
+  // handles, so neither the words nor the width could be reached.
   const above = y1 > 0.55;
   bar.style.cssText = `left:${((x1 + x2) / 2).toFixed(3)}in;`
-    + `top:${(above ? y1 - 0.46 : y1 + 0.12).toFixed(3)}in`;
+    + `top:${(above ? y1 - 0.46 : y2 + 0.12).toFixed(3)}in`;
   bar.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
 
   const allLocked = [...selIds].every(isLocked);
@@ -19324,6 +19372,26 @@ function historyRender() {
 }
 $('steps').addEventListener('click', () => { if ($('histpop').hidden) historyRender(); togglePop($('histpop'), $('steps')); });
 
+/** Is this node shown as a person sees it — laid out, not at opacity 0, not
+ *  in a closed panel? (A text node answers for its parent.) */
+function shownNode(n) {
+  const el = n && n.nodeType === 3 ? n.parentElement : n;
+  if (!el || !el.checkVisibility) return true;
+  return el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true });
+}
+/** The first SHOWN element under the pointer when the event's own target is
+ *  not shown, else null. A page can stack an invisible phrase over a visible
+ *  one (our-mission's word rotator keeps three at one spot and shows one):
+ *  the invisible one took every press, so the person clicked a word they saw
+ *  and another opened — or nothing did. */
+function shownUnder(d, e) {
+  if (!e || e.clientX == null || shownNode(e.target)) return null;
+  const nodes = [...d.elementsFromPoint(e.clientX, e.clientY)].filter(shownNode);
+  // Words first: a shown container between the stacked phrases (the
+  // rotator's own wrapper) is not what the person is pointing at.
+  return nodes.find(n => { const s = n.closest('[data-slot]'); return s && shownNode(s); }) || nodes[0] || null;
+}
+
 function dragify(d, roots) {
   within(d, roots, '[data-el], [data-shape]').forEach(el => {
     // A movable nested inside another movable — a callout's own paragraphs — is
@@ -19374,6 +19442,19 @@ function dragify(d, roots) {
         if (a && a.isContentEditable && !el.contains(a)) a.blur();
       }
       if (editing) return;
+      // The press landed on something invisible drawn over another object's
+      // words (shownUnder): hand it to the object the person can see.
+      if (!e.dsRedirected) {
+        const under = shownUnder(d, e);
+        const other = under && under.closest('[data-el], [data-shape]');
+        if (other && other !== el && !el.contains(other)) {
+          e.preventDefault(); e.stopPropagation();
+          const ev = new MouseEvent('mousedown', e);
+          ev.dsRedirected = true;
+          under.dispatchEvent(ev);
+          return;
+        }
+      }
       // A movable object grabs from ANYWHERE on itself — including over its own
       // words. A callout is nearly all text; the old rule "a click on text
       // never moves" left it with no grab handle at all. Editing the words is
@@ -20026,7 +20107,11 @@ function typeOnClick(d, el, e0) {
   // is the very thing the drill-in reaches past (see lastDrill).
   if (lastDrill.id === id && Date.now() - lastDrill.t < 700) return false;
   const at = ptOf(e0);
-  const t = e0.target;
+  // The words under the pointer as the person SEES them: an invisible slot
+  // stacked over a visible one in the same object (shownUnder) must not be
+  // the one that opens.
+  const t0 = e0.target;
+  const t = shownNode(t0) ? t0 : (shownUnder(d, e0) || t0);
   const slot = t && t.closest ? t.closest('[data-slot]') : null;
   let opened = false;
   if (slot && el.contains(slot) && !slot.closest('svg')) {
@@ -23902,6 +23987,10 @@ open('/repo/' + OUT).read()
   if (patched) {
     lastHtml = html;
     wire(patched);                     // only the sections it replaced
+    // A picture new to a patched page (a replaced photo, one the pool above
+    // could not reuse) has no height until it loads: wait for it, so what
+    // render()'s callers measure next is the page as it will stand.
+    await imagesSettled(patched);
     // Nothing reloaded, so the reader's place should be untouched — but
     // wire's reportFit can show or hide the "cut in print" banner, and that
     // resizes the stage under the report, which nudges its scroll by the
@@ -24074,9 +24163,42 @@ function patchPages(html) {
   if (!changed.length) return null;
   return changed.map(i => {
     const nu = live.importNode(B.pages[i], true);
+    // A picture the page already shows is moved across, not fetched again: a
+    // fresh <img> node starts its load async, so for a frame or a few hundred
+    // ms after the patch it had no height — the page below it closed up, and
+    // anything measured right after render() (place()'s box, the inventory,
+    // the audit) read every element under it some inches too high.
+    const pool = new Map();
+    livePages[i].querySelectorAll('img[src]').forEach(o => {
+      const k = o.getAttribute('src');
+      if (!pool.has(k)) pool.set(k, []);
+      pool.get(k).push(o);
+    });
+    nu.querySelectorAll('img[src]').forEach(n => {
+      const had = pool.get(n.getAttribute('src'));
+      const o = had && had.shift();
+      if (!o || !o.complete || !o.naturalWidth) return;
+      for (const a of [...o.attributes]) if (!n.hasAttribute(a.name)) o.removeAttribute(a.name);
+      for (const a of [...n.attributes]) if (o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value);
+      n.replaceWith(o);
+    });
     livePages[i].replaceWith(nu);
     return nu;
   });
+}
+
+/** Resolve once every picture in these roots has loaded (or failed), or
+ *  after `ms` — a picture that never comes must not stall a render. */
+function imagesSettled(roots, ms = 1500) {
+  const imgs = roots.flatMap(r => [...r.querySelectorAll('img')]).filter(i => !i.complete);
+  if (!imgs.length) return Promise.resolve();
+  return Promise.race([
+    Promise.all(imgs.map(i => new Promise(r => {
+      i.addEventListener('load', r, { once: true });
+      i.addEventListener('error', r, { once: true });
+    }))),
+    new Promise(r => setTimeout(r, ms)),
+  ]);
 }
 
 let pendingFrame = null;              // the hidden twin mid-load, if any
@@ -24172,6 +24294,7 @@ function stageChainWire(d) {
       if (rest > 0.5) w.scrollTo(w.scrollX, Math.max(0, from - rest));
     }
   }, { passive: false });
+  w.addEventListener('scroll', () => contextDodge(d), { passive: true });
   w.addEventListener('scroll', () => {
     // Cheapest test first: the band is almost always in, and this runs on
     // every scroll event the report fires.
@@ -24428,6 +24551,11 @@ function wire(roots) {
     [data-slot][data-inline]:empty { display:inline-block; min-width:1.5em;
                min-height:1em; outline:1px dashed #B9C9BE; outline-offset:1px;
                border-radius:2px; }
+    /* And its BLOCK half: an empty paragraph or heading slot (an eyebrow the
+       document leaves blank) laid out at zero height, and nothing on the page
+       could be clicked to fill it. Same dashed box, no display change. */
+    .page [data-slot]:not([data-inline]):not(svg *):empty { min-height:1em; min-width:1.5em;
+               outline:1px dashed #B9C9BE; outline-offset:1px; border-radius:2px; }
     /* user-select ALL (not none): a footnote chip must be part of a text
        selection so it travels when you cut/copy a sentence to move it.
        user-select none made the browser skip it, silently dropping the
@@ -24832,6 +24960,18 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
   // Binding them all is idempotent, not a route to duplicate editors: edit()
   // is keyed by SLOT, collecting every block with the key and opening ONE
   // editor over the whole slot, and it refuses outright while `editing`.
+  // A slot drawn at opacity 0 over a visible one (our-mission's word
+  // rotator stacks three phrases and shows one) still takes the click: the
+  // person clicks a word they see and an invisible one opens. Hand the click
+  // to the first SHOWN slot under the pointer instead.
+  const slotUnder = (el, e) => {
+    if (shownNode(el) || !e || e.clientX == null) return el;
+    for (const n of d.elementsFromPoint(e.clientX, e.clientY)) {
+      const s = n.closest && n.closest('[data-slot]');
+      if (s && shownNode(s)) return s;
+    }
+    return el;
+  };
   within(d, roots, '[data-slot]').forEach(el => {
     const key = el.dataset.slot;
     // A slot inside a movable object — a callout's title, a card's bullets,
@@ -24846,10 +24986,20 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
     if (el.closest('[data-el]')) {
       el.addEventListener('dblclick', e => {
         e.preventDefault(); e.stopPropagation();
-        showType(key); edit(d, key, el, ptOf(e));
+        const t = slotUnder(el, e);
+        showType(t.dataset.slot); edit(d, t.dataset.slot, t, ptOf(e));
       });
     } else {
-      el.addEventListener('click', e => { showType(key); edit(d, key, el, ptOf(e)); });
+      el.addEventListener('click', e => {
+        const t = slotUnder(el, e);
+        showType(t.dataset.slot); edit(d, t.dataset.slot, t, ptOf(e));
+        // A click that opened the words is the editor's. Let through to the
+        // page's own document-level handlers it became the page's as well:
+        // the Budget Primer's department popover opened on the Table 1
+        // header's click and took focus, which blurred the field the same
+        // click had just opened — "clicking that header does nothing".
+        if (editing) e.stopPropagation();
+      });
     }
   });
 
@@ -25584,6 +25734,11 @@ function edit(d, key, clicked, at) {
     && blocks.every(b => b.tagName === blocks[0].tagName && !b.closest('[data-el^="para."]'));
   const target = (clicked && blocks.includes(clicked)) ? clicked
     : blocks.find(b => b.getClientRects().length) || blocks[0];
+  // Words folded away in a closed <details> are laid out but not shown, and
+  // a contenteditable there cannot take focus: the field opened and nothing
+  // typed landed (the primer's obligated-funds panel). Unfold the way to it.
+  for (let det = target.closest('details'); det; det = det.parentElement && det.parentElement.closest('details'))
+    det.open = true;
   const inPlace = !inline && !allowLists && (blocks.length === 1 || repeats)
     && !target.closest(`[data-el="para.${CSS.escape(key)}"]`)
     && !target.hasAttribute('data-extra')
@@ -25674,9 +25829,24 @@ function edit(d, key, clicked, at) {
   // is open; editing in place must not reflow the page around the words.
   // Formatting lives in the chrome bar (B/I/lists appear there while a rich
   // editor is open — syncMarksBar), links on ⌘K, endnotes on right-click.
+  const standRect = (!inPlace && !inside) ? blocks[0].getBoundingClientRect() : null;
   if (inside) target.replaceChildren(host);
   else if (inPlace) target.replaceWith(host);
   else { blocks[0].replaceWith(host); blocks.slice(1).forEach(b => b.remove()); }
+  // A stand-in is a bare block in the slot's parent, so it takes the parent's
+  // whole width while the paragraph it replaced had a max-width or sat
+  // centred: the editor's outline then drew wider than the words (a cover
+  // deck 566px wide opened in a 688px box; a lead paragraph 700 in 1152).
+  // Hold it to the box the block had — the width, and the offset it sat at.
+  if (standRect && !richInline) {
+    const page = host.closest('section.page');
+    const z = page ? zoomOf(page) : 1;
+    const hr = host.getBoundingClientRect();
+    // rounded UP: a hundredth of a pixel short wraps the last word onto a
+    // line of its own (seen with the CI runner's fonts)
+    if (hr.width > standRect.width + 1) host.style.maxWidth = (Math.ceil(standRect.width / z) + 1) + 'px';
+    if (standRect.left > hr.left + 1) host.style.marginLeft = ((standRect.left - hr.left) / z).toFixed(2) + 'px';
+  }
   richHost = host;
   richOpts = { allowLists, allowMd, fnLabels, headMark, wear };
   collabParaOpened();
@@ -25691,7 +25861,13 @@ function edit(d, key, clicked, at) {
   // a focus that scrolled would move the words out from under the point the
   // caret is about to be put at.
   host.focus(at ? { preventScroll: true } : undefined);
-  caretOrAll(d, host, at);
+  // Placing the caret reads the document's selection; a document that lost
+  // its window between the click and here (a page script that navigated or
+  // re-rendered on the same click) has none. Thrown from here, `editing`
+  // stayed true with no host to close it, and every later click was
+  // swallowed by a commit path for an editor that did not exist.
+  try { caretOrAll(d, host, at); }
+  catch (e) { editing = false; richHost = null; richOpts = null; syncMarksBar(); collabParaClosed(); throw e; }
 
   const finish = async (keep) => {
     if (host.dataset.done) return;
@@ -31873,12 +32049,20 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         // original's.
         const base = id.replace(/^copy\.[^.]+\./, '');
         const data = _pilotObjData(base, el);
+        // Laid out but not shown (a tab not chosen, a closed panel, a word
+        // at opacity 0): a pilot must know, or it moves things nobody sees.
+        const shown = el.checkVisibility
+          ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })
+          : !!el.getClientRects().length;
         elements.push({
           id,
+          ...(shown ? {} : { hidden: true }),
           kind: sh ? (sh.kind || 'shape')
             : data.chart ? 'chart'
             : base.startsWith('text.') ? 'textbox'
-            : base.startsWith('table.') ? 'table'
+            // a table OBJECT (placed or flow: the Table panel opens it) — a
+            // renderer's own <table> that merely wears a table.* id is designed
+            : (base.startsWith('table.') && tableOf(base)) ? 'table'
             : base.startsWith('endnote.') ? 'endnote'
             : base.startsWith('para.') ? 'prose' : 'designed',
           box,

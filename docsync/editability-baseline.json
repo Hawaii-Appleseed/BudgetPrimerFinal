@@ -1,0 +1,15 @@
+{
+  "budget-primer": {
+    "[editability] accessible description(s) are renderer literals — words a reader is given INSTEAD of the drawing, in an attribute no slot can reach": 12,
+    "[editability] image(s) or drawing(s) nothing can select, move or resize — no data-el on it or on anything holding it": 10,
+    "[editability] text field(s) can be typed into but never moved or resized — no data-el on the field or on anything holding it": 17,
+    "[editability] text string(s) inside a movable (data-el) wrapper with no data-slot — draggable, words frozen (the C() trap)": 14,
+    "[editability] visible text string(s) carry no edit hook — not a slot, not movable": 79
+  },
+  "wfc-credits": {
+    "[editability] accessible description(s) are renderer literals — words a reader is given INSTEAD of the drawing, in an attribute no slot can reach": 4,
+    "[editability] bar(s) drawn by hand — parts sized by a typed-in width, which no editor panel opens and no retyped number moves": 1,
+    "[editability] visible text string(s) carry no edit hook — not a slot, not movable": 16,
+    "[fake-table] table(s) built from <div> rows, not a real table": 1
+  }
+}
