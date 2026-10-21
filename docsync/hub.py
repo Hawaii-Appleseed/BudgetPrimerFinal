@@ -19,6 +19,8 @@ What lands in `<hub>/primer/`:
 
     edit.html            the editor — ONE copy, for every project
     collab-client.js     its collaboration client
+    editor-version.txt   a fingerprint of those two, which an open tab polls to
+                         learn that a deploy replaced the editor under it
     sw.js                its service worker (Pyodide cached once, for good)
     projects.json        the registry: id -> {name, base, repo, rendered, collab: {path}}
     icons/, manifest.webmanifest   the tab icon
@@ -52,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import re
 import shutil
@@ -287,6 +290,15 @@ def _write(dst: Path, data: bytes, changed: list[str], *, dry: bool) -> None:
         dst.write_bytes(data)
 
 
+def editor_version() -> str:
+    """What an open tab on the hub compares to know it is running a superseded
+    editor: the editor and its client together, since either changes alone."""
+    h = hashlib.sha256(EDITOR.read_bytes())
+    if COLLAB_CLIENT.is_file():
+        h.update(COLLAB_CLIENT.read_bytes())
+    return h.hexdigest()[:16]
+
+
 def vendor(hub: Path, projects: list[dict], *, dry: bool,
            missing: list[str] | None = None) -> list[str]:
     """Copy everything; append to `missing` each reference a project's page
@@ -299,6 +311,11 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
     _write(primer / "edit.html", EDITOR.read_bytes(), changed, dry=dry)
     if COLLAB_CLIENT.is_file():
         _write(primer / "collab-client.js", COLLAB_CLIENT.read_bytes(), changed, dry=dry)
+    # Their fingerprint, beside them. A tab open on the hub polls it to learn
+    # that a deploy replaced the editor it is running: Pages serves HTML with
+    # no ETag, Last-Modified or Content-Length (measured 2026-10-20 — sw.js
+    # has an ETag, edit.html nothing), so the page itself cannot be asked.
+    _write(primer / "editor-version.txt", (editor_version() + "\n").encode(), changed, dry=dry)
     # The worker beside the editor, so its register('sw.js') finds one: without
     # it every cold open on the hub pulled Pyodide's ~30MB from the CDN again,
     # and a browser that had dropped that from its HTTP cache paid it every time.

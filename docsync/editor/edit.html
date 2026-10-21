@@ -21143,9 +21143,15 @@ async function boot() {
   // eye on it — a rebuild whose bump never reached this tab is exactly the
   // case a bump-driven check cannot catch, so it is also polled and checked
   // whenever the tab is looked at again.
-  if (local) {
+  //
+  // On the hub too (2026-10-20): a deploy lands under every open tab there,
+  // and nothing told one it was running the editor from before it — the room
+  // and the connector then met an editor older than they were, and a person's
+  // Claude was told to ask them to reload with no sign of why on their screen.
+  // Less often than locally (it is a request to the edge, not this machine).
+  if (local || docStore()) {
     buildChangedOnDisk();
-    setInterval(checkBuildFresh, 20000);
+    setInterval(checkBuildFresh, local ? 20000 : 300000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) checkBuildFresh();
     });
@@ -23278,29 +23284,54 @@ const STAMP_FILES = ['edit.html'];
 let buildStamp = null;
 async function buildChangedOnDisk() {
   try {
-    const rs = await Promise.all(STAMP_FILES.map(f =>
-      fetch(withBase(f), { method: 'HEAD', cache: 'no-store' })));
-    const stamp = rs.map(r => (r.headers.get('last-modified') || '')
-                            + '|' + (r.headers.get('content-length') || '')).join('~');
-    if (!/\d/.test(stamp)) return false;          // server tells us nothing useful
+    const stamp = docStore() ? await hubEditorVersion() : await localBuildStamp();
+    if (!stamp) return false;                       // nothing useful to compare
     if (buildStamp === null) { buildStamp = stamp; return false; }
     return stamp !== buildStamp;
   } catch (e) { return false; }
 }
+// Locally: the staged edit.html beside the project, by its headers.
+async function localBuildStamp() {
+  const rs = await Promise.all(STAMP_FILES.map(f =>
+    fetch(withBase(f), { method: 'HEAD', cache: 'no-store' })));
+  if (rs.some(r => !r.ok)) return '';               // an error page's stamp says nothing
+  const stamp = rs.map(r => (r.headers.get('last-modified') || '')
+                          + '|' + (r.headers.get('content-length') || '')).join('~');
+  return /\d/.test(stamp) ? stamp : '';
+}
+// On the hub: the fingerprint docsync.hub writes beside the ONE editor there
+// (editor-version.txt). The page's own headers cannot be used: Pages serves
+// HTML with no ETag, Last-Modified or Content-Length (measured 2026-10-20), so
+// a HEAD of edit.html looks the same before and after every deploy. no-store
+// also takes it past the service worker, which steps aside for that.
+async function hubEditorVersion() {
+  const r = await fetch(new URL('editor-version.txt', location.href), { cache: 'no-store' });
+  if (!r.ok) return '';                             // a hub vendored before the file existed
+  const v = (await r.text()).trim();
+  return /^[0-9a-f]{8,64}$/.test(v) ? v : '';
+}
 const STALE_MSG = 'the editor was updated on disk — click to reload';
+// On the hub there is no disk and no Save to make first: what has been typed
+// is in the shared document already, so a reload loses nothing but the
+// sentence still being typed, and nothing forces it — a deploy is not a
+// reason to take someone's cursor.
+const STALE_MSG_HUB = 'a newer editor is out — click to reload when you reach a stopping point';
 function offerEditorReload() {
   const s = $('stat');
+  const msg = docStore() ? STALE_MSG_HUB : STALE_MSG;
   // Idempotent, NOT once-only. It used to return early after the first call,
   // and _pull() then overwrote the text with "reloaded" — so the notice
   // flashed red for an instant and was gone for good, which is the opposite
   // of what a "you are running stale code" warning is for. Now it can be
   // re-asserted after anything that overwrites the row.
   s.dataset.stale = '1';
-  if (s.textContent === STALE_MSG) return;
-  s.textContent = STALE_MSG;
+  if (s.textContent === msg) return;
+  s.textContent = msg;
   s.classList.add('err');
   s.style.cursor = 'pointer';
-  s.title = 'Reload to pick up the new build. Save first if you have unsaved edits.';
+  s.title = docStore()
+    ? 'Reload to pick up the new build. Everything typed so far is kept in the shared document; finish the sentence you are in first.'
+    : 'Reload to pick up the new build. Save first if you have unsaved edits.';
   s.onclick = () => location.reload();
 }
 async function checkBuildFresh() {

@@ -3282,6 +3282,35 @@ check_eq("and never a guess from the id",
 check_eq("junk on the hub is not a name either",
          project_name("budget-primer", {}, {}, {"budget-primer": "oops"}), None)
 
+# ---- the hub: the editor's fingerprint, beside it ---------------------------
+# 2026-10-20: a tab open on the hub never learned that a deploy had replaced
+# its editor, and the first fix asked edit.html's own headers — which Pages
+# does not send for HTML (no ETag, Last-Modified or Content-Length), so it
+# could never fire. The vendor writes editor-version.txt; the tab polls that.
+import hashlib as _hashlib                                 # noqa: E402
+import tempfile as _tempfile                               # noqa: E402
+from docsync.hub import vendor as _hub_vendor              # noqa: E402
+from docsync.stage import EDITOR as _EDITOR, COLLAB_CLIENT as _COLLAB_CLIENT  # noqa: E402
+
+with _tempfile.TemporaryDirectory() as _d:
+    _hub = Path(_d)
+    (_hub / "primer").mkdir()
+    _hub_vendor(_hub, [], dry=False)
+    _ver = (_hub / "primer" / "editor-version.txt").read_text().strip()
+    _want = _hashlib.sha256(_EDITOR.read_bytes())
+    if _COLLAB_CLIENT.is_file():
+        _want.update(_COLLAB_CLIENT.read_bytes())
+    check_eq("the hub gets editor-version.txt: the editor and its client, fingerprinted",
+             _ver, _want.hexdigest()[:16])
+    check_eq("in the shape the editor's poll accepts",
+             bool(re.fullmatch(r"[0-9a-f]{8,64}", _ver)), True)
+    _hub_vendor(_hub, [], dry=False)
+    check_eq("and it is the same for the same editor (no change, no notice)",
+             (_hub / "primer" / "editor-version.txt").read_text().strip(), _ver)
+_edit_src = _EDITOR.read_text()
+check("the editor polls that file on the hub", _edit_src, "new URL('editor-version.txt', location.href)")
+check("past the service worker", _edit_src, "fetch(new URL('editor-version.txt', location.href), { cache: 'no-store' })")
+
 
 # ---- page copies: a duplicated designed page redraws from the document ----
 # The editor's Duplicate page stores a designed page's pristine markup on a
