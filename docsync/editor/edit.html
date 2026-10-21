@@ -30854,11 +30854,35 @@ const _pilotPageKnown = pid => pid == null
   || pageOrder().map(String).includes(String(pid))
   || designedPages.some(p => String(p.id) === String(pid))
   || pageBlanks().some(b => String(b.id) === String(pid));
+/** The pages that DRAW placed objects, as visiblePageId() reads them: a
+ *  sheet the engine built (section[data-page]) or one carrying its edit-mode
+ *  mount marker. A page a renderer builds by hand — demo-report's endnotes
+ *  sheet — has neither, and a box, shape, chart or table put on it was saved
+ *  and never shown. Null when the document carries no markers at all (an
+ *  older staged engine): then nothing can be told, and nothing is refused. */
+function _pilotDrawnPages() {
+  const d = $('out').contentDocument;
+  if (!d) return null;
+  const ids = [...d.querySelectorAll('section.page[data-page]')].map(pg => String(pg.dataset.page))
+    .concat([...d.querySelectorAll('[data-ds-mount]')].map(m => String(m.dataset.dsMount)));
+  return ids.length ? new Set(ids) : null;
+}
+/** Refuse a page that would swallow what is put on it, naming the ones that
+ *  would show it. Shared by every pilot verb that makes a placed object. */
+function _pilotPageDraws(pid, verb) {
+  if (pid == null) return { ok: true };
+  if (!_pilotPageKnown(pid)) return _bad(`no page '${pid}' — pages are ${pageOrder().join(', ')}`);
+  const drawn = _pilotDrawnPages();
+  if (drawn && !drawn.has(String(pid)))
+    return _bad(`${verb}: page ${pid} does not draw placed objects (its renderer builds that sheet by hand), so it would be saved and never seen — use page ${[...drawn].join(', ')}`);
+  return { ok: true };
+}
 const _bad = error => ({ ok: false, error });
 function _pilotValidateAddChart(o) {
   const use = 'addChart({page, x, y, w, h, chart: {type, labels, series: [{name, data}], …}})';
   if (o == null || typeof o !== 'object' || Array.isArray(o)) return _bad(use);
-  if (!_pilotPageKnown(o.page)) return _bad(`no page '${o.page}' — pages are ${pageOrder().join(', ')}`);
+  const pv = _pilotPageDraws(o.page, 'addChart');
+  if (!pv.ok) return pv;
   for (const k of ['x', 'y', 'w', 'h'])
     if (o[k] != null && !(typeof o[k] === 'number' && isFinite(o[k]))) return _bad(`addChart: ${k} is inches, a number`);
   if ((o.w != null && o.w <= 0) || (o.h != null && o.h <= 0)) return _bad('addChart: w and h must be above 0');
@@ -30902,7 +30926,8 @@ const addTableKeys = () => ['page', 'x', 'y', 'w', 'z', 'rows', ...TABLE_PATCH_K
 function _pilotValidateAddTable(o) {
   const use = 'addTable({page, x, y, w, rows: [[…], …], header, headerRows, merges, colw, colAlign, …})';
   if (o == null || typeof o !== 'object' || Array.isArray(o)) return _bad(use);
-  if (!_pilotPageKnown(o.page)) return _bad(`no page '${o.page}' — pages are ${pageOrder().join(', ')}`);
+  const pv = _pilotPageDraws(o.page, 'addTable');
+  if (!pv.ok) return pv;
   const bad = Object.keys(o).filter(k => !addTableKeys().includes(k));
   if (bad.length) return _bad(`addTable: not ${bad.join(', ')} — ${addTableKeys().join(', ')}`);
   if (!Array.isArray(o.rows) || !o.rows.length || !o.rows.every(Array.isArray))
@@ -30972,11 +30997,11 @@ function _pilotObjData(base, el) {
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
 const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'qr'];
-function _pilotValidateAddShape({ kind = 'rect' } = {}) {
+function _pilotValidateAddShape({ kind = 'rect', page } = {}) {
   if (!PILOT_SHAPE_KINDS.includes(kind))
     return { ok: false,
              error: `'${kind}' is not a shape — one of ${PILOT_SHAPE_KINDS.join(', ')}` };
-  return { ok: true };
+  return _pilotPageDraws(page, 'addShape');
 }
 function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
                                stroke, sw, z, rx, data } = {}) {
@@ -31446,7 +31471,7 @@ const PILOT_BATCH_VERBS = {
   // An empty md is refused here: the engine refuses a box with no words at
   // the next render, so accepting one left the draft unable to build.
   addTextBox: { validate: o => (o && typeof o.md === 'string' && !o.md.trim())
-      ? { ok: false, error: 'a text box needs words — md is empty' } : { ok: true },
+      ? { ok: false, error: 'a text box needs words — md is empty' } : _pilotPageDraws(o && o.page, 'addTextBox'),
     apply: o => _pilotApplyAddTextBox(o) },
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
   addChart: { validate: o => _pilotValidateAddChart(o), apply: o => _pilotApplyAddChart(o) },
@@ -32211,6 +32236,26 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     // build" — the caller told it worked, the person looking at a traceback.
     // Put the document back, withdraw the step, and say what the engine said.
     // A draft that was ALREADY broken is left alone: this batch may be the fix.
+    // ...and everything this batch MADE is on the page. The page checks above
+    // read the markers; this is the net for a sheet that has them and still
+    // does not draw a kind (a renderer that mounts boxes but never calls
+    // layer()), which would otherwise save an object nobody can ever see.
+    const MADE = ['addChart', 'addTable', 'addTextBox', 'addShape'];
+    const outD = $('out').contentDocument;
+    const unseen = renderFailed ? [] : applied.filter(a => MADE.includes(a.verb) && a.id && outD
+      && !outD.querySelector(`[data-el="${CSS.escape(a.id)}"], [data-shape="${CSS.escape(a.id)}"]`));
+    if (unseen.length) {
+      const st = JSON.parse(before);
+      source = st.source; layout = st.layout;
+      if (!collab) past.pop();
+      markDirty();
+      await render();
+      syncHistoryButtons();
+      const drawn = _pilotDrawnPages();
+      return { ok: false, error: `${unseen.map(a => a.id).join(', ')} would be saved and never seen: page `
+        + `${unseen[0].page} does not draw ${unseen[0].verb.replace(/^add/, '').toLowerCase()}s, so nothing was changed`
+        + (drawn ? ` — use page ${[...drawn].join(', ')}` : '') };
+    }
     if (renderFailed && !wasFailed) {
       const why = renderError;
       const st = JSON.parse(before);
