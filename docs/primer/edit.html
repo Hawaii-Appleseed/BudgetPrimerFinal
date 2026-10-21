@@ -22537,9 +22537,11 @@ async function startCollab() {
       if (!ops.length) return { ok: false, error: 'no ops' };
       if (hubViewOnly()) return { ok: false, error: 'the editor that was asked is view only' };
       if (editing) return { ok: false, error: 'an inline text editor is open in the editor that would apply this — close it and try again' };
+      const why = msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : ''));
       agentTouch({ by: msg.by ? `Claude, for ${String(msg.by).replace(/@.*$/, '')}` : 'Claude',
-                   what: msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : '')),
+                   what: why,
                    target: typeof (ops[0].args || [])[0] === 'string' ? ops[0].args[0] : null });
+      if (msg.what) pendingSaveWhy = (pendingSaveWhy ? pendingSaveWhy + ' ' : '') + String(msg.what).trim();
       // One op whose verb batch() cannot take — remove, duplicate, addPage,
       // applyScheme, addEndnotesSection push their own history — runs as
       // the single call it is, the same verb a local /__pilot would run.
@@ -28659,6 +28661,8 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     if (sent !== original) body.content = sent;
     if (M.layout && layoutText !== layoutOrig) body.layout = layoutText;
     if (body.content == null && body.layout == null) { markDirty(); return true; }
+    const why = pendingSaveWhy;
+    if (why) body.label = why;
     const r = await fetch(docStore(), {
       method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     });
@@ -28693,6 +28697,8 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     }
     if (!r.ok) throw new Error(j.error || `the store answered ${r.status}`);
     docVersion = j.version;
+    // Said once: the reason belongs to this version, not the next.
+    if (why && pendingSaveWhy.startsWith(why)) pendingSaveWhy = pendingSaveWhy.slice(why.length).trim();
     hubHistoryAdd(j);                            // the open panel lists it without asking the store again
     hubMarkSeen(j.version);
     if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
@@ -28744,6 +28750,14 @@ async function docStoreSave(layoutText, force = false, auto = false) {
 let hubAutosaveTimer = 0;
 let hubAutosaveHold = false;   // a 409 or a failure: wait for a press of Save
 let hubSaveBusy = false;       // a store Save in flight
+// Why the next Save happens, when someone's Claude changed the document
+// through this editor (onPilot): the connector's `note`, kept as that
+// version's label in the hub's history. A colleague's Claude reads the
+// history (read_report's context.recent_changes), so a change made here
+// explains itself to whoever comes next — without this, a change applied
+// in an open editor saved with no reason at all. Joined when several land
+// before one Save; cleared once a Save carries it.
+let pendingSaveWhy = '';
 let hubSavedAt = 0;            // when the last store Save landed
 let hubAutosaveFails = 0;      // failures in a row, before the hold
 let hubAutosaveHoldWhy = '';   // what the last one said
