@@ -7201,7 +7201,9 @@ class Layout:
         if not mine:
             return ""
         edit = bool(os.environ.get("DOCSYNC_EDIT"))
-        out = []
+        css = "" if getattr(self, "_placedtable_sent", False) else self.PLACED_TABLE_CSS
+        self._placedtable_sent = True
+        out = [css]
         for t in mine:
             out.append(self._table_el(t, edit))
         return "".join(out)
@@ -7403,6 +7405,21 @@ class Layout:
                 f'{anim_attrs(t.get("anim"))}{anchor_attrs(t)} '
                 f'style="{css}{";" + style if style else ""}{tglSty}">'
                 f'{colgroup}{body}</table>')
+
+    # A placed table's floor, for a report whose stylesheet never mentions
+    # .ds-table (only new.py's scaffold does): without it the cells had no
+    # padding and no rules, so the Table tool's empty rows drew a few pixels
+    # tall. :where() keeps it at zero specificity, so any report rule wins;
+    # a header cell inherits the table's own alignment instead of the
+    # browser's centring; an empty cell holds a zero-width space so it is a
+    # full line tall.
+    PLACED_TABLE_CSS = (
+        "<style>:where(table.ds-table[data-placed]){border-collapse:collapse}"
+        ":where(table.ds-table[data-placed]) :where(td,th){"
+        "border:1px solid #C9D6CD;padding:5px 8px;text-align:inherit}"
+        ":where(table.ds-table[data-placed]) :where(td,th):empty::before{"
+        'content:"\\200b"}'
+        "</style>")
 
     FLOW_TABLE_CSS = (
         "<style>table.ds-flow{border-collapse:collapse;table-layout:fixed}"

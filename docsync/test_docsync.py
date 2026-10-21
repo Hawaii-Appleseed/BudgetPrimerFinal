@@ -4226,9 +4226,21 @@ check_eq("colAlign refuses an alignment it does not know",
 _dh = _layout({"tables": [dict(_tb, colAlign=[None, "decimal"])]}).tables_html(1)
 check_eq("a decimal column splits its figures and leaves its header whole",
          (_dh.count('class="ds-dec"'), "<th" in _dh and ">B</th>" in _dh), (2, True))
+_th = re.sub(r"<style>.*?</style>", "", _layout({"tables": [_tb]}).tables_html(1))
 check_eq("a table nobody aligned renders as it did",
-         "ds-dec" in _layout({"tables": [_tb]}).tables_html(1)
-         or "text-align" in _layout({"tables": [_tb]}).tables_html(1), False)
+         "ds-dec" in _th or "text-align" in _th, False)
+# A placed table brings its own floor (padding, rules, a line per empty cell)
+# for a report whose stylesheet never mentions .ds-table: once per document,
+# at zero specificity, so a report's own table rules still win.
+_pl = _layout({"tables": [_tb, dict(_tb, id="t2", page=2)]})
+_p1, _p2 = _pl.tables_html(1), _pl.tables_html(2)
+check_eq("a placed table's floor CSS goes out once, ahead of the first table",
+         (_p1.startswith(Layout.PLACED_TABLE_CSS), Layout.PLACED_TABLE_CSS in _p2), (True, False))
+check_eq("the floor is :where() all through, so any report rule outranks it",
+         re.findall(r"(?:^|})([^{}]+)\{", Layout.PLACED_TABLE_CSS.replace("<style>", "")),
+         [":where(table.ds-table[data-placed])",
+          ":where(table.ds-table[data-placed]) :where(td,th)",
+          ":where(table.ds-table[data-placed]) :where(td,th):empty::before"])
 # A flow table is a REAL <table> in the page's own flow: static, full width,
 # with the same cell hooks the editor edits, and the header row marked so the
 # phone layout can hide it and label each stacked value from it.

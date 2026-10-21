@@ -1181,6 +1181,7 @@
      underneath clickable everywhere the card itself is not. */
   #context { position:absolute; z-index:6; top:4px; left:var(--rail-w); right:0;
           display:flex; justify-content:center; pointer-events:none; }
+  body.ds-menu-up #context { visibility:hidden; }   /* see menuUp() */
   /* dropped to the foot while the selection sits under its home at the top
      (contextDodge); clear of the page strip along the bottom edge */
   #context.low { top:auto; bottom:104px; }
@@ -4636,7 +4637,7 @@ function endnoteMenu(d, host, e) {
     m.appendChild(b);
   };
   buildEndnoteRows(d, m, host, range);
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   // Nudge back on-screen if it would spill off the right/bottom edge.
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
@@ -4733,7 +4734,7 @@ function textMenu(d, host, e) {
     add('Print (the PDF)', 'print'); add('Web (on screen)', 'web');
     add('Another condition…', '?'); add('Always (no condition)', null);
   });
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
@@ -5892,7 +5893,16 @@ function nextZ(floor = 1, page = null) {
 }
 function closeMenu(d) {
   d.querySelectorAll('.ds-menu').forEach(m => m.remove());
+  menuUp(false);
 }
+/** A right-click menu lives in the report's document, the floating context
+ *  card (#context) in the editor's, above it — and the card drops to the foot
+ *  of the stage when the selection is under its home at the top. Now that a
+ *  right-click selects what it hits, the card came up for that very selection
+ *  and could land over the menu opened beside it (the Animate submenu's speed
+ *  slider sat under the type bar). While a menu is open the card stands
+ *  aside; closeMenu, and a fresh document, bring it back. */
+const menuUp = on => document.body.classList.toggle('ds-menu-up', on);
 
 /** Every menu cancels mousedown to keep the editor focused: without it the
  *  click blurs the text being edited, commits it, and the caret the menu was
@@ -6017,7 +6027,7 @@ function pageMenu(d, pg, e) {
   }
   sep();
   submenuRow(d, m, 'Page colour ▸', sub => fillRow(d, sub, pageFillId(pid)));
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
@@ -6225,12 +6235,61 @@ function _pilotApplyFitFrame(id) {
   return { ok: true, id, h };
 }
 
+/** A right-click selects what it lands on, as a left click would — a group
+ *  whole, and inside the current selection the selection stays — so the
+ *  menu and the strip are about the same thing (pageMenu does it for a page).
+ *  It used to leave the selection where it was: right-click a paragraph with
+ *  a table selected and the menu was the paragraph's, the strip the table's. */
+function selectForMenu(d, id) {
+  // Already selected — on its own or as one of several — the selection stays,
+  // group or no group: a button's menu wires it to everything selected with
+  // it ("Reveal the 2 selected"), and expanding to the button's own group
+  // would throw that selection away.
+  if (!id || selIds.has(id)) return;
+  setSel(d, withGroups([id]));
+}
+
+/** Open the right-click menu again once a render in flight has landed, in
+ *  whatever document is current then (see contextify) — at the same spot in
+ *  the object that was hit, not the same spot on the screen: the page can
+ *  settle a few pixels differently after a render (CI's Linux runner showed
+ *  it), and the menu must still be the one for what was right-clicked. */
+async function menuAfterRender(e, target) {
+  const r0 = target.getBoundingClientRect();
+  const dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+  const hook = target.dataset.shape ? `[data-shape="${CSS.escape(target.dataset.shape)}"]`
+    : target.dataset.el ? `[data-el="${CSS.escape(target.dataset.el)}"]`
+    : target.dataset.page != null ? `section.page[data-page="${CSS.escape(target.dataset.page)}"]`
+    : null;
+  await new Promise(r => setTimeout(r, 0));
+  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  if (editing) return;
+  const d2 = $('out').contentDocument;
+  if (!d2) return;
+  const el2 = hook && d2.querySelector(hook);
+  let x = e.clientX, y = e.clientY;
+  if (el2) {
+    const r = el2.getBoundingClientRect();
+    x = r.left + Math.max(0, Math.min(dx, r.width - 1));
+    y = r.top + Math.max(0, Math.min(dy, r.height - 1));
+  }
+  const hit = d2.elementFromPoint(x, y);
+  const to = hit && (!el2 || el2.contains(hit)) ? hit : el2;
+  if (!to) return;
+  const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, composed: true,
+    view: d2.defaultView, button: 2, clientX: x, clientY: y,
+    screenX: e.screenX + (x - e.clientX), screenY: e.screenY + (y - e.clientY) });
+  ev.dsReplayed = true;
+  to.dispatchEvent(ev);
+}
+
 function layerMenu(d, el, e) {
   closeMenu(d);
   const id = el.dataset.shape || el.dataset.el || el.dataset.fill;
   // A page or a table row is a SURFACE: it can change colour but it is not a
   // thing that moves, so it gets the fill section and nothing else.
   const surface = !el.dataset.shape && !el.dataset.el;
+  if (!surface) selectForMenu(d, id);
   const m = d.createElement('div');
   m.className = 'ds-menu';
   m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
@@ -6276,7 +6335,7 @@ function layerMenu(d, el, e) {
       if (!layout.locked.length) delete layout.locked;
       markDirty(); paintSel(d);
     });
-    d.body.appendChild(m);
+    d.body.appendChild(m); menuUp(true);
     return;
   }
 
@@ -6869,6 +6928,7 @@ function layerMenu(d, el, e) {
   if (!!shapeOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Delete shape', async () => {
+      pushHistory();
       layout.shapes = layout.shapes.filter(s => s.id !== id);
       markDirty(); await render();
     });
@@ -6906,11 +6966,12 @@ function layerMenu(d, el, e) {
   if (layout.positions[id]) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Reset to its designed place', async () => {
+      pushHistory();
       delete layout.positions[id];
       markDirty(); await render();
     });
   }
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
 }
 
 function contextify(d, roots) {
@@ -6925,13 +6986,18 @@ function contextify(d, roots) {
       // element the DOM hid from it (see hitPlaced) — that element's menu, not
       // the page's. Table rows keep their own: a box UNDER a table is unseen.
       let target = el;
-      if (el.tagName === 'SECTION') {
-        const hit = hitPlaced(d, el, e);
-        // Nothing placed under the pointer: the click means the PAGE, and a
-        // page has its own menu rather than the generic surface one.
-        if (!hit) { pageMenu(d, el, e); return; }
-        target = hit;
-      }
+      if (el.tagName === 'SECTION') target = hitPlaced(d, el, e) || el;
+      // Words open in something else: close them, as a click there would
+      // (the right button's press usually has already), and ask again once
+      // their commit has re-rendered. The menu, and the selection it makes,
+      // belong in the document that results, not in one about to be replaced
+      // — a table cell's own menu waits the same way.
+      const a = d.activeElement;
+      if (editing && a && a !== d.body && !target.contains(a)) a.blur();
+      if (renderRunning && !e.dsReplayed) { menuAfterRender(e, target); return; }
+      // Nothing placed under the pointer: the click means the PAGE, and a
+      // page has its own menu rather than the generic surface one.
+      if (target.tagName === 'SECTION') { pageMenu(d, target, e); return; }
       // A TABLE's right-click is always its own menu, wherever on it the
       // click landed. Cells carry that menu themselves, but the table's
       // padding, its border, the gap under the last row — and any point the
@@ -6955,6 +7021,7 @@ function contextify(d, roots) {
   // mechanism this file's own popovers (layerMenu, pageMenu, and now the
   // toggle speed popover) rely on to dismiss themselves — bind once.
   if (fresh) {
+    menuUp(false);           // a new document: whatever menu was open went with the old one
     d.addEventListener('mousedown', e => {
       // Button 2 is the right-click that is ABOUT to open a menu. The event
       // order for a context click is not the same everywhere — a Mac trackpad
@@ -6977,9 +7044,9 @@ function contextify(d, roots) {
 // ---------------------------------------------------------------- resizing
 // Width is always safe: text reflows, images scale. Height is not — pin a text
 // box's height and it either clips the words or leaves a hole the moment the
-// prose changes, and .page is overflow:hidden so the clipping is silent. So
-// prose gets a width handle only; things whose size IS their content (images,
-// shapes) get corners too.
+// prose changes, and .page is overflow:hidden so the clipping is silent. So a
+// height dragged onto words is a FLOOR (min-height): they take every edge and
+// corner, and longer wording still pushes the box open.
 const MIN_IN = 0.4;
 
 /** A designed heading slot: the renderer's own <h1>/<h2>/<h3>, as against a
@@ -7003,8 +7070,8 @@ function handlesFor(el) {
   if ((el.dataset.el || '').startsWith('endnote.')) return [];
   // Shapes and text boxes resize from every edge and corner. Graphics scale
   // uniformly, so their handles are the four corners (each drives the one
-  // scale factor). A designed prose slot reflows on width alone — no height to
-  // drag — so it gets both horizontal edges, east and west.
+  // scale factor). Words — a heading, a paragraph — take every edge and
+  // corner too, their height kept as a floor.
   // An icon is a drawn glyph, not a box: stretching one only distorts it, so
   // it takes the four corners like any other graphic and scales as a whole.
   if (el.dataset.shape) {
@@ -7020,10 +7087,22 @@ function handlesFor(el) {
   // bottom edge sets how much room it takes without ever clipping the words —
   // which is the reason prose is width-only, and the reason a heading, being
   // a line or two rather than a paragraph, does not need to be.
-  if (isHeadingEl(el)) return ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+  // A paragraph is the same (Devin, 2026-10-21: every corner of a text box,
+  // as InDesign and Canva give one): its dragged height is a floor too.
+  if (isHeadingEl(el) || isTextEl(el)) return ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
   // A table is width-driven — its rows set the height — so it takes the two
-  // horizontal edges, like a designed prose slot.
+  // horizontal edges; so does a drawn chart, whose height follows its width.
   return ['e', 'w'];
+}
+
+/** Words and only words — a paragraph or a card of slots, not a table, a
+ *  chart or a picture — so a height dragged onto it can be a floor
+ *  (positions[].hmin) the words push past, never a box that clips them. */
+function isTextEl(el) {
+  if (!el || !el.dataset || !el.dataset.el || el.dataset.shape) return false;
+  if (el.dataset.el.startsWith('table.') || isGraphic(el)) return false;
+  if (el.matches('table, svg') || el.querySelector('table, svg, img, [data-chart]')) return false;
+  return el.matches('[data-slot]') || !!el.querySelector('[data-slot]');
 }
 
 function showHandles(d, page, el) {
@@ -7180,6 +7259,7 @@ function startResize(d, el, e0, dir) {
   const P = placer(d, el, page);          // reuse: a resize is a layout override too
   const b = P.box;                        // b.w/b.h are the CURRENT (scaled) size
   const baseScale = graphic ? ((storeOf(id) || {}).scale || 1) : 1;
+  const wordy = !shapeId && !graphic && (isHeadingEl(el) || isTextEl(el));
   const grab = { x: e0.clientX, y: e0.clientY };
   el.classList.add('ds-lifted');
   d.body.classList.add('ds-resizing');
@@ -7231,7 +7311,9 @@ function startResize(d, el, e0, dir) {
     } else {
       P.put(x, y, false);                 // pin it in place, holding its flow slot
       el.style.width = w.toFixed(2) + 'in';
-      if (vertical) el.style.height = h.toFixed(2) + 'in';
+      // Words take the height as the floor they will be saved with, so the
+      // drag shows what the page will: never a box cutting its text off.
+      if (vertical) el.style[wordy ? 'minHeight' : 'height'] = h.toFixed(2) + 'in';
     }
     showHandles(d, page, el);
     $('stat').textContent = `${id} → ${w.toFixed(2)}in wide`
@@ -7272,14 +7354,14 @@ function startResize(d, el, e0, dir) {
         const p = layout.positions[id];
         p.w = +size.w.toFixed(2);
         if (dir.includes('s') || dir.includes('n')) {
-          // Text grows; images do not. For a heading the dragged height is a
-          // minimum (hmin), so longer wording pushes the box open instead of
-          // being cut off by a number someone dragged weeks earlier.
-          const text = isHeadingEl(el);
-          if (text && size.h <= MIN_IN + 0.01) { delete p.h; delete p.hmin; }
+          // Text grows; images do not. For a heading or a paragraph the
+          // dragged height is a minimum (hmin), so longer wording pushes the
+          // box open instead of being cut off by a number someone dragged
+          // weeks earlier.
+          if (wordy && size.h <= MIN_IN + 0.01) { delete p.h; delete p.hmin; }
           else {
             p.h = +size.h.toFixed(2);
-            if (text) p.hmin = true; else delete p.hmin;
+            if (wordy) p.hmin = true; else delete p.hmin;
           }
         }
       }
@@ -8109,7 +8191,7 @@ function openTglSpeedPopover(d, anchorBtn, tb) {
   });
   w.appendChild(r);
   m.appendChild(w);
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const rect = anchorBtn.getBoundingClientRect();
   const sx = d.defaultView.scrollX, sy = d.defaultView.scrollY;
   m.style.left = (rect.left + sx) + 'px';
@@ -8349,6 +8431,9 @@ function wireCells(d, roots) {
         // time this fires, so it cannot be the thing we test on.
         const id = idOf(tableEl), at = td.dataset.cell;
         const pt = { clientX: e.clientX, clientY: e.clientY };
+        // Words open somewhere else close first, as contextify does.
+        const a = d.activeElement;
+        if (editing && a && a !== d.body && !td.contains(a)) a.blur();
         if (renderRunning) await render();
         const d2 = $('out').contentDocument;
         const cell = d2.querySelector(
@@ -8432,6 +8517,9 @@ function editCell(d, td, seed) {
   } else host.textContent = seed;
   td.textContent = '';
   td.appendChild(host);
+  // The cell as it opened (see edit()'s `opened`). Opened BY typing, the seed
+  // is already a keystroke, so there is nothing to compare against.
+  const opened = seed === undefined ? htmlToMd(host, { inline: true, br: '\n' }) : null;
   host.focus();
   const r = d.createRange();
   r.selectNodeContents(host);
@@ -8447,7 +8535,7 @@ function editCell(d, td, seed) {
     host.contentEditable = 'false';
     host.classList.remove('ds-cell-edit');
     if (keep) {
-      const moved = newVal !== ((t.rows[ri] && t.rows[ri][ci]) || '');
+      const moved = newVal !== opened && newVal !== ((t.rows[ri] && t.rows[ri][ci]) || '');
       const settled = moved ? await collabFieldSettle(newVal, 'table cell') : 'mine';
       if (moved && settled === 'mine') {
         await collabFieldFirstTheirs();
@@ -8474,7 +8562,9 @@ function editCell(d, td, seed) {
     // just told to close. Enter then left the editor stuck open on the next
     // cell and swallowed everything typed after it.
     if (['Escape', 'Enter', 'Tab'].includes(e.key)) e.stopPropagation();
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); return; }
+    // Escape keeps what was typed and leaves the cell selected: see edit()'s
+    // keydown. ⌘Z is the way back.
+    if (e.key === 'Escape') { e.preventDefault(); finish(true); return; }
     // Tab walks the grid and Enter drops a row — a table is filled in by
     // typing straight through it, not by reaching for the mouse per cell.
     if (e.key === 'Tab') {
@@ -8524,8 +8614,11 @@ function tableMenu(d, td, e) {
   if (!t) return;
   const [ri, ci] = td.dataset.cell.split(',').map(Number);
   const cols = t.rows[0].length, rows = t.rows.length;
-  // Right-clicking a cell also puts the cursor on it, so the menu and the
-  // panel are always talking about the same cell.
+  // Right-clicking a cell selects its table (selectForMenu) and puts the
+  // cursor on the cell, so the menu, the strip and the panel are always
+  // talking about the same thing. In that order: a selection change drops a
+  // cell range on another table.
+  selectForMenu(d, idOf(tableEl));
   selectCell(idOf(tableEl), ri, ci);
   const m = d.createElement('div'); m.className = 'ds-menu ds-tmenu';
   m.addEventListener('mousedown', menuKeepFocus);
@@ -8637,7 +8730,7 @@ function tableMenu(d, td, e) {
   }, !t.flow);
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = Math.max(4,
@@ -9373,6 +9466,15 @@ function selectedChartId() {
   const ids = [...selIds];
   if (ids.length !== 1) return null;
   return chartOf(ids[0]) ? ids[0] : null;
+}
+
+/** A click on a chart or a table opens the panel that edits it, the way Canva
+ *  puts a clicked chart's data in front of you. Only a CLICK: a drag moves
+ *  the object and leaves the side panel as it was. */
+function openPanelOnClick(id) {
+  if (!id || selIds.size !== 1 || !selIds.has(id)) return;
+  if (chartOf(id)) openChartPanel(id);
+  else if (id.startsWith('table.') && tableOf(id)) openTablePanel(id);
 }
 
 function openChartPanel(id) {
@@ -10458,13 +10560,14 @@ function editChartText(d, node) {
   d.body.appendChild(inp);
   inp.focus(); inp.select();
   let done = false;
+  const opened = chLabelOut(inp.value);     // see edit()'s `opened`
   const finish = async keep => {
     if (done) return; done = true;
     editing = false;
     hubAutosaveFlushNext();
     const val = chLabelOut(inp.value);
     inp.remove();
-    if (keep && val !== chartText(s.chart, hook)) {
+    if (keep && val !== opened && val !== chartText(s.chart, hook)) {
       const settled = await collabFieldSettle(val, 'chart label');
       if (settled === 'mine') {
         await collabFieldFirstTheirs();
@@ -10493,8 +10596,8 @@ function editChartText(d, node) {
   inp.addEventListener('blur', () => finish(true));
   inp.addEventListener('keydown', e => {
     e.stopPropagation();            // see editCell: the document handler would
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    // Enter and Escape both keep the new words (see edit()'s keydown).
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(true); }
   });
 }
 
@@ -10661,6 +10764,7 @@ function editBox(d, el, at) {
   // A click puts the caret where it landed; see caretAt.
   host.focus(at ? { preventScroll: true } : undefined);
   caretOrAll(d, host, at);
+  const opened = htmlToMd(host, { allowLists: true });   // see edit()'s `opened`
   const finish = async keep => {
     if (host.dataset.done) return;
     host.dataset.done = '1';
@@ -10675,9 +10779,10 @@ function editBox(d, el, at) {
     host.classList.remove('ds-edit');
     if (keep) {
       const want = newVal.trim();
+      const typed = newVal !== opened && want && want !== b.md;
       // Whose words, when two people wrote in this box at once.
-      const settled = want && want !== b.md ? await collabFieldSettle(want, 'text box') : 'mine';
-      if (settled === 'mine' && want && want !== b.md) {
+      const settled = typed ? await collabFieldSettle(want, 'text box') : 'mine';
+      if (settled === 'mine' && typed) {
         await collabFieldFirstTheirs();
         // `b` pointed into the layout this editor opened on; a collaborator's
         // change that just landed replaced it.
@@ -10699,8 +10804,8 @@ function editBox(d, el, at) {
   });
   host.addEventListener('paste', e => pasteClean(d, host, e, { allowLists: true }));
   host.addEventListener('keydown', e => {
-    // Escape keeps the box selected; see edit()'s keydown.
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    // Escape keeps the words and the box selected; see edit()'s keydown.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(true); }
     if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); link(d, host); }
     // Same bullet indent/outdent the slot editor has — a text box takes lists
     // too, and Tab meaning two different things in the two editors would be
@@ -10746,6 +10851,7 @@ function editEndnote(d, li, sid) {
   li.replaceWith(wrap);
   txt.focus();
   txt.select();
+  const opened = [txt.value.trim(), url.value.trim()];   // see edit()'s `opened`
 
   const finish = async keep => {
     if (wrap.dataset.done) return;
@@ -10760,7 +10866,7 @@ function editEndnote(d, li, sid) {
       // The URL may be cleared: a citation can be a book or an interview, and
       // requiring one here meant a source that had a link could never lose it.
       // The citation text itself still has to say something.
-      if (t && (t !== s.text || u !== s.url)) {
+      if (t && (t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url)) {
         pushHistory();
         updateSource(sid, t, u);
         markDirty();
@@ -10777,8 +10883,8 @@ function editEndnote(d, li, sid) {
   txt.addEventListener('blur', blurCheck);
   url.addEventListener('blur', blurCheck);
   [txt, url].forEach(inp => inp.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    // Enter and Escape both keep what was typed (see edit()'s keydown).
+    if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); finish(true); }
   }));
 }
 
@@ -14376,6 +14482,7 @@ function marquee(d, pg, e0, onClick = null) {
  *  (undo was dead whenever focus sat in the report — a real bug until now). */
 function keysFor(d) {
   wireFindKey(d);
+  d.addEventListener('keydown', saveKey, true);    // capture: see saveKey
   d.addEventListener('keydown', e => {
     // Before the `editing` guard too — see the top-level listener.
     if (zoomKey(e)) return;
@@ -15749,6 +15856,34 @@ function stepZoom(dir) {
 }
 $('zb-out').addEventListener('click', () => stepZoom(-1));
 $('zb-in').addEventListener('click', () => stepZoom(1));
+
+/** ⌘S (Ctrl+S) is Save, as in InDesign and every other document app. Nothing
+ *  bound it, so the browser's own "Save page as" opened over the editor. It
+ *  presses the same Save, shown or not (hub autosave hides the button; the
+ *  store still saves the same way), after closing any open words so what was
+ *  being typed is part of it. Bound in the CAPTURE phase of both documents:
+ *  a field's own keydown stops propagation (editChartText, editSvgSlot), and
+ *  the key must reach here first. Returns true when it handled the key. */
+function saveKey(e) {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.code !== 'KeyS') return false;
+  e.preventDefault();
+  e.stopPropagation();
+  if (presenting || modalOpen || document.querySelector('dialog[open]')) return true;
+  saveFromKey();
+  return true;
+}
+async function saveFromKey() {
+  const d = $('out').contentDocument;
+  const a = d && d.activeElement;
+  if (editing && a && a !== d.body) a.blur();      // closing the words commits them
+  await new Promise(r => setTimeout(r, 0));
+  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  if (editing) return;                             // a dialog kept them open
+  if (hubViewOnly()) { $('stat').textContent = 'view only — there is nothing of yours to save'; return; }
+  if (!dirty) { $('stat').textContent = 'nothing to save — every change is saved'; return; }
+  if ($('save').disabled) { $('stat').textContent = 'saving…'; return; }   // one is already running
+  $('save').click();
+}
 
 /** ⌘+ / ⌘- / ⌘0, from either document.
  *
@@ -19392,6 +19527,46 @@ function shownUnder(d, e) {
   return nodes.find(n => { const s = n.closest('[data-slot]'); return s && shownNode(s); }) || nodes[0] || null;
 }
 
+/** A click on another object while one's words are open took TWO clicks:
+ *  the press only blurred the open words (dragify's `if (editing) return`),
+ *  and the commit's re-render can replace the page under the pointer anyway.
+ *  So: commit the words, wait out that render, then replay the press as a
+ *  click on the same spot in whatever document is current — the ordinary
+ *  path from there, so it selects, opens a panel, or types where it landed.
+ *  A press held into a drag across the switch is taken as a click; the next
+ *  press drags.
+ *
+ *  The replay goes to the same spot IN the object, not the same spot on the
+ *  screen: the page can settle a few pixels differently after a render (on
+ *  CI's Linux runner the click landed beside the words, so the second box
+ *  was selected and never opened). If even that point misses the object,
+ *  its first field takes the click. */
+async function pressPastEditor(d, el, e, active) {
+  const id = idOf(el);
+  const r0 = el.getBoundingClientRect();
+  const dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+  active.blur();                          // commits: finish() ends `editing` at once
+  await new Promise(r => setTimeout(r, 0));
+  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  if (editing) return;                    // a dialog kept the words open
+  const d2 = $('out').contentDocument;
+  if (!d2) return;
+  const hook = `[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`;
+  const el2 = d2.querySelector(hook);
+  if (!el2) return;
+  const r = el2.getBoundingClientRect();
+  const x = r.left + Math.max(0, Math.min(dx, r.width - 1));
+  const y = r.top + Math.max(0, Math.min(dy, r.height - 1));
+  const at = { clientX: x, clientY: y,
+               screenX: e.screenX + (x - e.clientX), screenY: e.screenY + (y - e.clientY) };
+  const hit = d2.elementFromPoint(x, y);
+  const target = hit && el2.contains(hit) ? hit : (el2.querySelector('[data-slot]') || el2);
+  const ev = type => new MouseEvent(type, { bubbles: true, cancelable: true, composed: true,
+    view: d2.defaultView, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, ...at });
+  target.dispatchEvent(ev('mousedown'));
+  target.dispatchEvent(ev('mouseup'));
+}
+
 function dragify(d, roots) {
   within(d, roots, '[data-el], [data-shape]').forEach(el => {
     // A movable nested inside another movable — a callout's own paragraphs — is
@@ -19440,6 +19615,16 @@ function dragify(d, roots) {
       if (editing && e.shiftKey) {
         const a = d.activeElement;
         if (a && a.isContentEditable && !el.contains(a)) a.blur();
+      }
+      // A plain click on ANOTHER object while words are open: close them and
+      // land on what was clicked, in one click (see pressPastEditor).
+      if (editing && !e.shiftKey) {
+        const a = d.activeElement;
+        if (a && a.isContentEditable && !el.contains(a)) {
+          e.preventDefault(); e.stopPropagation();
+          pressPastEditor(d, el, e, a);
+        }
+        return;
       }
       if (editing) return;
       // The press landed on something invisible drawn over another object's
@@ -20264,6 +20449,7 @@ function startDrag(d, el, e0, drillIn = false) {
         clearGuides(d); paintSel(d); return;
       }
       clearGuides(d); paintSel(d);
+      openPanelOnClick(idOf(el));
       typeOnClick(d, el, e0);
       return;
     }
@@ -21021,6 +21207,7 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
   $('stat').textContent = `${id} on page ${page} — drag to place, recolour with the Fill button`;
 }));
 
+addEventListener('keydown', saveKey, true);       // capture: see saveKey
 addEventListener('keydown', e => {
   // Zoom first, and before the text-field guards below: ⌘+/⌘- mean the same
   // thing wherever focus happens to be, and a caret sitting in a field is no
@@ -24788,9 +24975,14 @@ function wire(roots) {
        and that pixel falls through to whatever element's box happens to
        overlap the edge — a figure caption beside a table, say — which then
        answers with the generic layer menu instead of the table's own. */
+    /* Canva's look: round corners, pill-shaped edges, a soft shadow so a
+       handle reads on any fill. Shape only — the boxes and offsets below are
+       what keeps them flush, so they stay as they are. */
     .ds-h { position:absolute; pointer-events:auto; background:#fff;
-            border:1.5px solid #6B9E78; border-radius:2px; }
+            border:1.5px solid #6B9E78; border-radius:4px;
+            box-shadow:0 1px 3px rgba(20,30,35,.28); }
     .ds-h:hover { background:#6B9E78; }
+    .ds-h-ne, .ds-h-nw, .ds-h-se, .ds-h-sw { border-radius:50%; }
     .ds-h-e { right:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
     .ds-h-w { left:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
     .ds-h-s { bottom:-7px; left:50%; width:18px; height:7px; margin-left:-9px; cursor:ns-resize; }
@@ -24821,7 +25013,7 @@ function wire(roots) {
        (half of the 9px square, which now sits flush outside), so each ring's
        offset is 4.5px further out than half its own 22px width — keep the two
        in step or the ring stops surrounding the square. */
-    .ds-rot-corner { width:22px; height:22px; background:transparent; border:0; }
+    .ds-rot-corner { width:22px; height:22px; background:transparent; border:0; box-shadow:none; }
     .ds-rot-corner:hover { background:transparent; }   /* stays invisible — the cursor is the affordance */
     .ds-rot-se { right:-15.5px; bottom:-15.5px; cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">\
@@ -25603,13 +25795,18 @@ function editSvgSlot(d, key, node) {
   inp.focus(); inp.select();
   showType(key);
   let done = false;
+  // The field flattens runs of spaces, so a label stored with two (rxkids'
+  // "7,969 on Medicaid  ·  60%") never compares equal to it and was rewritten
+  // by a field only opened and left. Untouched means unchanged: see edit()'s
+  // `opened`.
+  const opened = inp.value.replace(/\s+/g, ' ').trim();
   const finish = async keep => {
     if (done) return; done = true;
     editing = false;
     hubAutosaveFlushNext();
     const val = inp.value.replace(/\s+/g, ' ').trim();
     inp.remove();
-    if (keep && val !== cur) {
+    if (keep && val !== opened && val !== cur) {
       pushHistory();
       writeSlot(key, val);
       markDirty();
@@ -25620,8 +25817,8 @@ function editSvgSlot(d, key, node) {
   inp.addEventListener('blur', () => { if (!modalOpen) finish(true); });
   inp.addEventListener('keydown', e => {
     e.stopPropagation();            // see editCell: the document handler would act on it too
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    // Enter and Escape both keep the new words (see edit()'s keydown).
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(true); }
   });
 }
 
@@ -25868,6 +26065,13 @@ function edit(d, key, clicked, at) {
   // swallowed by a commit path for an editor that did not exist.
   try { caretOrAll(d, host, at); }
   catch (e) { editing = false; richHost = null; richOpts = null; syncMarksBar(); collabParaClosed(); throw e; }
+  // The words as they opened, read the way finish() reads them: the same at
+  // the close means nothing was typed, so nothing is written — not a block
+  // for a slot the page only defaults, and not a markdown round trip that
+  // does not come back byte for byte. Escape keeps what was typed; leaving a
+  // field you only opened must change nothing.
+  const opened = rehead(!allowMd ? (richInline ? host.textContent : host.innerText)
+                                 : htmlToMd(host, { allowLists, inline: richInline }));
 
   const finish = async (keep) => {
     if (host.dataset.done) return;
@@ -25887,9 +26091,10 @@ function edit(d, key, clicked, at) {
     host.classList.remove('ds-edit', 'ds-inline', 'ds-edit-in');
     if (keep) {
       // Unchanged is unchanged whatever the wrapping: opening and leaving a
-      // soft-wrapped slot must not rewrite it as one long line.
+      // soft-wrapped slot must not rewrite it as one long line. And words
+      // left as they opened (`opened`) are not an edit at all.
       const was = readSlot(key);
-      if (newVal.trim() !== was && !(joinWraps && newVal.trim() === soft(was))) {
+      if (newVal !== opened && newVal.trim() !== was && !(joinWraps && newVal.trim() === soft(was))) {
         // Record the pre-edit state FIRST, or this text change (a typed edit,
         // a deletion) is not undoable — every other edit path pushes history,
         // but the slot editor didn't, so ⌘Z after editing prose found nothing
@@ -25925,9 +26130,13 @@ function edit(d, key, clicked, at) {
   host.addEventListener('keydown', e => {
     // Escape leaves the words and KEEPS the object selected — the way out of
     // typing into moving, aligning or deleting the box a click typed into
-    // (typeOnClick). Stopped here, or the document's own Escape (clear the
-    // selection) saw it too: finish() has already set editing false.
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    // (typeOnClick). It keeps what was typed, too, as InDesign's Escape does
+    // and as a click elsewhere always has: it used to throw the edit away, so
+    // the one key an InDesign hand presses to leave a frame lost the words
+    // (Devin, 2026-10-21). ⌘Z is the way back. Stopped here, or the
+    // document's own Escape (clear the selection) saw it too: finish() has
+    // already set editing false.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(true); }
     if (e.key === 'Enter' && richInline) { e.preventDefault(); finish(true); }
     // Shift-Enter has nowhere to go in prose. content.md soft-wraps at about
     // eighty columns, so a newline inside a slot is a WRAPPED line and
