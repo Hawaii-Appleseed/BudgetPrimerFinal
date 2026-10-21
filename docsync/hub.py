@@ -492,7 +492,7 @@ def _keys(path: Path) -> dict:
 
 
 def _wrangler() -> list[str]:
-    local = Path.home() / "primer-editor" / "collab" / "node_modules" / ".bin" / "wrangler"
+    local = Path(__file__).resolve().parents[1] / "collab" / "node_modules" / ".bin" / "wrangler"
     return [str(local)] if local.is_file() else ["npx", "--yes", "wrangler@4"]
 
 
@@ -595,8 +595,11 @@ def main() -> int:
             hidden = hidden_text(hub, projects)
         except LiveUnknown as err:
             print(f"could not read the live documents ({err}).\n"
-                  "Sign wrangler in (`npx wrangler login`), or pass --no-live-check to ship without "
-                  "knowing whether a renamed or dropped slot hides anybody's words.", file=sys.stderr)
+                  "This check reads the hub's Cloudflare R2, and only Devin Thomas has Cloudflare "
+                  "access: unless you are Devin, stop here and ask Devin to ship this (land it in "
+                  "Cider first). On Devin's Mac: sign wrangler in (`npx wrangler login`). "
+                  "--no-live-check ships without knowing whether a renamed or dropped slot hides "
+                  "anybody's words; it is Devin's call, not a way round this.", file=sys.stderr)
             return 3
         allowed = set(a.allow_hidden)
         hidden = [h for h in hidden if h[0] not in allowed and f"{h[0]}:{h[1]}" not in allowed]
