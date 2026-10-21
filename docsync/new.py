@@ -83,6 +83,9 @@ body = "".join(L.sheet(pid) for pid in PAGES)
 body += L.pagemeta(range(1, DESIGNED_PAGES + 1))
 body += L.notices(NOTICES)
 body = C.fn.resolve(body)
+# Each marker a link to its endnote: resolve() alone leaves <sup>1</sup> as a
+# bare numeral pointing at nothing (docsync.check warns on exactly that).
+body = C.fn.linkify(body)
 
 # The citation list. An endnotes section placed in the editor (Insert ▸
 # Endnotes) already carries it, titled and movable — so nothing more is

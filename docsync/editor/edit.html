@@ -442,8 +442,8 @@
   #bar > button:disabled { opacity:.45; cursor:default; border-color:var(--ctl-line);
                          background:var(--ctl); }
   #bar > button.on { background:var(--sage); border-color:var(--sage); color:#fff; }
-  #undo, #redo, #history { font-size:15px; line-height:1; padding:4px 6px; }
-  #history { font-size:13px; }
+  #undo, #redo, #steps { font-size:15px; line-height:1; padding:4px 6px; }
+  #steps { font-size:13px; }
   #histpop { width:340px; max-height:60vh; overflow:auto; }
   #histpop .hrow { display:flex; gap:8px; align-items:baseline; width:100%; text-align:left; border:0; background:none;
         padding:6px 8px; border-radius:6px; font:12.5px system-ui; color:inherit; cursor:pointer; }
@@ -1611,6 +1611,9 @@
         box-shadow:0 24px 60px rgba(20,30,35,.35); display:flex; flex-direction:column; font:13px system-ui; color:#2F3E46; }
   #library .st-head { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #E8EEEA; }
   #library .st-head b { font-size:14px; }
+  /* .sw-default stretches to its row; here it would take the head and fold
+     the title and note into a column of single words. */
+  #story .st-head button, #library .st-head button { flex:none; width:auto; margin:0; padding:5px 12px; }
   #library .st-note { flex:1; font-size:11.5px; color:#7A8B84; }
   #library .st-list { overflow:auto; padding:8px 16px 16px; }
   #library .lib-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid #F0F4F1; }
@@ -2073,6 +2076,17 @@
       ><path d="M9.6 2.6h3.8v3.8M13.4 2.6 9.6 6.4"/><path
         d="M6.4 13.4H2.6V9.6M2.6 13.4l3.8-3.8"/></svg
       ><span class="shp-t">Resize…</span></button>
+    <!-- Make this page a public website (docsync/website.py): the choice is a
+         {site, slug} record in layout.json, so it Saves, Publishes, travels to
+         the hub and undoes like any other edit. Hidden where nothing is offered:
+         no sites listed, or a page with its own publish: block already. -->
+    <button class="shp" id="file-website" hidden><svg class="shp-i" viewBox="0 0 16 16"
+      ><circle cx="8" cy="8" r="5.6"/><path d="M2.4 8h11.2M8 2.4c1.7 1.6 2.5 3.5 2.5 5.6S9.7 12 8 13.6
+        M8 2.4C6.3 4 5.5 5.9 5.5 8s.8 4 2.5 5.6"/></svg
+      ><span class="shp-t">Publish as a website…</span></button>
+    <button class="shp" id="file-website-off" hidden><svg class="shp-i" viewBox="0 0 16 16"
+      ><circle cx="8" cy="8" r="5.6"/><path d="M3.9 12.1 12.1 3.9"/></svg
+      ><span class="shp-t">Stop publishing as a website…</span></button>
     <!-- Sources and Share MOVED here from the bar (same ids, same handlers).
          Neither is a per-selection act: Sources is the report's citation list
          and Share is who may open the document — both belong with Resize and
@@ -2165,7 +2179,7 @@
   <span class="bar-sep"></span>
   <button id="undo" disabled aria-label="Undo (⌘Z)">↶</button>
   <button id="redo" disabled aria-label="Redo (⌘⇧Z)">↷</button>
-  <button id="history" aria-label="History — every step you can undo, to jump back to one">⏱</button>
+  <button id="steps" aria-label="History — every step you can undo, to jump back to one">⏱</button>
   <button id="save" disabled>Save draft</button>
   <button id="push" hidden disabled aria-label="Send commits saved locally to GitHub">Push</button>
   <!-- Publish sits with Save and Push because it is the same kind of act —
@@ -3513,9 +3527,12 @@ function titlePreview(ref) {
  *  and page — for Page reference, Heading words and Link to a place. */
 function reportPlaces(d) {
   const pages = [...d.querySelectorAll('section.page')];
-  return [...d.querySelectorAll('section.page h1[data-slot], section.page h2[data-slot],'
-    + ' section.page h3[data-slot], section.page [data-slot] > h1, section.page [data-slot] > h2')]
-    .map(h => h.dataset.slot ? h : h.parentElement)
+  // The slot is the heading, wraps it, or — most renderers' pattern,
+  // <h1 data-el><span data-slot> — sits inside it; that last was missed, and
+  // the staff toolkit, retitc and the primer offered no place at all.
+  return [...d.querySelectorAll('section.page :is(h1, h2, h3)')]
+    .map(h => h.dataset.slot ? h : h.querySelector(':scope > [data-slot]')
+      || (h.parentElement && h.parentElement.matches('[data-slot]') ? h.parentElement : null))
     .filter((h, i, a) => h && h.dataset.slot && a.indexOf(h) === i
       && !h.closest('.ds-textbox') && (h.textContent || '').trim())
     .map(h => ({ key: h.dataset.slot, words: (h.textContent || '').replace(/\s+/g, ' ').trim(),
@@ -4942,7 +4959,7 @@ function openGlyphs(d, host, range) {
   glyphRender();
   const pop = $('glyphpop');
   pop.hidden = false;
-  const anchor = $('history');
+  const anchor = $('steps');
   const r = anchor.getBoundingClientRect();
   pop.style.position = 'fixed'; pop.style.top = (r.bottom + 6) + 'px';
   pop.style.left = Math.max(8, Math.min(innerWidth - 380, r.left - 160)) + 'px';
@@ -7833,6 +7850,19 @@ function closeOnOutsideClick(target, insideChrome) {
 }
 
 addEventListener('mousedown', e => closeOnOutsideClick(e.target, true));
+// Escape closes an open menu or panel the way a click away does — File,
+// Download, Colours, Layers and the rest only closed on a click. Not while a
+// modal is up, and not from a field inside a pop (Find's box, Glyphs' search
+// have their own Escape); first, so the same key does not also drop the
+// selection.
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+  const open = [...document.querySelectorAll('.pop:not(.docked):not([hidden])')];
+  const t = e.target;
+  if (!open.length || (t.closest && t.closest('.pop') && t.matches('input, textarea, select, [contenteditable]'))) return;
+  e.preventDefault(); e.stopPropagation();
+  open.forEach(p => { if (p.id === 'glyphpop') closeGlyphs(); else p.hidden = true; });
+}, true);
 
 /** The same rule, for clicks on the REPORT. The canvas is an iframe, and a
  *  mousedown inside one does not bubble to this document at all — so clicking
@@ -8868,8 +8898,22 @@ function tableInsertRow(t, at) {
   reindexCells(t, 'row', at, 1); cellSelShift(t, 'row', at, 1); reindexMerges(t, 'row', at, 1);
   t.rows.splice(at, 0, Array(t.rows[0].length).fill(''));
 }
+/** A merged cell's words live in its top-left cell. Deleting the row (or
+ *  column) that cell is on keeps the merge — one line shorter — and used to
+ *  throw its words away with the line; hand them, and the cell's own look, to
+ *  the line that becomes the merge's first. */
+function carryMergeAnchors(t, kind, at) {
+  (t.merges || []).forEach(([r, c, rs, cs]) => {
+    if (kind === 'row' ? (r !== at || rs < 2) : (c !== at || cs < 2)) return;
+    const [r2, c2] = kind === 'row' ? [r + 1, c] : [r, c + 1];
+    if (!String(t.rows[r2][c2] || '').trim()) t.rows[r2][c2] = t.rows[r][c];
+    const own = t.cells && t.cells[`${r},${c}`];
+    if (own && !t.cells[`${r2},${c2}`]) t.cells[`${r2},${c2}`] = own;
+  });
+}
 function tableDeleteRow(t, at) {
   if (t.rows.length <= 1) return;
+  carryMergeAnchors(t, 'row', at);
   reindexCells(t, 'row', at, -1); cellSelShift(t, 'row', at, -1); reindexMerges(t, 'row', at, -1);
   t.rows.splice(at, 1);
 }
@@ -8881,6 +8925,7 @@ function tableInsertCol(t, at) {
 }
 function tableDeleteCol(t, at) {
   if (t.rows[0].length <= 1) return;
+  carryMergeAnchors(t, 'col', at);
   reindexCells(t, 'col', at, -1); cellSelShift(t, 'col', at, -1); reindexMerges(t, 'col', at, -1);
   t.rows.forEach(r => r.splice(at, 1));
   if (t.colw) t.colw.splice(at, 1);
@@ -9623,6 +9668,7 @@ function chartGridPaste(e) {
   }
   chartWrite(ch => {
     const need = row0 + rows.length;
+    ch.labels = ch.labels || [];          // a scatter has none until a paste names its rows
     while (ch.labels.length < need) ch.labels.push('Item ' + (ch.labels.length + 1));
     const wide = Math.max(...rows.map(r => r.length)) - (intoLabels ? 1 : 0);
     const pie = CHART_BY_ITEM.includes(ch.type);
@@ -9646,6 +9692,15 @@ function chartGridPaste(e) {
     });
   });
   $('stat').textContent = rows.length + ' rows pasted';
+}
+
+/** How many points a chart draws: its longest list, labels or data. */
+const chPointCount = ch => Math.max((ch.labels || []).length,
+                                    0, ...(ch.series || []).map(x => (x.data || []).length));
+/** Give a chart at least `n` labels, so writing label n-1 never leaves a hole. */
+function chPadLabels(ch, n) {
+  ch.labels = ch.labels || [];
+  while (ch.labels.length < n) ch.labels.push('');
 }
 
 /** The data table: labels down the side, one column per series, and a colour
@@ -9676,7 +9731,13 @@ function renderChartData(pop, s, c, isPie, mk) {
   // engine and into hand-written SVG. With two or more series the colour
   // still belongs to the series, so the dot stays a hint.
   const perPoint = isPie || c.series.length === 1;
-  (c.labels || []).forEach((lab, ri) => {
+  // One row per POINT, not per label: a scatter plot has no labels at all
+  // (its two series are x and y), and a chart written by hand or by Claude
+  // can carry more numbers than names. Rows came from labels alone, so such a
+  // chart opened with an empty grid and its numbers could not be edited.
+  const nRows = Math.max((c.labels || []).length,
+                         ...c.series.slice(0, cols).map(se => (se.data || []).length));
+  Array.from({ length: nRows }, (_, ri) => (c.labels || [])[ri]).forEach((lab, ri) => {
     const cur = (isPie || c.series.length === 1)
       ? ((c.colors || [])[ri]
          || (isPie ? CHART_FALLBACK[ri % CHART_FALLBACK.length]
@@ -9703,12 +9764,12 @@ function renderChartData(pop, s, c, isPie, mk) {
     // input strips the newline on its way in, so the break is shown as a
     // visible pilcrow the typist can move or delete like any other character,
     // and folded back on the way out. Nothing else in the grid needs to know.
-    li.value = chLabelIn(lab); li.placeholder = 'Label';
+    li.value = chLabelIn(lab); li.placeholder = lab === undefined ? `#${ri + 1}` : 'Label';
     li.title = 'Type ' + CH_BREAK + ' to split the label across two lines';
     li.dataset.ck = `l${ri}`;
     li.addEventListener('change', () => {
       const v = chLabelOut(li.value);
-      if (v !== (lab || '')) chartWrite(ch => { ch.labels[ri] = v; });
+      if (v !== (lab || '')) chartWrite(ch => { chPadLabels(ch, ri + 1); ch.labels[ri] = v; });
     });
     cell(li);
     c.series.slice(0, cols).forEach((se, si) => {
@@ -9736,9 +9797,9 @@ function renderChartData(pop, s, c, isPie, mk) {
     const del = document.createElement('button');
     del.className = 'ch-rowdel'; del.textContent = '✕';
     del.title = 'Remove this row';
-    del.disabled = (c.labels || []).length <= 1;
+    del.disabled = nRows <= 1;
     del.addEventListener('click', () => chartWrite(ch => {
-      ch.labels.splice(ri, 1);
+      if (ch.labels) ch.labels.splice(ri, 1);
       ch.series.forEach(x => x.data.splice(ri, 1));
       if (ch.colors) ch.colors.splice(ri, 1);
     }));
@@ -9751,13 +9812,15 @@ function renderChartData(pop, s, c, isPie, mk) {
   rowBtns.className = 'tp-row';
   pop.appendChild(rowBtns);
   mk(rowBtns, '+ Row', 'Add a data row', () => chartWrite(ch => {
-    ch.labels.push('Item ' + (ch.labels.length + 1));
-    ch.series.forEach(x => x.data.push(0));
+    const n = chPointCount(ch);
+    // A chart with no labels (a scatter) gains a point, not a name.
+    if (ch.labels) { chPadLabels(ch, n); ch.labels.push('Item ' + (n + 1)); }
+    ch.series.forEach(x => { while (x.data.length < n) x.data.push(0); x.data.push(0); });
   }));
   if (!isPie) {
     mk(rowBtns, '+ Series', 'Add another set of bars', () => chartWrite(ch => {
       ch.series.push({ name: 'Series ' + (ch.series.length + 1),
-                       data: ch.labels.map(() => 0) });
+                       data: Array(chPointCount(ch)).fill(0) });
     }));
     mk(rowBtns, '− Series', 'Remove the last series', () => chartWrite(ch => {
       ch.series.pop();
@@ -9770,13 +9833,13 @@ function renderChartData(pop, s, c, isPie, mk) {
   pop.appendChild(utilRow);
   mk(utilRow, '⇄ Swap rows/columns', 'Turn the table on its side',
     () => chartWrite(ch => {
-      const rows = ch.labels.slice(), ser = ch.series.slice();
+      const rows = (ch.labels || []).slice(), ser = ch.series.slice();
       ch.labels = ser.map((x, i) => x.name || 'Series ' + (i + 1));
       ch.series = rows.map((name, ri) => ({
         name, data: ser.map(x => x.data[ri] || 0),
       }));
       delete ch.colors;
-    }), isPie || c.series.length < 1);
+    }), isPie || c.series.length < 1 || !(c.labels || []).length);
 
   const note = document.createElement('p');
   note.className = 'side-note';
@@ -10056,7 +10119,10 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
       // a caption in this column is about fourteen characters wide, and
       // "Gap between bars" on its own line lost its last word.
       const shape = [];
-      if (!['row', 'stacked-row', 'column'].includes(c.type)) {
+      // Only where there are category NAMES to turn: a row chart's sit in its
+      // gutter, and a scatter's and a histogram's axes are numbers — the
+      // control was offered on those and did nothing.
+      if (!['row', 'stacked-row', 'column', 'scatter', 'histogram'].includes(c.type)) {
         shape.push({ label: 'Labels', get: () => String(c.labelAngle || 0),
           options: [['0', 'Flat'], ['-45', 'Tilted'], ['-90', 'Vertical']],
           set: (ch, v) => {
@@ -10327,6 +10393,13 @@ function chartText(c, hook, value) {
   } else if (what === 'series') {
     if (value === undefined) return (c.series[n] || {}).name || '';
     c.series[n].name = value;
+  } else if (what === 'rule') {
+    // A reference line's label in words ("Spending cap"). Emptied, the line
+    // stays and its label goes — the same as clearing it in the panel.
+    const r = (c.rules || [])[n];
+    if (value === undefined) return r && typeof r.label === 'string' ? r.label : '';
+    if (!r) return undefined;
+    if (value.trim()) r.label = value.trim(); else delete r.label;
   }
   return undefined;
 }
@@ -10364,10 +10437,15 @@ function editChartText(d, node) {
   inp.className = 'ds-ch-edit';
   inp.value = chLabelIn(chartText(s.chart, hook));
   const cs = d.defaultView.getComputedStyle(node);
+  // The glyphs' own height, not the computed font-size: a chart's text is
+  // sized in the drawing's user units — INCHES in a page's shape layer — so
+  // cs.fontSize read "0.15px", the field drew its words invisibly small, and
+  // a paste into it came back empty and saved the title away. editSvgSlot
+  // learned this first; same rule.
   inp.style.cssText = `position:absolute;left:${r.left + d.defaultView.scrollX - 4}px;`
     + `top:${r.top + d.defaultView.scrollY - 3}px;height:${r.height + 6}px;`
-    + `min-width:${Math.max(46, r.width + 22)}px;font-size:${cs.fontSize};`
-    + `font-weight:${cs.fontWeight};text-align:${node.getAttribute('text-anchor') === 'middle'
+    + `min-width:${Math.max(46, r.width + 22)}px;font-size:${Math.max(11, r.height * 0.78).toFixed(1)}px;`
+    + `font-weight:${cs.fontWeight};font-family:${cs.fontFamily};text-align:${node.getAttribute('text-anchor') === 'middle'
         ? 'center' : 'left'};`;
   d.body.appendChild(inp);
   inp.focus(); inp.select();
@@ -12588,6 +12666,23 @@ function wireType() {
     fillParaPop(selected);
     togglePop($('ty-parapop'), $('ty-parabtn'));
   });
+  // A press on the card while typing ends the typing (on pointerdown), and
+  // the card trades its B/I/U group for a narrower one at once: everything to
+  // its right (Case, colour, spacing, ¶, effects, Reset) slid out from under
+  // the pointer, and the click landed on the strip. The press is still aimed
+  // at the button it hit, so a button that no longer holds the pointer has
+  // moved: it gets the click when the press comes up.
+  let typePress = null;
+  $('type').addEventListener('mousedown', e => {
+    const b = e.target.closest && e.target.closest('button');
+    const r = b && b.getBoundingClientRect();
+    typePress = b && !b.disabled && e.button === 0 && !(e.clientX >= r.left && e.clientX <= r.right
+      && e.clientY >= r.top && e.clientY <= r.bottom) ? b : null;
+  }, true);
+  addEventListener('mouseup', () => {
+    const b = typePress; typePress = null;
+    if (b && b.isConnected && !b.disabled && b.offsetParent) setTimeout(() => b.click(), 0);
+  }, true);
   // One write path for the whole panel: a patch through setStyle, a render,
   // and the type bar re-read — exactly what the case picker does.
   const paraSet = async patch => {
@@ -14003,9 +14098,14 @@ async function pasteStyle(d) {
         styleClip.data.img[k] !== undefined ? g[k] = clone(styleClip.data.img[k]) : delete g[k]);
       if (!Object.keys(g).length) delete layout.img[id];
       layout.positions = layout.positions || {};
-      const p = layout.positions[id] || (layout.positions[id] = {});
-      styleClip.data.flip !== undefined ? p.flip = styleClip.data.flip : delete p.flip;
-      if (!Object.keys(p).length) delete layout.positions[id];
+      // A position is a PLACE (the engine refuses one with no x/y), so an
+      // unmoved designed image is pinned where it stands before it takes a
+      // flip — a bare {flip} entry left the draft unable to build.
+      if (styleClip.data.flip !== undefined) {
+        const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+        const p = layout.positions[id] || (el && ensureStore(d, el));
+        if (p) p.flip = styleClip.data.flip;
+      } else if (layout.positions[id]) delete layout.positions[id].flip;
     } else {
       const obj = styleClip.type === 'shape' ? shapeOf(id) : styleClip.type === 'table' ? tableOf(id) : boxOf(id);
       if (!obj) return;
@@ -16211,6 +16311,9 @@ async function libraryDialog() {
   $('lib-save').addEventListener('click', async () => { close(); await saveToLibraryDialog(); });
   wrap.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
   wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
+  // Focus inside, or Escape goes to the page behind and the overlay, which
+  // covers the whole editor, stays until Done is clicked.
+  $('lib-close').focus();
 }
 $('file-library').addEventListener('click', () => { $('filepop').hidden = true; libraryDialog(); });
 
@@ -16788,7 +16891,17 @@ async function addNoteDialog(k, i = null) {
   await render();
   if (!$('notespop').hidden) notesRender();
 }
+/** Marks are placed by measuring their words, so they are measured again
+ *  once what moves words after a render has landed — the fonts, a picture
+ *  above them: rxkids' mark sat 30px over its paragraph until the next edit
+ *  happened to redraw it. */
 function drawNoteMarks(d) {
+  drawNoteMarksNow(d);
+  const again = () => { if ($('out').contentDocument === d) drawNoteMarksNow(d); };
+  if (d.fonts && d.fonts.ready) d.fonts.ready.then(() => d.defaultView.requestAnimationFrame(again));
+  [...d.images].filter(i => !i.complete).forEach(i => i.addEventListener('load', again, { once: true }));
+}
+function drawNoteMarksNow(d) {
   d.querySelectorAll('.ds-notemark').forEach(n => n.remove());
   const by = new Map();
   notesList().forEach(n => { if (n.key) by.set(n.key, (by.get(n.key) || []).concat(n.text)); });
@@ -16797,7 +16910,9 @@ function drawNoteMarks(d) {
   by.forEach((texts, k) => {
     const el = d.querySelector(`[data-slot="${CSS.escape(k)}"]`);
     const pg = el && el.closest('section.page');
-    if (!pg) return;
+    // Words not drawn (a carousel's hidden panel on our-mission) have no
+    // place to mark: measured, they put the mark in the page's corner.
+    if (!pg || !el.getClientRects().length) return;
     const b = inchBox(el, pg);
     const mk = d.createElement('div');
     mk.className = 'ds-notemark';
@@ -19184,7 +19299,7 @@ function historyRender() {
     host.appendChild(b);
   });
 }
-$('history').addEventListener('click', () => { if ($('histpop').hidden) historyRender(); togglePop($('histpop'), $('history')); });
+$('steps').addEventListener('click', () => { if ($('histpop').hidden) historyRender(); togglePop($('histpop'), $('steps')); });
 
 function dragify(d, roots) {
   within(d, roots, '[data-el], [data-shape]').forEach(el => {
@@ -19227,7 +19342,15 @@ function dragify(d, roots) {
     // Keyboard moves work on the SELECTION at the document level (keysFor), so
     // arrows still nudge a selected element without any element owning focus.
     el.addEventListener('mousedown', e => {
-      if (editing || e.button !== 0) return;
+      if (e.button !== 0) return;
+      // Shift adds to the selection, from words being typed too: leave them
+      // (kept — blur commits) and go on. A click types in a box, so without
+      // this "click one, shift-click another" never selected two.
+      if (editing && e.shiftKey) {
+        const a = d.activeElement;
+        if (a && a.isContentEditable && !el.contains(a)) a.blur();
+      }
+      if (editing) return;
       // A movable object grabs from ANYWHERE on itself — including over its own
       // words. A callout is nearly all text; the old rule "a click on text
       // never moves" left it with no grab handle at all. Editing the words is
@@ -23589,6 +23712,11 @@ function renderSays(msg) {
 }
 
 async function renderOnce() {
+  // A file change that lands while the engine is still loading (Claude
+  // writing layout.json as the editor opens) reaches here before there is a
+  // Python to render with. Nothing is lost by waiting: the pull has already
+  // taken the new source and layout, and boot's first render draws them.
+  if (!py) return;
   // Unconditional: this one ANNOUNCES the render, and claims the row for the
   // pair of writes that follow.
   $('stat').textContent = statFromRender = 'rendering…';
@@ -23645,6 +23773,7 @@ open('/repo/' + OUT).read()
     // successful one has nothing to diff against and must swap in full.
     lastHtml = null;
     renderFailed = true;
+    renderError = String(e.message || e).split('\n').filter(l => l.trim()).slice(-1)[0] || '';
     return;
   }
   // Keep the reader's place. Assigning srcdoc reloads the iframe, which
@@ -23793,6 +23922,8 @@ let lastHtml = null;
 // traceback while the status row said everything was fine, which is the
 // "boots, then nothing renders, and nothing says why" report.
 let renderFailed = false;
+// The engine's last line about it (the LayoutError a pilot is told).
+let renderError = '';
 
 /** Replace only the page sections whose HTML actually moved, in place.
  *
@@ -23965,10 +24096,26 @@ function stageChainWire(d) {
   }, { passive: true });
 }
 
+/** A render replaces the page's nodes, so a report's entrance animation
+ *  (rxkids' panels rise and fade in over .35s) played again after every
+ *  edit: the page flickered at each keystroke, and what was just moved was
+ *  measured mid-rise. The editor shows where things are, so a one-shot
+ *  animation on new nodes is finished at once. Loops (a pulsing dot) run
+ *  on, and so do the editor's own entrance previews (replayAnims). */
+function stillEntrances(d, roots) {
+  const CA = d.defaultView.CSSAnimation;
+  d.getAnimations().forEach(a => {
+    const el = a.effect && a.effect.target;
+    if (!(a instanceof CA) || !el || (roots && roots.length && !roots.some(r => r.contains(el)))) return;
+    if (el.closest('[data-ds-anim]') || a.effect.getComputedTiming().iterations === Infinity) return;
+    try { a.finish(); } catch (e) { /* an animation that cannot end: leave it */ }
+  });
+}
 function wire(roots) {
   const d = $('out').contentDocument;
   const fresh = !(roots && roots.length);
   healStrandedEditor();   // see its own comment; wire() is one of two callers
+  stillEntrances(d, roots);
   showLocalImages(d, roots);
   // Native image-drag steals the gesture before the editor's mousemove ever
   // fires — grab a placed photo and a ghost image flies while the box stays
@@ -23989,7 +24136,11 @@ function wire(roots) {
   paintCells(d);               // a cell range is ids, so it survives a render
   // Chart text edits where it is read. Bound on the text node, which sees the
   // dblclick before the shape does, so it never becomes a drag.
-  within(d, roots, 'g[data-shape] [data-ch]').forEach(n => {
+  // Both kinds: a shape's text under g[data-shape], an inline chart's
+  // (blocks.chart, in a renderer's flow) under [data-chart]. editChartText
+  // already handled the second; nothing bound it, so double-clicking a
+  // renderer chart's title did nothing at all.
+  within(d, roots, 'g[data-shape] [data-ch], [data-chart] [data-ch]').forEach(n => {
     n.addEventListener('dblclick', e => {
       e.preventDefault(); e.stopPropagation(); editChartText(d, n);
     });
@@ -28274,7 +28425,9 @@ async function docStorePublish() {
   }
   if (!docVersion) { $('stat').textContent = 'nothing to publish yet — make an edit and Save first'; return; }
   if (!await dsConfirm('Publish this document to GitHub?\n\nOne commit of it as saved, on the hub/'
-      + M.id + ' branch of ' + (REPO || 'its repository') + '. The live report is not changed by this.',
+      + M.id + ' branch of ' + (REPO || 'its repository') + '. '
+      + (siteOf() ? 'The public page' + (siteOf().url ? ' (' + siteOf().url + ')' : '') + ' is then rebuilt from it.'
+                : 'The live report is not changed by this.'),
       { okLabel: 'Publish' })) return;
   $('publish').disabled = true;
   $('stat').textContent = 'publishing…';
@@ -28283,14 +28436,55 @@ async function docStorePublish() {
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || j.reason || `the hub answered ${r.status}`);
     const sha = String(j.sha || '').slice(0, 7);
-    $('stat').textContent = j.status === 'unchanged'
+    const head = j.status === 'unchanged'
       ? `already published — ${j.branch} is at ${sha}`
       : `published ✓ — ${j.repo}@${j.branch} ${sha}`;
+    $('stat').textContent = head;
+    if (siteOf() && j.version) docStoreAwaitSite(j.version, head, j.status === 'unchanged');
   } catch (e) {
     $('stat').textContent = 'publish failed: ' + e.message;
   } finally {
     $('publish').disabled = false;
   }
+}
+
+/** What the public site made of the last Publish: the site job (publish-sites.yml)
+ *  reports to the relay, and the hub reads it back as {exported, site}. null when
+ *  it cannot say — a report is news, never a reason for Publish to fail. */
+async function docStoreSite() {
+  try {
+    const r = await fetch(`${docStore()}/publish`, { cache: 'no-store' });
+    return r.ok ? (await hubJson(r)).site || null : null;
+  } catch { return null; }
+}
+
+/** [short, full]: the short one is what fits the toolbar's clipped status line
+ *  (about 24 characters show); the full one is its hover. */
+function siteLine(site) {
+  const where = site.url ? ' — ' + site.url : '';
+  if (!site.ok) return ['site NOT updated — hover for why',
+                        'public site NOT updated: ' + (site.message || 'the publish job failed')];
+  return site.changed ? ['site updated ✓', 'public site updated ✓' + where]
+                      : ['site up to date ✓', 'public site already matched ✓' + where];
+}
+
+/** After Publish on a page with a public site: wait for the job's report on THIS
+ *  version (about a minute), and say how it went. A new commit starts the job;
+ *  an unchanged one starts nothing, so its report is the one already there. */
+async function docStoreAwaitSite(version, head, unchanged) {
+  // The site's answer first: the status line is clipped to the toolbar's width,
+  // and it is the part people are waiting for. All of it on hover.
+  const say = ([short, full]) => { $('stat').textContent = short; $('stat').title = full + ' · ' + head; };
+  const tries = unchanged ? 1 : 30;                       // 30 x 10 s = 5 minutes
+  for (let i = 0; i < tries; i++) {
+    const site = await docStoreSite();
+    if (site && site.version === version) { say(siteLine(site)); return; }
+    if (unchanged) break;
+    if (i === 0) say(['site: publishing…', 'public site: publishing… (about a minute)']);
+    await new Promise(res => setTimeout(res, 10000));
+  }
+  say(unchanged ? ['site: no report — hover', 'public site: no report for this version — Publish again after an edit to rebuild it']
+                : ['site: no report — hover', 'public site: no report after 5 minutes — look at the repository\'s Actions tab']);
 }
 
 /** The hub's answer as JSON — or the reason it is not one. An Access
@@ -29134,7 +29328,68 @@ $('file').onclick = () => {
   $('file-restore').hidden = !h;
   // No "(0)" — the count only means something when there IS something.
   rowLabel('file-restore', h ? `Restore deleted (${h})…` : 'Restore deleted…');
+  const offered = !M.site && Object.keys(M.sites || {}).length > 0;
+  $('file-website').hidden = !offered;
+  $('file-website-off').hidden = !(offered && layout.website);
+  rowLabel('file-website', layout.website ? 'Website: ' + websiteUrl(layout.website) : 'Publish as a website…');
   togglePop($('filepop'), $('file'));
+};
+
+// ---- File ▸ Publish as a website (docsync/website.py) ----
+const WEBSITE_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])$/;   // website.SLUG_RE
+function websiteUrl(w) {
+  const s = w && (M.sites || {})[w.site];
+  return s ? s.url + w.slug + '/' : '';
+}
+/** The public page this report goes to, if any: a publish: block's (M.site), or
+ *  the website chosen here. What Publish waits on, and what its status names. */
+function siteOf() {
+  if (M.site) return M.site;
+  const url = layout && layout.website ? websiteUrl(layout.website) : '';
+  return url ? { url, website: true } : null;
+}
+function websiteSlugFor(id) {
+  const s = String(id || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+  return WEBSITE_SLUG_RE.test(s) ? s : 'my-page';
+}
+$('file-website').onclick = async () => {
+  $('filepop').hidden = true;
+  const sites = M.sites || {}, names = Object.keys(sites), cur = layout.website || null;
+  const v = await dsForm(cur ? 'Website' : 'Publish as a website', [
+    { name: 'site', label: 'Website', type: 'select', value: cur ? cur.site : names[0],
+      options: names.map(n => ({ value: n, label: sites[n].title || n })) },
+    { name: 'slug', label: 'Address — lowercase words joined by hyphens', required: true,
+      value: cur ? cur.slug : websiteSlugFor(M.id), placeholder: 'act-163-credits' },
+  ], { okLabel: 'Next',
+       validate: x => WEBSITE_SLUG_RE.test(x.slug.trim()) ? ''
+         : 'The address is lowercase letters, numbers and hyphens, 2 to 64 characters, no hyphen at either end.' });
+  if (!v) return;
+  const next = { site: v.site, slug: v.slug.trim(), home: docStore() ? 'hub' : 'local' };
+  const url = websiteUrl(next);
+  if (cur && cur.site === next.site && cur.slug === next.slug && cur.home === next.home) return;
+  const how = docStore() ? 'Publish' : 'Save';
+  if (!await dsConfirm('Make this page public at\n\n' + url + '\n\nAnyone with the address can read it. It goes '
+      + 'live the next time you ' + how + ', and updates on every ' + how + ' after that.'
+      + (cur ? '\n\nThe page at its old address (' + websiteUrl(cur) + ') stays up until it is removed from the site.' : ''),
+      { okLabel: 'Make it public' })) return;
+  pushHistory();
+  layout.website = next;
+  markDirty();
+  await render();
+  $('stat').textContent = 'website: ' + url + ' — ' + how + ' to put it live';
+};
+$('file-website-off').onclick = async () => {
+  $('filepop').hidden = true;
+  const cur = layout.website;
+  if (!cur) return;
+  if (!await dsConfirm('Stop publishing this page as a website?\n\nPublishing will no longer update '
+      + websiteUrl(cur) + '. The page already there stays up until it is removed from the site.',
+      { okLabel: 'Stop publishing', danger: true })) return;
+  pushHistory();
+  delete layout.website;
+  markDirty();
+  await render();
+  $('stat').textContent = 'no longer a website — Save to keep that';
 };
 
 // Bring back an element that Delete hid. Undo covers the moment right after,
@@ -29789,8 +30044,15 @@ const asDataUrl = async url => {
  *  does. Session uploads already live in memory as data URLs. */
 async function inlineEverything(doc) {
   for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"]')]) {
+    const href = link.getAttribute('href') || '';
+    // A web font's stylesheet stays a link — it is fetched from the web
+    // wherever the file is opened. Joined onto the project's folder it 404'd,
+    // and a 404 does not throw: the error page replaced the link, as CSS.
+    if (/^(https?:)?\/\//i.test(href)) continue;
     try {
-      const css = await (await fetch(withBase(link.getAttribute('href')))).text();
+      const r = await fetch(withBase(href));
+      if (!r.ok) continue;
+      const css = await r.text();
       const st = doc.createElement('style');
       st.textContent = css;
       link.replaceWith(st);
@@ -30056,6 +30318,11 @@ async function exportHtml(forSquarespace) {
       const view = VIEW_W;
       let css = [...doc.querySelectorAll('style')].map(n => n.textContent).join('\n');
       css = freezeViewportUnits(flattenMedia(css, view), view);
+      // The report's web fonts come along as links: a font stylesheet only
+      // defines families (@font-face), so it cannot restyle the host page,
+      // and without it the block set itself in whatever the host loads.
+      const fonts = [...doc.querySelectorAll('link[rel~="stylesheet"]')].map(l => l.getAttribute('href') || '')
+        .filter(h => /^https:\/\/fonts\.(googleapis|bunny)\.(com|net)\//i.test(h));
       doc.querySelectorAll('style, script, link').forEach(n => n.remove());
       // Inline styles carry the same vw leak as the stylesheet does.
       doc.querySelectorAll('[style]').forEach(el => {
@@ -30073,6 +30340,7 @@ async function exportHtml(forSquarespace) {
      Its media queries and vw lengths were resolved at export too — a pasted
      block must not re-answer them against the host page's viewport. -->
 <div id="${uid}" class="dsx-wrap">
+${fonts.map(h => `<link rel="stylesheet" href="${h.replace(/"/g, '&quot;')}">`).join('\n')}
 <style>
 #${uid}.dsx-wrap { all:initial; display:block; width:100%; overflow:hidden; }
 #${uid} .dsx-scale { transform-origin:top left; width:${design}px; display:flow-root; }
@@ -30471,7 +30739,11 @@ function _pilotApplyPlace(id, { x, y, w, h } = {}) {
   if (w != null) {
     if (sh) sh.w = +w;
     else if (bx) bx.w = +w;
-    else layout.positions[id] = { ...(layout.positions[id] || {}), w: +w };
+    // What the resize handle does: a designed element is pinned where it
+    // stands, then sized. Writing {w} alone gave the engine a position with
+    // no x/y, which it refuses — place(id, {w}) on a renderer's chart took
+    // the whole draft down to "This draft does not build".
+    else ensureStore(d, el).w = +w;
   }
   if (h != null) { if (sh) sh.h = +h; else if (bx) bx.h = +h; }
   return { id };
@@ -30547,6 +30819,86 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
   wearDefaults('box', box, fill ? ['fill'] : []);
   boxes().push(box);
   return { id: 'text.' + id, page: pid };
+}
+
+// addChart / addTable: what the Chart and Table tools place, with the data
+// given up front. Until these, a pilot could edit a chart or a table and never
+// make one — Claude asked for "a chart of this" had to write layout.json
+// behind the editor or fake a table out of a text box. Same objects the tools
+// make (a chart is a kind:"chart" shape, a table a layout.json table), so the
+// person gets the same panel, menus and handles as for one they drew.
+const _pilotPageKnown = pid => pid == null
+  || pageOrder().map(String).includes(String(pid))
+  || designedPages.some(p => String(p.id) === String(pid))
+  || pageBlanks().some(b => String(b.id) === String(pid));
+const _bad = error => ({ ok: false, error });
+function _pilotValidateAddChart(o) {
+  const use = 'addChart({page, x, y, w, h, chart: {type, labels, series: [{name, data}], …}})';
+  if (o == null || typeof o !== 'object' || Array.isArray(o)) return _bad(use);
+  if (!_pilotPageKnown(o.page)) return _bad(`no page '${o.page}' — pages are ${pageOrder().join(', ')}`);
+  for (const k of ['x', 'y', 'w', 'h'])
+    if (o[k] != null && !(typeof o[k] === 'number' && isFinite(o[k]))) return _bad(`addChart: ${k} is inches, a number`);
+  if ((o.w != null && o.w <= 0) || (o.h != null && o.h <= 0)) return _bad('addChart: w and h must be above 0');
+  const c = o.chart;
+  if (c == null) return { ok: true };            // the Chart tool's starter chart
+  if (typeof c !== 'object' || Array.isArray(c)) return _bad('addChart: chart must be an object — ' + use);
+  const kinds = CHART_KINDS.map(([k]) => k);
+  if (c.type != null && !kinds.includes(c.type)) return _bad(`addChart: '${c.type}' is not a chart type — one of ${kinds.join(', ')}`);
+  if (c.labels != null && !Array.isArray(c.labels)) return _bad('addChart: chart.labels must be a list');
+  if (!Array.isArray(c.series) || !c.series.length) return _bad('addChart: chart.series needs at least one {name, data: [numbers]}');
+  for (const [i, se] of c.series.entries()) {
+    if (!se || typeof se !== 'object' || !Array.isArray(se.data))
+      return _bad(`addChart: chart.series[${i}].data must be a list of numbers`);
+    const j = se.data.findIndex(v => v !== null && !(typeof v === 'number' && isFinite(v)));
+    if (j >= 0) return _bad(`addChart: chart.series[${i}].data[${j}] ${JSON.stringify(se.data[j])} is not a number`);
+  }
+  return { ok: true };
+}
+function _pilotApplyAddChart({ page, x, y, w = 4, h = 2.8, chart, fill } = {}) {
+  const pid = page != null ? page : visiblePageId();
+  const id = freeShapeId('chart');
+  const spec = chart ? clone(chart)
+    : { labels: ['First', 'Second', 'Third'], series: [{ name: 'Series 1', data: [12, 19, 8] }],
+        legend: false, values: true, grid: true };
+  spec.type = spec.type || 'bar';
+  layout.shapes.push({ id, page: pid, kind: 'chart', x: x != null ? +x : placeX(+w), y: y != null ? +y : 1.6,
+                       w: +w, h: +h, z: nextZ(2, pid), fill: fill || 'none', chart: spec });
+  return { id, page: pid };
+}
+// Everything setTable takes may come with the table, plus where it goes. A
+// function, not a const: TABLE_PATCH_KEYS is declared further down the file.
+const addTableKeys = () => ['page', 'x', 'y', 'w', 'z', 'rows', ...TABLE_PATCH_KEYS];
+function _pilotValidateAddTable(o) {
+  const use = 'addTable({page, x, y, w, rows: [[…], …], header, headerRows, merges, colw, colAlign, …})';
+  if (o == null || typeof o !== 'object' || Array.isArray(o)) return _bad(use);
+  if (!_pilotPageKnown(o.page)) return _bad(`no page '${o.page}' — pages are ${pageOrder().join(', ')}`);
+  const bad = Object.keys(o).filter(k => !addTableKeys().includes(k));
+  if (bad.length) return _bad(`addTable: not ${bad.join(', ')} — ${addTableKeys().join(', ')}`);
+  if (!Array.isArray(o.rows) || !o.rows.length || !o.rows.every(Array.isArray))
+    return _bad('addTable: rows is a list of rows, each a list of cells — ' + use);
+  if (!o.rows.some(r => r.length)) return _bad('addTable: a table needs at least one cell');
+  for (const [i, r] of o.rows.entries()) {
+    const j = r.findIndex(v => v != null && !['string', 'number'].includes(typeof v));
+    if (j >= 0) return _bad(`addTable: rows[${i}][${j}] must be text or a number`);
+  }
+  for (const k of ['x', 'y', 'w'])
+    if (o[k] != null && !(typeof o[k] === 'number' && isFinite(o[k]))) return _bad(`addTable: ${k} is inches, a number`);
+  return { ok: true };
+}
+function _pilotApplyAddTable(o) {
+  const pid = o.page != null ? o.page : visiblePageId();
+  const id = freeTableId();
+  // Ragged rows are padded, numbers become the text they read as: a table's
+  // cells are words, and the engine refuses a grid that is not rectangular.
+  const n = Math.max(...o.rows.map(r => r.length));
+  const rows = o.rows.map(r => Array.from({ length: n }, (_, j) => r[j] == null ? '' : String(r[j])));
+  const w = o.w != null ? +o.w : Math.min(PAGE_W_IN - 1, Math.max(3.5, n * 1.3));
+  const t = { id, page: pid, x: o.x != null ? +o.x : placeX(w), y: o.y != null ? +o.y : 2, w,
+              z: o.z != null ? +o.z : 2, header: o.header !== false, rows };
+  const own = TABLE_PATCH_KEYS.filter(k => k !== 'header' && o[k] != null);
+  own.forEach(k => { t[k] = clone(o[k]); });
+  tables().push(wearDefaults('table', t, own));
+  return { id: 'table.' + id, page: pid, rows: rows.length, cols: n };
 }
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
@@ -30901,10 +31253,13 @@ function _pilotApplyLock(id, on) {
 function _pilotValidateGroup(ids) {
   if (!Array.isArray(ids) || ids.length < 2)
     return { ok: false, error: 'group needs an array of 2+ element ids' };
-  const d = $('out').contentDocument;
-  for (const id of ids)
-    if (!d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`))
-      return { ok: false, error: `no element '${id}' — check inventory()` };
+  // On the page OR in the store: a chart and its caption made earlier in the
+  // same batch are not drawn until the batch renders, and "make a figure and
+  // group it" is exactly what a batch is for.
+  for (const id of ids) {
+    const v = _pilotValidateExists(id);
+    if (!v.ok) return v;
+  }
   return { ok: true };
 }
 // Same semantics as groupSel: an element belongs to ONE group, so members are
@@ -31025,6 +31380,8 @@ const PILOT_BATCH_VERBS = {
       ? { ok: false, error: 'a text box needs words — md is empty' } : { ok: true },
     apply: o => _pilotApplyAddTextBox(o) },
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
+  addChart: { validate: o => _pilotValidateAddChart(o), apply: o => _pilotApplyAddChart(o) },
+  addTable: { validate: o => _pilotValidateAddTable(o), apply: o => _pilotApplyAddTable(o) },
   setMargins: { validate: (mg, master) => {
       if (master && !(layout.masters || {})[master]) return { ok: false, error: `no shared layout called '${master}'` };
       if (mg != null && (typeof mg !== 'object' || Object.keys(mg).some(k => !(k in MARGINS_DEFAULT))))
@@ -31528,6 +31885,15 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  places, addressable to a pilot so a hairline rule or a panel can land
    *  on ANY page (duplicate() clones onto the same page only). Geometry in
    *  page inches; fill/stroke/sw/z/rx as layout.json stores them. */
+  /** A chart of your data, as the Chart tool places it: `chart` is the spec
+   *  the Chart panel edits ({type, labels, series: [{name, data}], title,
+   *  legend, values, format, rules, …}); omitted, the tool's starter chart.
+   *  Returns its id for setChart, place, group. */
+  async addChart(opts = {}) { return _pilotOne('addChart', [opts]); },
+  /** A table, as the Table tool places it, with its cells and look given up
+   *  front — rows, plus any setTable key (headerRows, footerRows, merges,
+   *  colw, colAlign, band, headerFill, cells…). Returns 'table.<id>'. */
+  async addTable(opts = {}) { return _pilotOne('addTable', [opts]); },
   async addShape(opts = {}) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateAddShape(opts);
@@ -31672,7 +32038,11 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         return named[v.slice(1)];
       };
       if (typeof a === 'string') return one(a);
-      if (a && typeof a === 'object' && !Array.isArray(a))
+      // An array is a list of ids — group(['@chart', '@caption']) — and was
+      // passed through unresolved while hasRef() had already counted its
+      // refs, so the documented create-then-group batch always failed.
+      if (Array.isArray(a)) return a.map(one);
+      if (a && typeof a === 'object')
         return Object.fromEntries(Object.entries(a).map(([k, v]) => [k, one(v)]));
       return a;
     };
@@ -31722,6 +32092,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         pendingStyles.add(args[0].scope + ':' + String(args[0].name).trim());
       if (op.as) defined.add(String(op.as));
     }
+    const before = snapshot(), wasFailed = renderFailed;
     pushHistory();
     const named = {};
     const applied = [];
@@ -31762,6 +32133,23 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     }
     markDirty();
     await render();
+    // The verbs check what they can cheaply; the ENGINE is the last word (a
+    // chart spec, a table's column widths, a position with no x). A result it
+    // will not build used to come back ok:true over "This draft does not
+    // build" — the caller told it worked, the person looking at a traceback.
+    // Put the document back, withdraw the step, and say what the engine said.
+    // A draft that was ALREADY broken is left alone: this batch may be the fix.
+    if (renderFailed && !wasFailed) {
+      const why = renderError;
+      const st = JSON.parse(before);
+      source = st.source; layout = st.layout;
+      if (!collab) past.pop();
+      markDirty();
+      await render();
+      syncHistoryButtons();
+      return { ok: false, error: 'the engine would not build the result, so nothing was changed'
+        + (why ? ` — ${why}` : '') };
+    }
     paintSel($('out').contentDocument);   // harmless when nothing needed it
     const results = applied.map(a => (a.verb === 'place' || a.verb === 'addTextBox')
       ? { ...a, box: _pilotMeasure(a.id) } : a);

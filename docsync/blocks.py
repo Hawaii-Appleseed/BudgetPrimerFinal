@@ -992,7 +992,13 @@ def chart(L, el_id: str, spec: dict, w: float = 3.6, h: float = 2.4,
     if desc:
         name = desc
     elif c.get("title"):
+        # The chart's own title, read from the EFFECTIVE spec — so a title
+        # retyped in the Chart panel (or on the page) is what a screen reader
+        # hears next render. Said so in edit mode, because docsync.check
+        # otherwise sees a description no slot reaches and fails the report.
         name = f' role="img" aria-label="{_xml_attr(c["title"])}"'
+        if os.environ.get("DOCSYNC_EDIT"):
+            name += ' data-desc-from="the chart title (Chart panel)"'
     else:
         name = ""
     svg = (f'<svg viewBox="0 0 {w:g} {h:g}" class="chart"{name}{attrs}'

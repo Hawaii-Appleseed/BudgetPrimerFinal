@@ -1899,9 +1899,16 @@ def _chart_series(c: dict) -> list:
     out = []
     for i, s in enumerate(c.get("series") or []):
         kind = s.get("type")
+        raw = s.get("data") or []
         out.append({
             "name": s.get("name") or f"Series {i + 1}",
-            "data": [float(v or 0) for v in (s.get("data") or [])],
+            "data": [float(v or 0) for v in raw],
+            # Where the data says nothing (null — a month not yet reported, a
+            # year the survey skipped). The data still reads 0 there so every
+            # sum and stack is unchanged; a LINE or an AREA breaks at a gap
+            # instead of diving to zero and back, which drew a missing month
+            # as a collapse (and below the plot, under a raised axisMin).
+            "gaps": frozenset(j for j, v in enumerate(raw) if v is None),
             "color": s.get("color") or CHART_COLORS[i % len(CHART_COLORS)],
             # Per-point colour. A series colour says "this measure"; a point
             # colour says "this one bar" — the highlight that used to mean
@@ -1910,6 +1917,21 @@ def _chart_series(c: dict) -> list:
             "kind": kind if kind in CHART_SERIES_KINDS else "bar",
             "axis": "right" if s.get("axis") == "right" else "left",
         })
+    return out
+
+
+def _runs(n: int, gaps) -> list:
+    """The index runs a line is drawn through: 0..n-1 split at every gap."""
+    out, run = [], []
+    for i in range(n):
+        if i in gaps:
+            if run:
+                out.append(run)
+            run = []
+        else:
+            run.append(i)
+    if run:
+        out.append(run)
     return out
 
 
@@ -2170,7 +2192,7 @@ def _rules_svg(c, px, py, pw, ph, vmin, vmax, horizontal, fs, ink,
         return ""
     span = (vmax - vmin) or 1.0
     out = []
-    for r in rules:
+    for i, r in enumerate(rules):
         if not isinstance(r, dict):
             continue
         v = r.get("value")
@@ -2186,6 +2208,10 @@ def _rules_svg(c, px, py, pw, ph, vmin, vmax, horizontal, fs, ink,
         dash = "" if r.get("dash") is False else \
             f' stroke-dasharray="{fs * 0.34:.4f} {fs * 0.22:.4f}"'
         lab = r.get("label")
+        # A label in words ("Spending cap") is text on the page like a title,
+        # so it edits where it is read; one that is the value itself is a
+        # number the rule computes, and has nothing to retype.
+        hook = _ch_hook(c, f"rule:{i}") if isinstance(lab, str) else ""
         if lab is True:
             lab = _fmt_val(float(v), fmt)
         lab = "" if lab in (None, False) else str(lab)
@@ -2200,7 +2226,7 @@ def _rules_svg(c, px, py, pw, ph, vmin, vmax, horizontal, fs, ink,
                 # place on a horizontal chart that is never a bar's own row.
                 out.append(f'<text x="{gx + fs * 0.16:.4f}" y="{py + lsz:.4f}" '
                            f'font-size="{lsz:.4f}" fill="{col}" '
-                           f'font-weight="600">{_xml(lab)}</text>')
+                           f'font-weight="600"{hook}>{_xml(lab)}</text>')
         else:
             gy = py + ph - ph * t
             out.append(f'<line x1="{px:.4f}" y1="{gy:.4f}" x2="{px + pw:.4f}" '
@@ -2209,7 +2235,7 @@ def _rules_svg(c, px, py, pw, ph, vmin, vmax, horizontal, fs, ink,
             if lab:
                 out.append(f'<text x="{px + pw:.4f}" y="{gy - fs * 0.18:.4f}" '
                            f'text-anchor="end" font-size="{lsz:.4f}" '
-                           f'fill="{col}" font-weight="600">{_xml(lab)}</text>')
+                           f'fill="{col}" font-weight="600"{hook}>{_xml(lab)}</text>')
     return "".join(out)
 
 
@@ -2369,6 +2395,25 @@ def _label_angle(c) -> float:
     return max(-90.0, min(90.0, float(a)))
 
 
+def _rot_label_band(labels, fs, room, angle):
+    """(label size, depth of the category band) for names turned by `angle`.
+
+    A turned label is as deep as its own length leaning over, so the band is
+    measured off the longest name rather than off a line count. The leftmost
+    label leans back past its own tick into `room` (the tick-label gutter and
+    half a slot); it shrinks until it fits, never below the legibility floor —
+    at which point it overflows, which is still better than a label nobody can
+    read. One rule for every chart that turns its labels."""
+    rad = math.radians(abs(angle))
+    rot_sz = _lfs(fs * 0.82)
+    chars = max((len(str(nm).replace("\n", " ")) for nm in labels), default=0)
+    if chars and math.cos(rad) > 0.01:
+        fit = room / (chars * _EM_W * math.cos(rad))
+        rot_sz = _lfs(min(rot_sz, rot_sz * fit))
+    longest = chars * _EM_W * rot_sz
+    return rot_sz, fs * 0.8 + longest * math.sin(rad) + rot_sz * math.cos(rad)
+
+
 def _rotated_label(name, cx, cy, size, angle, col, hook) -> str:
     """One category label turned on its side. A rotated label anchors at the
     END for a left lean and the START for a right one, so the text runs away
@@ -2417,7 +2462,8 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
         bs = [s for s in grp if id(s) in bar_ids]
         vals = _stack_totals(bs, n) if (stacked and bs) else \
             [v for s in bs for v in s["data"]]
-        vals += [v for s in grp if id(s) not in bar_ids for v in s["data"]]
+        vals += [v for s in grp if id(s) not in bar_ids
+                 for j, v in enumerate(s["data"]) if j not in s["gaps"]]
         return grp, vals
 
     left = _bounds("left")
@@ -2467,21 +2513,8 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     pad_b = fs * (1.6 + 0.95 * (band - 1))
     rot_sz = _lfs(fs * 0.82)
     if angle and not horizontal:
-        # A turned label is as deep as its own length leaning over, so the
-        # band is measured off the longest name rather than off a line count.
-        rad = math.radians(abs(angle))
-        chars = max((len(str(nm).replace("\n", " ")) for nm in labels),
-                    default=0)
-        # The leftmost label leans back past its own tick, and the only room
-        # it has to lean into is the tick-label gutter. Shrink until it fits,
-        # never below the legibility floor — at which point it overflows,
-        # which is still better than a label nobody can read.
-        room = pad_l + max(0.1, w - pad_l - pad_r) / n / 2
-        if chars and math.cos(rad) > 0.01:
-            fit = room / (chars * _EM_W * math.cos(rad))
-            rot_sz = _lfs(min(rot_sz, rot_sz * fit))
-        longest = chars * _EM_W * rot_sz
-        pad_b = fs * 0.8 + longest * math.sin(rad) + rot_sz * math.cos(rad)
+        rot_sz, pad_b = _rot_label_band(
+            labels, fs, pad_l + max(0.1, w - pad_l - pad_r) / n / 2, angle)
     # A bar below zero hangs its value label under itself, which is exactly
     # where the category names are. Give that row its own line.
     if show_vals and not horizontal and not stacked and min(
@@ -2669,17 +2702,23 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
             cx = px + slot * gi + slot / 2
             cy = py + ph - ph * ((v - lo) / sp)
             pts.append((cx, cy, v, gi))
-        pl = " ".join(f"{a:.4f},{b:.4f}" for a, b, _, _ in pts)
-        if s["kind"] == "area":
-            zt = min(1.0, max(0.0, (0.0 - lo) / sp))
-            fy = py + ph - ph * zt
-            parts.append(f'<polygon points="{pts[0][0]:.4f},{fy:.4f} {pl} '
-                         f'{pts[-1][0]:.4f},{fy:.4f}" fill="{s["color"]}" '
-                         f'fill-opacity="0.35"/>')
-        parts.append(f'<polyline points="{pl}" fill="none" '
-                     f'stroke="{s["color"]}" stroke-width="0.022" '
-                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+        gaps = s["gaps"]
+        for run in _runs(n, gaps):
+            if len(run) < 2 and gaps:
+                continue                 # a lone point between gaps: its dot says it
+            pl = " ".join(f"{pts[i][0]:.4f},{pts[i][1]:.4f}" for i in run)
+            if s["kind"] == "area":
+                zt = min(1.0, max(0.0, (0.0 - lo) / sp))
+                fy = py + ph - ph * zt
+                parts.append(f'<polygon points="{pts[run[0]][0]:.4f},{fy:.4f} {pl} '
+                             f'{pts[run[-1]][0]:.4f},{fy:.4f}" fill="{s["color"]}" '
+                             f'fill-opacity="0.35"/>')
+            parts.append(f'<polyline points="{pl}" fill="none" '
+                         f'stroke="{s["color"]}" stroke-width="0.022" '
+                         f'stroke-linejoin="round" stroke-linecap="round"/>')
         for cx, cy, v, gi in pts:
+            if gi in gaps:
+                continue
             tip = ""
             if c.get("tips"):
                 who = labels[gi] if gi < len(labels) and labels[gi] else f"#{gi + 1}"
@@ -2715,7 +2754,8 @@ def _tick_y(gy, py, fs) -> float:
 
 def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
                 xmin=None, xmax=None, nticks=5, fmt=None, wrap_lines=1,
-                hook_chart=None, xfmt=None, xspread=False) -> str:
+                hook_chart=None, xfmt=None, xspread=False, angle=0.0,
+                rot_sz=None) -> str:
     """Gridlines, ticks and the two axis rules — shared by every chart drawn in
     a value plane (line, scatter, histogram), so they cannot drift apart.
 
@@ -2755,6 +2795,11 @@ def _plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid, xlabels=None,
             else:
                 gx = px + (pw * (i + 0.5) / len(xlabels) if len(xlabels) else 0)
                 slot = pw / max(1, len(xlabels))
+            if angle:
+                parts.append(_rotated_label(
+                    name, gx, py + ph + fs * 0.72, rot_sz, angle, ink["label"],
+                    _ch_hook(hook_chart if hook_chart is not None else {}, f"label:{i}")))
+                continue
             parts.append(f'<text x="{gx:.4f}" y="{py + ph + fs:.4f}" text-anchor="{anchor}" '
                          f'font-size="{_lfs(fs * 0.82):.4f}" fill="{ink["label"]}"'
                          f'{_ch_hook(hook_chart if hook_chart is not None else {}, f"label:{i}")}>'
@@ -2794,20 +2839,26 @@ def _area_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     if stacked and c.get("stackPct"):
         series = _stack_pct(series, n)
     pad_l, pad_b = fs * 2.6, fs * 1.6
+    # Turned names (the panel's Labels: Tilted / Vertical), the bar chart's
+    # rule: a year of months has no room to lie flat. The first point sits ON
+    # the plot's left edge, so the gutter is all the room its label leans into.
+    angle, rot_sz = _label_angle(c), None
+    if angle:
+        rot_sz, pad_b = _rot_label_band(labels, fs, pad_l, angle)
     px, py = x + pad_l, y
     pw, ph = max(0.1, w - pad_l - fs * 0.4), max(0.1, h - pad_b)
     afmt = _num_format(c)
     lfmt = _num_format(c, "labelFormat")
     vals = _stack_totals(series, n) if stacked else \
-        [v for s in series for v in s["data"]]
-    vmin, vmax, nticks = _axis_bounds(c, vals)
+        [v for s in series for j, v in enumerate(s["data"]) if j not in s["gaps"]]
+    vmin, vmax, nticks = _axis_bounds(c, vals or [0])
     span = (vmax - vmin) or 1.0
     parts = [_plot_frame(px, py, pw, ph, vmin, vmax, ink, fs,
                          c.get("grid") is not False,
                          xlabels=[labels[i] if i < len(labels) else ""
                                   for i in range(n)],
                          nticks=nticks, fmt=afmt, wrap_lines=_wrap_lines(c),
-                         hook_chart=c, xspread=True)]
+                         hook_chart=c, xspread=True, angle=angle, rot_sz=rot_sz)]
     xs = [px + (pw * i / (n - 1) if n > 1 else pw / 2) for i in range(n)]
     zy = py + ph - ph * min(1.0, max(0.0, (0.0 - vmin) / span))
     show_vals = bool(c.get("values"))
@@ -2822,14 +2873,20 @@ def _area_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         ty = [py + ph - ph * ((v - vmin) / span) for v in tops]
         by = [py + ph - ph * ((v - vmin) / span) for v in lower] if stacked \
             else [zy] * n
-        fwd = " ".join(f"{xs[i]:.4f},{ty[i]:.4f}" for i in range(n))
-        back = " ".join(f"{xs[i]:.4f},{by[i]:.4f}" for i in range(n - 1, -1, -1))
-        parts.append(f'<polygon points="{fwd} {back}" fill="{s["color"]}" '
-                     f'fill-opacity="{0.9 if stacked else 0.35:.2f}"/>')
-        parts.append(f'<polyline points="{fwd}" fill="none" '
-                     f'stroke="{s["color"]}" stroke-width="0.022" '
-                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+        gaps = frozenset() if stacked else s["gaps"]
+        for seg in _runs(n, gaps):        # not `run`: that is the stack's running top
+            if len(seg) < 2 and gaps:
+                continue
+            fwd = " ".join(f"{xs[i]:.4f},{ty[i]:.4f}" for i in seg)
+            back = " ".join(f"{xs[i]:.4f},{by[i]:.4f}" for i in reversed(seg))
+            parts.append(f'<polygon points="{fwd} {back}" fill="{s["color"]}" '
+                         f'fill-opacity="{0.9 if stacked else 0.35:.2f}"/>')
+            parts.append(f'<polyline points="{fwd}" fill="none" '
+                         f'stroke="{s["color"]}" stroke-width="0.022" '
+                         f'stroke-linejoin="round" stroke-linecap="round"/>')
         for i in range(n):
+            if i in gaps:
+                continue
             v = s["data"][i] if i < len(s["data"]) else 0
             if c.get("tips"):
                 who = labels[i] if i < len(labels) and labels[i] else f"#{i + 1}"
@@ -2872,10 +2929,16 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         if len(series) >= 2:
             xs, ys = series[0]["data"], series[1]["data"]
             col = series[1]["color"]
+            gaps = series[0]["gaps"] | series[1]["gaps"]
         else:
             xs = list(range(len(series[0]["data"])))
             ys = series[0]["data"]
             col = series[0]["color"]
+            gaps = series[0]["gaps"]
+        if gaps:
+            # A point with no x or no y is not a point at (0, 0).
+            keep = [i for i in range(min(len(xs), len(ys))) if i not in gaps]
+            xs, ys = [xs[i] for i in keep], [ys[i] for i in keep]
         n = min(len(xs), len(ys))
         if not n:
             return ""
@@ -2899,12 +2962,18 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
     n = max(len(labels), max((len(s["data"]) for s in series), default=0))
     if not n:
         return ""
-    vmin, vmax, nticks = _axis_bounds(c, [v for s in series for v in s["data"]])
+    # Turned names, as the bar and area charts turn theirs (Labels: Tilted).
+    angle, rot_sz = _label_angle(c), None
+    if angle:
+        rot_sz, pad_b = _rot_label_band(labels, fs, pad_l + pw / n / 2, angle)
+        ph = max(0.1, h - pad_b)
+    vmin, vmax, nticks = _axis_bounds(c, [v for s in series for j, v in enumerate(s["data"])
+                                          if j not in s["gaps"]] or [0])
     span = (vmax - vmin) or 1.0
     parts.append(_plot_frame(px, py, pw, ph, vmin, vmax, ink, fs, grid,
                              xlabels=[labels[i] if i < len(labels) else "" for i in range(n)],
                              nticks=nticks, fmt=afmt, wrap_lines=wrap_lines,
-                             hook_chart=c))
+                             hook_chart=c, angle=angle, rot_sz=rot_sz))
     show_vals = bool(c.get("values"))
     for s in series:
         pts = []
@@ -2913,10 +2982,16 @@ def _xy_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
             cx = px + pw * (i + 0.5) / n
             cy = py + ph - ph * ((v - vmin) / span)
             pts.append((cx, cy, v, i))
-        parts.append(f'<polyline points="{" ".join(f"{a:.4f},{b:.4f}" for a, b, _, _ in pts)}" '
-                     f'fill="none" stroke="{s["color"]}" stroke-width="0.022" '
-                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+        gaps = s["gaps"]
+        for run in _runs(n, gaps):
+            if len(run) < 2 and gaps:
+                continue
+            parts.append(f'<polyline points="{" ".join(f"{pts[i][0]:.4f},{pts[i][1]:.4f}" for i in run)}" '
+                         f'fill="none" stroke="{s["color"]}" stroke-width="0.022" '
+                         f'stroke-linejoin="round" stroke-linecap="round"/>')
         for cx, cy, v, i in pts:
+            if i in gaps:
+                continue
             tip = ""
             if c.get("tips"):
                 who = labels[i] if i < len(labels) and labels[i] else f"#{i + 1}"
@@ -4336,10 +4411,15 @@ ANCHOR_JS = (
     "el.style.margin=wrap==='right'?'0 0 '+pad+' '+pad:'0 '+pad+' '+pad+' 0';"
     "continue;}"
     "var pr=pg.getBoundingClientRect();if(!pr.width)continue;"
-    "var op=el.offsetParent;var ar=(op&&op!==pg&&pg.contains(op))?op.getBoundingClientRect():pr;"
+    # `top` is measured from inside the containing block's border, its
+    # rect from outside it: a 2px border-top on UHERO's figure grid put every
+    # piece anchored in it 2px lower than it was put.
+    "var op=el.offsetParent;var cb=(op&&op!==pg&&pg.contains(op))?op:pg;"
+    "var ar=cb===pg?pr:cb.getBoundingClientRect();"
+    "var bt=cb.offsetHeight?cb.clientTop*ar.height/cb.offsetHeight:0;"
     "var hr=host.getBoundingClientRect();var ppi=pr.width/W;"
     "var edge=bottom?hr.bottom:hr.top;"
-    "var top=(edge-ar.top)/ppi+parseFloat(el.getAttribute('data-anc-dy')||'0');"
+    "var top=(edge-ar.top-bt)/ppi+parseFloat(el.getAttribute('data-anc-dy')||'0');"
     "el.style.top=top.toFixed(3)+'in';}}"
     "window.__dsAnchor=go;go();addEventListener('load',go);addEventListener('resize',go);"
     "if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);})();"
@@ -7644,9 +7724,12 @@ class Layout:
             bg = bg if isinstance(bg, str) and bg != "none" else "none"
             # The hit area is the background RECT, not the <g>. A container has
             # no geometry of its own, so pointer-events:bounding-box on it is
-            # unreliable; a full-size rect with pointer-events:all is the
-            # standard way to make a mostly-empty drawing grabbable, and it is
-            # what actually catches the pointer here.
+            # unreliable; a full-size rect that takes the pointer whatever its
+            # fill is what actually catches it here. `fill`, not `all`: `all`
+            # also hit-tests the STROKE, and an unset stroke-width is one user
+            # unit — one INCH in this layer — so every chart caught clicks half
+            # an inch outside its box, over the header of a table set below
+            # it and over any link in the prose beside it.
             # Where this drawing was laid out, stamped on the node. A chart is
             # many elements at absolute inch coordinates, so there is no single
             # attribute the editor can nudge to move it — it translates the
@@ -7655,7 +7738,7 @@ class Layout:
             attrs.append(f'data-ox="{x}" data-oy="{y}" data-ow="{w}" data-oh="{h}"')
             return (f'<g {" ".join(attrs)}>'
                     f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{bg}"'
-                    f' pointer-events="all"/>'
+                    f' pointer-events="fill"/>'
                     f'{chart_svg(s.get("chart") or {}, x, y, w, h, s.get("anim"))}</g>')
         if s["kind"] == "qr":
             from .qr import svg_path

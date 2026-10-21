@@ -24,8 +24,9 @@ and it has no idea which site it is writing to.
                        editor can show it; write FILE's bytes' data URI back as
                        URL (repeatable)
     --replace OLD=>NEW  a plain text swap on the result (repeatable)
-    --no-fidelity      skip docsync.fidelity, which renders the result next to the
-                       page it replaces and refuses a change in how it looks
+    --no-fidelity      skip docsync.fidelity, which compares the result with the
+                       page it replaces (markup always, pixels where a browser is
+                       installed) and refuses a change in how it looks
 
 Without --write it only says whether the result differs from --out.
 """
@@ -152,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("  " + p, file=sys.stderr)
             print("fix the cause, or pass --no-fidelity if the change is deliberate", file=sys.stderr)
             return 1
-        print("fidelity: looks like the page it replaces" if problems == [] else "fidelity: not checked")
+        print("fidelity: looks like the page it replaces")
     if a.write:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(page, encoding="utf-8")

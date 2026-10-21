@@ -191,6 +191,24 @@ def _overlay(root: Path, binding, ref: str) -> list[str]:
     return took
 
 
+def config_for(root: Path, binding, ref: str = ""):
+    """What this project publishes to: its `publish:` block, or the website it was
+    made in the editor (docsync/website.py) — read from `ref`'s layout.json when
+    given, since that is where the hub's Publish put the choice. Never the
+    branch's docsync.yml: the sites a page may choose are the default branch's."""
+    from docsync import website                     # noqa: PLC0415
+    layout = None
+    ed = binding.editor
+    if ref and ed and ed.layout and not binding.publish:
+        rel = os.path.relpath(ed.layout, root)
+        try:
+            import json                                  # noqa: PLC0415
+            layout = json.loads(_git(root, "show", f"{ref}:{rel}"))
+        except (RuntimeError, ValueError):
+            layout = None
+    return website.publish_for(binding, layout)
+
+
 def _version_of(root: Path, ref: str) -> str:
     """The hub version a `hub/<id>` commit was exported from (collab/src/export.js
     writes it into the commit message)."""
@@ -209,7 +227,11 @@ def _report(base: str, key: str, room: str, payload: dict) -> str:
     try:
         req = urllib.request.Request(f"{base.rstrip('/')}/site/{room}", method="POST",
                                      data=json.dumps(payload).encode(),
-                                     headers={"content-type": "application/json", "x-export-key": key})
+                                     headers={"content-type": "application/json", "x-export-key": key,
+                                              # Cloudflare's bot check refuses urllib's default
+                                              # Python-urllib/x.y with a 403 (error 1010) before
+                                              # the Worker ever sees the request.
+                                              "user-agent": "cider-publish (docsync.publish)"})
         with urllib.request.urlopen(req, timeout=20) as r:
             return f"reported to the hub ({r.status})"
     except Exception as e:  # noqa: BLE001 — a report that fails must not fail the publish
@@ -235,9 +257,15 @@ def doctor(pid: str, *, hub_dir: Path | None = None, token_env: str = "SITE_PUBL
     except RegistryError as e:
         line(False, str(e), "add the project to docsync.yml (docsync.scaffold does)")
         return 1
-    cfg = b.publish
+    from docsync.website import WebsiteError, publish_for     # noqa: PLC0415
+    try:
+        cfg = publish_for(b)
+    except WebsiteError as e:
+        line(False, f"its website choice is not usable: {e}", "choose again from File ▸ Publish as a website…")
+        return 1
     if cfg is None:
-        line(False, "the binding has no publish: block", "add one — see the report-editor skill, 'Publishing a website project'")
+        line(False, "the binding has no publish: block and is not a website",
+             "choose File ▸ Publish as a website… in the editor, or add a publish: block")
         return 1
     line(True, f"publish: {cfg.repo}@{cfg.branch}, paths {', '.join(cfg.paths)}, home {cfg.home}"
                + (f", when {cfg.when}" if cfg.home == "local" else ""))
@@ -384,8 +412,16 @@ def main(argv: list[str] | None = None) -> int:
     except RegistryError as e:
         print(f"::notice::{e} — nothing to publish")
         return 0
+    from docsync.website import WebsiteError        # noqa: PLC0415
+    ref = a.ref or (f"origin/{a.hub_branch}" if a.hub_branch else "")
+    try:
+        cfg = config_for(root, b, ref)
+    except WebsiteError as e:
+        print(f"::error::{pid}: {e}")
+        cfg = None
+        if not a.print_target:
+            return 1
     if a.print_target:
-        cfg = b.publish
         owner, name = github_target(a.site_repo or cfg.repo) if cfg and cfg.home == "hub" else ("", "")
         out = os.environ.get("GITHUB_OUTPUT")
         text = f"owner={owner}\nname={name}\n"
@@ -399,16 +435,14 @@ def main(argv: list[str] | None = None) -> int:
         print("took from the hub branch:", ", ".join(took) or "(nothing there)")
         print("review with `git diff`, commit, then set `home: local` in the publish: block")
         return 0
-    cfg = b.publish
     if cfg is None:
-        print(f"::notice::{pid} has no publish: block — nothing to publish")
+        print(f"::notice::{pid} has no publish: block and is not a website — nothing to publish")
         return 0
     if cfg.home != "hub":
         print(f"::notice::{pid} is edited locally (home: local), not on the hub — not published from the hub branch")
         return 0
     if a.site_repo:
         cfg.repo = a.site_repo
-    ref = a.ref or (f"origin/{a.hub_branch}" if a.hub_branch else "")
     version = _version_of(root, ref) if ref else ""
     try:
         if ref:

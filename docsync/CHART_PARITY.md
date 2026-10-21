@@ -203,3 +203,36 @@ is separate work.
   sliver). `_tick_y()` keeps it just inside; every other tick is unchanged.
   `chart_parity`: 9,415 renders moved — every vertical chart with a grid, the
   top tick label only: **the fix**. No bound report's page moved (rebuilt all).
+
+## Gaps, turned labels on line and area, and two new sweep cases (2026-10-20)
+
+Found by having Claude build complicated charts through every route a report
+has (pilot verbs, layout.json, a renderer's `blocks.chart`) and then editing
+each one as a person would.
+
+- **A `null` value is a gap.** The schema has always accepted `null` in
+  `data`, and `_chart_series()` read it as `0` — so a line or area chart with
+  a month not yet reported dived to zero and back, and under a raised
+  `axisMin` the dive was drawn below the plot, over whatever sat under the
+  chart. `_chart_series()` now records `gaps` per series (the data still
+  reads 0, so sums and stacks are unchanged); a line, an unstacked area, a
+  combo overlay and a scatter plot break at a gap and leave its axis bounds
+  out. A stack has no hole to show, so `stacked-area` and every bar keep
+  reading 0.
+- **`labelAngle` turns a line or area chart's category names.** The Chart
+  panel has offered Labels: Flat / Tilted / Vertical on every chart with an
+  axis, and only the bar chart honoured it: 24 months of names on a line
+  chart lay flat on top of one another whatever the panel said. Line, area
+  and stacked-area now turn them by the bar chart's rule, which moved into
+  `_rot_label_band()` (bars draw byte-identically through it — see below).
+  The panel no longer offers the control on a scatter plot or a histogram,
+  whose axes are numbers.
+- **The sweep now carries both.** `DATA["gap"]` (a null in each of two
+  series) and `FLAGS` `{"labelAngle": -45}` / `{"labelAngle": -90, "legend":
+  True}`, so neither can move unseen again. Against HEAD: 32,385 renders,
+  1,424 differ, every one **the fix** — line / area / stacked-area under a
+  turned label (672), and line / area / scatter with a gap (752). Not one bar
+  chart moved, turned labels included, which is the check on the refactor.
+  No bound report draws a line, area or scatter chart or sets `labelAngle`;
+  the Budget Primer's one stacked area (fixed costs) has neither, so no
+  published page moved.

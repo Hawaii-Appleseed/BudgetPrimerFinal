@@ -787,7 +787,17 @@ class _Coverage(HTMLParser):
         """
         if not any(k in a for k in _DESC_ATTRS):
             return
+        # Two more places a description is not the renderer's literal:
+        # data-desc-from (blocks.chart naming a figure after its own title,
+        # which the Chart panel edits), and an image that came in through
+        # MARKDOWN — a text box's words or a slot's — whose alt lives in that
+        # markdown and is rewritten by the figure's Description menu item and
+        # the describeImage verb. Every template ships its logo and its
+        # placeholder art that way, so a fresh scaffold failed its own check.
+        in_md = tag == "img" and ("ds-textbox" in self.cls_stack
+                                  or any(cov for _, cov, *_ in self.stack))
         wired = (declared(a, "data-desc") or declared(a, "data-fixed")
+                 or declared(a, "data-desc-from") or in_md
                  or (a.get("aria-hidden") or "").lower() == "true")
         # The element's own class counts: _descriptions runs before the stack
         # append, so a description ON the .page wrapper is still in the sheet.

@@ -47,6 +47,8 @@ DATA = {
     "big": [{"name": "$", "data": [2.44e9, 1.1e9, 3.7e9]}],
     "tiny": [{"name": "p", "data": [0.2, 0.55, 0.31]}],
     "wide": [{"name": "x", "data": [1, 2, 3, 4, 5, 6, 7, 8]}],
+    # A month not reported: null, which the schema has always accepted.
+    "gap": [{"name": "g", "data": [4, None, 7]}, {"name": "h", "data": [2, 5, None]}],
 }
 LABELS = {
     "short": ["A", "B", "C"],
@@ -72,6 +74,8 @@ FLAGS = [
     {"colors": ["#FF0000", "#00FF00", "#0000FF"]},
     {"titleColor": "#111111", "labelColor": "#222222",
      "axisColor": "#333333", "gridColor": "#444444", "title": "Ink"},
+    {"labelAngle": -45},
+    {"labelAngle": -90, "legend": True},
 ]
 # A page-width figure, a full page, a thumbnail, and a tall narrow column —
 # the box is what drives every floor and shrink-to-fit decision in the engine.

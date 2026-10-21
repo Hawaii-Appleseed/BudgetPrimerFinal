@@ -16,6 +16,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+
+def _tmp_json():
+    """A fresh temp .json path. mkstemp() also OPENS the file; its descriptor
+    is closed here, or a few hundred layouts exhaust macOS's default limit of
+    256 open files (OSError: Too many open files)."""
+    import atexit
+    import tempfile
+    fd, name = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    atexit.register(lambda: os.path.exists(name) and os.unlink(name))
+    return Path(name)
+
 from docsync.content import ContentError                  # noqa: E402
 from docsync.fetch import (FetchError, access_token,      # noqa: E402
                            service_account_email)
@@ -1153,7 +1165,7 @@ from docsync.layout import Layout, LayoutError, PAGELESS_H  # noqa: E402
 
 
 def _layout(d):
-    f = Path(_tempfile.mkstemp(suffix=".json")[1])
+    f = _tmp_json()
     f.write_text(_json.dumps(d))
     return Layout(f)
 
@@ -2252,7 +2264,7 @@ def _act_layout(extra=None):
            "md": "**Download** PDF", "fill": "#2F3E46",
            "style": {"size": 14, "color": "#FFFFFF"}, "act": "pdf"}
     box.update(extra or {})
-    f = Path(_tf.mkstemp(suffix=".json")[1])
+    f = _tmp_json()
     f.write_text(json.dumps({"boxes": [box]}))
     return _L(f)
 
@@ -2306,7 +2318,7 @@ def _pair_layout(btn_extra=None, tgt_extra=None):
            "fill": "#52796F", "act": "toggle", "target": "t2"}
     tgt = {"id": "t2", "page": 1, "x": 1, "y": 1.6, "w": 5, "md": "Hidden words."}
     btn.update(btn_extra or {}); tgt.update(tgt_extra or {})
-    f = Path(_tf.mkstemp(suffix=".json")[1])
+    f = _tmp_json()
     f.write_text(json.dumps({"boxes": [btn, tgt]}))
     return _L(f)
 
@@ -2379,7 +2391,7 @@ finally:
 # A toggle can reveal shapes, tables and several things at once — each kind
 # stamps its hook on the node it already owns.
 def _trio_layout():
-    f = Path(_tf.mkstemp(suffix=".json")[1])
+    f = _tmp_json()
     f.write_text(json.dumps({
         "boxes": [
             {"id": "t1", "page": 1, "x": 1, "y": 1, "w": 2.6, "md": "Show all",
@@ -2412,7 +2424,7 @@ finally:
     del os.environ["DOCSYNC_EDIT"]
 
 try:
-    f = Path(_tf.mkstemp(suffix=".json")[1])
+    f = _tmp_json()
     f.write_text(json.dumps({"boxes": [
         {"id": "t1", "page": 1, "x": 1, "y": 1, "w": 2, "md": "x",
          "act": "toggle", "target": ["nope"]}]}))
@@ -2442,7 +2454,7 @@ for name, kw, want in [
 # shows everything), print and reduced-motion always show content, and the
 # keyframes animate translate/scale so an element's own rotation survives.
 def _anim_layout():
-    f = Path(_tf.mkstemp(suffix=".json")[1])
+    f = _tmp_json()
     f.write_text(json.dumps({
         "boxes": [{"id": "t1", "page": 1, "x": 1, "y": 1, "w": 3,
                    "md": "Animated", "anim": {"kind": "rise",
@@ -2501,7 +2513,7 @@ for raw, want in [
                           "anim": {"kind": "fade", "delay": -1}}}}, "delay"),
 ]:
     try:
-        f = Path(_tf.mkstemp(suffix=".json")[1])
+        f = _tmp_json()
         f.write_text(json.dumps(raw))
         _L(f)
         FAILS.append(f"anim refusal missed: {want}")
@@ -2633,7 +2645,7 @@ check("the breakpoint is the sheet, not a device width",
 # The width a report was BUILT at counts as much as one File > Resize wrote.
 # Reading only the override gave a 12.5in web page (rxkids) the 8.5in default,
 # so its sheet stopped fitting at 1200px while the release waited for 816.
-_wide = Layout(Path(_tempfile.mkstemp(suffix=".json")[1]), page=(12.5, 84))
+_wide = Layout(_tmp_json(), page=(12.5, 84))
 _wide.positions = {"el.a": {"x": 1, "y": 1}}
 check("a report BUILT wide gets its own breakpoint, with no override written",
       _wide.mobile_css(), "max-width:12.5in")
@@ -3849,6 +3861,16 @@ _decls = re.findall(r"^(?:async )?function\*? ?([A-Za-z_$][\w$]*)",
 check_eq("no function is declared twice in the editor's script",
          sorted({n for n in _decls if _decls.count(n) > 1}), [])
 
+# The same for an element id in the editor's markup: $('x') finds the FIRST,
+# so a second #x is dead and the first one runs the second's handlers too.
+# The undo History button (⏱) and the hub's saved-versions History were both
+# #history: the hub's never showed, and ⏱ also opened the versions panel.
+_markup = re.sub(r"<(script|style)\b.*?</\1>", "",
+                 (Path(__file__).parent / "editor" / "edit.html").read_text(), flags=re.S)
+_ids = re.findall(r'<[a-zA-Z][^>]*?\sid="([^"]+)"', _markup)
+check_eq("no id is given twice in the editor's markup",
+         sorted({n for n in _ids if _ids.count(n) > 1}), [])
+
 # ---- every attribute said once -------------------------------------------------
 # A start tag naming an attribute twice keeps the first and drops the rest,
 # silently. Each case below was one tag two helpers wrote into, each right on
@@ -4798,6 +4820,27 @@ with tempfile.TemporaryDirectory() as _td:
     check_eq("and nothing else: the registry stays the trusted branch's",
              (_td / "docsync.yml").read_text(), "command: trusted")
 
+# ------------------------------------------------- publish: what the staged manifest tells the editor
+from docsync.registry import Binding as _Binding, Editor as _Editor  # noqa: E402
+from docsync.stage import manifest as _manifest  # noqa: E402
+
+
+def _staged(publish):
+    from docsync.registry import ROOT as _ROOT
+    td = _ROOT / "projects" / "ds-manifest-test"          # nothing is read from it: only paths are made relative
+    return _manifest(_Binding(id="t", content=td / "c.md", publish=publish,
+                              editor=_Editor(render=td / "r.py", engine=[], out=td / "out.html", dir=td / "d")))
+
+
+check_eq("a project with no publish: block stages no site entry", _staged(None)["site"], None)
+check_eq("a local-home page stages none either: only the hub follows the site job",
+         _staged(Publish(repo="o/r", command="c", paths=["p"], home="local", url="https://x/"))["site"], None)
+check_eq("a hub-home page stages its repository and public url for the Publish dialog and status",
+         _staged(Publish(repo="o/r", command="c", paths=["p"], home="hub", url="https://x/"))["site"],
+         {"repo": "o/r", "url": "https://x/"})
+check_eq("a hub-home page with no url stages an empty one, not null",
+         _staged(Publish(repo="o/r", command="c", paths=["p"], home="hub"))["site"], {"repo": "o/r", "url": ""})
+
 # ------------------------------------------------- publish: any GitHub repo, one token minted per target
 for _repo, _want in (("Hawaii-Appleseed/Census-Forecaster", ("Hawaii-Appleseed", "Census-Forecaster")),
                      ("https://github.com/Hawaii-Appleseed/Some.Site.git", ("Hawaii-Appleseed", "Some.Site")),
@@ -4837,6 +4880,241 @@ from docsync.publish_page import semantic_tags  # noqa: E402
 check_eq("semantic_tags writes <b>/<i> as <strong>/<em> and leaves <br>, <body>, <i class=..> alone",
          semantic_tags('<p><b>x</b> <i>y</i><br><i class="ic"></i></p><body>'),
          '<p><strong>x</strong> <em>y</em><br><i class="ic"></i></p><body>')
+# ------------------------------------------------- publish: the report to the hub's Worker
+import urllib.request as _ur  # noqa: E402
+from docsync import publish as _pub  # noqa: E402
+
+_seen = {}
+
+
+class _Resp:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _fake_open(req, timeout=None):
+    _seen.update({k.lower(): v for k, v in req.header_items()}, url=req.full_url)
+    return _Resp()
+
+
+_real_open, _ur.urlopen = _ur.urlopen, _fake_open
+try:
+    _note = _pub._report("https://w.example/", "k", "O~R~p", {"ok": True})
+finally:
+    _ur.urlopen = _real_open
+check_eq("publish report names itself, not Python-urllib (Cloudflare 403s that, error 1010)",
+         (_note, _seen.get("url"), _seen.get("x-export-key"), "urllib" in _seen.get("user-agent", "urllib").lower()),
+         ("reported to the hub (200)", "https://w.example/site/O~R~p", "k", False))
+
+# ------------------------------------------------- fidelity: the markup check (no browser)
+import tempfile as _tf  # noqa: E402
+from docsync.fidelity import static_check  # noqa: E402
+
+with _tf.TemporaryDirectory() as _d:
+    _d = Path(_d)
+    (_d / "assets").mkdir()
+    (_d / "assets" / "site.css").write_text(
+        ".lbl strong{color:teal} .note p:last-child{margin:0} /* .ghost{} */ @media (max-width:600px){.lbl{font-size:12px}}")
+    _cur = _d / "page" / "index.html"
+    _cur.parent.mkdir()
+    _cur.write_text('<html><head><link rel="stylesheet" href="../assets/site.css?v=2"></head><body>'
+                    '<div class="lbl">in <strong>lost</strong> credits</div><p>Act 163 raised it.</p>'
+                    '<div class="note"><p>a</p><p>b</p></div></body></html>')
+    _h = _cur.read_text()
+    check_eq("fidelity: an identical page passes", static_check(_cur, _h), [])
+    check_eq("fidelity: bare editable-sentence spans draw nothing and pass",
+             static_check(_cur, _h.replace("<p>Act 163 raised it.</p>", "<p><span>Act 163</span> <span>raised it.</span></p>")), [])
+    check("fidelity: <b> where the page had <strong> is caught (the credits-page bug)",
+          " ".join(static_check(_cur, _h.replace("strong>", "b>"))), "never had: div.lbl > b")
+    check_eq("fidelity: an editor's word change passes", static_check(_cur, _h.replace("raised", "lifted")), [])
+    check_eq("fidelity: an editor bolding a word with a tag the page already uses passes",
+             static_check(_cur, _h.replace("raised", "<strong>raised</strong>")), [])
+    check("fidelity: a class dropped with the words unchanged is caught",
+          " ".join(static_check(_cur, _h.replace('class="lbl"', ""))), "same words, different markup")
+    check("fidelity: a span that moves a :last-child target is NOT inert",
+          " ".join(static_check(_cur, _h.replace("<p>b</p></div>", "<span><p>b</p></span></div>"))),
+          "same words, different markup")
+    check_eq("fidelity: a class only named inside a CSS comment does not count",
+             static_check(_cur, _h.replace("<p>Act", '<p class="ghost">Act')), [])
+
+# ------------------------------------------------- website: a page made public from the editor
+from docsync import website as _web  # noqa: E402
+
+_sites = {"reports": _web.Site("reports", "Reports", "Org/reports", "main", "", "https://org.github.io/reports/"),
+          "nested": _web.Site("nested", "Nested", "Org/site", "gh-pages", "pages", "https://org.github.io/site/pages/")}
+check_eq("website: no record is not a website", _web.designation({"page": {}}, _sites), None)
+_d = _web.designation({"website": {"site": "nested", "slug": "act-163", "home": "hub"}}, _sites)
+check_eq("website: a good record names its site, address and home, and where it lands",
+         (_d["site"].name, _d["slug"], _d["home"], _web.target_path(_d)), ("nested", "act-163", "hub", "pages/act-163"))
+for _bad, _why in (({"site": "elsewhere", "slug": "ok-page"}, "not one of this repository's sites"),
+                   ({"site": "reports", "slug": "Bad Slug"}, "lowercase words"),
+                   ({"site": "reports", "slug": "../escape"}, "lowercase words"),
+                   ({"site": "reports", "slug": "-edge"}, "lowercase words"),
+                   ({"site": "reports", "slug": "ok-page", "home": "cloud"}, "must be local or hub"),
+                   ("reports/ok-page", "must be {site, slug, home}")):
+    try:
+        _web.designation({"website": _bad}, _sites)
+        FAILS.append(f"website: {_bad!r} must be refused")
+    except _web.WebsiteError as e:
+        check(f"website: {_bad!r} is refused", str(e), _why)
+
+
+class _B:                       # just what publish_for reads off a binding
+    id, publish, editor = "my-page", None, None
+
+
+_p = _web.publish_for(_B(), {"website": {"site": "reports", "slug": "my-page", "home": "hub"}}, _sites)
+check_eq("website: the publish settings come from the record, with the engine's own command",
+         (_p.repo, _p.branch, _p.paths, _p.home, _p.when, _p.url, _p.command),
+         ("Org/reports", "main", ["my-page"], "hub", "save", "https://org.github.io/reports/my-page/",
+          "python3 -m docsync.website --id my-page --write"))
+check_eq("website: a page with neither a publish: block nor a record publishes nowhere",
+         _web.publish_for(_B(), {}, _sites), None)
+_B2 = type("_B2", (), {"id": "x", "editor": None, "publish": "EXPLICIT"})
+check_eq("website: an explicit publish: block wins over a record",
+         _web.publish_for(_B2(), {"website": {"site": "reports", "slug": "x-page"}}, _sites), "EXPLICIT")
+check_eq("website: script dependencies an import map or an import names are found",
+         _web.script_refs('<script type="importmap">{"imports": {"three": "./assets/vendor/three.module.js",'
+                          ' "cdn": "https://x/y.js"}}</script><script type=module>import a from "./lib/a.mjs";'
+                          ' await import("./lib/b.js"); import c from "https://x/c.js"</script>'),
+         {"assets/vendor/three.module.js", "lib/a.mjs", "lib/b.js"})
+
+# The recipe, end to end, on a real project: the address is claimed, and a second
+# project cannot take it.
+from docsync.registry import get as _get  # noqa: E402
+
+with _tf.TemporaryDirectory() as _site:
+    _site = Path(_site)
+    _real = _web.read_layout
+    _web.read_layout = lambda b: {**(_real(b) or {}), "website": {"site": "reports", "slug": "shared-address"}}
+    try:
+        check("website: a Cider report publishes as a page at its address",
+              _web.publish(_get("retitc"), _site, write=True, sites=_sites), "wrote https://org.github.io/reports/shared-address/")
+        check_eq("website: the page and its claim are written",
+                 ((_site / "shared-address" / "index.html").is_file(), (_site / "shared-address" / _web.MARKER).read_text()),
+                 (True, "retitc\n"))
+        check("website: publishing again is no change", _web.publish(_get("retitc"), _site, write=True, sites=_sites), "no change")
+        try:
+            _web.publish(_get("dotax-itep"), _site, write=True, sites=_sites)
+            FAILS.append("website: a second project must not take an address another holds")
+        except _web.WebsiteError as e:
+            check("website: a second project is refused the address", str(e), "already retitc's")
+        (_site / "foreign").mkdir()
+        (_site / "foreign" / "index.html").write_text("someone else's")
+        _web.read_layout = lambda b: {**(_real(b) or {}), "website": {"site": "reports", "slug": "foreign"}}
+        try:
+            _web.publish(_get("retitc"), _site, write=True, sites=_sites)
+            FAILS.append("website: a folder Cider did not make must not be overwritten")
+        except _web.WebsiteError as e:
+            check("website: a folder Cider did not make is refused", str(e), "Cider did not put there")
+    finally:
+        _web.read_layout = _real
+
+# ------------------------------------------- what Claude builds stays editable
+# Found 2026-10-20 by having Claude build complicated charts and tables through
+# every route (pilot verbs, layout.json, a renderer's blocks.chart) and then
+# editing each one as a person would. The editor halves live in
+# tests/editor/claude-creates.spec.js; these are the engine's.
+from docsync.layout import chart_svg as _cs2                     # noqa: E402
+
+_was_edit = os.environ.get("DOCSYNC_EDIT")
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _rule = {"type": "bar", "labels": ["a", "b"], "series": [{"name": "s", "data": [5, 9]}],
+             "rules": [{"value": 6, "label": "Spending cap"}, {"value": 8, "label": True}]}
+    _rs = _cs2(_rule, 0, 0, 4, 2.5)
+    check("a reference line's worded label edits on the page (and docsync.check sees a hook)",
+          _rs, 'data-ch="rule:0"')
+    check_eq("...but one that is the value itself has nothing to retype",
+             'data-ch="rule:1"' in _rs, False)
+    _cov_rule = _cov(f'<section class="page"><svg viewBox="0 0 4 2.5">{_rs}</svg></section>')
+    check_eq("a hooked reference-line label is not a literal in a drawing",
+             [t for t in _cov_rule.frozen_prose if "Spending" in t], [])
+finally:
+    if _was_edit is None:
+        os.environ.pop("DOCSYNC_EDIT", None)
+    else:
+        os.environ["DOCSYNC_EDIT"] = _was_edit
+
+# The hit area of a chart shape is its box: `all` hit-tested the stroke too,
+# and an unset stroke-width is an INCH in the page's layer — every chart took
+# clicks half an inch outside itself (a table's header row under it).
+_hit = _layout({"shapes": [{"id": "c1", "page": 1, "kind": "chart", "x": 1, "y": 1,
+                            "w": 3, "h": 2, "chart": {"type": "bar", "labels": ["a"],
+                                                      "series": [{"name": "s", "data": [1]}]}}]})
+_hl = _hit.layer(1)
+check("a chart's hit rect takes the pointer over its box only", _hl, 'pointer-events="fill"')
+check_eq("...never over a stroke an inch wide", 'pointer-events="all"' in _hl, False)
+
+# null is a gap: a line breaks there instead of diving to zero.
+_g = _cs2({"type": "line", "labels": list("abcde"),
+           "series": [{"name": "s", "data": [3, 4, None, 5, 6]}]}, 0, 0, 4, 2.5)
+check_eq("a line with a null draws two runs, not one through zero",
+         _g.count("<polyline"), 2)
+check_eq("...and no dot where there is no value", _g.count("<circle"), 4)
+_g0 = _cs2({"type": "line", "labels": list("abc"),
+            "series": [{"name": "s", "data": [60, None, 70]}], "axisMin": 50}, 0, 0, 4, 2.5)
+_ys = [float(y) for y in re.findall(r'cy="([\d.]+)"', _g0)]
+check_eq("a gap under a raised axisMin is not drawn below the plot",
+         all(y <= 2.5 for y in _ys), True)
+_ga = _cs2({"type": "area", "labels": list("abcde"),
+            "series": [{"name": "s", "data": [1, 2, None, 2, 1]}]}, 0, 0, 4, 2.5)
+check_eq("an area breaks at a gap too", _ga.count("<polygon"), 2)
+_gs = _cs2({"type": "stacked-area", "labels": list("abc"),
+            "series": [{"name": "s", "data": [1, None, 2]}, {"name": "t", "data": [1, 1, 1]}]},
+           0, 0, 4, 2.5)
+check_eq("a stack has no hole to show: it still reads the gap as 0",
+         _gs.count("<polygon"), 2)
+_sc = _cs2({"type": "scatter", "series": [{"name": "x", "data": [1, 2, None, 4]},
+                                          {"name": "y", "data": [5, 6, 7, None]}]}, 0, 0, 4, 2.5)
+check_eq("a scatter point with no x or no y is not drawn at zero", _sc.count("<circle"), 2)
+
+# Labels: Tilted on a line chart (the panel offered it; only bars obeyed).
+check("a line chart turns its labels when asked",
+      _cs2({"type": "line", "labels": [f"Month {i}" for i in range(24)],
+            "series": [{"name": "s", "data": list(range(24))}], "labelAngle": -45},
+           0, 0, 7, 3), 'transform="rotate(-45 ')
+check("...and so does an area chart",
+      _cs2({"type": "area", "labels": [f"Month {i}" for i in range(12)],
+            "series": [{"name": "s", "data": list(range(12))}], "labelAngle": -90},
+           0, 0, 7, 3), 'transform="rotate(-90 ')
+
+# Descriptions that ARE editable, which the check used to fail a report for.
+check_eq("an image in a text box's markdown has an editable alt",
+         _cov('<section class="page"><div class="ds-textbox" data-el="text.t1"><p>'
+              '<img src="a.svg" alt="Chart placeholder"></p></div></section>').desc_paged, [])
+check_eq("...and so does one in a slot's markdown",
+         _cov('<section class="page"><p data-slot="k"><img src="a.png" alt="A photo">'
+              '</p></section>').desc_paged, [])
+check_eq("...but a renderer's own <img alt> is still a literal",
+         _cov('<section class="page"><img data-el="cover.logo" alt="Appleseed logo">'
+              '</section>').desc_paged, ["Appleseed logo"])
+check_eq("a renderer chart named after its own title is wired (the title edits in the panel)",
+         _cov('<section class="page"><span data-chart="c"><svg class="chart" role="img" '
+              'aria-label="Revenue by source" data-desc-from="the chart title (Chart panel)">'
+              '</svg></span></section>').desc_paged, [])
+from docsync import blocks as _blocks2                            # noqa: E402
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _bc = _blocks2.chart(_layout({}), "fig.x", {"type": "bar", "title": "Revenue",
+                                                 "labels": ["a"], "series": [{"name": "s", "data": [1]}]})
+    check("blocks.chart says its description is its title", _bc, 'data-desc-from=')
+finally:
+    if _was_edit is None:
+        os.environ.pop("DOCSYNC_EDIT", None)
+    else:
+        os.environ["DOCSYNC_EDIT"] = _was_edit
+
+# A scaffolded report links its citation markers to the endnotes.
+from docsync import new as _new                                   # noqa: E402
+check("the scaffold renderer linkifies its citation markers",
+      Path(_new.__file__).read_text(), "body = C.fn.linkify(body)")
+
 try:
     sheet_inner("<html><body><p>no sheet</p></body></html>")
     FAILS.append("a render with no sheet must be refused")
