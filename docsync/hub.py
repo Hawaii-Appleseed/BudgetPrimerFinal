@@ -60,6 +60,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -198,7 +199,7 @@ def sources(*, dry: bool, hub: Path | None = None) -> list[dict]:
     out: dict[str, dict] = {}
 
     def add(bid: str, raw: dict, staged: Path, repo: str | None, where: str,
-            page: Path | None):
+            page: Path | None, render: Path | None = None):
         if raw.get("hub") is False:
             print(f"  {bid}: hub: false — skipped")
             return
@@ -219,7 +220,7 @@ def sources(*, dry: bool, hub: Path | None = None) -> list[dict]:
         if bid in out:
             print(f"  {bid}: also in {out[bid]['where']} — {where} wins")
         out[bid] = {"id": bid, "dir": staged, "repo": repo, "where": where, "page": page,
-                    "name": name}
+                    "name": name, "render": render}
 
     # This repo: the registry proper, staged in-process.
     print(f"{ROOT}")
@@ -233,7 +234,8 @@ def sources(*, dry: bool, hub: Path | None = None) -> list[dict]:
             continue
         if not dry:
             stage(b)
-        add(b.id, raw, b.editor.dir, _origin_slug(ROOT), ROOT.name, b.editor.out)
+        add(b.id, raw, b.editor.dir, _origin_slug(ROOT), ROOT.name, b.editor.out,
+            b.editor.render)
 
     # Consumers: their own vendored stage, in their own checkout.
     for repo in consumers():
@@ -303,6 +305,39 @@ def editor_version() -> str:
     return h.hexdigest()[:16]
 
 
+def drawn_slots(render: Path | None) -> list[str] | None:
+    """The slot keys a report's renderer READS — the words that are on its
+    page — found by building it once in edit mode with DOCSYNC_SLOTLOG, the
+    log docsync.check holds pages to. Written into the hub's manifest as
+    `drawn`, so the connector can tell a colleague's Claude which slots of a
+    live document are not on the page at all: a redesign that stops drawing
+    a slot leaves its words in the room, and they read like any other slot
+    (the UHERO summary kept ~40 such after going to three pages). None when
+    the report cannot be built here (a consumer's, or a broken build): then
+    nothing is marked, rather than everything."""
+    if not render or not Path(render).is_file():
+        return None
+    import tempfile                                    # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as d:
+        log, out = Path(d) / "slots.json", Path(d) / "out.html"
+        env = {k: v for k, v in os.environ.items() if not k.startswith("DOCSYNC_")}
+        env.update(DOCSYNC_EDIT="1", DOCSYNC_SLOTLOG=str(log), DOCSYNC_OUT=str(out),
+                   # A renderer finds `docsync` on its own path set-up; one that
+                   # leans on the working directory would not, run from here.
+                   PYTHONPATH=os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])))
+        try:
+            r = subprocess.run([sys.executable, str(render)], env=env, cwd=ROOT,
+                               capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return None
+        if r.returncode != 0 or not log.is_file():
+            return None
+        try:
+            return sorted(json.loads(log.read_text()))
+        except Exception:                                # noqa: BLE001 - an unreadable log marks nothing
+            return None
+
+
 def vendor(hub: Path, projects: list[dict], *, dry: bool,
            missing: list[str] | None = None) -> list[str]:
     """Copy everything; append to `missing` each reference a project's page
@@ -349,6 +384,9 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
         _sync_tree(sdir / "engine", pdir / "engine", changed, dry=dry, skip=("manifest.json",))
         m = json.loads((sdir / "engine" / "manifest.json").read_text())
         m["repo"] = p["repo"]
+        drawn = drawn_slots(p.get("render"))
+        if drawn is not None:
+            m["drawn"] = drawn
         _write(pdir / "engine" / "manifest.json",
                (json.dumps(m, indent=2) + "\n").encode(), changed, dry=dry)
         if (sdir / "assets").is_dir():

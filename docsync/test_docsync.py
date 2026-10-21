@@ -3347,6 +3347,23 @@ with _tempfile.TemporaryDirectory() as _d:
              _hidden_text(_hubd, _proj, live=lambda p: (_ for _ in ()).throw(AssertionError("asked"))), [])
     check_eq("a test rig's copy of the hub is not a ship", _is_ship(_hubd), False)
 
+# ---- the hub: which slots are on the page --------------------------------
+# docsync.hub builds each report once in edit mode and records the keys its
+# renderer READ into the hub's manifest (`drawn`), so the connector can tell a
+# colleague's Claude that a leftover slot is not on the page.
+from docsync.hub import drawn_slots as _drawn_slots                  # noqa: E402
+with _tempfile.TemporaryDirectory() as _d:
+    _dd = Path(_d)
+    (_dd / "content.md").write_text("[[on.it]]\nDrawn.\n\n[[left.over]]\nNot drawn.\n\n[[sources]]\n[x]: A source.\n")
+    (_dd / "render.py").write_text(
+        "from pathlib import Path\nfrom docsync.content import Content\n"
+        f"C = Content(Path({str(_dd / 'content.md')!r}))\nC.raw('on.it')\n")
+    check_eq("the slots a renderer reads are the ones on the page", _drawn_slots(_dd / "render.py"), ["on.it"])
+    (_dd / "broken.py").write_text("raise SystemExit(1)\n")
+    check_eq("a report that does not build marks nothing (None), rather than everything",
+             _drawn_slots(_dd / "broken.py"), None)
+check_eq("nor one with no renderer here (a consumer's)", _drawn_slots(None), None)
+
 _edit_src = _EDITOR.read_text()
 check("the editor polls that file on the hub", _edit_src, "new URL('editor-version.txt', location.href)")
 check("past the service worker", _edit_src, "fetch(new URL('editor-version.txt', location.href), { cache: 'no-store' })")
