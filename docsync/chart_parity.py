@@ -12,12 +12,16 @@ thousand-line change. So this draws every combination of type, dataset, label
 set, flag and box size the OLD engine could express, with both engines, and
 reports what moved.
 
-It is not a pass/fail gate, because some differences ARE the fix: a bar that
-used to be drawn at height zero while its label read -45, a legend whose names
-overlapped, a row label that ran off the left of the drawing. It exits non-zero
-so a bare run is noisy, prints one diff per differing shape so you can see
-WHICH pixel moved, and leaves the judgment where it belongs. What it makes
-impossible is finding out later.
+It is not a pass/fail gate by itself, because some differences ARE the fix: a
+bar that used to be drawn at height zero while its label read -45, a legend
+whose names overlapped, a row label that ran off the left of the drawing. It
+exits non-zero so a bare run is noisy, prints one diff per differing shape so
+you can see WHICH pixel moved, and leaves the judgment where it belongs. What
+it makes impossible is finding out later. CI (editor-tests.yml, the `parity`
+job) runs it against the commit a push or pull request started from and
+holds the judgment to its record: a render that moved fails the gate unless
+docsync/CHART_PARITY.md changed in the same range. Pages get the same
+treatment from docsync.build_parity.
 
 The old engine is read straight out of git, so there is nothing to keep in
 step: add a chart type or a flag below and both sides get it — the old engine

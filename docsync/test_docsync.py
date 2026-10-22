@@ -5263,6 +5263,23 @@ from docsync import new as _new                                   # noqa: E402
 check("the scaffold renderer linkifies its citation markers",
       Path(_new.__file__).read_text(), "body = C.fn.linkify(body)")
 
+# build_parity: what counts as a report's OWN files (a change there explains
+# its page moving) against the real registry, so a binding's shape is tested
+# as written, not as imagined.
+from docsync import build_parity as _bp                          # noqa: E402
+_bpb = _bp.bindings(_bp.ROOT)
+check_eq("build_parity reads every binding that has a renderer",
+         "rxkids" in _bpb and "budget-primer" in _bpb, True)
+check_eq("a report's content is its own", _bp.is_own("projects/rxkids/content.md", _bpb["rxkids"]["own"]), True)
+check_eq("...so is anything in its folder", _bp.is_own("projects/rxkids/original.html", _bpb["rxkids"]["own"]), True)
+check_eq("...and a file a watched glob names", _bp.is_own("projects/rxkids/assets/hero.png", _bpb["rxkids"]["own"]), True)
+check_eq("...but the engine is not", _bp.is_own("docsync/layout.py", _bpb["rxkids"]["own"]), False)
+check_eq("...nor another report", _bp.is_own("projects/retitc/content.md", _bpb["rxkids"]["own"]), False)
+check_eq("the primer's data under docs/js is its own (engine: in its binding)",
+         _bp.is_own("docs/js/historical_trends.json", _bpb["budget-primer"]["own"]), True)
+check_eq("a folder prefix is a folder, not a string prefix",
+         _bp.is_own("projects/rxkids-fiscal/content.md", _bpb["rxkids"]["own"]), False)
+
 try:
     sheet_inner("<html><body><p>no sheet</p></body></html>")
     FAILS.append("a render with no sheet must be refused")

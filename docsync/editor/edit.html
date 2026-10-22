@@ -27806,8 +27806,14 @@ function hubCommentsOnHand() {
 }
 /** Bring one thread to hand: darker highlight, raised card, panel open. */
 function hubCommentFocus(id, { scrollPage = true } = {}) {
+  // By the hub's id, or by the provisional one a new thread wore before the
+  // hub answered (hubCommentAdd; hubCommentsMerge keeps it as __clientId): a
+  // card clicked in that instant, or a focus held back past it - a render
+  // waits while someone types - names a thread the list knows by another id
+  // since, and must land on the thread, not on a name nothing carries any more.
+  const c = hubComments.find(x => x.id === id) || hubComments.find(x => x.__clientId === id);
+  if (c) id = c.id;
   hubCommentActive = id;
-  const c = hubComments.find(x => x.id === id);
   // On the tab that has it: a resolved thread lives under Resolved.
   if (c && (c.resolved ? hubCommentsTab !== 'resolved' : hubCommentsTab === 'resolved')) hubCommentsTab = c.resolved ? 'resolved' : 'open';
   if ($('cpanel').hidden) hubCommentsToggle(true); else hubCommentsRender();
