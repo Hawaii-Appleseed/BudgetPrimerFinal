@@ -3451,14 +3451,14 @@ const writeSlot = (k, v) => {
     console.warn('refused a slot marker inside slot text:', marker);
     $('stat').textContent = `"${marker.trim()}" is a slot marker, and a line of `
       + 'its own here would split this slot — nothing was saved';
-    return;
+    return false;
   }
   if (k === 'sources') {
     const bad = badSourceLines(v);
     if (bad.length) {
       console.warn('refused malformed sources line(s):', bad);
       $('stat').textContent = `refused a malformed sources line: "${bad[0].slice(0, 70)}" — nothing was saved`;
-      return;
+      return false;
     }
   }
   // A slot the RENDERER asks for that this document has not got yet — docsync
@@ -3471,7 +3471,7 @@ const writeSlot = (k, v) => {
   // dict, so where a block sits has never decided anything.
   if (!slotRe(k).test(source)) {
     source = source.replace(/\s*$/, '') + `\n\n[[${k}]]\n${v.trim()}\n`;
-    return;
+    return true;
   }
   // The block's own notes ride along, after the words. They are invisible to
   // the renderer either way, so where they sit is a question of reading
@@ -3479,6 +3479,7 @@ const writeSlot = (k, v) => {
   // answer to it.
   const body = [v.trim(), ...slotNotes(k)].filter(Boolean).join('\n\n');
   source = source.replace(slotRe(k), (m, head) => head + body + '\n');
+  return true;
 };
 
 // --- markdown <-> rich text --------------------------------------------
@@ -6292,7 +6293,7 @@ async function menuAfterRender(e, target) {
     : target.dataset.page != null ? `section.page[data-page="${CSS.escape(target.dataset.page)}"]`
     : null;
   await new Promise(r => setTimeout(r, 0));
-  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  await renderIdle();
   if (editing) return;
   const d2 = $('out').contentDocument;
   if (!d2) return;
@@ -6508,7 +6509,7 @@ function layerMenu(d, el, e) {
       item('Convert text to table', async () => {
         pushHistory();
         const r = textToTable(id);
-        if (r.error) { past.pop(); $('stat').textContent = r.error; return; }
+        if (r.error) { withdrawStep(); $('stat').textContent = r.error; return; }
         markDirty(); await render();
         setSel($('out').contentDocument, [r.id]);
         $('stat').textContent = `${r.rows} rows × ${r.cols} columns`;
@@ -8867,7 +8868,7 @@ function tableMenu(d, td, e) {
       for (let r = rg.r0; r <= rg.r1; r++) for (let c = rg.c0; c <= rg.c1; c++) keys.push(`${r},${c}`);
       const cur = ((t.cells || {})[`${ri},${ci}`] || {}).use;
       const row = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
-        b.addEventListener('click', async () => { closeMenu(d); pushHistory(); const ok = await fn(); if (ok === false) { past.pop(); return; }
+        b.addEventListener('click', async () => { closeMenu(d); pushHistory(); const ok = await fn(); if (ok === false) { withdrawStep(); return; }
           markDirty(); await render(); paintCells($('out').contentDocument); }); sub.appendChild(b); };
       Object.keys(cellStyles()).sort().forEach(n => row((cur === n ? '✓ ' : '') + n, () => applyCellStyle(t, keys, n)));
       row('No cell style', () => applyCellStyle(t, keys, null));
@@ -14039,7 +14040,7 @@ async function deleteSel(d) {
     });
   }
   selIds.clear();
-  if (!touched) { past.pop(); return; }
+  if (!touched) { withdrawStep(); return; }
   markDirty();
   await render();
   // AFTER the render: the pipeline writes its own status ("unsaved changes"),
@@ -14169,7 +14170,7 @@ async function duplicateSel(d) {
   const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
     && selGroups()[0].every(id => selIds.has(id));
   [...selIds].forEach(dup);
-  if (!copies.length) { past.pop(); return; }
+  if (!copies.length) { withdrawStep(); return; }
   // Duplicating a whole group hands back a group — the copy stays together,
   // as Canva's does.
   if (wasGroup && copies.length > 1) {
@@ -14311,7 +14312,7 @@ async function stepRepeatDialog(d) {
   const n = Math.max(1, Math.min(100, Math.round(+got.count) || 1));
   pushHistory();
   const made = stepRepeatIds(ids, n, +got.dx || 0, +got.dy || 0);
-  if (!made.length) { past.pop(); return; }
+  if (!made.length) { withdrawStep(); return; }
   setSel(d, [...ids, ...made]);
   markDirty();
   await render();
@@ -14858,12 +14859,20 @@ function wirePan(d) {
 
 /** Keyboard, inside the page: the top-level listener never hears iframe keys
  *  (undo was dead whenever focus sat in the report — a real bug until now). */
+// The iframe's document is REPLACED by most renders, so a listener on it
+// lives until the next edit unless it is put back every time. wire() runs
+// these on each fresh document; a listener registered anywhere else works
+// exactly once. Register here, never in wire() or keysFor() by hand.
+const DOCUMENT_WIRES = [];
+function onEachDocument(fn) { DOCUMENT_WIRES.push(fn); }
+window.__dsDocumentWires = () => DOCUMENT_WIRES.length;
+onEachDocument(wirePan);
+onEachDocument(d => d.addEventListener('paste', pasteLoose));
+onEachDocument(wireDrop);
+
 function keysFor(d) {
   wireFindKey(d);
   d.addEventListener('keydown', saveKey, true);    // capture: see saveKey
-  wirePan(d);
-  d.addEventListener('paste', pasteLoose);
-  wireDrop(d);
   d.addEventListener('keydown', e => {
     // Before the `editing` guard too — see the top-level listener.
     if (zoomKey(e)) return;
@@ -15074,7 +15083,8 @@ function immovableSlots(d) {
     const key = el.dataset.slot;
     if (!key || seen.has(key) || el.closest('[data-el]') || el.closest('.ds-edit')) return;
     seen.add(key);
-    out.push({ key, page: pageIdOf(el.closest('section.page')) });
+    const pg = el.closest('section.page');
+    out.push({ key, page: pageNumOf(d, pg) ?? pageIdOf(pg) });
   });
   return out;
 }
@@ -15111,7 +15121,7 @@ function renderNotices(d) {
   const host = $('notices');
   const el = d.getElementById('ds-notices');
   let msgs = [];
-  if (el) { try { msgs = JSON.parse(el.textContent) || []; } catch (e) {} }
+  if (el) { try { msgs = JSON.parse(el.textContent) || []; } catch (e) { swallowed('renderer notices are not JSON', e); } }
   const seen = notesSeen();
   const show = msgs.filter(m => typeof m === 'string' && m.trim() && !seen.has(m));
   host.textContent = '';
@@ -15658,7 +15668,7 @@ const pageCopyOf = pid => (pageBlanks().find(b => String(b.id) === String(pid)) 
  *  HTML — nothing on screen changes. The virtual layout file is overwritten,
  *  which the next render() overwrites again with the real one. */
 async function renderWith(lay) {
-  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  await renderIdle();
   py.globals.set('SRC', source);
   py.globals.set('LAYOUT', JSON.stringify(lay, null, 2));
   py.globals.set('CONTENT', M.content);
@@ -15910,18 +15920,30 @@ function visiblePageId() {
  *     endnotes page would validate and then silently never appear.
  *  3. Failing both (an older staged engine), the sheets' own order. */
 function mountedPages(d) {
-  let pages = [...d.querySelectorAll('section[data-page]')].map(pg => {
-    const pid = pg.dataset.page;
-    return { pg, id: /^\d+$/.test(pid) ? +pid : pid };
+  const num = pid => /^\d+$/.test(pid) ? +pid : pid;
+  // Per sheet, not all-or-nothing: a render that patches ONE sheet in place
+  // hands it back without the id the editor stamped on it (stampPageIds),
+  // and a whole-document "sections with data-page" branch then lost that
+  // sheet — a box added to page 2 left page 2 unmounted.
+  const seen = new Set();
+  const pages = [];
+  d.querySelectorAll('section.page').forEach(pg => {
+    const own = pg.dataset.page;
+    const m = own == null ? pg.querySelector('[data-ds-mount]') : null;
+    const pid = own != null ? own : m ? m.dataset.dsMount : null;
+    if (pid == null) return;
+    seen.add(pg);
+    pages.push({ pg, id: num(pid) });
+  });
+  // A marker outside any sheet (an older staged engine) still names a page.
+  d.querySelectorAll('[data-ds-mount]').forEach(m => {
+    const pg = m.closest('section.page');
+    if (pg && seen.has(pg)) return;
+    if (pg) { seen.add(pg); pages.push({ pg, id: num(m.dataset.dsMount) }); }
+    else pages.push({ pg: m, id: num(m.dataset.dsMount) });
   });
   if (!pages.length)
-    pages = [...d.querySelectorAll('[data-ds-mount]')].map(m => {
-      const pid = m.dataset.dsMount;
-      return { pg: m.closest('section.page') || m,
-               id: /^\d+$/.test(pid) ? +pid : pid };
-    });
-  if (!pages.length)
-    pages = [...d.querySelectorAll('section.page')].map((pg, i) => ({ pg, id: i + 1 }));
+    return [...d.querySelectorAll('section.page')].map((pg, i) => ({ pg, id: i + 1 }));
   return pages;
 }
 /** The number a sheet's placed things are keyed by (see mountedPages), or
@@ -16227,7 +16249,7 @@ async function saveFromKey() {
   const a = d && d.activeElement;
   if (editing && a && a !== d.body) a.blur();      // closing the words commits them
   await new Promise(r => setTimeout(r, 0));
-  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  await renderIdle();
   if (editing) return;                             // a dialog kept them open
   if (hubViewOnly()) { $('stat').textContent = 'view only — there is nothing of yours to save'; return; }
   if (!dirty) { $('stat').textContent = 'nothing to save — every change is saved'; return; }
@@ -16923,8 +16945,7 @@ function storyWrite(key, md) {
     if (!md.trim()) { $('stat').textContent = 'a text box needs words — delete it on the page instead'; return false; }
     b.md = fixOkina(md); return true;
   }
-  writeSlot(key, md);
-  return readSlot(key) === md.replace(/\n{3,}/g, '\n\n').trim();
+  return writeSlot(key, md) !== false;
 }
 function openStoryEditor() {
   if ($('story')) return;
@@ -16957,7 +16978,7 @@ function openStoryEditor() {
       ta.addEventListener('change', async () => {
         if (ta.value === ta.dataset.was) return;
         pushHistory();
-        if (!storyWrite(it.key, ta.value)) { past.pop(); box.classList.add('bad'); return; }
+        if (!storyWrite(it.key, ta.value)) { withdrawStep(); box.classList.add('bad'); return; }
         box.classList.remove('bad');
         ta.dataset.was = ta.value;
         markDirty(); await render();
@@ -19736,6 +19757,21 @@ function pushHistory() {
   future.length = 0;
   syncHistoryButtons();
 }
+/** Take back the step pushHistory just marked, because the action it was
+ *  for turned out to do nothing (a duplicate of nothing copyable, a refused
+ *  conversion, a batch rolled back). Locally the snapshot comes off the
+ *  stack. In a session there is no snapshot: pushHistory marked a boundary
+ *  on the document's Y.UndoManager, and with nothing changed since, the
+ *  boundary is empty and harmless. Every site used to `past.pop()` itself —
+ *  in a session that popped a snapshot from before the session began, or
+ *  nothing, and batch() then JSON.parse'd undefined. */
+function withdrawStep() {
+  if (collab) { syncHistoryButtons(); return null; }
+  const sn = past.pop();
+  if (sn) stepTimes.delete(sn);
+  syncHistoryButtons();
+  return sn;
+}
 async function restore(json) {
   const st = JSON.parse(json);
   source = st.source;
@@ -19902,7 +19938,7 @@ async function pressPastEditor(d, el, e, active) {
   const dx = e.clientX - r0.left, dy = e.clientY - r0.top;
   active.blur();                          // commits: finish() ends `editing` at once
   await new Promise(r => setTimeout(r, 0));
-  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  await renderIdle();
   if (editing) return;                    // a dialog kept the words open
   const d2 = $('out').contentDocument;
   if (!d2) return;
@@ -20821,7 +20857,7 @@ function startDrag(d, el, e0, drillIn = false) {
     // reads, and the list (and every <sup> marker pointing into it) renumbers.
     if (members.length === 1 && (idOf(members[0]) || '').startsWith('endnote.')) {
       const moved = reorderEndnote(d, members[0]);
-      if (moved) markDirty(); else past.pop();   // no change: no undo entry
+      if (moved) markDirty(); else withdrawStep();   // no change: no undo entry
       clearGuides(d);
       await render();                            // snaps it back into the flow
       if (moved) $('stat').textContent = moved;  // after render, so it survives
@@ -21318,7 +21354,7 @@ function cacheDraft() {
 async function clearDraftCache() {
   if (local || !M) return;
   const kv = await idbKV();
-  if (kv) { try { await kv.del(cacheKey()); } catch (e) {} }
+  if (kv) { try { await kv.del(cacheKey()); } catch (e) { swallowed('warm-boot cache clear', e); } }
 }
 /** On boot, adopt any unsaved edits cached in THIS browser over what we loaded
  *  from the branch — auto-restore, not a prompt, because Save keeps them and
@@ -23422,7 +23458,7 @@ async function detectLocal() {
       setPushState(j.ahead);
       if (j.doc != null) DOC = j.doc;
       contentHealth(j);        // the first ping already knows; don't wait for SSE
-    } catch (e) {} }
+    } catch (e) { swallowed('first ping was not JSON', e); } }
   } catch (e) { local = false; }
   if (!local) return;
   sayHello();                   // there is a server to tell, now that we know
@@ -23696,7 +23732,7 @@ function startLive(onEvent) {
     try {
       es = new EventSource(withProject('/__events'));
       es.onmessage = ev => {
-        let d = {}; try { d = JSON.parse(ev.data || '{}'); } catch (e) {}
+        let d = {}; try { d = JSON.parse(ev.data || '{}'); } catch (e) { swallowed('live event was not JSON', e); }
         // The stream only ADVERTISES pilot ops; this tab claims them over
         // HTTP. Claiming from the leader alone keeps every op in ONE tab's
         // in-memory document — split across two tabs they would edit two
@@ -23864,7 +23900,7 @@ async function refreshEngineFiles() {
   try {
     const fresh = JSON.parse(await get(withBase('engine/manifest.json')));
     if (fresh && fresh.files) M.files = fresh.files;
-  } catch (e) {}
+  } catch (e) { swallowed('engine manifest refresh', e); }
   const urls = Object.keys(M.files).filter(
     u => M.files[u] !== M.content && M.files[u] !== M.layout);
   const datas = await Promise.all(
@@ -24256,7 +24292,38 @@ async function _pull() {
  *  after it (source/layout are globals, so the rerun sees all of it), and
  *  every caller's await resolves only after a render that included its state.
  */
+/** Where an error is deliberately swallowed, say so once in the console
+ *  and keep a tally (window.__dsSwallowed()), so "it just does nothing" has
+ *  somewhere to look. The sites that stay bare are localStorage writes on a
+ *  file: URL, which fail by design. */
+const SWALLOWED = {};
+function swallowed(where, e) {
+  SWALLOWED[where] = (SWALLOWED[where] || 0) + 1;
+  if (SWALLOWED[where] === 1) console.debug(`[cider] ${where}: ${e && e.message ? e.message : e}`);
+}
+window.__dsSwallowed = () => ({ ...SWALLOWED });
+
 let renderRunning = false, renderAgain = false, renderWaiters = [];
+// The render pipeline's state lives in four variables — renderRunning, the
+// twin iframe (pendingFrame) and its resolver (pendingResolve), and pulling
+// — whose relationships nobody wrote down, so every reader guessed: the
+// settle signal once read pendingFrame and hung on a twin parked behind open
+// words. Ask by name instead.
+//  - running: renderOnce is at work (engine, diff, or waiting on the twin);
+//  - loading: a twin is mid-load and a render() is waiting on it;
+//  - parked:  a twin loaded while words were open and waits for the edit's
+//             own render to replace it — nothing moves under the person;
+//  - pulling: a version bump is being pulled from disk (it ends in a render).
+function renderState() {
+  return { running: renderRunning, loading: !!pendingResolve,
+           parked: !!pendingFrame && !pendingResolve, pulling: !!pulling };
+}
+const renderBusy = () => { const r = renderState(); return r.running || r.loading || r.pulling; };
+/** Resolves once no render is running (at once if none is). The idiom
+ *  `if (renderRunning) await new Promise(r => renderWaiters.push(r))` lived
+ *  in five places; this is it. */
+const renderIdle = () => renderRunning ? new Promise(r => renderWaiters.push(r)) : Promise.resolve();
+window.__dsRenderState = renderState;
 // --- "is the page settled?" for whoever drives this editor from outside ----
 // The test fixture used to sleep a fixed 1.5s after the first render, in case
 // the live server's first ping carried a version bump that swapped the canvas
@@ -24272,8 +24339,7 @@ window.__dsRenderSeq = () => renderSeq;
 // pendingResolve, not pendingFrame: a twin that loaded while words were
 // open stays parked (pendingFrame set) until the edit's own render replaces
 // it, and nothing moves under the person meanwhile — that is settled.
-window.__dsSettled = () => liveProbe !== 'pending' && (liveProbe !== 'local' || liveSynced)
-  && !pulling && !renderRunning && !pendingResolve;
+window.__dsSettled = () => liveProbe !== 'pending' && (liveProbe !== 'local' || liveSynced) && !renderBusy();
 // --- warm-boot preview ------------------------------------------------------
 // Pyodide takes ~1.5s to compile even fully cached, and the canvas used to sit
 // BLANK for all of it. The last successful render is kept in the Cache API
@@ -24674,7 +24740,7 @@ function patchPages(html) {
   // editing: a render mid-edit is deferred anyway, and the open editor lives
   // in these very nodes. pendingFrame: a swap is already in flight for this
   // output, and racing it would patch a document about to be discarded.
-  if (!lastHtml || !live || !live.body || pendingFrame || editing) return null;
+  if (!lastHtml || !live || !live.body || renderState().loading || renderState().parked || editing) return null;
   const parse = h => new DOMParser().parseFromString(h, 'text/html');
   const shape = doc => ({
     head: doc.head.innerHTML,
@@ -24874,9 +24940,26 @@ function stillEntrances(d, roots) {
     try { a.finish(); } catch (e) { /* an animation that cannot end: leave it */ }
   });
 }
+/** One identity per sheet. pageIdOf() reads a section's data-page — what
+ *  the page selection, the page menu and the page colour are keyed by — but
+ *  only the Primer's renderer stamps it; everything placed is keyed by the
+ *  mount number (pageNumOf). Two answers to "which page" cost a select-all
+ *  and a drop their page. Stamp the number on every mounted sheet that has
+ *  no id of its own, once per document, so the two agree. */
+function stampPageIds(d) {
+  const pages = mountedPages(d);
+  pages.forEach(({ pg, id }) => {
+    if (pg && pg.matches && pg.matches('section.page') && !pg.hasAttribute('data-page') && id != null) {
+      pg.setAttribute('data-page', String(id));
+      pg.setAttribute('data-page-stamped', '1');   // the editor's, not the renderer's
+    }
+  });
+}
+
 function wire(roots) {
   const d = $('out').contentDocument;
   const fresh = !(roots && roots.length);
+  stampPageIds(d);
   healStrandedEditor();   // see its own comment; wire() is one of two callers
   stillEntrances(d, roots);
   showLocalImages(d, roots);
@@ -24911,6 +24994,7 @@ function wire(roots) {
   // On the DOCUMENT, not its elements: a patch keeps the same document, so
   // re-adding these would double every keystroke and every selection read.
   if (fresh) {
+    DOCUMENT_WIRES.forEach(fn => fn(d));
     keysFor(d);
     wireMarkState(d);          // chrome B/I state tracks the edit selection
     anchorWire(d);             // the armed anchor click, once per document
@@ -24940,7 +25024,7 @@ function wire(roots) {
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {
-    try { designedPages = JSON.parse(meta.textContent); pagesDeclared = true; } catch (e) {}
+    try { designedPages = JSON.parse(meta.textContent); pagesDeclared = true; } catch (e) { swallowed('ds-pagemeta is not JSON', e); }
   }
   // No declaration: take the pages from the document itself, so the strip is
   // drawn for reports whose renderer predates L.pagemeta(). Order-editing stays
@@ -30507,7 +30591,7 @@ $('file-repo').onclick = async () => {
       login = (await (await fetch('https://api.github.com/user', {
         headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json' },
       })).json()).login || '';
-    } catch (e) {}
+    } catch (e) { swallowed('GitHub login lookup', e); }
     // A repo under YOUR account and one under an org are different endpoints;
     // pick by comparing the owner to who the token belongs to.
     const url = (login && owner.toLowerCase() === login.toLowerCase())
@@ -31558,7 +31642,10 @@ function _pilotValidateSetSlot(key, md) {
   }
   return { ok: true };
 }
-function _pilotApplySetSlot(key, md) { writeSlot(key, md); return { key }; }
+function _pilotApplySetSlot(key, md) {
+  if (writeSlot(key, md) === false) throw new Error($('stat').textContent || 'the words were refused');
+  return { key };
+}
 
 // An element a pilot can address is USUALLY in the DOM — but inside a batch,
 // an op can name a box/shape an earlier op just created, which exists only in
@@ -32971,17 +33058,14 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     // validated before its referent exists, so its validation runs at apply
     // time, and a failure there rolls the WHOLE batch back from the snapshot
     // pushHistory took — all-or-nothing either way, just enforced later.
-    // A swatch is written '@Name' too ('@Name 20%' with a tint), as a fill,
-    // a stroke or a colour: that is a value, not a ref — the swatch the
-    // report has, or any tinted one, is passed through untouched. Every
-    // single verb runs through here now, so addShape({fill: '@Brand 20%'})
-    // was refused as "names no earlier op's 'as'".
-    // And with no op named by `as`, nothing can be a ref at all: a '@Nope'
-    // then reaches its verb, which says "no swatch called 'Nope'".
-    const anyAs = ops.some(op => op && op.as);
-    const swatchRef = v => typeof v === 'string' && v.startsWith('@')
-      && (/\s/.test(v.trim()) || !!(layout.swatches || {})[v.slice(1).trim()]);
-    const refStr = v => anyAs && typeof v === 'string' && v.startsWith('@') && !swatchRef(v);
+    // A ref is '@' + a name an op IN THIS BATCH gives itself with `as` —
+    // nothing else. It used to be any string starting with '@', which is
+    // also how a swatch is written ('@Brand', '@Brand 20%'), so a fill was
+    // refused as "names no earlier op's 'as'"; a carve-out for swatches the
+    // report had still read '@Nope' as a ref. A forward name is refused
+    // (refs point backwards); any other '@…' is a value for its verb to judge.
+    const asNames = new Set(ops.filter(op => op && op.as != null).map(op => String(op.as)));
+    const refStr = v => typeof v === 'string' && /^@[\w-]+$/.test(v) && asNames.has(v.slice(1));
     const hasRef = a => typeof a === 'string' ? refStr(a)
       : (a && typeof a === 'object')
         ? Object.values(a).some(refStr)
@@ -33059,7 +33143,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         args = args.map(a => resolve(a, named));
       } catch (e) {
         // unknown ref can't happen (checked above) — belt and braces
-        const rolled = JSON.parse(past.pop());
+        withdrawStep();
+        const rolled = JSON.parse(before);
         source = rolled.source; layout = rolled.layout;
         return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
       }
@@ -33069,7 +33154,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           // Nothing has rendered yet: put source/layout back exactly as the
           // snapshot holds them and withdraw the history entry. dirty was
           // never set, so the document is untouched by every measure.
-          const rolled = JSON.parse(past.pop());
+          withdrawStep();
+          const rolled = JSON.parse(before);
           source = rolled.source; layout = rolled.layout;
           return { ok: false, error: `op ${i} (${op.verb}): ${v.error}` };
         }
@@ -33079,7 +33165,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       catch (e) {
         // A verb that finds, mid-apply, that it cannot (a merge across
         // another's edge): the whole batch is undone, as a failed check is.
-        const rolled = JSON.parse(past.pop());
+        withdrawStep();
+        const rolled = JSON.parse(before);
         source = rolled.source; layout = rolled.layout;
         return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
       }
@@ -33105,10 +33192,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (unseen.length) {
       const st = JSON.parse(before);
       source = st.source; layout = st.layout;
-      if (!collab) past.pop();
+      withdrawStep();
       markDirty();
       await render();
-      syncHistoryButtons();
       const drawn = _pilotDrawnPages();
       return { ok: false, error: `${unseen.map(a => a.id).join(', ')} would be saved and never seen: page `
         + `${unseen[0].page} does not draw ${unseen[0].verb.replace(/^add/, '').toLowerCase()}s, so nothing was changed`
@@ -33118,10 +33204,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       const why = renderError;
       const st = JSON.parse(before);
       source = st.source; layout = st.layout;
-      if (!collab) past.pop();
+      withdrawStep();
       markDirty();
       await render();
-      syncHistoryButtons();
       return { ok: false, error: 'the engine would not build the result, so nothing was changed'
         + (why ? ` — ${why}` : '') };
     }
