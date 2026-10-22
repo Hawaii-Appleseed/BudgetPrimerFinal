@@ -220,6 +220,24 @@ def _register_project(pid: str, root: Path, binding) -> None:
     _default_registry.cache_clear()
 
 
+@functools.lru_cache(maxsize=64)
+def _binding_name(root: Path, pid: str) -> str:
+    """The title a binding gives itself (`name:` in docsync.yml — what the
+    staff hub's list shows), else the id with its hyphens opened. The
+    registry used to title-case the id for every project, so a download of
+    "RxKids Hawaiʻi" was Rxkids.pdf and "Tax Testimony One-Pager" was
+    Tax-Testimony.pdf. Read raw, since Binding carries no name field."""
+    try:
+        import yaml
+        raw = yaml.safe_load((root / "docsync.yml").read_text()) or {}
+        for b in raw.get("bindings") or []:
+            if isinstance(b, dict) and b.get("id") == pid and b.get("name"):
+                return str(b["name"])
+    except Exception:                                  # noqa: BLE001
+        pass
+    return pid.replace("-", " ").title()
+
+
 @functools.lru_cache(maxsize=1)
 def _default_registry() -> dict:
     """The editor's start-page registry, derived from what this server serves.
@@ -239,7 +257,7 @@ def _default_registry() -> dict:
             continue
         base = (f"../_repo-{pid}" if p["root"] != SELF_ROOT
                 else "." if e.dir.name == "primer" else f"../{e.dir.name}")
-        entry = {"name": pid.replace("-", " ").title(), "base": base}
+        entry = {"name": _binding_name(p["root"], pid), "base": base}
         repo = _origin_of(p["root"])
         if repo:
             entry["repo"] = repo
@@ -482,6 +500,18 @@ class _WarmChrome:
             raise RuntimeError(f"{method}: {d['error'].get('message')}")
         return d.get("result", {})
 
+    def _still(self, s, deadline):
+        """An export is a still. A page's scroll-reveal (opacity 0 until an
+        IntersectionObserver fires) and count-up numbers never ran in a
+        capture nobody scrolls: rxkids' PNG read "3,680" for 14,808 and was
+        white below the fold. Every well-made page honours reduced motion
+        (its own rule puts each reveal at its end state and skips the
+        counting), so the capture asks for it — before navigation, so the
+        page's first paint already knows."""
+        self.call("Emulation.setEmulatedMedia",
+                  {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+                  s, deadline)
+
     def pdf(self, url: str, budget_ms: int = 12000, timeout: float = 45) -> bytes:
         """What `--virtual-time-budget=12000 --no-pdf-header-footer
         --print-to-pdf` wrote, byte for byte bar the timestamps: load, then
@@ -496,6 +526,7 @@ class _WarmChrome:
                           deadline=deadline)["sessionId"]
             on = lambda ev: (lambda d: d.get("method") == ev and d.get("sessionId") == s)
             self.call("Page.enable", None, s, deadline)
+            self._still(s, deadline)
             self.call("Page.navigate", {"url": url}, s, deadline)
             self._wait(on("Page.loadEventFired"), deadline)
             self.call("Emulation.setVirtualTimePolicy",
@@ -550,6 +581,7 @@ class _WarmChrome:
                                                    "awaitPromise": True}, s, deadline)
                 return r.get("result", {}).get("value")
             self.call("Page.enable", None, s, deadline)
+            self._still(s, deadline)
             size(1600)
             self.call("Page.navigate", {"url": url}, s, deadline)
             self._wait(on("Page.loadEventFired"), deadline)
@@ -1927,7 +1959,12 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/__quit":
                 return self._json(200, {"ok": False, "error":
                     "blocked in tests — the suite's server stays up"})
-            if path in ("/__save", "/__push"):
+            # /__save lets a spec through on purpose, by the same kind of
+            # header /__pull takes below — for a project the spec adopted
+            # from a throwaway clone it built itself, which is the only way
+            # the real save path (write, build, commit, roll back) is tested.
+            if path == "/__push" or (path == "/__save"
+                                     and self.headers.get("X-Primer-Test-Save") != "1"):
                 return self._json(200, {"ok": True, "ahead": 0, "message":
                     "blocked in tests — no real save/push happens here"})
             if path == "/__publish":
@@ -1964,9 +2001,25 @@ class Handler(SimpleHTTPRequestHandler):
                 bad = _export_bad_args(req)
                 if bad:
                     return self._json(400, {"ok": False, "error": bad})
-                body = b"%PDF-1.4 fake export for tests"
+                # The kind asked for, in the kind's own type: the editor
+                # refuses a "file" whose type is not what it asked for (a
+                # crash page used to be saved as Report.pdf), so a PNG/JPEG
+                # export gets a real zip of one real (1×1) PNG per page.
+                if req.get("fmt") in ("png", "jpeg"):
+                    import io as _io
+                    import zipfile as _zf
+                    px = base64.b64decode(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+                        "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+                    buf = _io.BytesIO()
+                    with _zf.ZipFile(buf, "w") as z:
+                        for i in range(1, 4):
+                            z.writestr(f"page-{i:02d}.png", px)
+                    body, ctype = buf.getvalue(), "application/zip"
+                else:
+                    body, ctype = b"%PDF-1.4 fake export for tests", "application/pdf"
                 self.send_response(200)
-                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -2187,12 +2240,14 @@ class Handler(SimpleHTTPRequestHandler):
         except (TypeError, ValueError):
             return self._json(200, {"ok": False, "error": "page size must be numbers"})
         sys.path.insert(0, str(SELF_ROOT))
+        yml = SELF_ROOT / "docsync.yml"
         try:
             from docsync.new import NewProjectError, create
             # create() read-appends docsync.yml; under the host lock so two
             # concurrent scaffolds (parallel test workers, two tabs) cannot
             # lose each other's binding.
             with _host_lock():
+                yml_before = yml.read_text() if yml.is_file() else ""
                 create(slug, name, w, h, root=SELF_ROOT, template=template,
                        scheme=scheme)
         except NewProjectError as e:
@@ -2201,15 +2256,39 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"ok": False, "error": f"scaffold failed: {e}"})
         finally:
             sys.path.remove(str(SELF_ROOT))
+
+        def unmake(why):
+            # The files and the binding are already on disk when the first
+            # build says no. Left there, the person's next try with the same
+            # title was "already exists", and Open listed a report that could
+            # not open. Nothing was promised until the build passed: take it
+            # all back — the binding only if docsync.yml is still exactly
+            # what create() made of it (another scaffold may have appended
+            # since; its block is not ours to move).
+            import shutil
+            with _host_lock():
+                now = yml.read_text() if yml.is_file() else ""
+                if now.startswith(yml_before) and f"id: {slug}\n" in now[len(yml_before):]:
+                    tail = now[len(yml_before):]
+                    if tail.count("- id: ") == 1:
+                        _write_atomic(yml, yml_before)
+                shutil.rmtree(SELF_ROOT / "projects" / slug, ignore_errors=True)
+                shutil.rmtree(DOCS / slug, ignore_errors=True)
+            PROJECTS.pop(slug, None)
+            STATE.pop(slug, None)
+            _default_registry.cache_clear()
+            return self._json(200, {"ok": False, "error":
+                f"nothing was created — the new report's first build failed, so it was taken back "
+                f"(pick another template, or tell whoever keeps this one):\n{why}"})
+
         binding = _load_bindings(SELF_ROOT).get(slug)
         if binding is None:
-            return self._json(200, {"ok": False,
-                                    "error": "created, but the binding did not read back"})
+            return unmake("the binding did not read back from docsync.yml")
         _register_project(slug, SELF_ROOT, binding)
         rebuild(slug, "scaffold")
         err = STATE[slug].error
         if err:
-            return self._json(200, {"ok": False, "error": f"created, but the first build failed: {err}"})
+            return unmake(err)
         return self._json(200, {"ok": True, "slug": slug})
 
     def _adopt(self, req):
@@ -2280,7 +2359,7 @@ class Handler(SimpleHTTPRequestHandler):
                     CONTENT.pop(str(cur["root"]), None)
                     _default_registry.cache_clear()
                 _register_project(pid, root, b)
-                registry[pid] = {"name": pid.replace("-", " ").title(),
+                registry[pid] = {"name": _binding_name(root, pid),
                                  "base": f"../_repo-{pid}",
                                  **({"repo": origin} if origin else {}),
                                  "local_root": str(root)}
@@ -3073,8 +3152,27 @@ class Handler(SimpleHTTPRequestHandler):
                 ["git", "-C", str(root), "diff", "--quiet", "HEAD", "--",
                  *paths]).returncode == 0:
             return "already up to date"
-        _git(root, "commit", "-m", f"{pid}: edit from the live editor (" + ", ".join(wrote) + ")",
-             "--", *paths)
+        try:
+            _git(root, *_identity(root), "commit", "-m",
+                 f"{pid}: edit from the live editor (" + ", ".join(wrote) + ")",
+                 "--", *paths)
+        except RuntimeError as e:
+            # A hook said no (the ʻokina lint, most days). The files were
+            # already written and built, so "save failed" was only half true:
+            # the words sat on disk uncommitted, the next rebuild bumped the
+            # version, and the editor read its own words back as "Claude
+            # changed the same thing you have unsaved". Put the disk back to
+            # what is committed — the words are still in the editor, and the
+            # message says so and carries the hook's reason.
+            for path, old in previous:
+                if old is not None:
+                    _write_atomic(path, old)
+                elif path.exists():
+                    path.unlink()
+            rebuild(pid, "save-rollback")
+            raise RuntimeError(
+                "nothing was saved — your words are still here in the editor. "
+                + str(e)) from e
         return "saved locally — Push when you're ready to publish"
 
     def _push(self, pid: str, req_ok: bool = False) -> str:
@@ -3339,6 +3437,25 @@ def _agent_flag_unannounced(pid: str, changed: list, prev_head: str) -> None:
     _agent_log_write(root, events)
     with STATE[pid].cond:
         STATE[pid].cond.notify_all()
+
+
+def _identity(root: Path) -> list:
+    """`-c user.name/user.email` for a checkout whose git has no identity —
+    a colleague's fresh machine, a CI runner — so a Save's commit does not
+    fail with "Author identity unknown *** Please tell me who you are"
+    (found by CI on 2026-10-22). The signed-in GitHub login (File ▸ Connect
+    GitHub) is the name when there is one, with GitHub's noreply address;
+    else the account on this computer. A configured identity is untouched."""
+    try:
+        if _git(root, "config", "user.email").strip():
+            return []
+    except RuntimeError:
+        pass                                   # unset: `git config` exits 1
+    login = (_gh_token().get("login") or "").strip()
+    name = login or os.environ.get("USER") or os.environ.get("USERNAME") or "Cider editor"
+    email = (f"{login}@users.noreply.github.com" if login
+             else f"{name}@{socket.gethostname() or 'localhost'}")
+    return ["-c", f"user.name={name}", "-c", f"user.email={email}"]
 
 
 def _git(root: Path, *args, timeout=45):

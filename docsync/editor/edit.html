@@ -798,7 +798,10 @@
      brand-new blank one has nothing on it yet. */
   .chip-thumb.empty { background:repeating-linear-gradient(45deg,
           #fff 0 6px, #F1F4F2 6px 12px); }
-  .chip-view { position:absolute; inset:0; overflow:hidden; }
+  /* pointer-events:none: the thumbnail is a live clone of the sheet, links
+     included — a click on one of the 21 links covering page 12's chip
+     navigated the whole editor to capitol.hawaii.gov. The chip takes the click. */
+  .chip-view { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
   .chip.hidden-pg { opacity:.45; }
   .chip.hidden-pg .chip-thumb { border-style:dashed; }
   .chip.blank .chip-thumb { border-style:dashed; }
@@ -2181,7 +2184,7 @@
     <div class="sizegrid" id="size-list"></div>
   </div>
   <span class="bar-sep"></span>
-  <button id="undo" disabled aria-label="Undo (⌘Z)">↶</button>
+  <button id="undo" disabled aria-label="Undo (⌘Z) — the last 200 steps are kept" title="Undo (⌘Z) — the last 200 steps are kept">↶</button>
   <button id="redo" disabled aria-label="Redo (⌘⇧Z)">↷</button>
   <button id="steps" aria-label="History — every step you can undo, to jump back to one">⏱</button>
   <button id="save" disabled>Save draft</button>
@@ -3345,6 +3348,7 @@ function engineRemember(id, base, urls) {
 let PROJECT = new URLSearchParams(location.search).get('project') || '';
 let PBASE = '';                 // '' = this directory
 let REGISTRY = null;
+let UNKNOWN_PROJECT = '';           // the ?project= nobody here answers to
 
 const withBase = u => PBASE ? PBASE.replace(/\/+$/, '') + '/' + u : u;
 
@@ -3362,7 +3366,12 @@ async function loadRegistry() {
   try { REGISTRY = JSON.parse(await get('projects.json')); } catch (e) { REGISTRY = null; }
   if (!REGISTRY) { PROJECT = ''; return; }
   if (PROJECT && REGISTRY[PROJECT]) PBASE = REGISTRY[PROJECT].base || '';
-  else PROJECT = '';            // unknown id: fall back to the default engine
+  else {
+    // A stale link opened the default report under the link's own id with
+    // nothing said; the idle line now says which report this is instead.
+    if (PROJECT) UNKNOWN_PROJECT = PROJECT;
+    PROJECT = '';                 // unknown id: fall back to the default engine
+  }
   // Switching reports is File > Open now. The <select> that used to sit in the
   // bar was a second way to do the same thing, in a place that had to explain
   // itself; the menu is where a document app keeps it, and the window title
@@ -3446,6 +3455,9 @@ const writeSlot = (k, v) => {
   // the slot in two, and pasting a key the document already has refused the
   // whole file for a duplicate. Refused at the write, the way a malformed
   // sources line is: named, nothing saved, the words still on screen to fix.
+  // Returns false when the write was REFUSED, so a caller that rewrites
+  // many slots (Change all) can count and name the ones that did not land
+  // instead of announcing every hit as changed.
   const marker = v.split('\n').find(l => MARKER_RE.test(l.trim()));
   if (marker) {
     console.warn('refused a slot marker inside slot text:', marker);
@@ -11207,7 +11219,16 @@ function findTargets() {
 
 const findRe = (needle, { cased, whole, grep }) => {
   const esc = grep ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(whole ? `\\b(?:${esc})\\b` : esc, cased ? 'g' : 'gi');
+  // \b is ASCII: "Whole words" found no ʻāina, no lā, no $419. A word edge
+  // is where a letter or digit of ANY script stops; the u flag makes \p{}
+  // mean that. A GREP pattern that is not valid under u (an escaped
+  // hyphen, say) falls back to the old edges rather than refusing.
+  const flags = cased ? 'g' : 'gi';
+  if (whole) {
+    try { return new RegExp(`(?<![\\p{L}\\p{N}_])(?:${esc})(?![\\p{L}\\p{N}_])`, flags + 'u'); }
+    catch (e) { return new RegExp(`\\b(?:${esc})\\b`, flags); }
+  }
+  return new RegExp(esc, flags);
 };
 /** What one hit changes to. Literal text in plain mode — a $ is a dollar
  *  sign — and $1…$99, $& and $$ in GREP mode; wrapped in the character style
@@ -11433,12 +11454,13 @@ function paintFindList() {
     if (!seen.has(k)) seen.set(k, []);
     seen.get(k).push(h);
   });
-  [...seen.entries()].slice(0, 40).forEach(([label, hits]) => {
+  const groups = [...seen.entries()];
+  groups.slice(0, 40).forEach(([label, hits]) => {
     const g = document.createElement('div');
     g.className = 'find-group';
     const lab = document.createElement('p');
     lab.className = 'find-where';
-    lab.textContent = `${label} · ${hits.length}`;
+    lab.textContent = `${label} · ${hits.length}${hits.length > 4 ? ` (${hits.length - 4} more not shown)` : ''}`;
     g.appendChild(lab);
     hits.slice(0, 4).forEach(h => {
       const p = document.createElement('p');
@@ -11453,13 +11475,23 @@ function paintFindList() {
         p.addEventListener('click', () => {
           const d = $('out').contentDocument;
           const el = d && d.querySelector(`[data-slot="${CSS.escape(h.target.key)}"]`);
-          if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (el) jumpTo(el, 'center');
         });
       }
       g.appendChild(p);
     });
     list.appendChild(g);
   });
+  // The list is capped (40 places, 4 hits each) and used to end without a
+  // word about it: "481 hits" above, 113 shown, and Change all covering
+  // places nobody had seen.
+  if (groups.length > 40) {
+    const more = document.createElement('p');
+    more.className = 'ch-eg find-more';
+    const k = groups.length - 40;
+    more.textContent = `… and ${k} more ${k === 1 ? 'place' : 'places'} not shown here — Change all covers them too`;
+    list.appendChild(more);
+  }
 }
 
 async function findReplaceAll() {
@@ -11470,18 +11502,28 @@ async function findReplaceAll() {
   // that took forty undos to back out would not be one anybody trusted.
   pushHistory();
   const done = new Set();
+  let refused = 0, why = '';
   findState.hits.forEach(h => {
     if (done.has(h.target.key)) return;             // a target is rewritten once
     done.add(h.target.key);
-    h.target.write(h.target.read().replace(findRe(findState.needle, findState),
+    const ok = h.target.write(h.target.read().replace(findRe(findState.needle, findState),
       (...args) => findChangeOf(findState, args)));
+    // writeSlot refuses a result it will not store (a line that would be a
+    // slot marker, a malformed sources line) and says why on the status
+    // line. "changed 1 hit in 1 place" then overwrote that, so the refusal
+    // read as a success.
+    if (ok === false) { refused++; why = $('stat').textContent; }
   });
   markDirty();
   await render();
   findRun();
   renderFindPanel();
-  $('stat').textContent = `changed ${n} ${n === 1 ? 'hit' : 'hits'} in `
-    + `${done.size} ${done.size === 1 ? 'place' : 'places'}`;
+  const changed = done.size - refused;
+  $('stat').textContent = refused
+    ? `${changed ? `changed ${changed} ${changed === 1 ? 'place' : 'places'}; ` : ''}`
+      + `${refused} ${refused === 1 ? 'place' : 'places'} refused the change — ${why}`
+    : `changed ${n} ${n === 1 ? 'hit' : 'hits'} in `
+      + `${done.size} ${done.size === 1 ? 'place' : 'places'}`;
 }
 
 // ------------------------------------------------------- the stylesheet
@@ -15437,7 +15479,7 @@ function chip(pid, pos, label, isHidden) {
   // Click a visible chip to scroll to it; the rail is navigation too.
   if (!isHidden) c.addEventListener('click', () => {
     const sec = (docSheets().find(s => String(s.id) === String(pid)) || {}).pg;
-    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (sec) jumpTo(sec, 'start');
     list.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
   });
   // Drag to reorder — only where an order is honoured.
@@ -17308,7 +17350,7 @@ function layersRender() {
         + `[data-shape="${CSS.escape(o.id)}"]`);
       if (!el) return;
       setSel(d, [o.id]);
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      jumpTo(el, 'center');
       layersRender();
     });
     r.addEventListener('dragstart', e =>
@@ -19721,6 +19763,7 @@ function bindMeasure(d) {
 const clearGuides = d => d.querySelectorAll('.ds-guide').forEach(g => g.remove());
 
 // ---- history: every move is undoable, or it is not safe to experiment ----
+const UNDO_DEPTH = 200;
 const past = [], future = [];
 const snapshot = () => JSON.stringify({ source, layout });
 // Reflect what's undoable on the toolbar buttons. The buttons only mirror
@@ -19753,7 +19796,10 @@ function pushHistory() {
   const sn = snapshot();
   past.push(sn);
   stepTimes.set(sn, Date.now());
-  if (past.length > 60) stepTimes.delete(past.shift());
+  // 200 steps, said on the button. The cap was 60 and nowhere: a long
+  // session of nudges lost its way back silently. A snapshot is ~20–35KB,
+  // so this is a few MB, flat.
+  if (past.length > UNDO_DEPTH) stepTimes.delete(past.shift());
   future.length = 0;
   syncHistoryButtons();
 }
@@ -21302,7 +21348,7 @@ function markDirty() {
   // again on every call - once per moved element per drop.
   if (layoutOrigSaidFor !== layoutOrig) { layoutOrigSaidFor = layoutOrig; layoutOrigSaid = layoutSaid(JSON.parse(layoutOrig || '{}')); }
   dirty = source !== original || layoutSaid(layout) !== layoutOrigSaid;
-  $('save').disabled = !dirty || hubViewOnly();
+  $('save').disabled = !dirty || hubViewOnly() || saving;
   // Discard stays live while a saved draft exists: with nothing unsaved it
   // offers to throw the whole draft away (see its handler).
   $('revert').disabled = !dirty && !(draftBranch && !local);
@@ -21707,7 +21753,9 @@ const IDLE_STAT = 'live — edits here and from Claude land in the same files';
 function sayIdle() {
   const st = $('stat');
   if (st.classList.contains('err')) return;
-  st.textContent = IDLE_STAT;
+  st.textContent = UNKNOWN_PROJECT
+    ? `no report called "${UNKNOWN_PROJECT}" on this server — this is ${M && M.id}. File ▸ Open lists the rest`
+    : IDLE_STAT;
 }
 (function watchStat() {
   const el = $('stat');
@@ -23275,9 +23323,15 @@ async function collabBranchStillOurs() {
 /** A collaborator saved: their commit holds this document (to within a
  *  keystroke), so from here "unsaved changes" means changed since THEIR
  *  save — and the room's draft branch exists now, whoever created it. */
-function collabSaved(sha) {
+function collabSaved(sha, info) {
   if (!collab || !sha) return;
   const f = collab.files();
+  // A RESTORE by someone else replaced the whole document — unsaved words
+  // of yours in any paragraph included — and the room's undo steps cannot
+  // bring them back (undoing one re-inserts them beside the restored
+  // copy). Say what happened, rather than "it holds what is on screen".
+  const restored = info && info.restored;
+  const hadMine = restored && (source !== original || layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}')));
   original = f.content; layoutOrig = f.layoutText;
   if (docStore()) { docVersion = sha; hubMarkSeen(sha); }
   if (collabShared() && !draftBranch && !docStore()) {
@@ -23287,7 +23341,15 @@ function collabSaved(sha) {
   }
   clearDraftCache();
   markDirty();
-  $('stat').textContent = 'a collaborator saved the shared draft — it holds what is on screen';
+  if (restored) {
+    sayNowAndAfterRender(hadMine
+      ? 'a collaborator restored an earlier version, which replaced the edits you had not saved — '
+        + 'ask them, or bring the newer version back from History'
+      : 'a collaborator restored an earlier version — it is what is on screen now');
+    if (hadMine) { $('stat').classList.add('err'); setTimeout(() => $('stat').classList.remove('err'), 12000); }
+    return;
+  }
+  sayNowAndAfterRender('a collaborator saved the shared draft — it holds what is on screen');
 }
 
 // ---------------------------------------------------------------- live mode
@@ -23298,6 +23360,11 @@ function collabSaved(sha) {
 // Claude to edit them. We adopt that change and keep whatever you were editing,
 // as long as the two are different files. Same file, both edited: you choose.
 let local = false;
+// A Save is on its way to disk: Push waits for it (pushing mid-save sends the
+// commit BEFORE this one, then says "pushed" over words that never left),
+// and the Save button stays down however the dirty flag moves meanwhile.
+let saving = false;
+let lastAhead = 0;              // what setPushState last heard, to re-apply after a Save
 
 let liveVer = -1;
 
@@ -23395,8 +23462,9 @@ async function agentNoteClick() {
 
 function setPushState(ahead) {
   if (typeof ahead !== 'number') return;
+  lastAhead = ahead;
   const b = $('push');
-  b.disabled = ahead === 0;
+  b.disabled = ahead === 0 || saving;
   b.classList.toggle('pending', ahead > 0);
   b.textContent = ahead > 0 ? `Push (${ahead})` : 'Push';
   // A Push that CANNOT succeed says so ON the button, before it is pressed.
@@ -23516,7 +23584,7 @@ async function detectLocal() {
     if (await pullFromDisk()) liveVer = v;
   };
   window.__onBump = onBump;            // test hook, like window.__fileSig
-  startLive(d => { pushHealth = d.push || {}; setPushState(d.ahead); setAgentNote(d.agent); watchHealth(d); serverHealth(d); updateHealth(d);
+  startLive(d => { if (serverReach(d)) return; pushHealth = d.push || {}; setPushState(d.ahead); setAgentNote(d.agent); watchHealth(d); serverHealth(d); updateHealth(d);
                    if (d.doc != null) DOC = d.doc;
                    contentHealth(d); onBump(d.v, d.error); });
   $('upd').onclick = installUpdate;
@@ -23707,7 +23775,7 @@ function startLive(onEvent) {
   // still applies wherever there IS an id to pool by.
   const scope = (M && M.id) || 'tab:' + meId;
   const LK = 'primer-live-leader:' + scope, EV = 'primer-live-event:' + scope;
-  let es = null, leading = false, hb = 0, evN = 0;
+  let es = null, leading = false, hb = 0, evN = 0, misses = 0;
   // The key scoping above is necessary but NOT sufficient: it is built from
   // M.id, so any tab whose manifest has no id lands in a shared '' bucket
   // together with every other such tab — whatever project they are actually
@@ -23758,11 +23826,19 @@ function startLive(onEvent) {
       // ANY tab reaches every tab's button. Followers never poll.
       fetch(withProject('/__ping'), { cache: 'no-store' }).then(r => r.json())
         .then(d => {
+          misses = 0;
           // The poll is also the pilot's safety net: if the SSE stream is
           // mid-reconnect when an op is queued, this picks it up within 2s.
           if (d.pilotWaiting && mine(d)) claimPilotOps();
           apply(d); relay(d);
-        }).catch(() => {});
+        }).catch(() => {
+          // Three in a row (~6s), not one: a restart answers nothing for a
+          // beat and a single miss would cry wolf. Said as an event so the
+          // follower tabs hear it through the same relay.
+          if (++misses < 3) return;
+          const d = { serverDown: true, project: M && M.id };
+          apply(d); relay(d);
+        });
     }, HB_MS);
   };
   const elect = () => {
@@ -24054,6 +24130,30 @@ function watchHealth(d) {
  *  relaunch fixes it, so say that. Ranks below a dead watcher, which stops
  *  reload entirely; this only means the newest server code is not live yet. */
 const SRV_STALE_MSG = 'editor server is running old code — relaunch the editor app';
+/** The live server has stopped answering (or is back). Without this a
+ *  person typed into a dead server for as long as they liked and learned at
+ *  Save, from "Failed to fetch". Re-asserted on every missed poll, because
+ *  boot and the steady state both write the status line after the fact.
+ *  Returns true when the payload was only this news, so nothing else reads
+ *  numbers out of it. */
+function serverReach(d) {
+  const stat = $('stat');
+  if (d && d.serverDown) {
+    if (stat.textContent !== SERVER_GONE_MSG) {
+      stat.dataset.srvgone = '1';
+      stat.textContent = SERVER_GONE_MSG;
+      stat.classList.add('err');
+      stat.title = 'Nothing on disk changed. Edits keep working here; Save needs the server back.';
+    }
+    return true;
+  }
+  if (stat.dataset.srvgone) {                             // it is back
+    stat.dataset.srvgone = ''; stat.classList.remove('err'); stat.title = '';
+    if (stat.textContent === SERVER_GONE_MSG) stat.textContent = 'live again';
+  }
+  return false;
+}
+
 function serverHealth(d) {
   if (!d || typeof d.serverStale !== 'boolean') return;   // older server: no opinion
   const stat = $('stat');
@@ -24221,6 +24321,10 @@ async function _pull() {
   let took = false, clash = false;
   if (freshSrc !== original) {
     if (source === original) { source = original = freshSrc; took = true; }
+    // The disk holds exactly what is unsaved here: nothing to choose between,
+    // and nothing left to save. (A commit a hook refused used to leave the
+    // written file on disk and then read as "Claude changed the same thing".)
+    else if (source === freshSrc) { original = freshSrc; markDirty(); }
     else clash = true;
   }
   if (M.layout && freshLayout !== layoutOrig) {
@@ -24497,9 +24601,20 @@ async function render() {
 // something else has spoken since, that something else was deliberate and this
 // was not.
 let statFromRender = '';
+// A message that must outlive the render about to start: a collaborator's
+// Save or restore is heard (and said) a beat BEFORE the adopt renders, and
+// the render then claimed the row with "rendering…" and its idle hint. The
+// next render says this instead of its hint; stale after a few seconds.
+let sayAfterRender = '', sayAfterRenderAt = 0;
 function renderSays(msg) {
   if ($('stat').textContent !== statFromRender) return;   // someone else is talking
+  if (sayAfterRender && Date.now() - sayAfterRenderAt < 4000) { msg = sayAfterRender; }
+  sayAfterRender = '';
   $('stat').textContent = statFromRender = msg;
+}
+function sayNowAndAfterRender(msg) {
+  $('stat').textContent = msg;
+  sayAfterRender = msg; sayAfterRenderAt = Date.now();
 }
 
 async function renderOnce() {
@@ -24923,6 +25038,22 @@ function stageChainWire(d) {
     g.stage.scrollTop = out - back;
     g.se.scrollTop += back / g.s;
   }, { passive: true });
+}
+
+/** Scroll the report so `el` is at the top (or the middle) of the view —
+ *  smoothly, and by scrolling the report WINDOW, never scrollIntoView.
+ *  scrollIntoView scrolls every ancestor too: it pushed the stage band
+ *  out, the band-return listener above handed it back with an instant
+ *  scrollTop write, and that write cancelled the smooth scroll in flight.
+ *  A page chip, a Layers row and Find's "Show me" all arrived nowhere (a
+ *  12-page jump ended on page 1). The report's own window is the one
+ *  scroller the band listener leaves alone. */
+function jumpTo(el, block = 'start') {
+  const w = $('out').contentWindow;
+  if (!w || !el) return;
+  const r = el.getBoundingClientRect();
+  const top = w.scrollY + r.top - (block === 'center' ? Math.max(0, (w.innerHeight - r.height) / 2) : 8);
+  w.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 }
 
 /** A render replaces the page's nodes, so a report's entrance animation
@@ -27524,7 +27655,10 @@ async function hubRestore(v) {
     docVersion = j.version;
     hubMarkSeen(j.version);
     await render();
-    if (collab) collab.setBaseSha(j.version);
+    // The room's undo steps are from BEFORE the restore: undoing one now
+    // re-inserts old words beside the restored copy, for everyone. Forgotten
+    // here and, through the flag on the version, in every other editor.
+    if (collab) { collab.forgetHistory(); collab.setBaseSha(j.version, { restored: true }); }
     clearDraftCache();
     markDirty();
     $('stat').textContent = `restored — the version from ${fmtWhen(v.updated_at)} is the current one now`;
@@ -28753,6 +28887,19 @@ async function hubCommentDelete(id) {
   return got;
 }
 async function hubReplyAdd(id, text, mentions) {
+  // A card still waiting for the hub's answer has a provisional id; a reply
+  // posted under it went to /comments/pending-…/replies and came back "no
+  // such comment", words gone. Wait for the real id (hubCommentsMerge
+  // leaves it on the card as __clientId) — one round trip, normally.
+  if (String(id).startsWith('pending-')) {
+    for (let i = 0; i < 100; i++) {
+      const real = hubComments.find(x => x.__clientId === id && !x.pending);
+      if (real) { id = real.id; break; }
+      if (!hubComments.some(x => x.id === id)) { $('stat').textContent = 'reply not added: the comment was not posted'; return null; }
+      await new Promise(r => setTimeout(r, 150));
+    }
+    if (String(id).startsWith('pending-')) { $('stat').textContent = 'reply not added: the comment is still posting — try again in a moment'; return null; }
+  }
   const c = hubComments.find(x => x.id === id);
   const was = hubCopy(c);
   if (c) {
@@ -29981,10 +30128,29 @@ async function postLocal(path, body, ms = 30000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), ms);
   try {
-    const r = await fetch(path, {
-      method: 'POST', signal: ac.signal,
-      ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
-    });
+    let r;
+    try {
+      r = await fetch(path, {
+        method: 'POST', signal: ac.signal,
+        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      // "Failed to fetch" is Chrome's for a connection nobody answered. The
+      // live server has gone (quit, crashed, the laptop slept through its
+      // idle exit); the words are still in this tab.
+      throw new Error(SERVER_GONE_MSG);
+    }
+    // The server answers every endpoint it knows with JSON, ok or not. A
+    // page of HTML with a 500 on it is Python dying mid-request; a 404 with
+    // no JSON is some other server on this port. Neither is a parse error
+    // for the person to read.
+    const json = /\bjson\b/i.test(r.headers.get('content-type') || '');
+    if (!json) {
+      throw new Error(r.ok
+        ? `the live server answered with something that is not the editor's (${r.status}) — is another app on this port? Your words are still here.`
+        : `the live server hit an error (${r.status}) — your words are still here; check its terminal, or relaunch the editor app and Save again`);
+    }
     return await r.json();
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -29994,6 +30160,8 @@ async function postLocal(path, body, ms = 30000) {
     throw e;
   } finally { clearTimeout(t); }
 }
+const SERVER_GONE_MSG = 'the live server is not answering — your words are safe in this tab. '
+  + 'Relaunch the editor app, then Save again';
 
 $('save').onclick = async () => {
   // Confirm, not block: prose has always been able to overflow a page and
@@ -30012,20 +30180,30 @@ $('save').onclick = async () => {
   // so a Save can never surprise-trigger a GitHub Actions run or send
   // something to the shared repo before you meant to.
   if (local) {
+    if (saving) return;
+    // What is SENT is what is saved. A save takes a build's worth of time,
+    // and words typed while it is in flight used to be marked saved with it
+    // (`original = source` read the CURRENT source when the answer came):
+    // the button went grey, beforeunload had nothing to guard, and the late
+    // words lived only in the tab. The baseline moves to the sent text, and
+    // markDirty keeps anything typed since.
+    const sent = source;
+    saving = true;
     $('save').disabled = true;
+    $('push').disabled = true;
     $('stat').textContent = 'saving to disk…';
     try {
       const j = await postLocal('/__save', {
         project: M.id,
-        content: source !== original ? source : null,
+        content: sent !== original ? sent : null,
         layout: (M.layout && layoutText !== layoutOrig) ? layoutText : null,
       });
       if (!j.ok) throw new Error(j.error || 'save failed');
-      original = source; layoutOrig = layoutText; dirty = false;
-      $('revert').disabled = true;
-      $('save').classList.remove('dirty');
+      original = sent; layoutOrig = layoutText;
       $('stat').textContent = j.message || 'saved';
       $('stat').title = '';
+      saving = false;
+      markDirty();                   // false now, unless something came after `sent`
       setPushState(j.ahead);
     } catch (e) {
       // The status line is one line. A commit a hook refused (the ʻokina
@@ -30033,7 +30211,9 @@ $('save').onclick = async () => {
       // nothing of the fix — the whole message rides the tooltip.
       $('stat').textContent = 'save failed: ' + e.message.replace(/\s+/g, ' ');
       $('stat').title = e.message;
-      $('save').disabled = false;    // always recoverable — never a dead spinner
+      saving = false;
+      markDirty();                   // always recoverable — never a dead spinner
+      setPushState(lastAhead);
     }
     return;
   }
@@ -30048,6 +30228,7 @@ $('save').onclick = async () => {
 // editor, and this is what sends all of them at once.
 $('agentnote').onclick = agentNoteClick;
 $('push').onclick = async () => {
+  if (saving) { $('stat').textContent = 'saving first — Push once it has landed'; return; }
   $('push').disabled = true;
   $('stat').textContent = 'pushing…';
   try {
@@ -30420,8 +30601,13 @@ const NEW_REPORT_SIZES = [
   { value: 'slide169', label: 'Slide 16:9 — 13.33 × 7.5 in', w: 13.333, h: 7.5 },
   { value: 'slide43',  label: 'Slide 4:3 — 10 × 7.5 in',     w: 10,     h: 7.5 },
 ];
+// "Probe ʻŌlelo Hawaiʻi" slugged to probe-lelo-hawai-i: the kahakō and the
+// ʻokina were "not a letter" and became hyphens. The marks come off (ō → o)
+// and the ʻokina simply goes (Hawaiʻi → hawaii), as the org's own URLs do.
 const slugifyReport = s =>
-  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+   .replace(/[\u02bb\u2018\u2019']/g, '')
+   .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 async function newReport(intoNewWindow) {
   // What this server can start a report FROM. Fetched fresh (it is one tiny
@@ -30474,15 +30660,15 @@ async function newReport(intoNewWindow) {
   $('stat').textContent = `creating "${name}"…`;
   let j;
   try {
-    j = await (await fetch('/__scaffold', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, slug, template: r.template || '',
-                             scheme: r.scheme || '',
-                             size: { w: size.w, h: size.h } }),
-    })).json();
+    // postLocal, so a crash page or a gone server is said as such rather
+    // than as "Unexpected token '<'"; a template's first build can take a
+    // while, hence the ceiling.
+    j = await postLocal('/__scaffold', { name, slug, template: r.template || '',
+                                         scheme: r.scheme || '',
+                                         size: { w: size.w, h: size.h } }, 120000);
   } catch (e) {
     $('stat').textContent = 'could not create it: ' + e.message;
+    $('stat').title = e.message;
     return;
   }
   if (!j.ok) { $('stat').textContent = j.error || 'could not create it'; return; }
@@ -31053,6 +31239,13 @@ function mediaFeature(feat, viewPx) {
     const v = len(m[1]);
     return v === null ? null : cmp(viewPx, '=', v);
   }
+  // The block is a STILL of what the editor showed: no motion (a scroll-
+  // reveal that waits for an observer the pasted block will never run left
+  // thirteen sections of a page at opacity 0), and the editor's own light
+  // scheme (a dark-mode host flipped a block's words light on its white
+  // sheet). Decided here like a width.
+  if ((m = /^prefers-reduced-motion(?:\s*:\s*(.+))?$/i.exec(s))) return !m[1] || m[1].trim() === 'reduce';
+  if ((m = /^prefers-color-scheme\s*:\s*(.+)$/i.exec(s))) return m[1].trim() === 'light';
   return null;                                   // orientation, hover, height…
 }
 
@@ -31403,11 +31596,32 @@ async function downloadSource() {
 // local server's Chrome renders, re-encoded or cropped here (a canvas), so
 // the server keeps its two formats and a page's pixels are made once.
 const fflateLib = () => import('https://cdn.jsdelivr.net/npm/fflate@0.8.3/esm/browser.js');
+/** The server's answer to an export, or the reason there is none. Only a
+ *  JSON body used to count as a failure: a crash page (500, HTML), a 404
+ *  from some other server on the port, an empty 200 — each was saved as
+ *  "Report.pdf" and announced as downloaded, and the person found out when
+ *  the file would not open. A file is a file only when the status is good
+ *  and the body is the kind asked for. */
+async function exportAnswer(r, kinds) {
+  const type = (r.headers.get('Content-Type') || '').toLowerCase();
+  if (type.includes('application/json')) {
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    throw new Error(j.error || `the server refused the export (HTTP ${r.status})`);
+  }
+  const text = async () => { try { return (await r.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160); } catch (e) { return ''; } };
+  if (!r.ok) throw new Error(`the live server hit an error (HTTP ${r.status}) — nothing was downloaded. ${await text()}`.trim());
+  if (!kinds.some(k => type.includes(k))) {
+    throw new Error(`the server answered with ${type || 'no content type'} instead of a file — nothing was downloaded. `
+      + `Is the live server still the editor's? ${await text()}`.trim());
+  }
+  const blob = await r.blob();
+  if (!blob.size) throw new Error('the server answered with an empty file — nothing was downloaded');
+  return blob;
+}
 async function exportBlob(body) {
   const r = await fetch('/__export', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project: M.id, content: source, layout: JSON.stringify(layout, null, 2) + '\n', ...body }) });
-  if ((r.headers.get('Content-Type') || '').includes('application/json')) throw new Error((await r.json()).error || 'export failed');
-  return r.blob();
+  return exportAnswer(r, body.fmt === 'pdf' ? ['application/pdf'] : ['application/zip', 'image/png', 'application/octet-stream']);
 }
 function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
@@ -31580,17 +31794,11 @@ async function doExport(fmt) {
       body: JSON.stringify({ fmt, marks, project: M.id, ...(spec ? { pages: spec } : {}),
         content: source, layout: JSON.stringify(layout, null, 2) + '\n' }),
     });
-    if ((r.headers.get('Content-Type') || '').includes('application/json')) {
-      throw new Error((await r.json()).error || 'export failed');
-    }
-    const url = URL.createObjectURL(await r.blob());
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    $('stat').textContent = `downloaded ${name}`;
+    const blob = await exportAnswer(r, fmt === 'pdf' ? ['application/pdf'] : ['application/zip', 'application/octet-stream']);
+    saveBlob(blob, name);
   } catch (e) {
     $('stat').textContent = 'export failed: ' + e.message;
+    $('stat').title = e.message;
   }
 }
 

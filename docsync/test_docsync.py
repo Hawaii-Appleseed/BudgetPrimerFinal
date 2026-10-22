@@ -629,6 +629,19 @@ _fn_nolink.resolve("<p>Words.[^x]</p>")
 check_eq("an endnote with no link draws no anchor",
          "<a href" in _fn_nolink.endnotes_html(), False)
 check("and still prints its citation", _fn_nolink.endnotes_html(), "A book.")
+# A citation naming no source draws a red "?" in edit mode, and linkify must
+# leave it alone: it read the digits of the marker's colour (#C0392B) as note
+# numbers and replaced the "?" with inert "0392" (2026-10-22 audit).
+_fn_missing = Footnotes({"x": ("A book.", "")})
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _missing = _fn_missing.linkify(_fn_missing.resolve("<p>Words.[^nope] More.[^x]</p>"))
+finally:
+    os.environ.pop("DOCSYNC_EDIT", None)
+check("a citation with no source keeps its ? marker through linkify", _missing, '>?</a>')
+check_eq("and the marker's colour is never read as a note number",
+         "<sup>0392</sup>" in _missing or ">0392<" in _missing, False)
+check("while the real citation beside it still links", _missing, 'href="#en1"')
 # A URL with brackets in it — the shape Wikipedia and many statute sites use.
 # The link destination stopped at the first ')', so the href was cut short and
 # the stray bracket was left sitting in the prose.
