@@ -7374,14 +7374,10 @@ function startGroupResize(d, members, page, U, e0, dir) {
     parts.forEach(p => {
       if (p.sh || !p.now) return;
       p.P.commit(p.P.put(p.now.x, p.now.y, false));
-      if (p.graphic) return;                       // the scale is on the store
-      const w = +p.now.w.toFixed(2), h = +p.now.h.toFixed(2);
-      if (p.bx) { p.bx.w = w; if (p.bx.h) p.bx.h = h; }
-      else if (p.tb) p.tb.w = w;
-      else {
-        const pos = layout.positions[p.id];
-        if (pos) { pos.w = w; if (pos.h) pos.h = h; }
-      }
+      // A height only where one was already set — a box or paragraph that
+      // grows with its words keeps growing.
+      const had = p.bx ? p.bx.h != null : (layout.positions[p.id] || {}).h != null;
+      commitSize(d, p.el, { w: p.now.w, h: had ? p.now.h : undefined });
     });
     markDirty();
     render().then(() => paintSel($('out').contentDocument));
@@ -7476,46 +7472,59 @@ function startResize(d, el, e0, dir) {
       markDirty();                        // the scale is already on the store
     } else if (!shapeId) {
       P.commit({ x: size.x, y: size.y });
-      // A text box's geometry lives in boxes[], not positions{} — writing to
-      // the wrong store used to throw here and the width never persisted.
-      const bx2 = boxOf(id), tb2 = tableOf(id);
-      if (bx2) {
-        bx2.w = +size.w.toFixed(2);
-        // A text box grows to at least this height (min-height in the renderer,
-        // so words never clip); dragging a vertical edge sets it, and dragging
-        // it back to nothing clears it (auto height again).
-        if (dir.includes('s') || dir.includes('n')) {
-          if (size.h > MIN_IN + 0.01) bx2.h = +size.h.toFixed(2);
-          // A threaded frame is exactly its height — it cannot go back to
-          // growing, or it would never pass words on. It keeps the smallest.
-          else if (inThread(bx2)) bx2.h = +MIN_IN.toFixed(2);
-          else delete bx2.h;
-        }
-        markDirty();
-      } else if (tb2) {
-        tb2.w = +size.w.toFixed(2);       // a table is width-only; rows set height
-        markDirty();
-      } else {
-        const p = layout.positions[id];
-        p.w = +size.w.toFixed(2);
-        if (dir.includes('s') || dir.includes('n')) {
-          // Text grows; images do not. For a heading or a paragraph the
-          // dragged height is a minimum (hmin), so longer wording pushes the
-          // box open instead of being cut off by a number someone dragged
-          // weeks earlier.
-          if (wordy && size.h <= MIN_IN + 0.01) { delete p.h; delete p.hmin; }
-          else {
-            p.h = +size.h.toFixed(2);
-            if (wordy) p.hmin = true; else delete p.hmin;
-          }
-        }
-      }
+      commitSize(d, el, { w: size.w, h: (dir.includes('s') || dir.includes('n')) ? size.h : undefined });
     } else {
       markDirty();
     }
     paintSel(d);                          // ring + handles + mini follow the new box
   };
   dragListen(d, move, up);
+}
+
+/** THE size write — the one place a width or a height lands in the store,
+ *  for a handle drag, a group's corner, and the pilot's place(). Each kind
+ *  keeps its size differently, and three copies of this branch had drifted:
+ *  place() wrote a box's height with no floor and never gave a paragraph
+ *  its hmin, and a width written to the wrong store once threw here and
+ *  never persisted. `w` and `h` are inches; leave one undefined to keep it.
+ *  - a shape: x/y/w/h on its own object (its x/y are placed elsewhere);
+ *  - a text box: w, and h as the height it grows to at least (min-height),
+ *    cleared when dragged to nothing — a threaded frame keeps the smallest;
+ *  - a placed table: w only, its rows set the height;
+ *  - a designed element: positions{} (pinned first), w, and for WORDS the
+ *    height as a floor (hmin) so longer wording pushes the box open;
+ *  - a graphic from a handle: nothing — it scales, and its scale is already
+ *    on the store (startResize never calls this for one); from place(), a
+ *    width or height pins it like any designed element — the engine draws
+ *    a renderer chart to the width it is given. */
+function commitSize(d, el, { w, h } = {}) {
+  const id = el.dataset.shape || el.dataset.el;
+  const round = v => +(+v).toFixed(2);
+  const sh = shapeOf(id);
+  if (sh) {
+    if (w != null) sh.w = round(w);
+    if (h != null) sh.h = round(h);
+    markDirty(); return;
+  }
+  const bx = boxOf(id), tb = tableOf(id);
+  if (bx) {
+    if (w != null) bx.w = round(w);
+    if (h != null) {
+      if (h > MIN_IN + 0.01) bx.h = round(h);
+      else if (inThread(bx)) bx.h = round(MIN_IN);
+      else delete bx.h;
+    }
+    markDirty(); return;
+  }
+  if (tb) { if (w != null) tb.w = round(w); markDirty(); return; }
+  const p = ensureStore(d, el);
+  const wordy = isHeadingEl(el) || isTextEl(el);
+  if (w != null) p.w = round(w);
+  if (h != null) {
+    if (wordy && h <= MIN_IN + 0.01) { delete p.h; delete p.hmin; }
+    else { p.h = round(h); if (wordy) p.hmin = true; else delete p.hmin; }
+  }
+  markDirty();
 }
 
 // ------------------------------------------------------------ rotate & style
@@ -14519,32 +14528,62 @@ const canUngroup = () => selGroups().length > 0;
 let lastDrill = { id: null, t: 0 };
 
 let lastNudge = 0, nudgeSeq = -1;
-/** The object chords every design tool shares, bound in both documents
- *  (the page's keys never reach the chrome's listener and vice versa):
- *  ⌘⇧] / ⌘⇧[ to the front / back (InDesign's, Figma's, Canva's — ⌘⌥] stays
- *  too), ⌘A everything placed on the page, ⌘X cut, Ctrl+Y redo. Keyed on
- *  e.code for the brackets: with Shift held e.key is '}' on a US keyboard,
- *  which is why the chord used to fall through to nothing. Returns whether
- *  the key was taken. Callers have already stepped aside for a text field. */
-function objectKeys(d, e) {
-  const mod = e.metaKey || e.ctrlKey;
-  if (!mod) return false;
-  if (!e.altKey && e.shiftKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
-    e.preventDefault();
-    if (selIds.size) layerStep(d, e.code === 'BracketRight' ? 1 : -1, true);
+/** THE object chords, one table for both documents. The page's keys arrive
+ *  in the iframe's document and the chrome's in the outer one, each with
+ *  its own listener; for years every chord lived in both by hand, and one
+ *  added to one listener worked only when focus happened to sit there
+ *  (⌘A, ⌘X and ⌘⇧] were missing from both; ⌘⌥⇧V, ⌘⌥U and ⌥] from the
+ *  chrome's). Each listener now does its own guards — a text field, open
+ *  words, a table cell — and then asks this. Order matters: chords that
+ *  need nothing selected come first, then the ones on the selection.
+ *  Returns whether the key was taken (and, if so, its default prevented). */
+const CHORDS = [
+  // name, test, act — `mod` is ⌘ on a Mac and Ctrl elsewhere
+  ['undo / redo', (e, k) => k.mod && !k.alt && k.key === 'z', (d, e) => e.shiftKey ? redo() : undo()],
+  ['redo (Ctrl+Y)', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'y', () => redo()],
+  ['to front / back', (e, k) => k.mod && !k.alt && k.shift && (e.code === 'BracketRight' || e.code === 'BracketLeft'),
+    (d, e) => { if (selIds.size) layerStep(d, e.code === 'BracketRight' ? 1 : -1, true); }],
+  ['forward / back', (e, k) => k.mod && (e.key === ']' || e.key === '['),
+    (d, e) => layerStep(d, e.key === ']' ? 1 : -1, e.altKey)],
+  ['select all on the page', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'a', d => selectAllOnPage(d)],
+  ['duplicate', (e, k) => k.mod && !k.alt && k.key === 'd', d => duplicateSel(d)],
+  // ⌘C/⌘V copy objects; ⌥ makes it the format painter. Guarded on there
+  // being something to act on, so a bare ⌘C/⌘V still reaches the browser.
+  ['copy / copy style', (e, k) => k.mod && k.key === 'c' && selIds.size > 0, (d, e) => e.altKey ? copyStyle(d) : copySel(d)],
+  ['cut', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'x' && selIds.size > 0, d => cutSel(d)],
+  ['paste in place', (e, k) => k.mod && k.alt && k.shift && e.code === 'KeyV' && !!clip, d => pasteClip(d, true)],
+  ['paste / paste style', (e, k) => k.mod && k.key === 'v' && !!(e.altKey ? styleClip : clip),
+    (d, e) => e.altKey ? pasteStyle(d) : pasteClip(d)],
+  ['step and repeat', (e, k) => k.mod && k.alt && e.code === 'KeyU' && selIds.size > 0, d => stepRepeatDialog(d)],
+  ['transform again', (e, k) => k.mod && k.alt && e.code === 'Digit3', d => transformAgain(d)],
+  // ⌥] / ⌥[ walk the stack (⌘] / ⌘[ move in it). By code: ⌥] types a quote.
+  ['next / previous object', (e, k) => k.alt && !k.mod && (e.code === 'BracketRight' || e.code === 'BracketLeft'),
+    (d, e) => selectNextObject(d, e.code === 'BracketRight' ? 1 : -1)],
+  ['group / ungroup', (e, k) => k.mod && k.key === 'g', (d, e) => e.shiftKey ? ungroupSel(d) : groupSel(d)],
+  // on the selection
+  ['deselect', (e, k) => e.key === 'Escape' && selIds.size > 0, d => clearSel(d), { noPrevent: true }],
+  ['delete', (e, k) => (e.key === 'Delete' || e.key === 'Backspace') && selIds.size > 0, d => deleteSel(d)],
+  ['open the words', (e, k) => e.key === 'Enter' && !k.mod && !k.alt && !k.shift && selIds.size === 1,
+    (d, e) => enterOpensBox(d, e), { maybe: true }],
+  ['nudge', (e, k) => e.key.startsWith('Arrow') && selIds.size > 0 && !(e.target && held.get(e.target)),
+    (d, e) => {
+      const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
+      const d4 = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+      if (d4) nudgeSel(d, d4);
+    }],
+];
+function objectChord(d, e) {
+  const k = { mod: e.metaKey || e.ctrlKey, alt: e.altKey, shift: e.shiftKey, key: (e.key || '').toLowerCase() };
+  for (const [name, test, act, opts = {}] of CHORDS) {
+    if (!test(e, k)) continue;
+    if (opts.maybe) { if (act(d, e)) return true; continue; }   // the act says whether it applied
+    if (!opts.noPrevent) e.preventDefault();
+    act(d, e);
     return true;
-  }
-  if (!e.altKey && !e.shiftKey && e.key.toLowerCase() === 'y') {
-    e.preventDefault(); redo(); return true;
-  }
-  if (!e.altKey && !e.shiftKey && e.key.toLowerCase() === 'a') {
-    e.preventDefault(); selectAllOnPage(d); return true;
-  }
-  if (!e.altKey && !e.shiftKey && e.key.toLowerCase() === 'x' && selIds.size) {
-    e.preventDefault(); cutSel(d); return true;
   }
   return false;
 }
+window.__dsChords = () => CHORDS.map(c => c[0]);   // test hook: the table, by name
 
 /** ⌘A: everything placed on the page the selection is on (else the page in
  *  view), locked things left out, groups taken whole. Chrome's own select-all
@@ -14842,56 +14881,9 @@ function keysFor(d) {
       return;
     }
     if (editing) return;
-    const t = e.target;
-    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT'
-              || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-      e.preventDefault(); e.shiftKey ? redo() : undo(); return;
-    }
-    if (objectKeys(d, e)) return;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-      e.preventDefault(); duplicateSel(d); return;
-    }
-    // ⌘C/⌘V copy objects; ⌥ makes it the format painter (copy/paste style).
-    // Guard on there being something to act on, so a bare ⌘C/⌘V still reaches
-    // the browser's own copy/paste.
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selIds.size) {
-      e.preventDefault(); e.altKey ? copyStyle(d) : copySel(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.shiftKey && e.code === 'KeyV' && clip) {
-      e.preventDefault(); pasteClip(d, true); return;           // Paste in Place
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && (e.altKey ? styleClip : clip)) {
-      e.preventDefault(); e.altKey ? pasteStyle(d) : pasteClip(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyU' && selIds.size) {
-      e.preventDefault(); stepRepeatDialog(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'Digit3') {
-      e.preventDefault(); transformAgain(d); return;
-    }
-    // ⌥] / ⌥[ walk the stack (⌘] / ⌘[ move in it). By code: ⌥] types a quote.
-    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
-      e.preventDefault(); selectNextObject(d, e.code === 'BracketRight' ? 1 : -1); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
-      e.preventDefault(); e.shiftKey ? ungroupSel(d) : groupSel(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && (e.key === ']' || e.key === '[')) {
-      e.preventDefault(); layerStep(d, e.key === ']' ? 1 : -1, e.altKey); return;
-    }
+    if (inField(e.target)) return;
     if (tableCellKey(e)) return;
-    if (!selIds.size) return;
-    if (e.key === 'Escape') { clearSel(d); return; }
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault(); deleteSel(d); return;
-    }
-    if (enterOpensBox(d, e)) return;
-    if (t && held.get(t)) return;          // keyDrag owns a picked-up element
-    const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
-    const d4 = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
-                 ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-    if (d4) { e.preventDefault(); nudgeSel(d, d4); }
+    objectChord(d, e);                     // the one table, shared with the chrome
   });
 }
 
@@ -21583,44 +21575,11 @@ addEventListener('keydown', e => {
   if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT')) return;
   if (t && t.isContentEditable) return;
   if (tableCellKey(e)) return;
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-    e.preventDefault();
-    e.shiftKey ? redo() : undo();
-  }
-  if (objectKeys($('out').contentDocument, e)) return;
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-    e.preventDefault();
-    duplicateSel($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selIds.size) {
-    e.preventDefault();
-    e.altKey ? copyStyle($('out').contentDocument) : copySel($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && (e.altKey ? styleClip : clip)) {
-    e.preventDefault();
-    e.altKey ? pasteStyle($('out').contentDocument) : pasteClip($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
-    e.preventDefault();
-    e.shiftKey ? ungroupSel($('out').contentDocument) : groupSel($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && (e.key === ']' || e.key === '[')) {
-    e.preventDefault();
-    layerStep($('out').contentDocument, e.key === ']' ? 1 : -1, e.altKey);
-  }
-  if (e.key === 'Escape' && selIds.size) clearSel($('out').contentDocument);
-  // Arrow-nudge and Delete here too, not only in the iframe's own handler:
-  // after a click the keyboard focus may sit on the outer page rather than the
-  // iframe, and without this the selection would be unreachable by keyboard.
-  if (selIds.size) {
-    const d = $('out').contentDocument;
-    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSel(d); }
-    if (enterOpensBox(d, e)) return;
-    const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
-    const d4 = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
-                 ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-    if (d4) { e.preventDefault(); nudgeSel(d, d4); }
-  }
+  // The same table as the page's own listener: after a click the keyboard
+  // focus may sit on the chrome rather than the iframe, and a chord that
+  // lived in one listener only worked in one of the two places.
+  const d = $('out').contentDocument;
+  if (d) objectChord(d, e);
 });
 
 // --- hover tooltips ---------------------------------------------------------
@@ -21705,6 +21664,15 @@ wireTooltips(document);
  *  cancels it outright.
  */
 const IDLE_STAT = 'live — edits here and from Claude land in the same files';
+/** The idle sentence, said only when nothing is wrong: a standing warning
+ *  (the file watcher dead, the server running old code — both wear .err)
+ *  stays. Two writers used to put the sentence straight over it, so whether
+ *  the warning showed depended on which of them ran last. */
+function sayIdle() {
+  const st = $('stat');
+  if (st.classList.contains('err')) return;
+  st.textContent = IDLE_STAT;
+}
 (function watchStat() {
   const el = $('stat');
   let timer = null;
@@ -21937,7 +21905,7 @@ async function boot() {
   // …unless the first render FAILED, in which case its message is the only
   // thing on screen explaining the traceback in the canvas. Reassurance that
   // contradicts what the user is looking at is worse than silence.
-  if (local && !renderFailed) $('stat').textContent = 'live — edits here and from Claude land in the same files';
+  if (local && !renderFailed) sayIdle();
   else if (cachedRestored) $('stat').textContent =
     'restored unsaved edits from this browser — Save to keep them, or Discard to drop them';
   // What moved while this person was away. After the first render, because
@@ -23491,7 +23459,7 @@ async function detectLocal() {
   // saying) and comes back the moment it has that to say.
   $('title').textContent = M.id + ' · live';
   $('title').hidden = true;
-  $('stat').textContent = 'live — edits here and from Claude land in the same files';
+  sayIdle();
   // Adopt a rebuild the moment the version moves. Two ways see it, because one
   // failing silently is exactly the bug this had: the event stream is instant
   // when the browser keeps it open, and a 1.5s poll catches it when the stream
@@ -31631,21 +31599,9 @@ function _pilotApplyPlace(id, { x, y, w, h } = {}) {
     const P = placer(d, el, page);
     P.commit(P.put(x != null ? +x : P.box.x, y != null ? +y : P.box.y, false));
   }
-  // Explicit size lands where each kind keeps it — the same fields the
-  // resize handles write. A designed element has no free height (its
-  // content decides), so h applies to shapes and boxes only.
-  const sh = shapeOf(id);
-  const bx = boxOf(id);
-  if (w != null) {
-    if (sh) sh.w = +w;
-    else if (bx) bx.w = +w;
-    // What the resize handle does: a designed element is pinned where it
-    // stands, then sized. Writing {w} alone gave the engine a position with
-    // no x/y, which it refuses — place(id, {w}) on a renderer's chart took
-    // the whole draft down to "This draft does not build".
-    else ensureStore(d, el).w = +w;
-  }
-  if (h != null) { if (sh) sh.h = +h; else if (bx) bx.h = +h; }
+  // Explicit size lands exactly where a handle drag puts it (commitSize):
+  // a box's height with the same floor, a paragraph's as its hmin.
+  if (w != null || h != null) commitSize(d, el, { w, h });
   return { id };
 }
 // Measured AFTER render, from the fresh DOM — the truth of where the element
