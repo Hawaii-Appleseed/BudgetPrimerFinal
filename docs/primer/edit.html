@@ -21778,6 +21778,7 @@ async function boot() {
   }));
   fileJobs.forEach(j => j.p.catch(() => {}));
   await detectLocal();          // local live server? then Save writes to disk
+  liveProbe = local ? 'local' : 'static';
   docStoreDecide();             // …or the hub's document store? then Save writes there
   // Seed the build stamp with what THIS page was loaded from, then keep an
   // eye on it — a rebuild whose bump never reached this tab is exactly the
@@ -23786,7 +23787,11 @@ function startLive(onEvent) {
   });
   elect();
   setInterval(elect, HB_MS);
-  if (!document.hidden) catchUpOnce();   // first paint has current state without waiting for a heartbeat
+  // The first catch-up is what a driver waits on (__dsSettled): a bump it
+  // carries starts its pull synchronously inside apply(), so `pulling` is
+  // already up by the time this resolves.
+  if (!document.hidden) catchUpOnce().finally(() => { liveSynced = true; });
+  else liveSynced = true;                // a hidden tab follows; nothing to wait for
   window.__liveIsLeader = () => leading; // test hook: exactly one tab holds the stream
 }
 
@@ -24284,6 +24289,23 @@ async function _pull() {
  *  every caller's await resolves only after a render that included its state.
  */
 let renderRunning = false, renderAgain = false, renderWaiters = [];
+// --- "is the page settled?" for whoever drives this editor from outside ----
+// The test fixture used to sleep a fixed 1.5s after the first render, in case
+// the live server's first ping carried a version bump that swapped the canvas
+// moments later; and specs slept after every click for the same reason. That
+// is a quarter of every test spent idle. These say it instead: how many
+// renders have finished (data-ds-render on #out carries it too), and whether
+// anything is still on its way — the local probe, the first catch-up ping, a
+// pull from disk it may start, a render, a twin iframe mid-load.
+let renderSeq = 0;
+let liveProbe = 'pending';            // 'local' | 'static' once detectLocal has answered
+let liveSynced = false;               // the first catch-up ping has been applied
+window.__dsRenderSeq = () => renderSeq;
+// pendingResolve, not pendingFrame: a twin that loaded while words were
+// open stays parked (pendingFrame set) until the edit's own render replaces
+// it, and nothing moves under the person meanwhile — that is settled.
+window.__dsSettled = () => liveProbe !== 'pending' && (liveProbe !== 'local' || liveSynced)
+  && !pulling && !renderRunning && !pendingResolve;
 // --- warm-boot preview ------------------------------------------------------
 // Pyodide takes ~1.5s to compile even fully cached, and the canvas used to sit
 // BLANK for all of it. The last successful render is kept in the Cache API
@@ -24424,6 +24446,9 @@ async function render() {
     } while (renderAgain);
   } finally {
     renderRunning = false;
+    renderSeq++;
+    const out = $('out');
+    if (out) out.setAttribute('data-ds-render', String(renderSeq));
     const ws = renderWaiters; renderWaiters = [];
     ws.forEach(r => r());
     suggestSchedule();
