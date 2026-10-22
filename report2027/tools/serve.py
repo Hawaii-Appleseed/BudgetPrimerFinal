@@ -1840,8 +1840,48 @@ class Handler(SimpleHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    # The server binds to loopback, so only this Mac can reach it — but every
+    # web page open in the browser is on this Mac too. A page anywhere could
+    # POST to /__push (which publishes), /__quit, /__rollback or
+    # /__oauth/save with `mode: 'no-cors'` and the body would be read as
+    # JSON regardless of its type, and nothing asked where it came from. A
+    # browser always names the page an ambient request comes from (Origin;
+    # the Host header is what DNS rebinding forges), so: a POST that names a
+    # page must name one of this server's own, and the Host must be this
+    # server. A request with no Origin — curl, the MCP server, a script, the
+    # pilot loop in CLAUDE.md — is not a browser's and is still welcome.
+    _OWN_HOSTS = ("localhost", "127.0.0.1", "[::1]")
+
+    @classmethod
+    def _own(cls, hostport):
+        """True for this server's own host, with or without a port."""
+        hp = (hostport or "").strip().lower()
+        if hp.startswith("["):
+            name = hp[:hp.index("]") + 1] if "]" in hp else hp
+        else:
+            name = hp.rsplit(":", 1)[0] if ":" in hp else hp
+        return name in cls._OWN_HOSTS
+
+    def _foreign(self):
+        host = self.headers.get("Host")
+        if host and not self._own(host):
+            return f"refused: Host {host.strip()!r} is not this server"
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return None                          # curl, a script, the MCP server
+        m = re.match(r"^https?://([^/]+)$", origin, re.I)
+        if origin.lower() == "null" or not m or not self._own(m.group(1)):
+            return f"refused: a page at {origin} may not drive this editor"
+        return None
+
     def do_POST(self):
         path = self.path.split("?")[0]
+        why = self._foreign()
+        if why:
+            # Drain the body first: left in the socket, it is read as the
+            # next request line on a kept-alive connection ("probe" -> 501).
+            self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
+            return self._json(403, {"ok": False, "error": why})
         if path in ("/__hello", "/__bye"):
             # sendBeacon bodies are plain text (the tab's own id), not JSON —
             # and /__bye must stay parse-proof: it is fired during pagehide,
