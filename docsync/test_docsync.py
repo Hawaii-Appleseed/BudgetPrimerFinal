@@ -629,6 +629,19 @@ _fn_nolink.resolve("<p>Words.[^x]</p>")
 check_eq("an endnote with no link draws no anchor",
          "<a href" in _fn_nolink.endnotes_html(), False)
 check("and still prints its citation", _fn_nolink.endnotes_html(), "A book.")
+# A citation naming no source draws a red "?" in edit mode, and linkify must
+# leave it alone: it read the digits of the marker's colour (#C0392B) as note
+# numbers and replaced the "?" with inert "0392" (2026-10-22 audit).
+_fn_missing = Footnotes({"x": ("A book.", "")})
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _missing = _fn_missing.linkify(_fn_missing.resolve("<p>Words.[^nope] More.[^x]</p>"))
+finally:
+    os.environ.pop("DOCSYNC_EDIT", None)
+check("a citation with no source keeps its ? marker through linkify", _missing, '>?</a>')
+check_eq("and the marker's colour is never read as a note number",
+         "<sup>0392</sup>" in _missing or ">0392<" in _missing, False)
+check("while the real citation beside it still links", _missing, 'href="#en1"')
 # A URL with brackets in it — the shape Wikipedia and many statute sites use.
 # The link destination stopped at the first ')', so the href was cut short and
 # the stray bracket was left sitting in the prose.
@@ -1205,6 +1218,38 @@ _L = _layout({"page": {"w": 8.5, "h": None}})
 check("the style rides out with the first layer", _L.layer(1), "<style>")
 check_eq("and only once", _L.layer(2), "")
 check_eq("a report with no override renders exactly as before", _layout({}).layer(1), "")
+
+# A report BUILT pageless (the web-page reports: our-mission, wfc-credits,
+# rxkids, tfc-2027-priorities pass page=(12.5, None)) is the same as one whose
+# layout.json says h:null — and its stylesheet must not carry the sentinel as a
+# min-height (that was the 160in sheet: 11 letter pages, 8 empty).
+def _built_pageless():
+    t = _tmp_json(); t.write_text("{}")
+    return Layout(t, page=(12.5, None))
+_BP = _built_pageless()
+check_eq("built pageless: page_h is the sentinel", _BP.page_h, PAGELESS_H)
+check_eq("built pageless: the .page min-height is 0, not the sentinel", _BP.page_min_h, 0)
+check("built pageless: the sheet is `Win auto`", _BP.page_style(), "@page{size:12.5in auto;margin:0}")
+check_eq("a fixed page keeps its own min-height",
+         _layout({"page": {"w": 8.5, "h": 11}}).page_min_h, 11.0)
+check_eq("a layout override of a built-pageless report wins",
+         _layout({"page": {"w": 8.5, "h": 11}}).page_h, 11.0)
+# The shipped renderers, rebuilt: no min-height of 160in/84in/38.5in left.
+import subprocess as _sp
+for _slug in ("our-mission", "wfc-credits", "rxkids", "tfc-2027-priorities"):
+    _out = Path(tempfile.mkdtemp()) / "out.html"
+    _r = _sp.run([sys.executable, str(Path(__file__).resolve().parent.parent / "projects" / _slug / "render_report.py")],
+                 env={**os.environ, "DOCSYNC_OUT": str(_out)}, capture_output=True, text=True)
+    _h = _out.read_text() if _out.exists() else ""
+    check(f"{_slug} builds", _r.stdout, "wrote")
+    check(f"{_slug}: .page has no fixed height", _h, ".page{width:12.5in;min-height:0}")
+    check(f"{_slug}: the print sheet is 12.5in wide with auto height", _h, "@page{size:12.5in auto")
+    if "min-height:160in" in _h or "min-height:84.0in" in _h or "min-height:38.5in" in _h:
+        FAILS.append(f"{_slug}: a fixed sheet height is still in the stylesheet")
+    if _slug == "tfc-2027-priorities" and "size: letter" in _h:
+        FAILS.append("tfc prints on its own letter @page again; it is pageless")
+    if _slug == "rxkids" and "break-before: page" in _h:
+        FAILS.append("rxkids forces a page break between tabs; a pageless sheet runs on")
 
 check_page_raises("a non-object page is refused", {"page": [8.5, 11]}, "must be an object")
 check_page_raises("a non-numeric width is refused", {"page": {"w": "wide", "h": 11}},
@@ -3051,6 +3096,12 @@ with tempfile.TemporaryDirectory() as _td:
              ["chrome bit"])
     check_eq("editability defaults to warn", _bs["t-plain"].editability,
              "warn")
+
+    _reg.write_text("bindings:\n  - id: t-web\n    content: c.md\n    editor:\n"
+                    "      dir: d\n      render: r.py\n      out: o.html\n"
+                    "      page: [12.5, null]\n")
+    check_eq("a manifest page of [w, null] is pageless",
+             load_registry(_reg)[0].editor.page, (12.5, None))
     _reg.write_text("bindings:\n  - id: t-bad\n    content: c.md\n"
                     "    editability: loose\n")
     try:
@@ -4226,9 +4277,21 @@ check_eq("colAlign refuses an alignment it does not know",
 _dh = _layout({"tables": [dict(_tb, colAlign=[None, "decimal"])]}).tables_html(1)
 check_eq("a decimal column splits its figures and leaves its header whole",
          (_dh.count('class="ds-dec"'), "<th" in _dh and ">B</th>" in _dh), (2, True))
+_th = re.sub(r"<style>.*?</style>", "", _layout({"tables": [_tb]}).tables_html(1))
 check_eq("a table nobody aligned renders as it did",
-         "ds-dec" in _layout({"tables": [_tb]}).tables_html(1)
-         or "text-align" in _layout({"tables": [_tb]}).tables_html(1), False)
+         "ds-dec" in _th or "text-align" in _th, False)
+# A placed table brings its own floor (padding, rules, a line per empty cell)
+# for a report whose stylesheet never mentions .ds-table: once per document,
+# at zero specificity, so a report's own table rules still win.
+_pl = _layout({"tables": [_tb, dict(_tb, id="t2", page=2)]})
+_p1, _p2 = _pl.tables_html(1), _pl.tables_html(2)
+check_eq("a placed table's floor CSS goes out once, ahead of the first table",
+         (_p1.startswith(Layout.PLACED_TABLE_CSS), Layout.PLACED_TABLE_CSS in _p2), (True, False))
+check_eq("the floor is :where() all through, so any report rule outranks it",
+         re.findall(r"(?:^|})([^{}]+)\{", Layout.PLACED_TABLE_CSS.replace("<style>", "")),
+         [":where(table.ds-table[data-placed])",
+          ":where(table.ds-table[data-placed]) :where(td,th)",
+          ":where(table.ds-table[data-placed]) :where(td,th):empty::before"])
 # A flow table is a REAL <table> in the page's own flow: static, full width,
 # with the same cell hooks the editor edits, and the header row marked so the
 # phone layout can hide it and label each stacked value from it.
@@ -5250,6 +5313,41 @@ check("...while one that fits is", _tm, "GET exemptions")
 from docsync import new as _new                                   # noqa: E402
 check("the scaffold renderer linkifies its citation markers",
       Path(_new.__file__).read_text(), "body = C.fn.linkify(body)")
+
+# build_parity: what counts as a report's OWN files (a change there explains
+# its page moving) against the real registry, so a binding's shape is tested
+# as written, not as imagined.
+from docsync import build_parity as _bp                          # noqa: E402
+_bpb = _bp.bindings(_bp.ROOT)
+check_eq("build_parity reads every binding that has a renderer",
+         "rxkids" in _bpb and "budget-primer" in _bpb, True)
+check_eq("a report's content is its own", _bp.is_own("projects/rxkids/content.md", _bpb["rxkids"]["own"]), True)
+check_eq("...so is anything in its folder", _bp.is_own("projects/rxkids/original.html", _bpb["rxkids"]["own"]), True)
+check_eq("...and a file a watched glob names", _bp.is_own("projects/rxkids/assets/hero.png", _bpb["rxkids"]["own"]), True)
+check_eq("...but the engine is not", _bp.is_own("docsync/layout.py", _bpb["rxkids"]["own"]), False)
+check_eq("...nor another report", _bp.is_own("projects/retitc/content.md", _bpb["rxkids"]["own"]), False)
+check_eq("the primer's data under docs/js is its own (engine: in its binding)",
+         _bp.is_own("docs/js/historical_trends.json", _bpb["budget-primer"]["own"]), True)
+check_eq("a folder prefix is a folder, not a string prefix",
+         _bp.is_own("projects/rxkids-fiscal/content.md", _bpb["rxkids"]["own"]), False)
+
+# --- a new report from a template carries the typed title everywhere ---------
+for _tn in ("appleseed-report", "appleseed-brief", "appleseed-onepager"):
+    _tl = TEMPLATES[_tn]["layout"]()
+    _new._apply_title(_tl, "Kūpuna Care Gap")
+    _mds = [b["md"] for b in _tl["boxes"]]
+    check_eq(f"{_tn}: no placeholder title left",
+             [m for m in _mds if "YOUR REPORT" in m or "title here" in m], [])
+    check_eq(f"{_tn}: the cover title is the typed one",
+             [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-title"], ["Kūpuna Care Gap"])
+_tl = TEMPLATES["appleseed-report"]["layout"]()
+_new._apply_title(_tl, "Kūpuna Care Gap")
+check_eq("report footers read page · TITLE",
+         [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-foot2"], ["2 · KŪPUNA CARE GAP"])
+_tl = TEMPLATES["appleseed-report"]["layout"]()
+_new._apply_title(_tl, "A very long report title that would wrap the footer")
+check("a long title is shortened in footers only",
+      [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-foot2"][0], "…")
 
 try:
     sheet_inner("<html><body><p>no sheet</p></body></html>")

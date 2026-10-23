@@ -717,6 +717,11 @@
      reads as the drop target going away. Set by the same drag handlers that
      already track the reorder. */
   @media (prefers-reduced-motion:reduce) { #rail { transition:none; } }
+  .open-row { display:flex; align-items:center; }
+  .open-row .shp { flex:1; min-width:0; }
+  .open-forget { flex:none; border:0; background:none; color:#8A9A92; cursor:pointer;
+          font:16px/1 system-ui; padding:4px 8px; border-radius:6px; }
+  .open-forget:hover { color:#B3261E; background:rgba(179,38,30,.1); }
   #rail-list { display:flex; align-items:flex-start; gap:2px; }
   /* Insert point between two pages: a hit strip that shows a small + and a
      guide line only on hover, so thirteen of them add no standing noise. It
@@ -798,7 +803,10 @@
      brand-new blank one has nothing on it yet. */
   .chip-thumb.empty { background:repeating-linear-gradient(45deg,
           #fff 0 6px, #F1F4F2 6px 12px); }
-  .chip-view { position:absolute; inset:0; overflow:hidden; }
+  /* pointer-events:none: the thumbnail is a live clone of the sheet, links
+     included — a click on one of the 21 links covering page 12's chip
+     navigated the whole editor to capitol.hawaii.gov. The chip takes the click. */
+  .chip-view { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
   .chip.hidden-pg { opacity:.45; }
   .chip.hidden-pg .chip-thumb { border-style:dashed; }
   .chip.blank .chip-thumb { border-style:dashed; }
@@ -1181,6 +1189,7 @@
      underneath clickable everywhere the card itself is not. */
   #context { position:absolute; z-index:6; top:4px; left:var(--rail-w); right:0;
           display:flex; justify-content:center; pointer-events:none; }
+  body.ds-menu-up #context { visibility:hidden; }   /* see menuUp() */
   /* dropped to the foot while the selection sits under its home at the top
      (contextDodge); clear of the page strip along the bottom edge */
   #context.low { top:auto; bottom:104px; }
@@ -2180,7 +2189,7 @@
     <div class="sizegrid" id="size-list"></div>
   </div>
   <span class="bar-sep"></span>
-  <button id="undo" disabled aria-label="Undo (⌘Z)">↶</button>
+  <button id="undo" disabled aria-label="Undo (⌘Z) — the last 200 steps are kept" title="Undo (⌘Z) — the last 200 steps are kept">↶</button>
   <button id="redo" disabled aria-label="Redo (⌘⇧Z)">↷</button>
   <button id="steps" aria-label="History — every step you can undo, to jump back to one">⏱</button>
   <button id="save" disabled>Save draft</button>
@@ -3344,6 +3353,7 @@ function engineRemember(id, base, urls) {
 let PROJECT = new URLSearchParams(location.search).get('project') || '';
 let PBASE = '';                 // '' = this directory
 let REGISTRY = null;
+let UNKNOWN_PROJECT = '';           // the ?project= nobody here answers to
 
 const withBase = u => PBASE ? PBASE.replace(/\/+$/, '') + '/' + u : u;
 
@@ -3361,7 +3371,12 @@ async function loadRegistry() {
   try { REGISTRY = JSON.parse(await get('projects.json')); } catch (e) { REGISTRY = null; }
   if (!REGISTRY) { PROJECT = ''; return; }
   if (PROJECT && REGISTRY[PROJECT]) PBASE = REGISTRY[PROJECT].base || '';
-  else PROJECT = '';            // unknown id: fall back to the default engine
+  else {
+    // A stale link opened the default report under the link's own id with
+    // nothing said; the idle line now says which report this is instead.
+    if (PROJECT) UNKNOWN_PROJECT = PROJECT;
+    PROJECT = '';                 // unknown id: fall back to the default engine
+  }
   // Switching reports is File > Open now. The <select> that used to sit in the
   // bar was a second way to do the same thing, in a place that had to explain
   // itself; the menu is where a document app keeps it, and the window title
@@ -3412,25 +3427,55 @@ const SOURCE_LINE_RE = /^\[[^\]]+\]:\s*\S[\s\S]*$/;
 const SOURCE_URL_RE = /^([\s\S]*?)\s+—\s+(https?:\/\/\S+)$/;
 const badSourceLines = v => v.split('\n').map(l => l.trim()).filter(Boolean)
   .filter(l => !SOURCE_LINE_RE.test(l));
+// A fake ʻokina — a straight or curly apostrophe, a modifier letter, a
+// backtick or an acute inside a Hawaiian word — becomes the real one, U+02BB,
+// as words are committed: typed, pasted, or sent by a pilot. The same word
+// list as the machine-wide lint (~/.config/git-hooks/okina-lint.py), which
+// refuses a Save's commit on Devin's Mac with git's own words for it, and
+// which the hub never runs at all — so there the wrong glyph shipped. Only
+// these words, never a bare apostrophe: "Hawaii's" has no quote between the
+// i's and cannot match. A leading backtick is left alone (a code span).
+const OKINA_RULES = (() => {
+  const B = "['\u2018\u2019\u02BC`\u00B4]", BI = "['\u2018\u2019\u02BC\u00B4]";
+  return [
+    [`Hawai${B}i`, 'Hawaiʻi'], [`O${B}ahu`, 'Oʻahu'], [`Kaua${B}i`, 'Kauaʻi'],
+    [`Moloka${B}i`, 'Molokaʻi'], [`L[āa]na${B}i`, 'Lānaʻi'], [`Kaho${B}olawe`, 'Kahoʻolawe'],
+    [`Wai${B}anae`, 'Waiʻanae'], [`Kaka${B}ako`, 'Kakaʻako'], [`Ka${B}anapali`, 'Kaʻanapali'],
+    [`Ha${B}ik[ūu]`, 'Haʻikū'], [`Pa${B}ia`, 'Paʻia'], [`Pu${B}uhonua`, 'Puʻuhonua'],
+    [`${BI}[āa]ina\\b`, 'ʻāina'], [`${BI}ohana\\b`, 'ʻohana'],
+    [`${BI}[ōo]lelo\\b`, 'ʻōlelo'], [`${BI}okina\\b`, 'ʻokina'],
+  ].map(([p, good]) => [new RegExp(p, 'g'), good]);
+})();
+function fixOkina(s) {
+  if (typeof s !== 'string' || !/['\u2018\u2019\u02BC`\u00B4]/.test(s)) return s;
+  let out = s;
+  for (const [re, good] of OKINA_RULES) out = out.replace(re, good);
+  return out;
+}
+
 const writeSlot = (k, v) => {
+  v = fixOkina(v);
   // A line that is nothing but `[[something]]` IS a slot marker to
   // parse_content, wherever it sits — so pasting one into a paragraph split
   // the slot in two, and pasting a key the document already has refused the
   // whole file for a duplicate. Refused at the write, the way a malformed
   // sources line is: named, nothing saved, the words still on screen to fix.
+  // Returns false when the write was REFUSED, so a caller that rewrites
+  // many slots (Change all) can count and name the ones that did not land
+  // instead of announcing every hit as changed.
   const marker = v.split('\n').find(l => MARKER_RE.test(l.trim()));
   if (marker) {
     console.warn('refused a slot marker inside slot text:', marker);
     $('stat').textContent = `"${marker.trim()}" is a slot marker, and a line of `
       + 'its own here would split this slot — nothing was saved';
-    return;
+    return false;
   }
   if (k === 'sources') {
     const bad = badSourceLines(v);
     if (bad.length) {
       console.warn('refused malformed sources line(s):', bad);
       $('stat').textContent = `refused a malformed sources line: "${bad[0].slice(0, 70)}" — nothing was saved`;
-      return;
+      return false;
     }
   }
   // A slot the RENDERER asks for that this document has not got yet — docsync
@@ -3443,7 +3488,7 @@ const writeSlot = (k, v) => {
   // dict, so where a block sits has never decided anything.
   if (!slotRe(k).test(source)) {
     source = source.replace(/\s*$/, '') + `\n\n[[${k}]]\n${v.trim()}\n`;
-    return;
+    return true;
   }
   // The block's own notes ride along, after the words. They are invisible to
   // the renderer either way, so where they sit is a question of reading
@@ -3451,6 +3496,7 @@ const writeSlot = (k, v) => {
   // answer to it.
   const body = [v.trim(), ...slotNotes(k)].filter(Boolean).join('\n\n');
   source = source.replace(slotRe(k), (m, head) => head + body + '\n');
+  return true;
 };
 
 // --- markdown <-> rich text --------------------------------------------
@@ -3944,7 +3990,7 @@ function htmlToMd(root, { allowLists = false, inline = false, br = ' ' } = {}) {
   // A TABLE CELL is one string with no wrapping, so it passes '\n' and means
   // it. Written into content.md, a break nothing renders is a change to the
   // file that never reaches the page.
-  if (inline) return nodeToMdInline(root, br).trim();
+  if (inline) return fixOkina(nodeToMdInline(root, br).trim());
   const blocks = [...root.children];
   const parts = [];
   for (const el of blocks) {
@@ -3964,7 +4010,7 @@ function htmlToMd(root, { allowLists = false, inline = false, br = ' ' } = {}) {
       if (text) parts.push(text);
     }
   }
-  return parts.join('\n\n').trim();
+  return fixOkina(parts.join('\n\n').trim());
 }
 
 /** True when the selection sits inside a <b> while about to apply italic
@@ -4636,7 +4682,7 @@ function endnoteMenu(d, host, e) {
     m.appendChild(b);
   };
   buildEndnoteRows(d, m, host, range);
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   // Nudge back on-screen if it would spill off the right/bottom edge.
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
@@ -4733,7 +4779,7 @@ function textMenu(d, host, e) {
     add('Print (the PDF)', 'print'); add('Web (on screen)', 'web');
     add('Another condition…', '?'); add('Always (no condition)', null);
   });
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
@@ -5185,9 +5231,14 @@ async function uploadImageFile(d, onDone) {
   const inp = d.createElement('input');
   inp.type = 'file';
   inp.accept = 'image/*';
-  inp.addEventListener('change', async () => {
-    let file = inp.files[0];
+  inp.addEventListener('change', () => uploadImageBlob(inp.files[0], onDone));
+  inp.click();
+}
+/** The upload itself — for a picked file, a pasted one or a dropped one. */
+async function uploadImageBlob(file, onDone) {
     if (!file) return;
+    if (hubViewOnly()) { $('stat').textContent = 'view only — this document is shared with you to read'; return; }
+    if (!local && !docStore() && !(await ensureAuth())) return;
     const beforeKB = file.size / 1024;
     file = await compressImageFile(file);
     const afterKB = file.size / 1024;
@@ -5259,8 +5310,6 @@ async function uploadImageFile(d, onDone) {
     } catch (e) {
       $('stat').textContent = 'upload failed: ' + e.message;
     }
-  });
-  inp.click();
 }
 
 /** Show just-uploaded images before they are deployed: the page resolves
@@ -5892,7 +5941,16 @@ function nextZ(floor = 1, page = null) {
 }
 function closeMenu(d) {
   d.querySelectorAll('.ds-menu').forEach(m => m.remove());
+  menuUp(false);
 }
+/** A right-click menu lives in the report's document, the floating context
+ *  card (#context) in the editor's, above it — and the card drops to the foot
+ *  of the stage when the selection is under its home at the top. Now that a
+ *  right-click selects what it hits, the card came up for that very selection
+ *  and could land over the menu opened beside it (the Animate submenu's speed
+ *  slider sat under the type bar). While a menu is open the card stands
+ *  aside; closeMenu, and a fresh document, bring it back. */
+const menuUp = on => document.body.classList.toggle('ds-menu-up', on);
 
 /** Every menu cancels mousedown to keep the editor focused: without it the
  *  click blurs the text being edited, commits it, and the caret the menu was
@@ -6017,7 +6075,7 @@ function pageMenu(d, pg, e) {
   }
   sep();
   submenuRow(d, m, 'Page colour ▸', sub => fillRow(d, sub, pageFillId(pid)));
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
@@ -6225,12 +6283,61 @@ function _pilotApplyFitFrame(id) {
   return { ok: true, id, h };
 }
 
+/** A right-click selects what it lands on, as a left click would — a group
+ *  whole, and inside the current selection the selection stays — so the
+ *  menu and the strip are about the same thing (pageMenu does it for a page).
+ *  It used to leave the selection where it was: right-click a paragraph with
+ *  a table selected and the menu was the paragraph's, the strip the table's. */
+function selectForMenu(d, id) {
+  // Already selected — on its own or as one of several — the selection stays,
+  // group or no group: a button's menu wires it to everything selected with
+  // it ("Reveal the 2 selected"), and expanding to the button's own group
+  // would throw that selection away.
+  if (!id || selIds.has(id)) return;
+  setSel(d, withGroups([id]));
+}
+
+/** Open the right-click menu again once a render in flight has landed, in
+ *  whatever document is current then (see contextify) — at the same spot in
+ *  the object that was hit, not the same spot on the screen: the page can
+ *  settle a few pixels differently after a render (CI's Linux runner showed
+ *  it), and the menu must still be the one for what was right-clicked. */
+async function menuAfterRender(e, target) {
+  const r0 = target.getBoundingClientRect();
+  const dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+  const hook = target.dataset.shape ? `[data-shape="${CSS.escape(target.dataset.shape)}"]`
+    : target.dataset.el ? `[data-el="${CSS.escape(target.dataset.el)}"]`
+    : target.dataset.page != null ? `section.page[data-page="${CSS.escape(target.dataset.page)}"]`
+    : null;
+  await new Promise(r => setTimeout(r, 0));
+  await renderIdle();
+  if (editing) return;
+  const d2 = $('out').contentDocument;
+  if (!d2) return;
+  const el2 = hook && d2.querySelector(hook);
+  let x = e.clientX, y = e.clientY;
+  if (el2) {
+    const r = el2.getBoundingClientRect();
+    x = r.left + Math.max(0, Math.min(dx, r.width - 1));
+    y = r.top + Math.max(0, Math.min(dy, r.height - 1));
+  }
+  const hit = d2.elementFromPoint(x, y);
+  const to = hit && (!el2 || el2.contains(hit)) ? hit : el2;
+  if (!to) return;
+  const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, composed: true,
+    view: d2.defaultView, button: 2, clientX: x, clientY: y,
+    screenX: e.screenX + (x - e.clientX), screenY: e.screenY + (y - e.clientY) });
+  ev.dsReplayed = true;
+  to.dispatchEvent(ev);
+}
+
 function layerMenu(d, el, e) {
   closeMenu(d);
   const id = el.dataset.shape || el.dataset.el || el.dataset.fill;
   // A page or a table row is a SURFACE: it can change colour but it is not a
   // thing that moves, so it gets the fill section and nothing else.
   const surface = !el.dataset.shape && !el.dataset.el;
+  if (!surface) selectForMenu(d, id);
   const m = d.createElement('div');
   m.className = 'ds-menu';
   m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
@@ -6276,7 +6383,7 @@ function layerMenu(d, el, e) {
       if (!layout.locked.length) delete layout.locked;
       markDirty(); paintSel(d);
     });
-    d.body.appendChild(m);
+    d.body.appendChild(m); menuUp(true);
     return;
   }
 
@@ -6419,7 +6526,7 @@ function layerMenu(d, el, e) {
       item('Convert text to table', async () => {
         pushHistory();
         const r = textToTable(id);
-        if (r.error) { past.pop(); $('stat').textContent = r.error; return; }
+        if (r.error) { withdrawStep(); $('stat').textContent = r.error; return; }
         markDirty(); await render();
         setSel($('out').contentDocument, [r.id]);
         $('stat').textContent = `${r.rows} rows × ${r.cols} columns`;
@@ -6869,6 +6976,7 @@ function layerMenu(d, el, e) {
   if (!!shapeOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Delete shape', async () => {
+      pushHistory();
       layout.shapes = layout.shapes.filter(s => s.id !== id);
       markDirty(); await render();
     });
@@ -6906,11 +7014,12 @@ function layerMenu(d, el, e) {
   if (layout.positions[id]) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Reset to its designed place', async () => {
+      pushHistory();
       delete layout.positions[id];
       markDirty(); await render();
     });
   }
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
 }
 
 function contextify(d, roots) {
@@ -6925,13 +7034,18 @@ function contextify(d, roots) {
       // element the DOM hid from it (see hitPlaced) — that element's menu, not
       // the page's. Table rows keep their own: a box UNDER a table is unseen.
       let target = el;
-      if (el.tagName === 'SECTION') {
-        const hit = hitPlaced(d, el, e);
-        // Nothing placed under the pointer: the click means the PAGE, and a
-        // page has its own menu rather than the generic surface one.
-        if (!hit) { pageMenu(d, el, e); return; }
-        target = hit;
-      }
+      if (el.tagName === 'SECTION') target = hitPlaced(d, el, e) || el;
+      // Words open in something else: close them, as a click there would
+      // (the right button's press usually has already), and ask again once
+      // their commit has re-rendered. The menu, and the selection it makes,
+      // belong in the document that results, not in one about to be replaced
+      // — a table cell's own menu waits the same way.
+      const a = d.activeElement;
+      if (editing && a && a !== d.body && !target.contains(a)) a.blur();
+      if (renderRunning && !e.dsReplayed) { menuAfterRender(e, target); return; }
+      // Nothing placed under the pointer: the click means the PAGE, and a
+      // page has its own menu rather than the generic surface one.
+      if (target.tagName === 'SECTION') { pageMenu(d, target, e); return; }
       // A TABLE's right-click is always its own menu, wherever on it the
       // click landed. Cells carry that menu themselves, but the table's
       // padding, its border, the gap under the last row — and any point the
@@ -6955,6 +7069,7 @@ function contextify(d, roots) {
   // mechanism this file's own popovers (layerMenu, pageMenu, and now the
   // toggle speed popover) rely on to dismiss themselves — bind once.
   if (fresh) {
+    menuUp(false);           // a new document: whatever menu was open went with the old one
     d.addEventListener('mousedown', e => {
       // Button 2 is the right-click that is ABOUT to open a menu. The event
       // order for a context click is not the same everywhere — a Mac trackpad
@@ -6977,9 +7092,9 @@ function contextify(d, roots) {
 // ---------------------------------------------------------------- resizing
 // Width is always safe: text reflows, images scale. Height is not — pin a text
 // box's height and it either clips the words or leaves a hole the moment the
-// prose changes, and .page is overflow:hidden so the clipping is silent. So
-// prose gets a width handle only; things whose size IS their content (images,
-// shapes) get corners too.
+// prose changes, and .page is overflow:hidden so the clipping is silent. So a
+// height dragged onto words is a FLOOR (min-height): they take every edge and
+// corner, and longer wording still pushes the box open.
 const MIN_IN = 0.4;
 
 /** A designed heading slot: the renderer's own <h1>/<h2>/<h3>, as against a
@@ -7003,8 +7118,8 @@ function handlesFor(el) {
   if ((el.dataset.el || '').startsWith('endnote.')) return [];
   // Shapes and text boxes resize from every edge and corner. Graphics scale
   // uniformly, so their handles are the four corners (each drives the one
-  // scale factor). A designed prose slot reflows on width alone — no height to
-  // drag — so it gets both horizontal edges, east and west.
+  // scale factor). Words — a heading, a paragraph — take every edge and
+  // corner too, their height kept as a floor.
   // An icon is a drawn glyph, not a box: stretching one only distorts it, so
   // it takes the four corners like any other graphic and scales as a whole.
   if (el.dataset.shape) {
@@ -7020,10 +7135,22 @@ function handlesFor(el) {
   // bottom edge sets how much room it takes without ever clipping the words —
   // which is the reason prose is width-only, and the reason a heading, being
   // a line or two rather than a paragraph, does not need to be.
-  if (isHeadingEl(el)) return ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+  // A paragraph is the same (Devin, 2026-10-21: every corner of a text box,
+  // as InDesign and Canva give one): its dragged height is a floor too.
+  if (isHeadingEl(el) || isTextEl(el)) return ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
   // A table is width-driven — its rows set the height — so it takes the two
-  // horizontal edges, like a designed prose slot.
+  // horizontal edges; so does a drawn chart, whose height follows its width.
   return ['e', 'w'];
+}
+
+/** Words and only words — a paragraph or a card of slots, not a table, a
+ *  chart or a picture — so a height dragged onto it can be a floor
+ *  (positions[].hmin) the words push past, never a box that clips them. */
+function isTextEl(el) {
+  if (!el || !el.dataset || !el.dataset.el || el.dataset.shape) return false;
+  if (el.dataset.el.startsWith('table.') || isGraphic(el)) return false;
+  if (el.matches('table, svg') || el.querySelector('table, svg, img, [data-chart]')) return false;
+  return el.matches('[data-slot]') || !!el.querySelector('[data-slot]');
 }
 
 function showHandles(d, page, el) {
@@ -7165,6 +7292,117 @@ function wireSections(d, roots) {
   });
 }
 
+/** Handles on a selection of several — a group, or any set: the four corners
+ *  of the box round them all. A corner drag scales every piece about the
+ *  opposite corner, places and sizes together, as a group resizes in
+ *  InDesign, Figma and Canva. A group used to show no handles at all, and
+ *  the only way to resize one was piece by piece. Locked pieces stay; so
+ *  does anything on another page. */
+function showGroupHandles(d, els) {
+  const page = els[0].closest('section.page') || d.querySelector('section.page');
+  const members = outermost(els).filter(el => !isLocked(idOf(el))
+    && (el.closest('section.page') || page) === page);
+  if (members.length < 2) return;
+  const U = unionBox(members.map(el => shapeBox(el, page)));
+  if (!(U.w > 0 && U.h > 0)) return;
+  const ov = d.createElement('div');
+  ov.className = 'ds-handles ds-handles-group';
+  ov.style.cssText = `left:${U.x}in;top:${U.y}in;width:${U.w}in;height:${U.h}in`;
+  ['ne', 'nw', 'se', 'sw'].forEach(dir => {
+    const h = d.createElement('div');
+    h.className = 'ds-h ds-h-' + dir;
+    h.title = 'Drag to scale the selection together';
+    h.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      startGroupResize(d, members, page, U, e, dir);
+    });
+    ov.appendChild(h);
+  });
+  page.appendChild(ov);
+}
+function unionBox(bs) {
+  const x = Math.min(...bs.map(b => b.x)), y = Math.min(...bs.map(b => b.y));
+  return { x, y, w: Math.max(...bs.map(b => b.x + b.w)) - x, h: Math.max(...bs.map(b => b.y + b.h)) - y };
+}
+function startGroupResize(d, members, page, U, e0, dir) {
+  const pr = page.getBoundingClientRect();
+  if (!pr.width) return;
+  pushHistory();
+  const px = DPI * zoomOf(page);
+  const grab = { x: e0.clientX, y: e0.clientY };
+  // Each piece as its kind keeps it: a shape by its own x/y/w/h; everything
+  // else through placer(), as a drag and a single resize already do; a
+  // graphic by its scale, as its own corner handle does.
+  const parts = members.map(el => {
+    const id = idOf(el);
+    const sh = shapeOf(id), bx = boxOf(id), tb = tableOf(id);
+    const graphic = !sh && isGraphic(el);
+    if (graphic) ensureStore(d, el);
+    const P = sh ? null : placer(d, el, page);
+    const b = sh ? { x: sh.x, y: sh.y, w: sh.w, h: sh.h } : { ...P.box };
+    return { el, id, sh, bx, tb, graphic, P, b, now: null,
+             scale0: graphic ? ((storeOf(id) || {}).scale || 1) : 1,
+             wordy: !sh && !graphic && (isHeadingEl(el) || isTextEl(el)) };
+  });
+  d.body.classList.add('ds-resizing');
+  members.forEach(el => el.classList.add('ds-lifted'));
+  const west = dir.includes('w'), north = dir.includes('n');
+  const ax = west ? U.x + U.w : U.x, ay = north ? U.y + U.h : U.y;   // the anchor corner
+  let f = 1;
+  const apply = e => {
+    const dx = (e.clientX - grab.x) / px, dy = (e.clientY - grab.y) / px;
+    const fx = (west ? U.w - dx : U.w + dx) / U.w;
+    const fy = (north ? U.h - dy : U.h + dy) / U.h;
+    f = Math.abs(fx - 1) > Math.abs(fy - 1) ? fx : fy;        // one factor, aspect kept
+    f = Math.max(MIN_IN / Math.max(U.w, U.h), f);
+    // Never off the page: the factor stops where the far edge meets the sheet.
+    f = Math.min(f, west ? ax / U.w : (PAGE_W_IN - ax) / U.w,
+                    north ? ay / U.h : (PAGE_H_IN - ay) / U.h);
+    const X = west ? ax - U.w * f : ax, Y = north ? ay - U.h * f : ay;
+    parts.forEach(p => {
+      const x = X + (p.b.x - U.x) * f, y = Y + (p.b.y - U.y) * f, w = p.b.w * f, h = p.b.h * f;
+      p.now = { x, y, w, h };
+      if (p.sh) {
+        p.sh.x = +x.toFixed(2); p.sh.y = +y.toFixed(2); p.sh.w = +w.toFixed(2); p.sh.h = +h.toFixed(2);
+        paintShape(d, p.id);
+        return;
+      }
+      p.P.put(x, y, false);
+      if (p.graphic) {
+        const st = storeOf(p.id), sc = +(p.scale0 * f).toFixed(3);
+        if (Math.abs(sc - 1) < 0.005) delete st.scale; else st.scale = sc;
+        paintRot(d, p.el);
+        return;
+      }
+      p.el.style.width = w.toFixed(2) + 'in';
+      if (!p.tb) p.el.style[p.wordy ? 'minHeight' : 'height'] = h.toFixed(2) + 'in';
+    });
+    hideHandles(d);
+    const ov = d.createElement('div');
+    ov.className = 'ds-handles ds-handles-group';
+    ov.style.cssText = `left:${X}in;top:${Y}in;width:${U.w * f}in;height:${U.h * f}in`;
+    page.appendChild(ov);
+    $('stat').textContent = `${parts.length} pieces → ${Math.round(f * 100)}%`;
+  };
+  const move = e => apply(e);
+  const up = () => {
+    dragUnlisten(d, move, up);
+    d.body.classList.remove('ds-resizing');
+    members.forEach(el => el.classList.remove('ds-lifted'));
+    parts.forEach(p => {
+      if (p.sh || !p.now) return;
+      p.P.commit(p.P.put(p.now.x, p.now.y, false));
+      // A height only where one was already set — a box or paragraph that
+      // grows with its words keeps growing.
+      const had = p.bx ? p.bx.h != null : (layout.positions[p.id] || {}).h != null;
+      commitSize(d, p.el, { w: p.now.w, h: had ? p.now.h : undefined });
+    });
+    markDirty();
+    render().then(() => paintSel($('out').contentDocument));
+  };
+  dragListen(d, move, up);
+}
+
 function startResize(d, el, e0, dir) {
   const page = el.closest('section.page') || d.querySelector('section.page');
   const pr = page.getBoundingClientRect();
@@ -7180,6 +7418,7 @@ function startResize(d, el, e0, dir) {
   const P = placer(d, el, page);          // reuse: a resize is a layout override too
   const b = P.box;                        // b.w/b.h are the CURRENT (scaled) size
   const baseScale = graphic ? ((storeOf(id) || {}).scale || 1) : 1;
+  const wordy = !shapeId && !graphic && (isHeadingEl(el) || isTextEl(el));
   const grab = { x: e0.clientX, y: e0.clientY };
   el.classList.add('ds-lifted');
   d.body.classList.add('ds-resizing');
@@ -7231,7 +7470,9 @@ function startResize(d, el, e0, dir) {
     } else {
       P.put(x, y, false);                 // pin it in place, holding its flow slot
       el.style.width = w.toFixed(2) + 'in';
-      if (vertical) el.style.height = h.toFixed(2) + 'in';
+      // Words take the height as the floor they will be saved with, so the
+      // drag shows what the page will: never a box cutting its text off.
+      if (vertical) el.style[wordy ? 'minHeight' : 'height'] = h.toFixed(2) + 'in';
     }
     showHandles(d, page, el);
     $('stat').textContent = `${id} → ${w.toFixed(2)}in wide`
@@ -7249,46 +7490,59 @@ function startResize(d, el, e0, dir) {
       markDirty();                        // the scale is already on the store
     } else if (!shapeId) {
       P.commit({ x: size.x, y: size.y });
-      // A text box's geometry lives in boxes[], not positions{} — writing to
-      // the wrong store used to throw here and the width never persisted.
-      const bx2 = boxOf(id), tb2 = tableOf(id);
-      if (bx2) {
-        bx2.w = +size.w.toFixed(2);
-        // A text box grows to at least this height (min-height in the renderer,
-        // so words never clip); dragging a vertical edge sets it, and dragging
-        // it back to nothing clears it (auto height again).
-        if (dir.includes('s') || dir.includes('n')) {
-          if (size.h > MIN_IN + 0.01) bx2.h = +size.h.toFixed(2);
-          // A threaded frame is exactly its height — it cannot go back to
-          // growing, or it would never pass words on. It keeps the smallest.
-          else if (inThread(bx2)) bx2.h = +MIN_IN.toFixed(2);
-          else delete bx2.h;
-        }
-        markDirty();
-      } else if (tb2) {
-        tb2.w = +size.w.toFixed(2);       // a table is width-only; rows set height
-        markDirty();
-      } else {
-        const p = layout.positions[id];
-        p.w = +size.w.toFixed(2);
-        if (dir.includes('s') || dir.includes('n')) {
-          // Text grows; images do not. For a heading the dragged height is a
-          // minimum (hmin), so longer wording pushes the box open instead of
-          // being cut off by a number someone dragged weeks earlier.
-          const text = isHeadingEl(el);
-          if (text && size.h <= MIN_IN + 0.01) { delete p.h; delete p.hmin; }
-          else {
-            p.h = +size.h.toFixed(2);
-            if (text) p.hmin = true; else delete p.hmin;
-          }
-        }
-      }
+      commitSize(d, el, { w: size.w, h: (dir.includes('s') || dir.includes('n')) ? size.h : undefined });
     } else {
       markDirty();
     }
     paintSel(d);                          // ring + handles + mini follow the new box
   };
   dragListen(d, move, up);
+}
+
+/** THE size write — the one place a width or a height lands in the store,
+ *  for a handle drag, a group's corner, and the pilot's place(). Each kind
+ *  keeps its size differently, and three copies of this branch had drifted:
+ *  place() wrote a box's height with no floor and never gave a paragraph
+ *  its hmin, and a width written to the wrong store once threw here and
+ *  never persisted. `w` and `h` are inches; leave one undefined to keep it.
+ *  - a shape: x/y/w/h on its own object (its x/y are placed elsewhere);
+ *  - a text box: w, and h as the height it grows to at least (min-height),
+ *    cleared when dragged to nothing — a threaded frame keeps the smallest;
+ *  - a placed table: w only, its rows set the height;
+ *  - a designed element: positions{} (pinned first), w, and for WORDS the
+ *    height as a floor (hmin) so longer wording pushes the box open;
+ *  - a graphic from a handle: nothing — it scales, and its scale is already
+ *    on the store (startResize never calls this for one); from place(), a
+ *    width or height pins it like any designed element — the engine draws
+ *    a renderer chart to the width it is given. */
+function commitSize(d, el, { w, h } = {}) {
+  const id = el.dataset.shape || el.dataset.el;
+  const round = v => +(+v).toFixed(2);
+  const sh = shapeOf(id);
+  if (sh) {
+    if (w != null) sh.w = round(w);
+    if (h != null) sh.h = round(h);
+    markDirty(); return;
+  }
+  const bx = boxOf(id), tb = tableOf(id);
+  if (bx) {
+    if (w != null) bx.w = round(w);
+    if (h != null) {
+      if (h > MIN_IN + 0.01) bx.h = round(h);
+      else if (inThread(bx)) bx.h = round(MIN_IN);
+      else delete bx.h;
+    }
+    markDirty(); return;
+  }
+  if (tb) { if (w != null) tb.w = round(w); markDirty(); return; }
+  const p = ensureStore(d, el);
+  const wordy = isHeadingEl(el) || isTextEl(el);
+  if (w != null) p.w = round(w);
+  if (h != null) {
+    if (wordy && h <= MIN_IN + 0.01) { delete p.h; delete p.hmin; }
+    else { p.h = round(h); if (wordy) p.hmin = true; else delete p.hmin; }
+  }
+  markDirty();
 }
 
 // ------------------------------------------------------------ rotate & style
@@ -8109,7 +8363,7 @@ function openTglSpeedPopover(d, anchorBtn, tb) {
   });
   w.appendChild(r);
   m.appendChild(w);
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const rect = anchorBtn.getBoundingClientRect();
   const sx = d.defaultView.scrollX, sy = d.defaultView.scrollY;
   m.style.left = (rect.left + sx) + 'px';
@@ -8258,7 +8512,9 @@ function tableCellKey(e) {
     if (td) editCell(d, td, seed);
   };
   if (e.key === 'Tab') {
-    e.preventDefault(); stepCell(t, r, c, 0, e.shiftKey ? -1 : 1, true); return true;
+    e.preventDefault();
+    if (!stepCell(t, r, c, 0, e.shiftKey ? -1 : 1, true) && !e.shiftKey) tableAppendRow(t);
+    return true;
   }
   if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); open(); return true; }
   if (e.key === 'Escape') { clearCellSel(d); renderTablePanel(); return true; }
@@ -8349,6 +8605,9 @@ function wireCells(d, roots) {
         // time this fires, so it cannot be the thing we test on.
         const id = idOf(tableEl), at = td.dataset.cell;
         const pt = { clientX: e.clientX, clientY: e.clientY };
+        // Words open somewhere else close first, as contextify does.
+        const a = d.activeElement;
+        if (editing && a && a !== d.body && !td.contains(a)) a.blur();
         if (renderRunning) await render();
         const d2 = $('out').contentDocument;
         const cell = d2.querySelector(
@@ -8432,6 +8691,9 @@ function editCell(d, td, seed) {
   } else host.textContent = seed;
   td.textContent = '';
   td.appendChild(host);
+  // The cell as it opened (see edit()'s `opened`). Opened BY typing, the seed
+  // is already a keystroke, so there is nothing to compare against.
+  const opened = seed === undefined ? htmlToMd(host, { inline: true, br: '\n' }) : null;
   host.focus();
   const r = d.createRange();
   r.selectNodeContents(host);
@@ -8447,7 +8709,7 @@ function editCell(d, td, seed) {
     host.contentEditable = 'false';
     host.classList.remove('ds-cell-edit');
     if (keep) {
-      const moved = newVal !== ((t.rows[ri] && t.rows[ri][ci]) || '');
+      const moved = newVal !== opened && newVal !== ((t.rows[ri] && t.rows[ri][ci]) || '');
       const settled = moved ? await collabFieldSettle(newVal, 'table cell') : 'mine';
       if (moved && settled === 'mine') {
         await collabFieldFirstTheirs();
@@ -8474,12 +8736,17 @@ function editCell(d, td, seed) {
     // just told to close. Enter then left the editor stuck open on the next
     // cell and swallowed everything typed after it.
     if (['Escape', 'Enter', 'Tab'].includes(e.key)) e.stopPropagation();
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); return; }
+    // Escape keeps what was typed and leaves the cell selected: see edit()'s
+    // keydown. ⌘Z is the way back.
+    if (e.key === 'Escape') { e.preventDefault(); finish(true); return; }
     // Tab walks the grid and Enter drops a row — a table is filled in by
     // typing straight through it, not by reaching for the mouse per cell.
     if (e.key === 'Tab') {
       e.preventDefault();
-      finish(true).then(() => stepCell(t, ri, ci, 0, e.shiftKey ? -1 : 1, true));
+      const back = e.shiftKey;
+      finish(true).then(() => {
+        if (!stepCell(t, ri, ci, 0, back ? -1 : 1, true) && !back) tableAppendRow(t);
+      });
       return;
     }
     // Enter commits (a cell is usually one line); Shift+Enter for a real newline.
@@ -8524,8 +8791,11 @@ function tableMenu(d, td, e) {
   if (!t) return;
   const [ri, ci] = td.dataset.cell.split(',').map(Number);
   const cols = t.rows[0].length, rows = t.rows.length;
-  // Right-clicking a cell also puts the cursor on it, so the menu and the
-  // panel are always talking about the same cell.
+  // Right-clicking a cell selects its table (selectForMenu) and puts the
+  // cursor on the cell, so the menu, the strip and the panel are always
+  // talking about the same thing. In that order: a selection change drops a
+  // cell range on another table.
+  selectForMenu(d, idOf(tableEl));
   selectCell(idOf(tableEl), ri, ci);
   const m = d.createElement('div'); m.className = 'ds-menu ds-tmenu';
   m.addEventListener('mousedown', menuKeepFocus);
@@ -8615,7 +8885,7 @@ function tableMenu(d, td, e) {
       for (let r = rg.r0; r <= rg.r1; r++) for (let c = rg.c0; c <= rg.c1; c++) keys.push(`${r},${c}`);
       const cur = ((t.cells || {})[`${ri},${ci}`] || {}).use;
       const row = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
-        b.addEventListener('click', async () => { closeMenu(d); pushHistory(); const ok = await fn(); if (ok === false) { past.pop(); return; }
+        b.addEventListener('click', async () => { closeMenu(d); pushHistory(); const ok = await fn(); if (ok === false) { withdrawStep(); return; }
           markDirty(); await render(); paintCells($('out').contentDocument); }); sub.appendChild(b); };
       Object.keys(cellStyles()).sort().forEach(n => row((cur === n ? '✓ ' : '') + n, () => applyCellStyle(t, keys, n)));
       row('No cell style', () => applyCellStyle(t, keys, null));
@@ -8637,7 +8907,7 @@ function tableMenu(d, td, e) {
   }, !t.flow);
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
-  d.body.appendChild(m);
+  d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = Math.max(4,
@@ -8905,6 +9175,24 @@ function defineCellStyle(name, look) {
 function tableInsertRow(t, at) {
   reindexCells(t, 'row', at, 1); cellSelShift(t, 'row', at, 1); reindexMerges(t, 'row', at, 1);
   t.rows.splice(at, 0, Array(t.rows[0].length).fill(''));
+}
+/** Tab out of the last cell: a new row, and its first cell open — a table is
+ *  filled by typing through it, as in Word, Docs and InDesign. It used to
+ *  close the words and drop the keyboard on the page. */
+async function tableAppendRow(t) {
+  pushHistory();
+  tableInsertRow(t, t.rows.length);
+  markDirty();
+  await render();
+  const d = $('out').contentDocument;
+  const id = 'table.' + t.id, r = t.rows.length - 1;
+  if (!selIds.has(id)) setSel(d, [id]);
+  selectCell(id, r, 0);
+  paintCells(d);
+  renderTablePanel();
+  const td = cellEl(d, id, r, 0);
+  if (td) editCell(d, td);
+  $('stat').textContent = 'a new row — Tab moves on, Shift+Tab back';
 }
 /** A merged cell's words live in its top-left cell. Deleting the row (or
  *  column) that cell is on keeps the merge — one line shorter — and used to
@@ -9373,6 +9661,15 @@ function selectedChartId() {
   const ids = [...selIds];
   if (ids.length !== 1) return null;
   return chartOf(ids[0]) ? ids[0] : null;
+}
+
+/** A click on a chart or a table opens the panel that edits it, the way Canva
+ *  puts a clicked chart's data in front of you. Only a CLICK: a drag moves
+ *  the object and leaves the side panel as it was. */
+function openPanelOnClick(id) {
+  if (!id || selIds.size !== 1 || !selIds.has(id)) return;
+  if (chartOf(id)) openChartPanel(id);
+  else if (id.startsWith('table.') && tableOf(id)) openTablePanel(id);
 }
 
 function openChartPanel(id) {
@@ -10458,13 +10755,14 @@ function editChartText(d, node) {
   d.body.appendChild(inp);
   inp.focus(); inp.select();
   let done = false;
+  const opened = chLabelOut(inp.value);     // see edit()'s `opened`
   const finish = async keep => {
     if (done) return; done = true;
     editing = false;
     hubAutosaveFlushNext();
     const val = chLabelOut(inp.value);
     inp.remove();
-    if (keep && val !== chartText(s.chart, hook)) {
+    if (keep && val !== opened && val !== chartText(s.chart, hook)) {
       const settled = await collabFieldSettle(val, 'chart label');
       if (settled === 'mine') {
         await collabFieldFirstTheirs();
@@ -10493,8 +10791,8 @@ function editChartText(d, node) {
   inp.addEventListener('blur', () => finish(true));
   inp.addEventListener('keydown', e => {
     e.stopPropagation();            // see editCell: the document handler would
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    // Enter and Escape both keep the new words (see edit()'s keydown).
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(true); }
   });
 }
 
@@ -10661,6 +10959,7 @@ function editBox(d, el, at) {
   // A click puts the caret where it landed; see caretAt.
   host.focus(at ? { preventScroll: true } : undefined);
   caretOrAll(d, host, at);
+  const opened = htmlToMd(host, { allowLists: true });   // see edit()'s `opened`
   const finish = async keep => {
     if (host.dataset.done) return;
     host.dataset.done = '1';
@@ -10675,9 +10974,10 @@ function editBox(d, el, at) {
     host.classList.remove('ds-edit');
     if (keep) {
       const want = newVal.trim();
+      const typed = newVal !== opened && want && want !== b.md;
       // Whose words, when two people wrote in this box at once.
-      const settled = want && want !== b.md ? await collabFieldSettle(want, 'text box') : 'mine';
-      if (settled === 'mine' && want && want !== b.md) {
+      const settled = typed ? await collabFieldSettle(want, 'text box') : 'mine';
+      if (settled === 'mine' && typed) {
         await collabFieldFirstTheirs();
         // `b` pointed into the layout this editor opened on; a collaborator's
         // change that just landed replaced it.
@@ -10699,8 +10999,8 @@ function editBox(d, el, at) {
   });
   host.addEventListener('paste', e => pasteClean(d, host, e, { allowLists: true }));
   host.addEventListener('keydown', e => {
-    // Escape keeps the box selected; see edit()'s keydown.
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    // Escape keeps the words and the box selected; see edit()'s keydown.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(true); }
     if (e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); link(d, host); }
     // Same bullet indent/outdent the slot editor has — a text box takes lists
     // too, and Tab meaning two different things in the two editors would be
@@ -10746,6 +11046,7 @@ function editEndnote(d, li, sid) {
   li.replaceWith(wrap);
   txt.focus();
   txt.select();
+  const opened = [txt.value.trim(), url.value.trim()];   // see edit()'s `opened`
 
   const finish = async keep => {
     if (wrap.dataset.done) return;
@@ -10760,7 +11061,7 @@ function editEndnote(d, li, sid) {
       // The URL may be cleared: a citation can be a book or an interview, and
       // requiring one here meant a source that had a link could never lose it.
       // The citation text itself still has to say something.
-      if (t && (t !== s.text || u !== s.url)) {
+      if (t && (t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url)) {
         pushHistory();
         updateSource(sid, t, u);
         markDirty();
@@ -10777,8 +11078,8 @@ function editEndnote(d, li, sid) {
   txt.addEventListener('blur', blurCheck);
   url.addEventListener('blur', blurCheck);
   [txt, url].forEach(inp => inp.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    // Enter and Escape both keep what was typed (see edit()'s keydown).
+    if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); finish(true); }
   }));
 }
 
@@ -10907,23 +11208,78 @@ function findTargets() {
         read: () => readSlot(k), write: v => writeSlot(k, v) });
     });
   }
+  // The citation list is a slot with no [data-slot] on the page (it renders as
+  // the endnotes, or nowhere), so the DOM walk above never met it: a source's
+  // title or URL gave "Nothing found", and renaming a citation id renamed the
+  // [^id] tokens in the words but left its "[id]:" line behind.
+  if (/^\[\[sources\]\]/m.test(source) && !out.some(t => t.key === 'sources')) {
+    out.push({ kind: 'slot', key: 'sources', label: 'sources', use: () => undefined,
+      read: () => readSlot('sources'), write: v => writeSlot('sources', v) });
+  }
   (layout.boxes || []).forEach(b => out.push({
     kind: 'box', key: b.id, label: b.id, use: () => (b.style || {}).use,
-    read: () => b.md || '', write: v => { b.md = v; },
+    read: () => b.md || '', write: v => { b.md = fixOkina(v); },
   }));
   (layout.tables || []).forEach(t => (t.rows || []).forEach((row, r) =>
     row.forEach((_cell, c) => out.push({
       kind: 'cell', key: `${t.id}[${r + 1},${c + 1}]`, label: `${t.id} r${r + 1}c${c + 1}`,
       use: () => (t.style || {}).use,
       read: () => String(t.rows[r][c] ?? ''),
-      write: v => { t.rows[r][c] = v; },
+      write: v => { t.rows[r][c] = fixOkina(v); },
+      cellAt: [t.id, r, c],
     }))));
   return out;
 }
 
+/** The node on the page a Find target lives in, or null (the sources list has none). */
+function findElOf(t) {
+  const d = $('out').contentDocument;
+  if (!d) return null;
+  const q = id => d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  if (t.kind === 'slot') return d.querySelector(`[data-slot="${CSS.escape(t.key)}"]`);
+  if (t.kind === 'box') return q('text.' + t.key) || q(t.key);
+  if (t.kind === 'cell') {
+    const [id, r, c] = t.cellAt;
+    const tbl = q('table.' + id) || q(id);
+    const tr = tbl && (tbl.matches('table') ? tbl : tbl.querySelector('table'));
+    const row = tr && tr.rows[r];
+    return (row && row.cells[c]) || tbl;
+  }
+  return null;
+}
+/** Scroll to a hit's place and make it show: a bare scroll left the person
+ *  hunting for which of a page's paragraphs was meant. */
+function findShow(t) {
+  if (t.key === 'sources') { openSources(); return; }
+  const el = findElOf(t);
+  if (!el) { $('stat').textContent = `${t.label} is not on a page right now`; return; }
+  jumpTo(el, 'center');
+  const d = el.ownerDocument;
+  d.querySelectorAll('[data-find-flash]').forEach(n => {
+    n.removeAttribute('data-find-flash'); n.style.outline = n.dataset.findWas || ''; delete n.dataset.findWas;
+  });
+  el.dataset.findWas = el.style.outline;
+  el.setAttribute('data-find-flash', '');
+  el.style.outline = '3px solid #E8A317';
+  setTimeout(() => {
+    if (el.hasAttribute('data-find-flash')) {
+      el.removeAttribute('data-find-flash'); el.style.outline = el.dataset.findWas || ''; delete el.dataset.findWas;
+    }
+  }, 2200);
+}
+
 const findRe = (needle, { cased, whole, grep }) => {
   const esc = grep ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(whole ? `\\b(?:${esc})\\b` : esc, cased ? 'g' : 'gi');
+  // \b is ASCII: "Whole words" found no ʻāina, no lā, no $419. A word edge
+  // is where a letter or digit of ANY script stops; the u flag makes \p{}
+  // mean that. A GREP pattern that is not valid under u (an escaped
+  // hyphen, say) falls back to the old edges rather than refusing.
+  const flags = cased ? 'g' : 'gi';
+  if (whole) {
+    try { return new RegExp(`(?<![\\p{L}\\p{N}_])(?:${esc})(?![\\p{L}\\p{N}_])`, flags + 'u'); }
+    catch (e) { return new RegExp(`\\b(?:${esc})\\b`, flags); }
+  }
+  return new RegExp(esc, flags);
 };
 /** What one hit changes to. Literal text in plain mode — a $ is a dollar
  *  sign — and $1…$99, $& and $$ in GREP mode; wrapped in the character style
@@ -11149,12 +11505,13 @@ function paintFindList() {
     if (!seen.has(k)) seen.set(k, []);
     seen.get(k).push(h);
   });
-  [...seen.entries()].slice(0, 40).forEach(([label, hits]) => {
+  const groups = [...seen.entries()];
+  groups.slice(0, 40).forEach(([label, hits]) => {
     const g = document.createElement('div');
     g.className = 'find-group';
     const lab = document.createElement('p');
     lab.className = 'find-where';
-    lab.textContent = `${label} · ${hits.length}`;
+    lab.textContent = `${label} · ${hits.length}${hits.length > 4 ? ` (${hits.length - 4} more not shown)` : ''}`;
     g.appendChild(lab);
     hits.slice(0, 4).forEach(h => {
       const p = document.createElement('p');
@@ -11163,19 +11520,23 @@ function paintFindList() {
       b.textContent = h.hit;
       p.append(document.createTextNode(h.before), b,
         document.createTextNode(h.after));
-      if (h.target.kind === 'slot') {
-        p.classList.add('find-go');
-        p.title = 'Show me';
-        p.addEventListener('click', () => {
-          const d = $('out').contentDocument;
-          const el = d && d.querySelector(`[data-slot="${CSS.escape(h.target.key)}"]`);
-          if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        });
-      }
+      p.classList.add('find-go');
+      p.title = 'Show me';
+      p.addEventListener('click', () => findShow(h.target));
       g.appendChild(p);
     });
     list.appendChild(g);
   });
+  // The list is capped (40 places, 4 hits each) and used to end without a
+  // word about it: "481 hits" above, 113 shown, and Change all covering
+  // places nobody had seen.
+  if (groups.length > 40) {
+    const more = document.createElement('p');
+    more.className = 'ch-eg find-more';
+    const k = groups.length - 40;
+    more.textContent = `… and ${k} more ${k === 1 ? 'place' : 'places'} not shown here — Change all covers them too`;
+    list.appendChild(more);
+  }
 }
 
 async function findReplaceAll() {
@@ -11186,18 +11547,28 @@ async function findReplaceAll() {
   // that took forty undos to back out would not be one anybody trusted.
   pushHistory();
   const done = new Set();
+  let refused = 0, why = '';
   findState.hits.forEach(h => {
     if (done.has(h.target.key)) return;             // a target is rewritten once
     done.add(h.target.key);
-    h.target.write(h.target.read().replace(findRe(findState.needle, findState),
+    const ok = h.target.write(h.target.read().replace(findRe(findState.needle, findState),
       (...args) => findChangeOf(findState, args)));
+    // writeSlot refuses a result it will not store (a line that would be a
+    // slot marker, a malformed sources line) and says why on the status
+    // line. "changed 1 hit in 1 place" then overwrote that, so the refusal
+    // read as a success.
+    if (ok === false) { refused++; why = $('stat').textContent; }
   });
   markDirty();
   await render();
   findRun();
   renderFindPanel();
-  $('stat').textContent = `changed ${n} ${n === 1 ? 'hit' : 'hits'} in `
-    + `${done.size} ${done.size === 1 ? 'place' : 'places'}`;
+  const changed = done.size - refused;
+  $('stat').textContent = refused
+    ? `${changed ? `changed ${changed} ${changed === 1 ? 'place' : 'places'}; ` : ''}`
+      + `${refused} ${refused === 1 ? 'place' : 'places'} refused the change — ${why}`
+    : `changed ${n} ${n === 1 ? 'hit' : 'hits'} in `
+      + `${done.size} ${done.size === 1 ? 'place' : 'places'}`;
 }
 
 // ------------------------------------------------------- the stylesheet
@@ -13079,6 +13450,8 @@ function paintSel(d) {
   if (els.length === 1 && !isLocked(idOf(els[0]))) {
     const page = els[0].closest('section.page') || d.querySelector('section.page');
     showHandles(d, page, els[0]);
+  } else if (els.length > 1) {
+    showGroupHandles(d, els);
   }
   showMini(d, els);
   arrangeBar(d);
@@ -13754,7 +14127,7 @@ async function deleteSel(d) {
     });
   }
   selIds.clear();
-  if (!touched) { past.pop(); return; }
+  if (!touched) { withdrawStep(); return; }
   markDirty();
   await render();
   // AFTER the render: the pipeline writes its own status ("unsaved changes"),
@@ -13884,7 +14257,7 @@ async function duplicateSel(d) {
   const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
     && selGroups()[0].every(id => selIds.has(id));
   [...selIds].forEach(dup);
-  if (!copies.length) { past.pop(); return; }
+  if (!copies.length) { withdrawStep(); return; }
   // Duplicating a whole group hands back a group — the copy stays together,
   // as Canva's does.
   if (wasGroup && copies.length > 1) {
@@ -14026,7 +14399,7 @@ async function stepRepeatDialog(d) {
   const n = Math.max(1, Math.min(100, Math.round(+got.count) || 1));
   pushHistory();
   const made = stepRepeatIds(ids, n, +got.dx || 0, +got.dy || 0);
-  if (!made.length) { past.pop(); return; }
+  if (!made.length) { withdrawStep(); return; }
   setSel(d, [...ids, ...made]);
   markDirty();
   await render();
@@ -14243,6 +14616,111 @@ const canUngroup = () => selGroups().length > 0;
 let lastDrill = { id: null, t: 0 };
 
 let lastNudge = 0, nudgeSeq = -1;
+/** THE object chords, one table for both documents. The page's keys arrive
+ *  in the iframe's document and the chrome's in the outer one, each with
+ *  its own listener; for years every chord lived in both by hand, and one
+ *  added to one listener worked only when focus happened to sit there
+ *  (⌘A, ⌘X and ⌘⇧] were missing from both; ⌘⌥⇧V, ⌘⌥U and ⌥] from the
+ *  chrome's). Each listener now does its own guards — a text field, open
+ *  words, a table cell — and then asks this. Order matters: chords that
+ *  need nothing selected come first, then the ones on the selection.
+ *  Returns whether the key was taken (and, if so, its default prevented). */
+const CHORDS = [
+  // name, test, act — `mod` is ⌘ on a Mac and Ctrl elsewhere
+  ['undo / redo', (e, k) => k.mod && !k.alt && k.key === 'z', (d, e) => e.shiftKey ? redo() : undo()],
+  ['redo (Ctrl+Y)', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'y', () => redo()],
+  ['to front / back', (e, k) => k.mod && !k.alt && k.shift && (e.code === 'BracketRight' || e.code === 'BracketLeft'),
+    (d, e) => { if (selIds.size) layerStep(d, e.code === 'BracketRight' ? 1 : -1, true); }],
+  ['forward / back', (e, k) => k.mod && (e.key === ']' || e.key === '['),
+    (d, e) => layerStep(d, e.key === ']' ? 1 : -1, e.altKey)],
+  ['select all on the page', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'a', d => selectAllOnPage(d)],
+  ['duplicate', (e, k) => k.mod && !k.alt && k.key === 'd', d => duplicateSel(d)],
+  // ⌘C/⌘V copy objects; ⌥ makes it the format painter. Guarded on there
+  // being something to act on, so a bare ⌘C/⌘V still reaches the browser.
+  ['copy / copy style', (e, k) => k.mod && k.key === 'c' && selIds.size > 0, (d, e) => e.altKey ? copyStyle(d) : copySel(d)],
+  ['cut', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'x' && selIds.size > 0, d => cutSel(d)],
+  ['paste in place', (e, k) => k.mod && k.alt && k.shift && e.code === 'KeyV' && !!clip, d => pasteClip(d, true)],
+  ['paste / paste style', (e, k) => k.mod && k.key === 'v' && !!(e.altKey ? styleClip : clip),
+    (d, e) => e.altKey ? pasteStyle(d) : pasteClip(d)],
+  ['step and repeat', (e, k) => k.mod && k.alt && e.code === 'KeyU' && selIds.size > 0, d => stepRepeatDialog(d)],
+  ['transform again', (e, k) => k.mod && k.alt && e.code === 'Digit3', d => transformAgain(d)],
+  // ⌥] / ⌥[ walk the stack (⌘] / ⌘[ move in it). By code: ⌥] types a quote.
+  ['next / previous object', (e, k) => k.alt && !k.mod && (e.code === 'BracketRight' || e.code === 'BracketLeft'),
+    (d, e) => selectNextObject(d, e.code === 'BracketRight' ? 1 : -1)],
+  ['group / ungroup', (e, k) => k.mod && k.key === 'g', (d, e) => e.shiftKey ? ungroupSel(d) : groupSel(d)],
+  // on the selection
+  ['deselect', (e, k) => e.key === 'Escape' && selIds.size > 0, d => clearSel(d), { noPrevent: true }],
+  ['delete', (e, k) => (e.key === 'Delete' || e.key === 'Backspace') && selIds.size > 0, d => deleteSel(d)],
+  ['open the words', (e, k) => e.key === 'Enter' && !k.mod && !k.alt && !k.shift && selIds.size === 1,
+    (d, e) => enterOpensBox(d, e), { maybe: true }],
+  ['nudge', (e, k) => e.key.startsWith('Arrow') && selIds.size > 0 && !(e.target && held.get(e.target)),
+    (d, e) => {
+      const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
+      const d4 = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+      if (d4) nudgeSel(d, d4);
+    }],
+];
+function objectChord(d, e) {
+  const k = { mod: e.metaKey || e.ctrlKey, alt: e.altKey, shift: e.shiftKey, key: (e.key || '').toLowerCase() };
+  for (const [name, test, act, opts = {}] of CHORDS) {
+    if (!test(e, k)) continue;
+    if (opts.maybe) { if (act(d, e)) return true; continue; }   // the act says whether it applied
+    if (!opts.noPrevent) e.preventDefault();
+    act(d, e);
+    return true;
+  }
+  return false;
+}
+window.__dsChords = () => CHORDS.map(c => c[0]);   // test hook: the table, by name
+
+/** ⌘A: everything placed on the page the selection is on (else the page in
+ *  view), locked things left out, groups taken whole. Chrome's own select-all
+ *  used to run instead and paint the toolbar's words blue. */
+function selectAllOnPage(d) {
+  const first = selEls(d)[0];
+  const want = visiblePageId();
+  const pg = (first && first.closest('section.page'))
+    || (selPage != null && d.querySelector(`section.page[data-page="${CSS.escape(String(selPage))}"]`))
+    || (mountedPages(d).find(p => p.id === want) || {}).pg
+    || d.querySelector('section.page');
+  if (!pg) return;
+  const ids = layerItems(d, pg).map(o => o.id).filter(id => !isLocked(id));
+  if (!ids.length) { $('stat').textContent = 'nothing placed on this page to select'; return; }
+  setSel(d, withGroups(ids));
+  const n = pageNumOf(d, pg);
+  $('stat').textContent = `${selIds.size} selected — everything placed on ${n != null ? 'page ' + n : 'this page'}`;
+}
+
+/** ⌘X: copy, then delete — the way to move a shape or a text box to another
+ *  page. A designed element cannot be copied (copySel says so) and is left. */
+async function cutSel(d) {
+  if (!selIds.size) return;
+  const before = clip;
+  copySel(d);
+  if (clip === before) return;
+  const n = clip.items.length;
+  await deleteSel(d);
+  $('stat').textContent = `cut ${n} element${n > 1 ? 's' : ''} — ⌘V pastes onto the page in view`;
+}
+
+/** Enter on a selected text box opens its words (Canva's and Figma's way in;
+ *  a double-click still does). Returns whether it did. */
+function enterOpensBox(d, e) {
+  if (e.key !== 'Enter' || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || editing) return false;
+  if (selIds.size !== 1) return false;
+  const id = [...selIds][0];
+  if (!id.startsWith('text.') || !boxOf(id) || isLocked(id)) return false;
+  const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  if (!el) return false;
+  e.preventDefault();
+  editBox(d, el);
+  // The caret at the end of the words, ready to carry on — not the whole
+  // box selected, where the first key typed would replace every word.
+  const sel = d.getSelection();
+  if (richHost && sel) { sel.selectAllChildren(richHost); sel.collapseToEnd(); }
+  return true;
+}
+
 function nudgeSel(d, d4) {
   const els = outermost(selEls(d).filter(el => !isLocked(idOf(el))));
   if (!els.length) return;
@@ -14372,13 +14850,120 @@ function marquee(d, pg, e0, onClick = null) {
   dragListen(d, move, up);
 }
 
+// --- a picture or words from outside, with nothing open ---------------------
+// A paste with no field open used to do nothing, and a file dragged onto the
+// page got Chrome's default. A picture pastes or drops as a picture box (the
+// same upload as Insert image), words paste as a text box, on the page in
+// view — Canva's behaviour. Both documents, since focus may sit on either.
+const looseFiles = dt => dt ? [...(dt.files || [])].filter(f => /^image\//.test(f.type)) : [];
+const dragHasFiles = dt => !!dt && [...(dt.types || [])].includes('Files');
+function inField(t) {
+  return !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT'
+                 || t.isContentEditable);
+}
+function pasteLoose(e) {
+  if (editing || inField(e.target) || document.querySelector('dialog[open]')) return;
+  const cb = e.clipboardData;
+  if (!cb) return;
+  const files = looseFiles(cb);
+  if (files.length) { e.preventDefault(); insertLooseImages(files); return; }
+  const text = (cb.getData('text/plain') || '').trim();
+  if (!text) return;
+  e.preventDefault();
+  pasteLooseText(text);
+}
+async function pasteLooseText(text) {
+  const page = visiblePageId();
+  const w = Math.min(5, Math.max(2, PAGE_W_IN - 2));
+  const r = await docsync.api.addTextBox({ page, x: placeX(w), y: 1.5, w, md: text });
+  if (!r.ok) { $('stat').textContent = r.error; return; }
+  const d = $('out').contentDocument;
+  setSel(d, [r.id]);
+  $('stat').textContent = `pasted as a text box on page ${page} — drag to move, double-click to edit`;
+}
+async function insertLooseImages(files, at = null) {
+  for (const f of files) await uploadImageBlob(f, (path, name) => placeImageBox(path, name, at));
+}
+function wireDrop(doc) {
+  doc.addEventListener('dragover', e => {
+    if (!dragHasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  doc.addEventListener('drop', e => {
+    if (!dragHasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    const files = looseFiles(e.dataTransfer);
+    if (!files.length) { $('stat').textContent = 'only pictures can be dropped onto the page'; return; }
+    let at = null;
+    const pg = e.target && e.target.closest ? e.target.closest('section.page') : null;
+    if (pg) {
+      const pr = pg.getBoundingClientRect(), px = DPI * zoomOf(pg);
+      at = { page: pageNumOf(doc, pg), x: +((e.clientX - pr.left) / px - 1.5).toFixed(2),
+             y: +((e.clientY - pr.top) / px - 0.5).toFixed(2) };
+    }
+    insertLooseImages(files, at);
+  });
+}
+addEventListener('paste', pasteLoose);
+wireDrop(document);
+
+// --- the hand tool ----------------------------------------------------------
+// Space held, then a drag anywhere on the canvas, pans — InDesign's, Figma's
+// and Canva's hand. Nothing selects or moves while the bar is down. Taken
+// only where Space means nothing else: not in a text field, not with a table
+// cell selected (there it types), not while words are open.
+let spaceHeld = false;
+function spaceKey(e) {
+  if (e.code !== 'Space' || editing || cellSel || e.metaKey || e.ctrlKey || e.altKey) return false;
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT'
+            || t.tagName === 'BUTTON' || t.isContentEditable)) return false;
+  spaceHeld = true;
+  const d = $('out').contentDocument;
+  if (d && d.body) d.body.classList.add('ds-hand');
+  e.preventDefault();                    // Space would scroll a screen
+  return true;
+}
+function spaceUp() {
+  spaceHeld = false;
+  const d = $('out').contentDocument;
+  if (d && d.body) d.body.classList.remove('ds-hand', 'ds-panning');
+}
+function wirePan(d) {
+  d.addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
+  d.addEventListener('mousedown', e => {
+    if (!spaceHeld || e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const w = d.defaultView;
+    const x0 = e.clientX, y0 = e.clientY, sx = w.scrollX, sy = w.scrollY;
+    d.body.classList.add('ds-panning');
+    const move = ev => w.scrollTo(sx - (ev.clientX - x0), sy - (ev.clientY - y0));
+    const up = () => { dragUnlisten(d, move, up); d.body.classList.remove('ds-panning'); };
+    dragListen(d, move, up);
+  }, true);
+}
+
 /** Keyboard, inside the page: the top-level listener never hears iframe keys
  *  (undo was dead whenever focus sat in the report — a real bug until now). */
+// The iframe's document is REPLACED by most renders, so a listener on it
+// lives until the next edit unless it is put back every time. wire() runs
+// these on each fresh document; a listener registered anywhere else works
+// exactly once. Register here, never in wire() or keysFor() by hand.
+const DOCUMENT_WIRES = [];
+function onEachDocument(fn) { DOCUMENT_WIRES.push(fn); }
+window.__dsDocumentWires = () => DOCUMENT_WIRES.length;
+onEachDocument(wirePan);
+onEachDocument(d => d.addEventListener('paste', pasteLoose));
+onEachDocument(wireDrop);
+
 function keysFor(d) {
   wireFindKey(d);
+  d.addEventListener('keydown', saveKey, true);    // capture: see saveKey
   d.addEventListener('keydown', e => {
     // Before the `editing` guard too — see the top-level listener.
     if (zoomKey(e)) return;
+    if (spaceKey(e)) return;
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyV') {
       plainPasteNext = true;                 // the paste event that follows spends it
       setTimeout(() => { plainPasteNext = false; }, 800);
@@ -14392,54 +14977,9 @@ function keysFor(d) {
       return;
     }
     if (editing) return;
-    const t = e.target;
-    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT'
-              || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-      e.preventDefault(); e.shiftKey ? redo() : undo(); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-      e.preventDefault(); duplicateSel(d); return;
-    }
-    // ⌘C/⌘V copy objects; ⌥ makes it the format painter (copy/paste style).
-    // Guard on there being something to act on, so a bare ⌘C/⌘V still reaches
-    // the browser's own copy/paste.
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selIds.size) {
-      e.preventDefault(); e.altKey ? copyStyle(d) : copySel(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.shiftKey && e.code === 'KeyV' && clip) {
-      e.preventDefault(); pasteClip(d, true); return;           // Paste in Place
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && (e.altKey ? styleClip : clip)) {
-      e.preventDefault(); e.altKey ? pasteStyle(d) : pasteClip(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyU' && selIds.size) {
-      e.preventDefault(); stepRepeatDialog(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'Digit3') {
-      e.preventDefault(); transformAgain(d); return;
-    }
-    // ⌥] / ⌥[ walk the stack (⌘] / ⌘[ move in it). By code: ⌥] types a quote.
-    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.code === 'BracketRight' || e.code === 'BracketLeft')) {
-      e.preventDefault(); selectNextObject(d, e.code === 'BracketRight' ? 1 : -1); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
-      e.preventDefault(); e.shiftKey ? ungroupSel(d) : groupSel(d); return;
-    }
-    if ((e.metaKey || e.ctrlKey) && (e.key === ']' || e.key === '[')) {
-      e.preventDefault(); layerStep(d, e.key === ']' ? 1 : -1, e.altKey); return;
-    }
+    if (inField(e.target)) return;
     if (tableCellKey(e)) return;
-    if (!selIds.size) return;
-    if (e.key === 'Escape') { clearSel(d); return; }
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault(); deleteSel(d); return;
-    }
-    if (t && held.get(t)) return;          // keyDrag owns a picked-up element
-    const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
-    const d4 = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
-                 ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-    if (d4) { e.preventDefault(); nudgeSel(d, d4); }
+    objectChord(d, e);                     // the one table, shared with the chrome
   });
 }
 
@@ -14630,7 +15170,8 @@ function immovableSlots(d) {
     const key = el.dataset.slot;
     if (!key || seen.has(key) || el.closest('[data-el]') || el.closest('.ds-edit')) return;
     seen.add(key);
-    out.push({ key, page: pageIdOf(el.closest('section.page')) });
+    const pg = el.closest('section.page');
+    out.push({ key, page: pageNumOf(d, pg) ?? pageIdOf(pg) });
   });
   return out;
 }
@@ -14667,7 +15208,7 @@ function renderNotices(d) {
   const host = $('notices');
   const el = d.getElementById('ds-notices');
   let msgs = [];
-  if (el) { try { msgs = JSON.parse(el.textContent) || []; } catch (e) {} }
+  if (el) { try { msgs = JSON.parse(el.textContent) || []; } catch (e) { swallowed('renderer notices are not JSON', e); } }
   const seen = notesSeen();
   const show = msgs.filter(m => typeof m === 'string' && m.trim() && !seen.has(m));
   host.textContent = '';
@@ -14815,11 +15356,23 @@ async function railThumbs() {
   // One pass over the sheets, addressed by node rather than re-queried per chip
   // by an attribute most renderers never stamp.
   const sheets = new Map(docSheets().map(s => [String(s.id), s.pg]));
+  // Incremental + lazy: a chip is built only when it is on (or near) the
+  // visible part of the strip, and a sheet that has not changed since its
+  // last preview reuses that preview instead of being cloned again. The strip
+  // scrolls sideways, so "near" is a horizontal window of the strip plus one
+  // screen either side.
+  const rr = $('rail').getBoundingClientRect(), pad = rr.width;
+  for (const k of [...thumbCache.keys()]) if (!sheets.has(k)) thumbCache.delete(k);
+  const sheetKey = sheet || null;
   $('rail-list').querySelectorAll('.chip').forEach(c => {
     const host = c.querySelector('.chip-view');
     const frame = c.querySelector('.chip-thumb');
     if (!host) return;
     const sec = sheets.get(c.dataset.pid);
+    if (sec) {
+      const cr = c.getBoundingClientRect();
+      if (cr.width && (cr.right < rr.left - pad || cr.left > rr.right + pad)) return;
+    }
     if (!sec) { frame.classList.add('empty'); if (host.shadowRoot) host.shadowRoot.replaceChildren(); return; }
     const pw = sec.offsetWidth, ph = sec.offsetHeight;
     if (!pw || !ph) { frame.classList.add('empty'); return; }
@@ -14831,6 +15384,13 @@ async function railThumbs() {
     frame.classList.remove('empty');
     const sr = host.shadowRoot || host.attachShadow({ mode: 'open' });
     if (sheet) sr.adoptedStyleSheets = [sheet];
+    const sig = [pw, ph, host.clientWidth, b.fontFamily, b.fontSize, b.color,
+                 sec.innerHTML].join('|');
+    const hit = thumbCache.get(c.dataset.pid);
+    if (hit && hit.sig === sig && hit.sheet === sheetKey) {
+      if (sr.firstChild !== hit.wrap) sr.replaceChildren(hit.wrap);
+      return;
+    }
     // Scale to WIDTH: a page is portrait and the frame matches, so height
     // follows; a page far taller than 8.5x11 overflows and is clipped to its
     // top by .chip-view's overflow:hidden, rather than shrinking to a sliver.
@@ -14851,8 +15411,17 @@ async function railThumbs() {
     clone.style.margin = '0';
     wrap.appendChild(clone);
     sr.replaceChildren(wrap);
+    thumbCache.set(c.dataset.pid, { sig, sheet: sheetKey, wrap });
   });
 }
+// pid -> {sig, sheet, wrap}: the last built preview of each page.
+const thumbCache = new Map();
+// Chips scrolled into view get their preview now (railThumbs skips far ones).
+let thumbScrollT = 0;
+$('rail').addEventListener('scroll', () => {
+  clearTimeout(thumbScrollT);
+  thumbScrollT = setTimeout(railThumbs, 80);
+}, { passive: true });
 
 /** Light up the page the canvas is actually looking at, the way Canva's strip
  *  tracks the scroll — the chip was only ever marked on click before, so it
@@ -14860,7 +15429,19 @@ async function railThumbs() {
 let railRAF = 0;
 function railScrollSync() {
   if (railRAF) return;                 // one sync per frame, not per scroll tick
-  railRAF = requestAnimationFrame(() => { railRAF = 0; railSyncActive(); });
+  railRAF = requestAnimationFrame(() => {
+    railRAF = 0; railSyncActive(); layersFollow();
+  });
+}
+
+/** The Layers panel lists the page you are looking at, so when the canvas
+ *  scrolls to another page while it is open, it moves with it. */
+let layersPid = null;
+function layersFollow() {
+  if ($('layerspop').hidden) return;
+  if (String(visiblePageId()) === layersPid) return;
+  if ($('layers-list').querySelector('.lrow.dragging')) return;   // not mid-drag
+  layersRender();
 }
 
 function railSyncActive() {
@@ -14983,7 +15564,7 @@ function chip(pid, pos, label, isHidden) {
   // Click a visible chip to scroll to it; the rail is navigation too.
   if (!isHidden) c.addEventListener('click', () => {
     const sec = (docSheets().find(s => String(s.id) === String(pid)) || {}).pg;
-    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (sec) jumpTo(sec, 'start');
     list.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
   });
   // Drag to reorder — only where an order is honoured.
@@ -15214,7 +15795,7 @@ const pageCopyOf = pid => (pageBlanks().find(b => String(b.id) === String(pid)) 
  *  HTML — nothing on screen changes. The virtual layout file is overwritten,
  *  which the next render() overwrites again with the real one. */
 async function renderWith(lay) {
-  if (renderRunning) await new Promise(r => renderWaiters.push(r));
+  await renderIdle();
   py.globals.set('SRC', source);
   py.globals.set('LAYOUT', JSON.stringify(lay, null, 2));
   py.globals.set('CONTENT', M.content);
@@ -15452,27 +16033,52 @@ function visiblePageId() {
   // degrade — it stops the whole draft building on the first thing added.
   const first = () => pageOrder()[0] ?? 1;
   if (!d) return first();
-  // Three sources, most authoritative first.
-  //  1. The section's own id — only the Primer's renderer stamps these.
-  //  2. The engine's edit-mode mount marker, which carries the number that
-  //     renderer really looks boxes up by. A sheet it never mounts has no
-  //     marker and so is never offered: dropping a box on demo-report's
-  //     endnotes page would validate and then silently never appear.
-  //  3. Failing both (an older staged engine), the sheets' own order.
-  let pages = [...d.querySelectorAll('section[data-page]')].map(pg => {
-    const pid = pg.dataset.page;
-    return { pg, id: /^\d+$/.test(pid) ? +pid : pid };
-  });
-  if (!pages.length)
-    pages = [...d.querySelectorAll('[data-ds-mount]')].map(m => {
-      const pid = m.dataset.dsMount;
-      return { pg: m.closest('section.page') || m,
-               id: /^\d+$/.test(pid) ? +pid : pid };
-    });
-  if (!pages.length)
-    pages = [...d.querySelectorAll('section.page')].map((pg, i) => ({ pg, id: i + 1 }));
+  const pages = mountedPages(d);
   if (!pages.length) return first();
   return nearestToMid(pages);
+}
+/** Every sheet a new element can land on, as [{pg, id}] — the id being the
+ *  number boxes, shapes and tables are looked up by. Three sources, most
+ *  authoritative first.
+ *  1. The section's own id — only the Primer's renderer stamps these.
+ *  2. The engine's edit-mode mount marker, which carries the number that
+ *     renderer really looks boxes up by. A sheet it never mounts has no
+ *     marker and so is never offered: dropping a box on demo-report's
+ *     endnotes page would validate and then silently never appear.
+ *  3. Failing both (an older staged engine), the sheets' own order. */
+function mountedPages(d) {
+  const num = pid => /^\d+$/.test(pid) ? +pid : pid;
+  // Per sheet, not all-or-nothing: a render that patches ONE sheet in place
+  // hands it back without the id the editor stamped on it (stampPageIds),
+  // and a whole-document "sections with data-page" branch then lost that
+  // sheet — a box added to page 2 left page 2 unmounted.
+  const seen = new Set();
+  const pages = [];
+  d.querySelectorAll('section.page').forEach(pg => {
+    const own = pg.dataset.page;
+    const m = own == null ? pg.querySelector('[data-ds-mount]') : null;
+    const pid = own != null ? own : m ? m.dataset.dsMount : null;
+    if (pid == null) return;
+    seen.add(pg);
+    pages.push({ pg, id: num(pid) });
+  });
+  // A marker outside any sheet (an older staged engine) still names a page.
+  d.querySelectorAll('[data-ds-mount]').forEach(m => {
+    const pg = m.closest('section.page');
+    if (pg && seen.has(pg)) return;
+    if (pg) { seen.add(pg); pages.push({ pg, id: num(m.dataset.dsMount) }); }
+    else pages.push({ pg: m, id: num(m.dataset.dsMount) });
+  });
+  if (!pages.length)
+    return [...d.querySelectorAll('section.page')].map((pg, i) => ({ pg, id: i + 1 }));
+  return pages;
+}
+/** The number a sheet's placed things are keyed by (see mountedPages), or
+ *  null for a sheet nothing mounts on. Not pageIdOf(): that is the section's
+ *  own data-page, which most renderers never stamp. */
+function pageNumOf(d, pg) {
+  const hit = mountedPages(d).find(p => p.pg === pg);
+  return hit ? hit.id : null;
 }
 
 // ------------------------------------------------------------------- zoom
@@ -15749,6 +16355,34 @@ function stepZoom(dir) {
 }
 $('zb-out').addEventListener('click', () => stepZoom(-1));
 $('zb-in').addEventListener('click', () => stepZoom(1));
+
+/** ⌘S (Ctrl+S) is Save, as in InDesign and every other document app. Nothing
+ *  bound it, so the browser's own "Save page as" opened over the editor. It
+ *  presses the same Save, shown or not (hub autosave hides the button; the
+ *  store still saves the same way), after closing any open words so what was
+ *  being typed is part of it. Bound in the CAPTURE phase of both documents:
+ *  a field's own keydown stops propagation (editChartText, editSvgSlot), and
+ *  the key must reach here first. Returns true when it handled the key. */
+function saveKey(e) {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.code !== 'KeyS') return false;
+  e.preventDefault();
+  e.stopPropagation();
+  if (presenting || modalOpen || document.querySelector('dialog[open]')) return true;
+  saveFromKey();
+  return true;
+}
+async function saveFromKey() {
+  const d = $('out').contentDocument;
+  const a = d && d.activeElement;
+  if (editing && a && a !== d.body) a.blur();      // closing the words commits them
+  await new Promise(r => setTimeout(r, 0));
+  await renderIdle();
+  if (editing) return;                             // a dialog kept them open
+  if (hubViewOnly()) { $('stat').textContent = 'view only — there is nothing of yours to save'; return; }
+  if (!dirty) { $('stat').textContent = 'nothing to save — every change is saved'; return; }
+  if ($('save').disabled) { $('stat').textContent = 'saving…'; return; }   // one is already running
+  $('save').click();
+}
 
 /** ⌘+ / ⌘- / ⌘0, from either document.
  *
@@ -16436,10 +17070,9 @@ function storyWrite(key, md) {
     const b = boxOf(key);
     if (!b) return false;
     if (!md.trim()) { $('stat').textContent = 'a text box needs words — delete it on the page instead'; return false; }
-    b.md = md; return true;
+    b.md = fixOkina(md); return true;
   }
-  writeSlot(key, md);
-  return readSlot(key) === md.replace(/\n{3,}/g, '\n\n').trim();
+  return writeSlot(key, md) !== false;
 }
 function openStoryEditor() {
   if ($('story')) return;
@@ -16472,7 +17105,7 @@ function openStoryEditor() {
       ta.addEventListener('change', async () => {
         if (ta.value === ta.dataset.was) return;
         pushHistory();
-        if (!storyWrite(it.key, ta.value)) { past.pop(); box.classList.add('bad'); return; }
+        if (!storyWrite(it.key, ta.value)) { withdrawStep(); box.classList.add('bad'); return; }
         box.classList.remove('bad');
         ta.dataset.was = ta.value;
         markDirty(); await render();
@@ -16783,6 +17416,7 @@ function layersRender() {
   if (!d || !d.querySelector('section.page')) return;
   const pg = pageEl(d);
   const pid = visiblePageId();
+  layersPid = String(pid);
   $('layers-title').textContent =
     `Layers — page ${pageOrder().indexOf(pid) + 1 || '?'}`;
   host.innerHTML = '';
@@ -16802,11 +17436,14 @@ function layersRender() {
         + `[data-shape="${CSS.escape(o.id)}"]`);
       if (!el) return;
       setSel(d, [o.id]);
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      jumpTo(el, 'center');
       layersRender();
     });
-    r.addEventListener('dragstart', e =>
-      e.dataTransfer.setData('text/plain', o.id));
+    r.addEventListener('dragstart', e => {
+      r.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', o.id);
+    });
+    r.addEventListener('dragend', () => r.classList.remove('dragging'));
     dropTarget(r);
     return r;
   };
@@ -18113,12 +18750,17 @@ function _pasteIntoApply(shapeId, boxId) {
 // is just the image. A box is already movable, resizable, layerable and
 // persisted in layout.json, so the image inherits every behaviour placed
 // text has, and the asset file itself lives with the project (assets dir).
-async function placeImageBox(path, name) {
+async function placeImageBox(path, name, at = null) {
   const d = $('out').contentDocument;
   pushHistory();
   const id = freeBoxId();
   const page = visiblePageId();
-  boxes().push({ id, page, x: placeX(3), y: 1.5, w: 3, z: 2, md: `![${name}](${path})` });
+  // Dropped onto the page in view: under the pointer, kept on the sheet.
+  const x = at && String(at.page) === String(page) && at.x != null
+    ? Math.max(0, Math.min(+at.x, PAGE_W_IN - 3)) : placeX(3);
+  const y = at && String(at.page) === String(page) && at.y != null
+    ? Math.max(0, Math.min(+at.y, PAGE_H_IN - 1)) : 1.5;
+  boxes().push({ id, page, x: +x.toFixed(2), y: +y.toFixed(2), w: 3, z: 2, md: `![${name}](${path})` });
   setSel(d, ['text.' + id]);
   markDirty();
   await render();
@@ -19210,6 +19852,7 @@ function bindMeasure(d) {
 const clearGuides = d => d.querySelectorAll('.ds-guide').forEach(g => g.remove());
 
 // ---- history: every move is undoable, or it is not safe to experiment ----
+const UNDO_DEPTH = 200;
 const past = [], future = [];
 const snapshot = () => JSON.stringify({ source, layout });
 // Reflect what's undoable on the toolbar buttons. The buttons only mirror
@@ -19242,9 +19885,27 @@ function pushHistory() {
   const sn = snapshot();
   past.push(sn);
   stepTimes.set(sn, Date.now());
-  if (past.length > 60) stepTimes.delete(past.shift());
+  // 200 steps, said on the button. The cap was 60 and nowhere: a long
+  // session of nudges lost its way back silently. A snapshot is ~20–35KB,
+  // so this is a few MB, flat.
+  if (past.length > UNDO_DEPTH) stepTimes.delete(past.shift());
   future.length = 0;
   syncHistoryButtons();
+}
+/** Take back the step pushHistory just marked, because the action it was
+ *  for turned out to do nothing (a duplicate of nothing copyable, a refused
+ *  conversion, a batch rolled back). Locally the snapshot comes off the
+ *  stack. In a session there is no snapshot: pushHistory marked a boundary
+ *  on the document's Y.UndoManager, and with nothing changed since, the
+ *  boundary is empty and harmless. Every site used to `past.pop()` itself —
+ *  in a session that popped a snapshot from before the session began, or
+ *  nothing, and batch() then JSON.parse'd undefined. */
+function withdrawStep() {
+  if (collab) { syncHistoryButtons(); return null; }
+  const sn = past.pop();
+  if (sn) stepTimes.delete(sn);
+  syncHistoryButtons();
+  return sn;
 }
 async function restore(json) {
   const st = JSON.parse(json);
@@ -19392,6 +20053,46 @@ function shownUnder(d, e) {
   return nodes.find(n => { const s = n.closest('[data-slot]'); return s && shownNode(s); }) || nodes[0] || null;
 }
 
+/** A click on another object while one's words are open took TWO clicks:
+ *  the press only blurred the open words (dragify's `if (editing) return`),
+ *  and the commit's re-render can replace the page under the pointer anyway.
+ *  So: commit the words, wait out that render, then replay the press as a
+ *  click on the same spot in whatever document is current — the ordinary
+ *  path from there, so it selects, opens a panel, or types where it landed.
+ *  A press held into a drag across the switch is taken as a click; the next
+ *  press drags.
+ *
+ *  The replay goes to the same spot IN the object, not the same spot on the
+ *  screen: the page can settle a few pixels differently after a render (on
+ *  CI's Linux runner the click landed beside the words, so the second box
+ *  was selected and never opened). If even that point misses the object,
+ *  its first field takes the click. */
+async function pressPastEditor(d, el, e, active) {
+  const id = idOf(el);
+  const r0 = el.getBoundingClientRect();
+  const dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+  active.blur();                          // commits: finish() ends `editing` at once
+  await new Promise(r => setTimeout(r, 0));
+  await renderIdle();
+  if (editing) return;                    // a dialog kept the words open
+  const d2 = $('out').contentDocument;
+  if (!d2) return;
+  const hook = `[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`;
+  const el2 = d2.querySelector(hook);
+  if (!el2) return;
+  const r = el2.getBoundingClientRect();
+  const x = r.left + Math.max(0, Math.min(dx, r.width - 1));
+  const y = r.top + Math.max(0, Math.min(dy, r.height - 1));
+  const at = { clientX: x, clientY: y,
+               screenX: e.screenX + (x - e.clientX), screenY: e.screenY + (y - e.clientY) };
+  const hit = d2.elementFromPoint(x, y);
+  const target = hit && el2.contains(hit) ? hit : (el2.querySelector('[data-slot]') || el2);
+  const ev = type => new MouseEvent(type, { bubbles: true, cancelable: true, composed: true,
+    view: d2.defaultView, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, ...at });
+  target.dispatchEvent(ev('mousedown'));
+  target.dispatchEvent(ev('mouseup'));
+}
+
 function dragify(d, roots) {
   within(d, roots, '[data-el], [data-shape]').forEach(el => {
     // A movable nested inside another movable — a callout's own paragraphs — is
@@ -19440,6 +20141,16 @@ function dragify(d, roots) {
       if (editing && e.shiftKey) {
         const a = d.activeElement;
         if (a && a.isContentEditable && !el.contains(a)) a.blur();
+      }
+      // A plain click on ANOTHER object while words are open: close them and
+      // land on what was clicked, in one click (see pressPastEditor).
+      if (editing && !e.shiftKey) {
+        const a = d.activeElement;
+        if (a && a.isContentEditable && !el.contains(a)) {
+          e.preventDefault(); e.stopPropagation();
+          pressPastEditor(d, el, e, a);
+        }
+        return;
       }
       if (editing) return;
       // The press landed on something invisible drawn over another object's
@@ -20119,9 +20830,14 @@ function typeOnClick(d, el, e0) {
     showType(key);
     edit(d, key, slot, at);
     opened = editing;
-  } else if (id.startsWith('text.') && boxOf(id)) {
+  } else if (id.startsWith('text.') && boxOf(id)
+             && (el.textContent.trim() || !el.querySelector('img'))) {
     // Inside a group the double-click drills in first (see dragify); a text
-    // box that is already the selection on its own simply types.
+    // box that is already the selection on its own simply types. A box that
+    // holds only a picture has no words to type in — the templates' cover
+    // photo is one, full-bleed, and a click anywhere on the cover that missed
+    // the title used to open it with the caret beside the image. It selects;
+    // a double-click still edits it.
     editBox(d, el, at);
     opened = editing;
   }
@@ -20264,6 +20980,7 @@ function startDrag(d, el, e0, drillIn = false) {
         clearGuides(d); paintSel(d); return;
       }
       clearGuides(d); paintSel(d);
+      openPanelOnClick(idOf(el));
       typeOnClick(d, el, e0);
       return;
     }
@@ -20280,7 +20997,7 @@ function startDrag(d, el, e0, drillIn = false) {
     // reads, and the list (and every <sup> marker pointing into it) renumbers.
     if (members.length === 1 && (idOf(members[0]) || '').startsWith('endnote.')) {
       const moved = reorderEndnote(d, members[0]);
-      if (moved) markDirty(); else past.pop();   // no change: no undo entry
+      if (moved) markDirty(); else withdrawStep();   // no change: no undo entry
       clearGuides(d);
       await render();                            // snaps it back into the flow
       if (moved) $('stat').textContent = moved;  // after render, so it survives
@@ -20725,7 +21442,7 @@ function markDirty() {
   // again on every call - once per moved element per drop.
   if (layoutOrigSaidFor !== layoutOrig) { layoutOrigSaidFor = layoutOrig; layoutOrigSaid = layoutSaid(JSON.parse(layoutOrig || '{}')); }
   dirty = source !== original || layoutSaid(layout) !== layoutOrigSaid;
-  $('save').disabled = !dirty || hubViewOnly();
+  $('save').disabled = !dirty || hubViewOnly() || saving;
   // Discard stays live while a saved draft exists: with nothing unsaved it
   // offers to throw the whole draft away (see its handler).
   $('revert').disabled = !dirty && !(draftBranch && !local);
@@ -20777,7 +21494,7 @@ function cacheDraft() {
 async function clearDraftCache() {
   if (local || !M) return;
   const kv = await idbKV();
-  if (kv) { try { await kv.del(cacheKey()); } catch (e) {} }
+  if (kv) { try { await kv.del(cacheKey()); } catch (e) { swallowed('warm-boot cache clear', e); } }
 }
 /** On boot, adopt any unsaved edits cached in THIS browser over what we loaded
  *  from the branch — auto-restore, not a prompt, because Save keeps them and
@@ -21021,51 +21738,24 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
   $('stat').textContent = `${id} on page ${page} — drag to place, recolour with the Fill button`;
 }));
 
+addEventListener('keydown', saveKey, true);       // capture: see saveKey
+addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
+addEventListener('blur', spaceUp);
 addEventListener('keydown', e => {
   // Zoom first, and before the text-field guards below: ⌘+/⌘- mean the same
   // thing wherever focus happens to be, and a caret sitting in a field is no
   // reason for them to fall through to Chrome's page zoom.
   if (zoomKey(e)) return;
+  if (spaceKey(e)) return;
   const t = e.target;
   if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT')) return;
   if (t && t.isContentEditable) return;
   if (tableCellKey(e)) return;
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-    e.preventDefault();
-    e.shiftKey ? redo() : undo();
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-    e.preventDefault();
-    duplicateSel($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selIds.size) {
-    e.preventDefault();
-    e.altKey ? copyStyle($('out').contentDocument) : copySel($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && (e.altKey ? styleClip : clip)) {
-    e.preventDefault();
-    e.altKey ? pasteStyle($('out').contentDocument) : pasteClip($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
-    e.preventDefault();
-    e.shiftKey ? ungroupSel($('out').contentDocument) : groupSel($('out').contentDocument);
-  }
-  if ((e.metaKey || e.ctrlKey) && (e.key === ']' || e.key === '[')) {
-    e.preventDefault();
-    layerStep($('out').contentDocument, e.key === ']' ? 1 : -1, e.altKey);
-  }
-  if (e.key === 'Escape' && selIds.size) clearSel($('out').contentDocument);
-  // Arrow-nudge and Delete here too, not only in the iframe's own handler:
-  // after a click the keyboard focus may sit on the outer page rather than the
-  // iframe, and without this the selection would be unreachable by keyboard.
-  if (selIds.size) {
-    const d = $('out').contentDocument;
-    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSel(d); }
-    const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
-    const d4 = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
-                 ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-    if (d4) { e.preventDefault(); nudgeSel(d, d4); }
-  }
+  // The same table as the page's own listener: after a click the keyboard
+  // focus may sit on the chrome rather than the iframe, and a chord that
+  // lived in one listener only worked in one of the two places.
+  const d = $('out').contentDocument;
+  if (d) objectChord(d, e);
 });
 
 // --- hover tooltips ---------------------------------------------------------
@@ -21150,6 +21840,17 @@ wireTooltips(document);
  *  cancels it outright.
  */
 const IDLE_STAT = 'live — edits here and from Claude land in the same files';
+/** The idle sentence, said only when nothing is wrong: a standing warning
+ *  (the file watcher dead, the server running old code — both wear .err)
+ *  stays. Two writers used to put the sentence straight over it, so whether
+ *  the warning showed depended on which of them ran last. */
+function sayIdle() {
+  const st = $('stat');
+  if (st.classList.contains('err')) return;
+  st.textContent = UNKNOWN_PROJECT
+    ? `no report called "${UNKNOWN_PROJECT}" on this server — this is ${M && M.id}. File ▸ Open lists the rest`
+    : IDLE_STAT;
+}
 (function watchStat() {
   const el = $('stat');
   let timer = null;
@@ -21180,6 +21881,13 @@ async function boot() {
   const manifestGuess = get((guessBase ? guessBase + '/' : '') + 'engine/manifest.json');
   manifestGuess.catch(() => {});
   await loadRegistry();
+  // A registry that exists and lists nothing (every report forgotten) has no
+  // default report to open: the engine next door is somebody else's, not a
+  // fallback. Start page, where "+ New report" and adopting live.
+  if (REGISTRY && !Object.keys(REGISTRY).length && !onHub()) {
+    location.replace('start.html');
+    await new Promise(() => {});           // the page is leaving; boot nothing
+  }
   M = JSON.parse(await (PBASE.replace(/\/+$/, '') === guessBase
     ? manifestGuess : get(withBase('engine/manifest.json'))));
   checkStage2();
@@ -21191,7 +21899,9 @@ async function boot() {
   // never draws. Only a manifest with no `pages` key at all keeps the
   // Budget Primer default below.
   if (Array.isArray(M.pages)) EXTRA_PAGES = M.pages;
-  PAGE_W_IN = M.page.w; PAGE_H_IN = M.page.h;
+  PAGE_W_IN = M.page.w;
+  // A report BUILT pageless (docsync.yml page: [w, null]) has no bottom: the same sentinel as File > Resize > Pageless.
+  PAGE_H_IN = M.page.h == null ? PAGELESS_H : M.page.h;
   MARGIN_IN = M.margins.side; TOP_IN = M.margins.top;
   $('title').textContent = M.id;
   // The window/tab title is the report, not the tool. Several of these are
@@ -21223,6 +21933,7 @@ async function boot() {
   }));
   fileJobs.forEach(j => j.p.catch(() => {}));
   await detectLocal();          // local live server? then Save writes to disk
+  liveProbe = local ? 'local' : 'static';
   docStoreDecide();             // …or the hub's document store? then Save writes there
   // Seed the build stamp with what THIS page was loaded from, then keep an
   // eye on it — a rebuild whose bump never reached this tab is exactly the
@@ -21381,7 +22092,7 @@ async function boot() {
   // …unless the first render FAILED, in which case its message is the only
   // thing on screen explaining the traceback in the canvas. Reassurance that
   // contradicts what the user is looking at is worse than silence.
-  if (local && !renderFailed) $('stat').textContent = 'live — edits here and from Claude land in the same files';
+  if (local && !renderFailed) sayIdle();
   else if (cachedRestored) $('stat').textContent =
     'restored unsaved edits from this browser — Save to keep them, or Discard to drop them';
   // What moved while this person was away. After the first render, because
@@ -22660,7 +23371,7 @@ async function startCollab() {
       return { ok: true, inventory: { project: inv.project, pageOrder: inv.pageOrder,
                                       styles: inv.styles,
                                       pages: inv.pages.map(p => ({ id: p.id, index: p.index, slots: p.slots, elements: p.elements })) },
-               page: { w: PAGE_W_IN, h: PAGE_H_IN, pageless: !!(layout.page && layout.page.h == null) },
+               page: { w: PAGE_W_IN, h: PAGE_H_IN, pageless: isPageless() },
                fit: fitReport() };
     },
     presence: collabPresence,
@@ -22715,10 +23426,28 @@ async function collabBranchStillOurs() {
 /** A collaborator saved: their commit holds this document (to within a
  *  keystroke), so from here "unsaved changes" means changed since THEIR
  *  save — and the room's draft branch exists now, whoever created it. */
-function collabSaved(sha) {
+async function collabSaved(sha, info) {
   if (!collab || !sha) return;
   const f = collab.files();
+  // A RESTORE by someone else replaced the whole document — unsaved words
+  // of yours in any paragraph included — and the room's undo steps cannot
+  // bring them back (undoing one re-inserts them beside the restored
+  // copy). Say what happened, rather than "it holds what is on screen".
+  const restored = info && info.restored;
+  const hadMine = restored && (source !== original || layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}')));
   original = f.content; layoutOrig = f.layoutText;
+  // A restore is applied as a per-slot diff, so the room may still hold words
+  // the restored version does not: the saved baseline is the version itself,
+  // not what the room holds, or those words would read as saved and Save
+  // would stay grey over them.
+  if (restored && docStore()) {
+    try {
+      const [c, l] = await Promise.all([
+        fetch(`${docStore()}/history/${sha}/content`, { cache: 'no-store' }),
+        M.layout ? fetch(`${docStore()}/history/${sha}/layout`, { cache: 'no-store' }) : null]);
+      if (c.ok && (!l || l.ok)) { original = await c.text(); if (l) layoutOrig = await l.text(); }
+    } catch (e) { /* the room's copy stands as the baseline */ }
+  }
   if (docStore()) { docVersion = sha; hubMarkSeen(sha); }
   if (collabShared() && !draftBranch && !docStore()) {
     draftBranch = sharedDraftBranch();
@@ -22727,7 +23456,18 @@ function collabSaved(sha) {
   }
   clearDraftCache();
   markDirty();
-  $('stat').textContent = 'a collaborator saved the shared draft — it holds what is on screen';
+  if (restored) {
+    sayNowAndAfterRender(hadMine
+      ? (dirty
+        ? 'a collaborator restored an earlier version: edits you had not saved in paragraphs it changed were replaced '
+          + '(ask them, or bring the newer version back from History); the rest are kept — Save to keep them'
+        : 'a collaborator restored an earlier version, which replaced the edits you had not saved — '
+          + 'ask them, or bring the newer version back from History')
+      : 'a collaborator restored an earlier version — it is what is on screen now');
+    if (hadMine) { $('stat').classList.add('err'); setTimeout(() => $('stat').classList.remove('err'), 12000); }
+    return;
+  }
+  sayNowAndAfterRender('a collaborator saved the shared draft — it holds what is on screen');
 }
 
 // ---------------------------------------------------------------- live mode
@@ -22738,6 +23478,11 @@ function collabSaved(sha) {
 // Claude to edit them. We adopt that change and keep whatever you were editing,
 // as long as the two are different files. Same file, both edited: you choose.
 let local = false;
+// A Save is on its way to disk: Push waits for it (pushing mid-save sends the
+// commit BEFORE this one, then says "pushed" over words that never left),
+// and the Save button stays down however the dirty flag moves meanwhile.
+let saving = false;
+let lastAhead = 0;              // what setPushState last heard, to re-apply after a Save
 
 let liveVer = -1;
 
@@ -22835,8 +23580,9 @@ async function agentNoteClick() {
 
 function setPushState(ahead) {
   if (typeof ahead !== 'number') return;
+  lastAhead = ahead;
   const b = $('push');
-  b.disabled = ahead === 0;
+  b.disabled = ahead === 0 || saving;
   b.classList.toggle('pending', ahead > 0);
   b.textContent = ahead > 0 ? `Push (${ahead})` : 'Push';
   // A Push that CANNOT succeed says so ON the button, before it is pressed.
@@ -22898,7 +23644,7 @@ async function detectLocal() {
       setPushState(j.ahead);
       if (j.doc != null) DOC = j.doc;
       contentHealth(j);        // the first ping already knows; don't wait for SSE
-    } catch (e) {} }
+    } catch (e) { swallowed('first ping was not JSON', e); } }
   } catch (e) { local = false; }
   if (!local) return;
   sayHello();                   // there is a server to tell, now that we know
@@ -22935,7 +23681,7 @@ async function detectLocal() {
   // saying) and comes back the moment it has that to say.
   $('title').textContent = M.id + ' · live';
   $('title').hidden = true;
-  $('stat').textContent = 'live — edits here and from Claude land in the same files';
+  sayIdle();
   // Adopt a rebuild the moment the version moves. Two ways see it, because one
   // failing silently is exactly the bug this had: the event stream is instant
   // when the browser keeps it open, and a 1.5s poll catches it when the stream
@@ -22956,7 +23702,7 @@ async function detectLocal() {
     if (await pullFromDisk()) liveVer = v;
   };
   window.__onBump = onBump;            // test hook, like window.__fileSig
-  startLive(d => { pushHealth = d.push || {}; setPushState(d.ahead); setAgentNote(d.agent); watchHealth(d); serverHealth(d); updateHealth(d);
+  startLive(d => { if (serverReach(d)) return; pushHealth = d.push || {}; setPushState(d.ahead); setAgentNote(d.agent); watchHealth(d); serverHealth(d); updateHealth(d);
                    if (d.doc != null) DOC = d.doc;
                    contentHealth(d); onBump(d.v, d.error); });
   $('upd').onclick = installUpdate;
@@ -23147,7 +23893,7 @@ function startLive(onEvent) {
   // still applies wherever there IS an id to pool by.
   const scope = (M && M.id) || 'tab:' + meId;
   const LK = 'primer-live-leader:' + scope, EV = 'primer-live-event:' + scope;
-  let es = null, leading = false, hb = 0, evN = 0;
+  let es = null, leading = false, hb = 0, evN = 0, misses = 0;
   // The key scoping above is necessary but NOT sufficient: it is built from
   // M.id, so any tab whose manifest has no id lands in a shared '' bucket
   // together with every other such tab — whatever project they are actually
@@ -23172,7 +23918,7 @@ function startLive(onEvent) {
     try {
       es = new EventSource(withProject('/__events'));
       es.onmessage = ev => {
-        let d = {}; try { d = JSON.parse(ev.data || '{}'); } catch (e) {}
+        let d = {}; try { d = JSON.parse(ev.data || '{}'); } catch (e) { swallowed('live event was not JSON', e); }
         // The stream only ADVERTISES pilot ops; this tab claims them over
         // HTTP. Claiming from the leader alone keeps every op in ONE tab's
         // in-memory document — split across two tabs they would edit two
@@ -23198,11 +23944,19 @@ function startLive(onEvent) {
       // ANY tab reaches every tab's button. Followers never poll.
       fetch(withProject('/__ping'), { cache: 'no-store' }).then(r => r.json())
         .then(d => {
+          misses = 0;
           // The poll is also the pilot's safety net: if the SSE stream is
           // mid-reconnect when an op is queued, this picks it up within 2s.
           if (d.pilotWaiting && mine(d)) claimPilotOps();
           apply(d); relay(d);
-        }).catch(() => {});
+        }).catch(() => {
+          // Three in a row (~6s), not one: a restart answers nothing for a
+          // beat and a single miss would cry wolf. Said as an event so the
+          // follower tabs hear it through the same relay.
+          if (++misses < 3) return;
+          const d = { serverDown: true, project: M && M.id };
+          apply(d); relay(d);
+        });
     }, HB_MS);
   };
   const elect = () => {
@@ -23231,7 +23985,11 @@ function startLive(onEvent) {
   });
   elect();
   setInterval(elect, HB_MS);
-  if (!document.hidden) catchUpOnce();   // first paint has current state without waiting for a heartbeat
+  // The first catch-up is what a driver waits on (__dsSettled): a bump it
+  // carries starts its pull synchronously inside apply(), so `pulling` is
+  // already up by the time this resolves.
+  if (!document.hidden) catchUpOnce().finally(() => { liveSynced = true; });
+  else liveSynced = true;                // a hidden tab follows; nothing to wait for
   window.__liveIsLeader = () => leading; // test hook: exactly one tab holds the stream
 }
 
@@ -23336,7 +24094,7 @@ async function refreshEngineFiles() {
   try {
     const fresh = JSON.parse(await get(withBase('engine/manifest.json')));
     if (fresh && fresh.files) M.files = fresh.files;
-  } catch (e) {}
+  } catch (e) { swallowed('engine manifest refresh', e); }
   const urls = Object.keys(M.files).filter(
     u => M.files[u] !== M.content && M.files[u] !== M.layout);
   const datas = await Promise.all(
@@ -23490,6 +24248,30 @@ function watchHealth(d) {
  *  relaunch fixes it, so say that. Ranks below a dead watcher, which stops
  *  reload entirely; this only means the newest server code is not live yet. */
 const SRV_STALE_MSG = 'editor server is running old code — relaunch the editor app';
+/** The live server has stopped answering (or is back). Without this a
+ *  person typed into a dead server for as long as they liked and learned at
+ *  Save, from "Failed to fetch". Re-asserted on every missed poll, because
+ *  boot and the steady state both write the status line after the fact.
+ *  Returns true when the payload was only this news, so nothing else reads
+ *  numbers out of it. */
+function serverReach(d) {
+  const stat = $('stat');
+  if (d && d.serverDown) {
+    if (stat.textContent !== SERVER_GONE_MSG) {
+      stat.dataset.srvgone = '1';
+      stat.textContent = SERVER_GONE_MSG;
+      stat.classList.add('err');
+      stat.title = 'Nothing on disk changed. Edits keep working here; Save needs the server back.';
+    }
+    return true;
+  }
+  if (stat.dataset.srvgone) {                             // it is back
+    stat.dataset.srvgone = ''; stat.classList.remove('err'); stat.title = '';
+    if (stat.textContent === SERVER_GONE_MSG) stat.textContent = 'live again';
+  }
+  return false;
+}
+
 function serverHealth(d) {
   if (!d || typeof d.serverStale !== 'boolean') return;   // older server: no opinion
   const stat = $('stat');
@@ -23657,6 +24439,10 @@ async function _pull() {
   let took = false, clash = false;
   if (freshSrc !== original) {
     if (source === original) { source = original = freshSrc; took = true; }
+    // The disk holds exactly what is unsaved here: nothing to choose between,
+    // and nothing left to save. (A commit a hook refused used to leave the
+    // written file on disk and then read as "Claude changed the same thing".)
+    else if (source === freshSrc) { original = freshSrc; markDirty(); }
     else clash = true;
   }
   if (M.layout && freshLayout !== layoutOrig) {
@@ -23728,7 +24514,54 @@ async function _pull() {
  *  after it (source/layout are globals, so the rerun sees all of it), and
  *  every caller's await resolves only after a render that included its state.
  */
+/** Where an error is deliberately swallowed, say so once in the console
+ *  and keep a tally (window.__dsSwallowed()), so "it just does nothing" has
+ *  somewhere to look. The sites that stay bare are localStorage writes on a
+ *  file: URL, which fail by design. */
+const SWALLOWED = {};
+function swallowed(where, e) {
+  SWALLOWED[where] = (SWALLOWED[where] || 0) + 1;
+  if (SWALLOWED[where] === 1) console.debug(`[cider] ${where}: ${e && e.message ? e.message : e}`);
+}
+window.__dsSwallowed = () => ({ ...SWALLOWED });
+
 let renderRunning = false, renderAgain = false, renderWaiters = [];
+// The render pipeline's state lives in four variables — renderRunning, the
+// twin iframe (pendingFrame) and its resolver (pendingResolve), and pulling
+// — whose relationships nobody wrote down, so every reader guessed: the
+// settle signal once read pendingFrame and hung on a twin parked behind open
+// words. Ask by name instead.
+//  - running: renderOnce is at work (engine, diff, or waiting on the twin);
+//  - loading: a twin is mid-load and a render() is waiting on it;
+//  - parked:  a twin loaded while words were open and waits for the edit's
+//             own render to replace it — nothing moves under the person;
+//  - pulling: a version bump is being pulled from disk (it ends in a render).
+function renderState() {
+  return { running: renderRunning, loading: !!pendingResolve,
+           parked: !!pendingFrame && !pendingResolve, pulling: !!pulling };
+}
+const renderBusy = () => { const r = renderState(); return r.running || r.loading || r.pulling; };
+/** Resolves once no render is running (at once if none is). The idiom
+ *  `if (renderRunning) await new Promise(r => renderWaiters.push(r))` lived
+ *  in five places; this is it. */
+const renderIdle = () => renderRunning ? new Promise(r => renderWaiters.push(r)) : Promise.resolve();
+window.__dsRenderState = renderState;
+// --- "is the page settled?" for whoever drives this editor from outside ----
+// The test fixture used to sleep a fixed 1.5s after the first render, in case
+// the live server's first ping carried a version bump that swapped the canvas
+// moments later; and specs slept after every click for the same reason. That
+// is a quarter of every test spent idle. These say it instead: how many
+// renders have finished (data-ds-render on #out carries it too), and whether
+// anything is still on its way — the local probe, the first catch-up ping, a
+// pull from disk it may start, a render, a twin iframe mid-load.
+let renderSeq = 0;
+let liveProbe = 'pending';            // 'local' | 'static' once detectLocal has answered
+let liveSynced = false;               // the first catch-up ping has been applied
+window.__dsRenderSeq = () => renderSeq;
+// pendingResolve, not pendingFrame: a twin that loaded while words were
+// open stays parked (pendingFrame set) until the edit's own render replaces
+// it, and nothing moves under the person meanwhile — that is settled.
+window.__dsSettled = () => liveProbe !== 'pending' && (liveProbe !== 'local' || liveSynced) && !renderBusy();
 // --- warm-boot preview ------------------------------------------------------
 // Pyodide takes ~1.5s to compile even fully cached, and the canvas used to sit
 // BLANK for all of it. The last successful render is kept in the Cache API
@@ -23869,6 +24702,9 @@ async function render() {
     } while (renderAgain);
   } finally {
     renderRunning = false;
+    renderSeq++;
+    const out = $('out');
+    if (out) out.setAttribute('data-ds-render', String(renderSeq));
     const ws = renderWaiters; renderWaiters = [];
     ws.forEach(r => r());
     suggestSchedule();
@@ -23883,9 +24719,20 @@ async function render() {
 // something else has spoken since, that something else was deliberate and this
 // was not.
 let statFromRender = '';
+// A message that must outlive the render about to start: a collaborator's
+// Save or restore is heard (and said) a beat BEFORE the adopt renders, and
+// the render then claimed the row with "rendering…" and its idle hint. The
+// next render says this instead of its hint; stale after a few seconds.
+let sayAfterRender = '', sayAfterRenderAt = 0;
 function renderSays(msg) {
   if ($('stat').textContent !== statFromRender) return;   // someone else is talking
+  if (sayAfterRender && Date.now() - sayAfterRenderAt < 4000) { msg = sayAfterRender; }
+  sayAfterRender = '';
   $('stat').textContent = statFromRender = msg;
+}
+function sayNowAndAfterRender(msg) {
+  $('stat').textContent = msg;
+  sayAfterRender = msg; sayAfterRenderAt = Date.now();
 }
 
 async function renderOnce() {
@@ -24126,7 +24973,7 @@ function patchPages(html) {
   // editing: a render mid-edit is deferred anyway, and the open editor lives
   // in these very nodes. pendingFrame: a swap is already in flight for this
   // output, and racing it would patch a document about to be discarded.
-  if (!lastHtml || !live || !live.body || pendingFrame || editing) return null;
+  if (!lastHtml || !live || !live.body || renderState().loading || renderState().parked || editing) return null;
   const parse = h => new DOMParser().parseFromString(h, 'text/html');
   const shape = doc => ({
     head: doc.head.innerHTML,
@@ -24311,6 +25158,22 @@ function stageChainWire(d) {
   }, { passive: true });
 }
 
+/** Scroll the report so `el` is at the top (or the middle) of the view —
+ *  smoothly, and by scrolling the report WINDOW, never scrollIntoView.
+ *  scrollIntoView scrolls every ancestor too: it pushed the stage band
+ *  out, the band-return listener above handed it back with an instant
+ *  scrollTop write, and that write cancelled the smooth scroll in flight.
+ *  A page chip, a Layers row and Find's "Show me" all arrived nowhere (a
+ *  12-page jump ended on page 1). The report's own window is the one
+ *  scroller the band listener leaves alone. */
+function jumpTo(el, block = 'start') {
+  const w = $('out').contentWindow;
+  if (!w || !el) return;
+  const r = el.getBoundingClientRect();
+  const top = w.scrollY + r.top - (block === 'center' ? Math.max(0, (w.innerHeight - r.height) / 2) : 8);
+  w.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+
 /** A render replaces the page's nodes, so a report's entrance animation
  *  (rxkids' panels rise and fade in over .35s) played again after every
  *  edit: the page flickered at each keystroke, and what was just moved was
@@ -24326,9 +25189,26 @@ function stillEntrances(d, roots) {
     try { a.finish(); } catch (e) { /* an animation that cannot end: leave it */ }
   });
 }
+/** One identity per sheet. pageIdOf() reads a section's data-page — what
+ *  the page selection, the page menu and the page colour are keyed by — but
+ *  only the Primer's renderer stamps it; everything placed is keyed by the
+ *  mount number (pageNumOf). Two answers to "which page" cost a select-all
+ *  and a drop their page. Stamp the number on every mounted sheet that has
+ *  no id of its own, once per document, so the two agree. */
+function stampPageIds(d) {
+  const pages = mountedPages(d);
+  pages.forEach(({ pg, id }) => {
+    if (pg && pg.matches && pg.matches('section.page') && !pg.hasAttribute('data-page') && id != null) {
+      pg.setAttribute('data-page', String(id));
+      pg.setAttribute('data-page-stamped', '1');   // the editor's, not the renderer's
+    }
+  });
+}
+
 function wire(roots) {
   const d = $('out').contentDocument;
   const fresh = !(roots && roots.length);
+  stampPageIds(d);
   healStrandedEditor();   // see its own comment; wire() is one of two callers
   stillEntrances(d, roots);
   showLocalImages(d, roots);
@@ -24363,6 +25243,7 @@ function wire(roots) {
   // On the DOCUMENT, not its elements: a patch keeps the same document, so
   // re-adding these would double every keystroke and every selection read.
   if (fresh) {
+    DOCUMENT_WIRES.forEach(fn => fn(d));
     keysFor(d);
     wireMarkState(d);          // chrome B/I state tracks the edit selection
     anchorWire(d);             // the armed anchor click, once per document
@@ -24392,7 +25273,7 @@ function wire(roots) {
   const meta = d.getElementById('ds-pagemeta');
   pagesDeclared = false;
   if (meta) {
-    try { designedPages = JSON.parse(meta.textContent); pagesDeclared = true; } catch (e) {}
+    try { designedPages = JSON.parse(meta.textContent); pagesDeclared = true; } catch (e) { swallowed('ds-pagemeta is not JSON', e); }
   }
   // No declaration: take the pages from the document itself, so the strip is
   // drawn for reports whose renderer predates L.pagemeta(). Order-editing stays
@@ -24788,9 +25669,14 @@ function wire(roots) {
        and that pixel falls through to whatever element's box happens to
        overlap the edge — a figure caption beside a table, say — which then
        answers with the generic layer menu instead of the table's own. */
+    /* Canva's look: round corners, pill-shaped edges, a soft shadow so a
+       handle reads on any fill. Shape only — the boxes and offsets below are
+       what keeps them flush, so they stay as they are. */
     .ds-h { position:absolute; pointer-events:auto; background:#fff;
-            border:1.5px solid #6B9E78; border-radius:2px; }
+            border:1.5px solid #6B9E78; border-radius:4px;
+            box-shadow:0 1px 3px rgba(20,30,35,.28); }
     .ds-h:hover { background:#6B9E78; }
+    .ds-h-ne, .ds-h-nw, .ds-h-se, .ds-h-sw { border-radius:50%; }
     .ds-h-e { right:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
     .ds-h-w { left:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
     .ds-h-s { bottom:-7px; left:50%; width:18px; height:7px; margin-left:-9px; cursor:ns-resize; }
@@ -24821,7 +25707,7 @@ function wire(roots) {
        (half of the 9px square, which now sits flush outside), so each ring's
        offset is 4.5px further out than half its own 22px width — keep the two
        in step or the ring stops surrounding the square. */
-    .ds-rot-corner { width:22px; height:22px; background:transparent; border:0; }
+    .ds-rot-corner { width:22px; height:22px; background:transparent; border:0; box-shadow:none; }
     .ds-rot-corner:hover { background:transparent; }   /* stays invisible — the cursor is the affordance */
     .ds-rot-se { right:-15.5px; bottom:-15.5px; cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">\
@@ -24844,6 +25730,8 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
 stroke-linecap="round"/><path d="M4 10 2 7.3M4 10 1 11" fill="none" stroke="%232F3E46" \
 stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
     body.ds-resizing, body.ds-resizing * { cursor:inherit !important; }
+    body.ds-hand, body.ds-hand * { cursor:grab !important; }
+    body.ds-panning, body.ds-panning * { cursor:grabbing !important; }
     .ds-menu { position:absolute; z-index:99999; background:#fff; border:1px solid #C9D6CD;
                border-radius:6px; box-shadow:0 6px 24px rgba(47,62,70,.22); padding:4px;
                min-width:190px; font:12px system-ui; max-height:84vh; overflow-y:auto; }
@@ -25172,7 +26060,8 @@ function makeEndnotesSection() {
 
 /** True when this document is one continuous sheet rather than pages. */
 const isPageless = () =>
-  !!(layout.page && (layout.page.h === null || layout.page.h === undefined));
+  layout.page ? (layout.page.h === null || layout.page.h === undefined)
+              : !!(M && M.page && (M.page.h === null || M.page.h === undefined));
 
 /** Set when a citation is placed with no endnotes section in the document:
  *  the section is created when that edit COMMITS, inside its own render. */
@@ -25603,13 +26492,18 @@ function editSvgSlot(d, key, node) {
   inp.focus(); inp.select();
   showType(key);
   let done = false;
+  // The field flattens runs of spaces, so a label stored with two (rxkids'
+  // "7,969 on Medicaid  ·  60%") never compares equal to it and was rewritten
+  // by a field only opened and left. Untouched means unchanged: see edit()'s
+  // `opened`.
+  const opened = inp.value.replace(/\s+/g, ' ').trim();
   const finish = async keep => {
     if (done) return; done = true;
     editing = false;
     hubAutosaveFlushNext();
     const val = inp.value.replace(/\s+/g, ' ').trim();
     inp.remove();
-    if (keep && val !== cur) {
+    if (keep && val !== opened && val !== cur) {
       pushHistory();
       writeSlot(key, val);
       markDirty();
@@ -25620,8 +26514,8 @@ function editSvgSlot(d, key, node) {
   inp.addEventListener('blur', () => { if (!modalOpen) finish(true); });
   inp.addEventListener('keydown', e => {
     e.stopPropagation();            // see editCell: the document handler would act on it too
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    // Enter and Escape both keep the new words (see edit()'s keydown).
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(true); }
   });
 }
 
@@ -25868,6 +26762,13 @@ function edit(d, key, clicked, at) {
   // swallowed by a commit path for an editor that did not exist.
   try { caretOrAll(d, host, at); }
   catch (e) { editing = false; richHost = null; richOpts = null; syncMarksBar(); collabParaClosed(); throw e; }
+  // The words as they opened, read the way finish() reads them: the same at
+  // the close means nothing was typed, so nothing is written — not a block
+  // for a slot the page only defaults, and not a markdown round trip that
+  // does not come back byte for byte. Escape keeps what was typed; leaving a
+  // field you only opened must change nothing.
+  const opened = rehead(!allowMd ? (richInline ? host.textContent : host.innerText)
+                                 : htmlToMd(host, { allowLists, inline: richInline }));
 
   const finish = async (keep) => {
     if (host.dataset.done) return;
@@ -25887,9 +26788,10 @@ function edit(d, key, clicked, at) {
     host.classList.remove('ds-edit', 'ds-inline', 'ds-edit-in');
     if (keep) {
       // Unchanged is unchanged whatever the wrapping: opening and leaving a
-      // soft-wrapped slot must not rewrite it as one long line.
+      // soft-wrapped slot must not rewrite it as one long line. And words
+      // left as they opened (`opened`) are not an edit at all.
       const was = readSlot(key);
-      if (newVal.trim() !== was && !(joinWraps && newVal.trim() === soft(was))) {
+      if (newVal !== opened && newVal.trim() !== was && !(joinWraps && newVal.trim() === soft(was))) {
         // Record the pre-edit state FIRST, or this text change (a typed edit,
         // a deletion) is not undoable — every other edit path pushes history,
         // but the slot editor didn't, so ⌘Z after editing prose found nothing
@@ -25925,9 +26827,13 @@ function edit(d, key, clicked, at) {
   host.addEventListener('keydown', e => {
     // Escape leaves the words and KEEPS the object selected — the way out of
     // typing into moving, aligning or deleting the box a click typed into
-    // (typeOnClick). Stopped here, or the document's own Escape (clear the
-    // selection) saw it too: finish() has already set editing false.
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    // (typeOnClick). It keeps what was typed, too, as InDesign's Escape does
+    // and as a click elsewhere always has: it used to throw the edit away, so
+    // the one key an InDesign hand presses to leave a frame lost the words
+    // (Devin, 2026-10-21). ⌘Z is the way back. Stopped here, or the
+    // document's own Escape (clear the selection) saw it too: finish() has
+    // already set editing false.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(true); }
     if (e.key === 'Enter' && richInline) { e.preventDefault(); finish(true); }
     // Shift-Enter has nowhere to go in prose. content.md soft-wraps at about
     // eighty columns, so a newline inside a slot is a WRAPPED line and
@@ -26845,33 +27751,93 @@ $('hpanel-close').onclick = () => hubHistoryToggle(false);
 $('hpanel-named').onclick = () => { hubHistoryNamedOnly = !hubHistoryNamedOnly; hubHistoryRender(); };
 $('hpanel-show').onchange = () => hubHistoryPaint($('out') && $('out').contentDocument);
 /** Bring a version back: a new version on top, everyone in the session gets it. */
+/** Who in the room holds words no Save has recorded, and which paragraphs of
+ *  them a restore to `v` would replace, as a sentence for the confirm. Empty
+ *  when nobody does. Asked of the room's presence (each editor says `unsaved`
+ *  when it wrote words no Save has recorded), and the paragraphs from the
+ *  same per-slot diff the restore itself applies. */
+async function hubRestoreWarning(v) {
+  const names = collab && collab.unsavedPeers ? collab.unsavedPeers().map(p => p.name || p.login || 'someone') : [];
+  const mine = source !== original || (M.layout && layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}')));
+  let m = null;
+  if (collab && collab.mergeRestore) {
+    try {
+      const [c, l] = await Promise.all([
+        fetch(`${docStore()}/history/${v.version}/content`, { cache: 'no-store' }),
+        M.layout ? fetch(`${docStore()}/history/${v.version}/layout`, { cache: 'no-store' }) : null]);
+      if (c.ok && (!l || l.ok)) {
+        m = collab.mergeRestore({ content: original, layout: layoutOrig || '{}' },
+          { content: await c.text(), layout: l ? await l.text() : (layoutOrig || '{}') },
+          { content: source, layout: layout });
+      }
+    } catch (e) { /* the generic sentence below is true without it */ }
+  }
+  // A slot added since the saved version has no place in the restored one: it goes.
+  const lost = m && m.dropped && m.dropped.length
+    ? `This version does not have ${m.dropped.length === 1 ? 'the paragraph' : 'the paragraphs'} added since it was saved (${m.dropped.slice(0, 4).join(', ')}${m.dropped.length > 4 ? ', …' : ''}), so ${m.dropped.length === 1 ? 'it' : 'they'} will be dropped.\n\n`
+    : '';
+  if (!names.length && !mine) return lost;
+  const who = [...new Set(names)];
+  if (mine) who.push('you');
+  const list = who.length > 1 ? who.slice(0, -1).join(', ') + ' and ' + who[who.length - 1] : who[0];
+  let detail = '';
+  if (m) {
+    detail = m.taken.length
+      ? ` Words in ${m.taken.length === 1 ? 'this paragraph' : m.taken.length + ' paragraphs'} would be replaced (${m.taken.slice(0, 4).join(', ')}${m.taken.length > 4 ? ', …' : ''}); every other paragraph keeps what is typed in it.`
+      : ' Nothing they typed is in a paragraph this version changes, so it all stays.';
+  }
+  return `${list.charAt(0).toUpperCase() + list.slice(1)} ${who.length > 1 || who[0] === 'you' && who.length === 1 ? 'have' : 'has'} unsaved words in this session.${detail || ' A paragraph this version changes is replaced; the others keep what is typed in them.'}\n\n${lost}`;
+}
 async function hubRestore(v) {
+  const warn = await hubRestoreWarning(v);
   if (!await dsConfirm(`Bring back the version from ${fmtWhen(v.updated_at)}${v.label ? ` ("${v.label}")` : ''}?\n\n`
+      + warn
       + 'It becomes the current version — a new Save on top of the others, so nothing is lost. '
       + 'Everyone in this session gets it.', { okLabel: 'Restore' })) return;
   $('stat').textContent = 'restoring…';
   try {
+    if (collab) await collab.drainNow();   // a collaborator's words still held back by an open box count
     const r = await fetch(`${docStore()}/restore`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v.version }) });
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     // Adopt the files the way a collaborator's change lands, then record the
     // version the way a Save does: the room learns it through baseSha.
+    // As a per-slot diff: a paragraph the restored version does not change
+    // (against the version it goes on top of) keeps whatever is typed in it,
+    // so a colleague's unsaved words elsewhere survive. The hub's restore()
+    // leaves the room to the editor on purpose; this is where it is handled.
+    let kept = [];
+    if (collab && collab.mergeRestore) {
+      try {
+        const m = collab.mergeRestore({ content: original, layout: layoutOrig || '{}' },
+          { content: j.content, layout: j.layout != null ? j.layout : (layoutOrig || '{}') },
+          { content: source, layout: layout });
+        kept = m.kept;
+        j.__merged = m;
+      } catch (e) { j.__merged = null; }
+    }
     pushHistory();
-    source = j.content;
+    source = j.__merged ? j.__merged.content : j.content;
     if (M.layout && j.layout != null) {
-      layout = JSON.parse(j.layout);
+      layout = j.__merged ? j.__merged.layout : JSON.parse(j.layout);
       layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
       syncPageSize();
     }
-    original = source; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
+    // The saved baseline is the restored version itself; `source` may carry
+    // colleagues' unsaved words the diff kept, and those stay unsaved.
+    original = j.content; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
     docVersion = j.version;
     hubMarkSeen(j.version);
     await render();
-    if (collab) collab.setBaseSha(j.version);
+    // The room's undo steps are from BEFORE the restore: undoing one now
+    // re-inserts old words beside the restored copy, for everyone. Forgotten
+    // here and, through the flag on the version, in every other editor.
+    if (collab) { collab.forgetHistory(); collab.setBaseSha(j.version, { restored: true }); }
     clearDraftCache();
     markDirty();
-    $('stat').textContent = `restored — the version from ${fmtWhen(v.updated_at)} is the current one now`;
+    $('stat').textContent = `restored — the version from ${fmtWhen(v.updated_at)} is the current one now`
+      + (kept.length ? `; unsaved words in ${kept.length === 1 ? 'a paragraph' : kept.length + ' paragraphs'} it did not change were kept — Save to keep them` : '');
   } catch (e) {
     $('stat').textContent = 'restore failed: ' + e.message;
   }
@@ -27597,8 +28563,14 @@ function hubCommentsOnHand() {
 }
 /** Bring one thread to hand: darker highlight, raised card, panel open. */
 function hubCommentFocus(id, { scrollPage = true } = {}) {
+  // By the hub's id, or by the provisional one a new thread wore before the
+  // hub answered (hubCommentAdd; hubCommentsMerge keeps it as __clientId): a
+  // card clicked in that instant, or a focus held back past it - a render
+  // waits while someone types - names a thread the list knows by another id
+  // since, and must land on the thread, not on a name nothing carries any more.
+  const c = hubComments.find(x => x.id === id) || hubComments.find(x => x.__clientId === id);
+  if (c) id = c.id;
   hubCommentActive = id;
-  const c = hubComments.find(x => x.id === id);
   // On the tab that has it: a resolved thread lives under Resolved.
   if (c && (c.resolved ? hubCommentsTab !== 'resolved' : hubCommentsTab === 'resolved')) hubCommentsTab = c.resolved ? 'resolved' : 'open';
   if ($('cpanel').hidden) hubCommentsToggle(true); else hubCommentsRender();
@@ -28091,6 +29063,19 @@ async function hubCommentDelete(id) {
   return got;
 }
 async function hubReplyAdd(id, text, mentions) {
+  // A card still waiting for the hub's answer has a provisional id; a reply
+  // posted under it went to /comments/pending-…/replies and came back "no
+  // such comment", words gone. Wait for the real id (hubCommentsMerge
+  // leaves it on the card as __clientId) — one round trip, normally.
+  if (String(id).startsWith('pending-')) {
+    for (let i = 0; i < 100; i++) {
+      const real = hubComments.find(x => x.__clientId === id && !x.pending);
+      if (real) { id = real.id; break; }
+      if (!hubComments.some(x => x.id === id)) { $('stat').textContent = 'reply not added: the comment was not posted'; return null; }
+      await new Promise(r => setTimeout(r, 150));
+    }
+    if (String(id).startsWith('pending-')) { $('stat').textContent = 'reply not added: the comment is still posting — try again in a moment'; return null; }
+  }
   const c = hubComments.find(x => x.id === id);
   const was = hubCopy(c);
   if (c) {
@@ -29319,10 +30304,29 @@ async function postLocal(path, body, ms = 30000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), ms);
   try {
-    const r = await fetch(path, {
-      method: 'POST', signal: ac.signal,
-      ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
-    });
+    let r;
+    try {
+      r = await fetch(path, {
+        method: 'POST', signal: ac.signal,
+        ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      // "Failed to fetch" is Chrome's for a connection nobody answered. The
+      // live server has gone (quit, crashed, the laptop slept through its
+      // idle exit); the words are still in this tab.
+      throw new Error(SERVER_GONE_MSG);
+    }
+    // The server answers every endpoint it knows with JSON, ok or not. A
+    // page of HTML with a 500 on it is Python dying mid-request; a 404 with
+    // no JSON is some other server on this port. Neither is a parse error
+    // for the person to read.
+    const json = /\bjson\b/i.test(r.headers.get('content-type') || '');
+    if (!json) {
+      throw new Error(r.ok
+        ? `the live server answered with something that is not the editor's (${r.status}) — is another app on this port? Your words are still here.`
+        : `the live server hit an error (${r.status}) — your words are still here; check its terminal, or relaunch the editor app and Save again`);
+    }
     return await r.json();
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -29332,6 +30336,8 @@ async function postLocal(path, body, ms = 30000) {
     throw e;
   } finally { clearTimeout(t); }
 }
+const SERVER_GONE_MSG = 'the live server is not answering — your words are safe in this tab. '
+  + 'Relaunch the editor app, then Save again';
 
 $('save').onclick = async () => {
   // Confirm, not block: prose has always been able to overflow a page and
@@ -29350,23 +30356,40 @@ $('save').onclick = async () => {
   // so a Save can never surprise-trigger a GitHub Actions run or send
   // something to the shared repo before you meant to.
   if (local) {
+    if (saving) return;
+    // What is SENT is what is saved. A save takes a build's worth of time,
+    // and words typed while it is in flight used to be marked saved with it
+    // (`original = source` read the CURRENT source when the answer came):
+    // the button went grey, beforeunload had nothing to guard, and the late
+    // words lived only in the tab. The baseline moves to the sent text, and
+    // markDirty keeps anything typed since.
+    const sent = source;
+    saving = true;
     $('save').disabled = true;
+    $('push').disabled = true;
     $('stat').textContent = 'saving to disk…';
     try {
       const j = await postLocal('/__save', {
         project: M.id,
-        content: source !== original ? source : null,
+        content: sent !== original ? sent : null,
         layout: (M.layout && layoutText !== layoutOrig) ? layoutText : null,
       });
       if (!j.ok) throw new Error(j.error || 'save failed');
-      original = source; layoutOrig = layoutText; dirty = false;
-      $('revert').disabled = true;
-      $('save').classList.remove('dirty');
+      original = sent; layoutOrig = layoutText;
       $('stat').textContent = j.message || 'saved';
+      $('stat').title = '';
+      saving = false;
+      markDirty();                   // false now, unless something came after `sent`
       setPushState(j.ahead);
     } catch (e) {
-      $('stat').textContent = 'save failed: ' + e.message;
-      $('save').disabled = false;    // always recoverable — never a dead spinner
+      // The status line is one line. A commit a hook refused (the ʻokina
+      // lint says eleven lines' worth) was cut to "git commit failed:" and
+      // nothing of the fix — the whole message rides the tooltip.
+      $('stat').textContent = 'save failed: ' + e.message.replace(/\s+/g, ' ');
+      $('stat').title = e.message;
+      saving = false;
+      markDirty();                   // always recoverable — never a dead spinner
+      setPushState(lastAhead);
     }
     return;
   }
@@ -29381,6 +30404,7 @@ $('save').onclick = async () => {
 // editor, and this is what sends all of them at once.
 $('agentnote').onclick = agentNoteClick;
 $('push').onclick = async () => {
+  if (saving) { $('stat').textContent = 'saving first — Push once it has landed'; return; }
   $('push').disabled = true;
   $('stat').textContent = 'pushing…';
   try {
@@ -29486,6 +30510,7 @@ function currentDocSize() {
     return DOC_SIZES.find(d => Math.abs(d.w - p.w) < 0.02
       && (pageless ? d.h === null : d.h !== null && Math.abs(d.h - p.h) < 0.02)) || null;
   }
+  if (isPageless()) return DOC_SIZES.find(d => d.h === null && Math.abs(d.w - PAGE_W_IN) < 0.02) || null;
   return DOC_SIZES.find(d => d.h !== null
     && Math.abs(d.w - PAGE_W_IN) < 0.02 && Math.abs(d.h - PAGE_H_IN) < 0.02) || null;
 }
@@ -29557,6 +30582,8 @@ function renderOpenList() {
     return;
   }
   ids.forEach(id => {
+    const row = document.createElement('div');
+    row.className = 'open-row';
     const b = document.createElement('button');
     b.className = 'shp';
     b.dataset.open = id;
@@ -29573,7 +30600,17 @@ function renderOpenList() {
     t.className = 'shp-t';
     t.textContent = (REGISTRY[id] || {}).name || id;
     b.appendChild(t);
-    host.appendChild(b);
+    row.appendChild(b);
+    // Forgetting only means something where there is a server keeping the list.
+    if (local) {
+      const x = document.createElement('button');
+      x.className = 'open-forget'; x.dataset.forget = id;
+      x.textContent = '×';
+      x.setAttribute('aria-label', 'Forget ' + ((REGISTRY[id] || {}).name || id));
+      x.title = 'Forget this report (its files stay on disk)';
+      row.appendChild(x);
+    }
+    host.appendChild(row);
   });
 }
 
@@ -29753,8 +30790,13 @@ const NEW_REPORT_SIZES = [
   { value: 'slide169', label: 'Slide 16:9 — 13.33 × 7.5 in', w: 13.333, h: 7.5 },
   { value: 'slide43',  label: 'Slide 4:3 — 10 × 7.5 in',     w: 10,     h: 7.5 },
 ];
+// "Probe ʻŌlelo Hawaiʻi" slugged to probe-lelo-hawai-i: the kahakō and the
+// ʻokina were "not a letter" and became hyphens. The marks come off (ō → o)
+// and the ʻokina simply goes (Hawaiʻi → hawaii), as the org's own URLs do.
 const slugifyReport = s =>
-  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+   .replace(/[\u02bb\u2018\u2019']/g, '')
+   .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 async function newReport(intoNewWindow) {
   // What this server can start a report FROM. Fetched fresh (it is one tiny
@@ -29807,15 +30849,15 @@ async function newReport(intoNewWindow) {
   $('stat').textContent = `creating "${name}"…`;
   let j;
   try {
-    j = await (await fetch('/__scaffold', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, slug, template: r.template || '',
-                             scheme: r.scheme || '',
-                             size: { w: size.w, h: size.h } }),
-    })).json();
+    // postLocal, so a crash page or a gone server is said as such rather
+    // than as "Unexpected token '<'"; a template's first build can take a
+    // while, hence the ceiling.
+    j = await postLocal('/__scaffold', { name, slug, template: r.template || '',
+                                         scheme: r.scheme || '',
+                                         size: { w: size.w, h: size.h } }, 120000);
   } catch (e) {
     $('stat').textContent = 'could not create it: ' + e.message;
+    $('stat').title = e.message;
     return;
   }
   if (!j.ok) { $('stat').textContent = j.error || 'could not create it'; return; }
@@ -29924,7 +30966,7 @@ $('file-repo').onclick = async () => {
       login = (await (await fetch('https://api.github.com/user', {
         headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json' },
       })).json()).login || '';
-    } catch (e) {}
+    } catch (e) { swallowed('GitHub login lookup', e); }
     // A repo under YOUR account and one under an org are different endpoints;
     // pick by comparing the owner to who the token belongs to.
     const url = (login && owner.toLowerCase() === login.toLowerCase())
@@ -30167,7 +31209,31 @@ function docImportReview(j) {
 
 $('open-all').onclick = () => { location.href = 'start.html'; };
 
+/** Take a report off this machine's list. Nothing on disk is touched: the
+ *  server writes a tombstone to the registry, and adopting the folder again
+ *  brings the report back. Forgetting the last one lands on the start page. */
+async function forgetProject(id) {
+  const name = (REGISTRY[id] || {}).name || id;
+  const isActive = id === activeProjectId();
+  if (!await dsConfirm('Forget ' + name + '? It leaves this list; its files stay '
+      + 'where they are, and adopting the folder again brings it back.'
+      + (isActive && dirty ? ' Unsaved edits here are lost.' : ''),
+      { okLabel: 'Forget', danger: true })) return;
+  try {
+    const r = await fetch('/__forget', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: id }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'refused');
+  } catch (e) { $('stat').textContent = 'could not forget ' + name + ': ' + e.message; return; }
+  delete REGISTRY[id];
+  if (isActive || !Object.keys(REGISTRY).length) { location.href = 'start.html'; return; }
+  renderOpenList();
+  $('stat').textContent = 'forgot ' + name;
+}
+
 $('open-list').onclick = async (e) => {
+  const f = e.target.closest('[data-forget]');
+  if (f) return forgetProject(f.dataset.forget);
   const b = e.target.closest('[data-open]');
   if (!b) return;
   const id = b.dataset.open;
@@ -30201,8 +31267,8 @@ $('size-list').onclick = async (e) => {
  *  to one that was resized and put back. */
 async function applyDocSize(d) {
   const built = M.page || {};
-  const isBuilt = d.h !== null && Math.abs(d.w - built.w) < 0.02
-                               && Math.abs(d.h - built.h) < 0.02;
+  const isBuilt = Math.abs(d.w - built.w) < 0.02
+    && (d.h === null ? built.h == null : built.h != null && Math.abs(d.h - built.h) < 0.02);
   if (isBuilt) delete layout.page;
   else layout.page = d.h === null ? { w: d.w, h: null } : { w: d.w, h: d.h };
   syncPageSize();
@@ -30226,7 +31292,7 @@ function syncPageSize() {
   // A pageless document has no bottom. The rules that keep content on the page
   // still need a number, so they get one no report will reach — the same
   // sentinel layout.py uses, so the two sides agree.
-  PAGE_H_IN = p ? (p.h === null || p.h === undefined ? PAGELESS_H : p.h) : M.page.h;
+  PAGE_H_IN = p ? (p.h === null || p.h === undefined ? PAGELESS_H : p.h) : (M.page.h == null ? PAGELESS_H : M.page.h);
 }
 
 $('download').onclick = () => {
@@ -30258,7 +31324,9 @@ function exportPages() {
     if (a < 1 || hi < a) return `pages: ${part.trim()} is not a range from 1 upward`;
     for (let k = a; k <= hi; k++) keep.add(k);
   }
-  if (Math.max(...keep) > n) return `pages: the report has ${n} page${n === 1 ? '' : 's'}`;
+  if (Math.max(...keep) > n) return isPageless()
+    ? 'pages: this report is one continuous page, so there is nothing to pick from — leave the field empty'
+    : `pages: the report has ${n} page${n === 1 ? '' : 's'}`;
   return [...keep].sort((a, b) => a - b);
 }
 // A report's own on-page "Download PDF" button (docsync.blocks.pdf_button)
@@ -30322,7 +31390,13 @@ const asDataUrl = async url => {
  *  <style>, images as data: URIs. A file that reaches for assets/ is only
  *  identical while it sits next to them — and a Squarespace block never
  *  does. Session uploads already live in memory as data URLs. */
-async function inlineEverything(doc) {
+async function inlineEverything(doc, opts = {}) {
+  // What the caller may want to tell the user: opts.fonts / opts.scripts turn
+  // the two network-or-folder inlinings on (a Squarespace block keeps its font
+  // links and takes no script, so they are off by default).
+  const res = { fonts: [], fontsLinked: [], scriptsInlined: 0, scriptsLeft: [] };
+  if (opts.fonts) await inlineWebFonts(doc, res);
+  if (opts.scripts) await inlineScripts(doc, res);
   for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"]')]) {
     const href = link.getAttribute('href') || '';
     // A web font's stylesheet stays a link — it is fetched from the web
@@ -30350,6 +31424,75 @@ async function inlineEverything(doc) {
     if (/^(data:|https?:|#)/i.test(src)) continue;
     try { img.setAttribute('href', localImages.get(src) || await asDataUrl(withBase(src))); }
     catch (e) { /* keep the relative path */ }
+  }
+  return res;
+}
+
+/** Google Fonts links -> @font-face rules with the woff2 files inline as data:
+ *  URIs, so the exported file sets itself in its fonts with no network (the
+ *  families are SIL OFL, which allows redistributing them). Only the latin and
+ *  latin-ext subsets are kept: the other subsets (cyrillic, greek, vietnamese…)
+ *  are most of the bytes and no Hawaiian-policy report uses them; the ʻokina
+ *  is in latin. A stylesheet whose CSS or any file will not fetch is left as
+ *  its <link> — the web copy beats a half-embedded one — and listed in
+ *  res.fontsLinked so the package can say so. res.fonts collects every face's
+ *  bytes for the package's fonts/ folder. */
+async function inlineWebFonts(doc, res) {
+  for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"]')]) {
+    const href = link.getAttribute('href') || '';
+    if (!/^(https?:)?\/\/fonts\.googleapis\.com\//i.test(href)) continue;
+    try {
+      const r = await fetch(href.startsWith('//') ? 'https:' + href : href);
+      if (!r.ok) throw new Error('css ' + r.status);
+      const css = await r.text();
+      const faces = [];
+      for (const m of css.matchAll(/(?:\/\*\s*([\w-]+)\s*\*\/\s*)?@font-face\s*{([^}]*)}/g)) {
+        if (m[1] && !/^latin(-ext)?$/.test(m[1])) continue;
+        const body = m[2];
+        const get = k => ((new RegExp(k + '\\s*:\\s*([^;]+)', 'i')).exec(body) || [])[1];
+        const url = /url\((['"]?)(https?:[^'")]+)\1\)/.exec(body);
+        if (!url) continue;
+        const fr = await fetch(url[2]);
+        if (!fr.ok) throw new Error('font ' + fr.status);
+        const buf = new Uint8Array(await fr.arrayBuffer());
+        faces.push({ family: (get('font-family') || 'font').replace(/['"]/g, '').trim(),
+                     weight: (get('font-weight') || '400').trim(),
+                     style: (get('font-style') || 'normal').trim(),
+                     subset: m[1] || '', url: url[2], bytes: buf, rule: m[0].replace(/^\/\*[^*]*\*\/\s*/, '') });
+      }
+      if (!faces.length) throw new Error('no faces');
+      let inline = '';
+      for (const f of faces) {
+        const uri = await new Promise(ok => {
+          const fr = new FileReader();
+          fr.onload = () => ok(fr.result);
+          fr.readAsDataURL(new Blob([f.bytes], { type: 'font/woff2' }));
+        });
+        inline += f.rule.replace(f.url, uri) + '\n';
+      }
+      const st = doc.createElement('style');
+      st.setAttribute('data-ds-fonts', '');
+      st.textContent = inline;
+      link.replaceWith(st);
+      res.fonts.push(...faces);
+    } catch (e) { res.fontsLinked.push(href); }     // keep the <link>
+  }
+}
+
+/** A relative <script src> (the primer's primer.js) -> an inline script, so
+ *  the file does not need the folder it was exported from. */
+async function inlineScripts(doc, res) {
+  for (const sc of [...doc.querySelectorAll('script[src]')]) {
+    const src = sc.getAttribute('src') || '';
+    if (/^(data:|https?:|\/\/)/i.test(src)) { res.scriptsLeft.push(src); continue; }
+    try {
+      const r = await fetch(withBase(src));
+      if (!r.ok) throw new Error(r.status);
+      const code = await r.text();
+      sc.removeAttribute('src');
+      sc.textContent = code.replace(/<\/script/gi, '<\\/script');
+      res.scriptsInlined++;
+    } catch (e) { res.scriptsLeft.push(src); }      // keep the reference
   }
 }
 
@@ -30386,6 +31529,13 @@ function mediaFeature(feat, viewPx) {
     const v = len(m[1]);
     return v === null ? null : cmp(viewPx, '=', v);
   }
+  // The block is a STILL of what the editor showed: no motion (a scroll-
+  // reveal that waits for an observer the pasted block will never run left
+  // thirteen sections of a page at opacity 0), and the editor's own light
+  // scheme (a dark-mode host flipped a block's words light on its white
+  // sheet). Decided here like a width.
+  if ((m = /^prefers-reduced-motion(?:\s*:\s*(.+))?$/i.exec(s))) return !m[1] || m[1].trim() === 'reduce';
+  if ((m = /^prefers-color-scheme\s*:\s*(.+)$/i.exec(s))) return m[1].trim() === 'light';
   return null;                                   // orientation, hover, height…
 }
 
@@ -30578,7 +31728,7 @@ async function exportHtml(forSquarespace) {
   try {
     const raw = await renderClean();
     const doc = new DOMParser().parseFromString(raw, 'text/html');
-    await inlineEverything(doc);
+    await inlineEverything(doc, { scripts: !forSquarespace });
 
     let out, name;
     if (!forSquarespace) {
@@ -30736,11 +31886,32 @@ async function downloadSource() {
 // local server's Chrome renders, re-encoded or cropped here (a canvas), so
 // the server keeps its two formats and a page's pixels are made once.
 const fflateLib = () => import('https://cdn.jsdelivr.net/npm/fflate@0.8.3/esm/browser.js');
+/** The server's answer to an export, or the reason there is none. Only a
+ *  JSON body used to count as a failure: a crash page (500, HTML), a 404
+ *  from some other server on the port, an empty 200 — each was saved as
+ *  "Report.pdf" and announced as downloaded, and the person found out when
+ *  the file would not open. A file is a file only when the status is good
+ *  and the body is the kind asked for. */
+async function exportAnswer(r, kinds) {
+  const type = (r.headers.get('Content-Type') || '').toLowerCase();
+  if (type.includes('application/json')) {
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    throw new Error(j.error || `the server refused the export (HTTP ${r.status})`);
+  }
+  const text = async () => { try { return (await r.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160); } catch (e) { return ''; } };
+  if (!r.ok) throw new Error(`the live server hit an error (HTTP ${r.status}) — nothing was downloaded. ${await text()}`.trim());
+  if (!kinds.some(k => type.includes(k))) {
+    throw new Error(`the server answered with ${type || 'no content type'} instead of a file — nothing was downloaded. `
+      + `Is the live server still the editor's? ${await text()}`.trim());
+  }
+  const blob = await r.blob();
+  if (!blob.size) throw new Error('the server answered with an empty file — nothing was downloaded');
+  return blob;
+}
 async function exportBlob(body) {
   const r = await fetch('/__export', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project: M.id, content: source, layout: JSON.stringify(layout, null, 2) + '\n', ...body }) });
-  if ((r.headers.get('Content-Type') || '').includes('application/json')) throw new Error((await r.json()).error || 'export failed');
-  return r.blob();
+  return exportAnswer(r, body.fmt === 'pdf' ? ['application/pdf'] : ['application/zip', 'image/png', 'application/octet-stream']);
 }
 function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
@@ -30828,27 +31999,35 @@ async function exportPackage() {
     Object.entries(unzipSync(new Uint8Array(await (await exportBlob({ fmt: 'png' })).arrayBuffer())))
       .forEach(([n, b]) => { files[`pages/${n}`] = b; });
     const doc = new DOMParser().parseFromString(await renderClean(), 'text/html');
-    await inlineEverything(doc);
+    const inl = await inlineEverything(doc, { fonts: true, scripts: true });
     files[`${slug}.html`] = strToU8('<!DOCTYPE html>\n' + doc.documentElement.outerHTML);
+    // Faces whose bytes inlineWebFonts already holds, plus any @font-face still
+    // pointing at a URL (fetched here, as before).
     const css = [...doc.querySelectorAll('style')].map(n => n.textContent).join('\n');
-    const faces = fontFaces(css);
+    const faces = [...inl.fonts, ...fontFaces(css)];
     let fontCss = '', got = 0;
     const names = new Set();
     for (const [i, f] of faces.entries()) {
       const ext = (/\.(woff2?|ttf|otf)(\?|$)/i.exec(f.url) || [, 'woff2'])[1].toLowerCase();
-      let n = `${f.family.replace(/[^A-Za-z0-9]+/g, '-')}-${f.weight.replace(/\s+/g, '_')}${f.style === 'italic' ? '-italic' : ''}`;
+      let n = `${f.family.replace(/[^A-Za-z0-9]+/g, '-')}-${f.weight.replace(/\s+/g, '_')}${f.style === 'italic' ? '-italic' : ''}${f.subset ? '-' + f.subset : ''}`;
       if (names.has(n)) n += `-${i}`;
       names.add(n);
       try {
-        const r = await fetch(f.url);
-        if (!r.ok) continue;
-        files[`fonts/${n}.${ext}`] = new Uint8Array(await r.arrayBuffer());
+        const bytes = f.bytes || new Uint8Array(await (await fetch(f.url)).arrayBuffer());
+        if (!bytes.length) continue;
+        files[`fonts/${n}.${ext}`] = bytes;
         fontCss += f.rule.replace(f.url, `${n}.${ext}`) + '\n';
         got++;
       } catch (e) { /* a font that will not download is named in the README */ }
     }
     if (fontCss) files['fonts/fonts.css'] = strToU8(fontCss);
     const fams = [...new Set(faces.map(f => f.family))];
+    const fontNote = inl.fontsLinked.length
+      ? `Fonts NOT embedded: ${inl.fontsLinked.length} Google Fonts stylesheet${inl.fontsLinked.length === 1 ? '' : 's'} could not be fetched, so the HTML still links ${inl.fontsLinked.length === 1 ? 'it' : 'them'} (it needs a connection to show those fonts).`
+      : (inl.fonts.length ? 'Fonts: embedded in the HTML as woff2 (latin and latin-ext subsets), and in fonts/.' : '');
+    const scriptNote = inl.scriptsLeft.length
+      ? `Scripts still loaded from elsewhere: ${inl.scriptsLeft.join(', ')}.`
+      : (inl.scriptsInlined ? `${inl.scriptsInlined} script${inl.scriptsInlined === 1 ? '' : 's'} inlined into the HTML.` : '');
     files['README.txt'] = strToU8([
       `${slug} — package from the draft editor, ${new Date().toISOString().slice(0, 10)}`, '',
       `${slug}.pdf          the report as printed`,
@@ -30857,9 +32036,15 @@ async function exportPackage() {
       'fonts/               the font files the report loads, and fonts.css pointing at them',
       '', 'Fonts: ' + (fams.join(', ') || 'none beyond the system\'s'),
       `${got} of ${faces.length} font file${faces.length === 1 ? '' : 's'} included.`,
+      ...(fontNote ? [fontNote] : []), ...(scriptNote ? [scriptNote] : []),
       'The Google Fonts used here are under the SIL Open Font License; check any other font\'s licence before passing it on.',
     ].join('\n') + '\n');
     saveBlob(new Blob([zipSync(files, { level: 6 })], { type: 'application/zip' }), `${slug}-package.zip`);
+    // Said in the status line too, not only the README: a fallback is a decision
+    // the person should see without opening the zip.
+    $('stat').textContent += ` — ${got} font file${got === 1 ? '' : 's'} embedded`
+      + (inl.fontsLinked.length ? `; fonts LINKED, not embedded (could not fetch ${inl.fontsLinked.length})` : '')
+      + (inl.scriptsLeft.length ? '; a script is still external' : '');
   } catch (e) { $('stat').textContent = 'package failed: ' + e.message; }
 }
 
@@ -30913,17 +32098,11 @@ async function doExport(fmt) {
       body: JSON.stringify({ fmt, marks, project: M.id, ...(spec ? { pages: spec } : {}),
         content: source, layout: JSON.stringify(layout, null, 2) + '\n' }),
     });
-    if ((r.headers.get('Content-Type') || '').includes('application/json')) {
-      throw new Error((await r.json()).error || 'export failed');
-    }
-    const url = URL.createObjectURL(await r.blob());
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    $('stat').textContent = `downloaded ${name}`;
+    const blob = await exportAnswer(r, fmt === 'pdf' ? ['application/pdf'] : ['application/zip', 'application/octet-stream']);
+    saveBlob(blob, name);
   } catch (e) {
     $('stat').textContent = 'export failed: ' + e.message;
+    $('stat').title = e.message;
   }
 }
 
@@ -30964,13 +32143,21 @@ async function doExport(fmt) {
 // half-applied under a history entry nothing pushed cleanly.
 function _pilotValidateSetSlot(key, md) {
   if (!slotRe(key).test(source)) return { ok: false, error: `no slot '${key}'` };
+  // writeSlot refuses these too, but only in the status line, which the
+  // render that followed then overwrote — so a pilot was told ok over words
+  // that never landed.
+  const marker = md.split('\n').find(l => MARKER_RE.test(l.trim()));
+  if (marker) return { ok: false, error: `"${marker.trim()}" is a slot marker — a line of its own would split this slot` };
   if (key === 'sources') {
     const bad = badSourceLines(md);
     if (bad.length) return { ok: false, error: `malformed sources line: "${bad[0]}"` };
   }
   return { ok: true };
 }
-function _pilotApplySetSlot(key, md) { writeSlot(key, md); return { key }; }
+function _pilotApplySetSlot(key, md) {
+  if (writeSlot(key, md) === false) throw new Error($('stat').textContent || 'the words were refused');
+  return { key };
+}
 
 // An element a pilot can address is USUALLY in the DOM — but inside a batch,
 // an op can name a box/shape an earlier op just created, which exists only in
@@ -31011,21 +32198,9 @@ function _pilotApplyPlace(id, { x, y, w, h } = {}) {
     const P = placer(d, el, page);
     P.commit(P.put(x != null ? +x : P.box.x, y != null ? +y : P.box.y, false));
   }
-  // Explicit size lands where each kind keeps it — the same fields the
-  // resize handles write. A designed element has no free height (its
-  // content decides), so h applies to shapes and boxes only.
-  const sh = shapeOf(id);
-  const bx = boxOf(id);
-  if (w != null) {
-    if (sh) sh.w = +w;
-    else if (bx) bx.w = +w;
-    // What the resize handle does: a designed element is pinned where it
-    // stands, then sized. Writing {w} alone gave the engine a position with
-    // no x/y, which it refuses — place(id, {w}) on a renderer's chart took
-    // the whole draft down to "This draft does not build".
-    else ensureStore(d, el).w = +w;
-  }
-  if (h != null) { if (sh) sh.h = +h; else if (bx) bx.h = +h; }
+  // Explicit size lands exactly where a handle drag puts it (commitSize):
+  // a box's height with the same floor, a paragraph's as its hmin.
+  if (w != null || h != null) commitSize(d, el, { w, h });
   return { id };
 }
 // Measured AFTER render, from the fresh DOM — the truth of where the element
@@ -31089,6 +32264,7 @@ function _pilotApplySetChart(id, patch) {
 }
 
 function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', style, fill } = {}) {
+  md = fixOkina(md);
   const pid = page != null ? page : visiblePageId();
   const id = freeBoxId();
   const box = { id, page: pid, x: x != null ? +x : placeX(w), y: y != null ? +y : 2,
@@ -31254,10 +32430,13 @@ function _pilotObjData(base, el) {
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
 const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'qr'];
-function _pilotValidateAddShape({ kind = 'rect', page } = {}) {
+function _pilotValidateAddShape(o = {}) {
+  const { kind = 'rect', page } = o || {};
   if (!PILOT_SHAPE_KINDS.includes(kind))
     return { ok: false,
              error: `'${kind}' is not a shape — one of ${PILOT_SHAPE_KINDS.join(', ')}` };
+  const n = _pilotNums(o, ['x', 'y', 'w', 'h'], 'addShape', { zeroH: kind === 'line' });
+  if (!n.ok) return n;
   return _pilotPageDraws(page, 'addShape');
 }
 function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
@@ -31715,20 +32894,63 @@ async function _pilotArrange(ids, o, run) {
 }
 async function _pilotOne(verb, args) {
   const r = await docsync.api.batch([{ verb, args }]);
+  // One op: "op 0 (place):" in front of its error names nothing the caller
+  // does not know. The rest of the message is the batch's — the validation,
+  // the engine's refusal and the rollback that goes with it are all there.
+  if (r && !r.ok && typeof r.error === 'string')
+    r.error = r.error.replace(new RegExp('^op 0 \\(' + verb + '\\): '), '');
   if (!r || !r.ok || !Array.isArray(r.results)) return r;
   const { results, ...rest } = r;
   const { verb: _v, ...out } = results[0] || {};
   return { ...rest, ...out };
 }
+/** Geometry a verb takes is inches, as finite numbers; a width or height
+ *  is more than nothing. `place(id, {x: NaN})` and `place(id, {x: '2in'})`
+ *  used to pass straight through: the store took null, the next render died
+ *  on "box.x: None is not a number", and the verb had already answered ok. */
+function _pilotNums(o, keys, verb, { zeroH = false } = {}) {
+  if (o != null && (typeof o !== 'object' || Array.isArray(o)))
+    return { ok: false, error: `${verb} takes an object of options` };
+  for (const k of keys) {
+    const v = o && o[k];
+    if (v == null) continue;
+    if (typeof v !== 'number' || !isFinite(v))
+      return { ok: false, error: `${verb}: ${k} must be a number of inches, not ${JSON.stringify(v)}` };
+    if ((k === 'w' || k === 'h') && !(v > 0 || (zeroH && k === 'h' && v === 0)))
+      return { ok: false, error: `${verb}: ${k} must be more than 0in` };
+  }
+  return { ok: true };
+}
+/** A fill is a #hex, a named swatch the report has, a CSS gradient, or null
+ *  to reset. Anything else used to be written as given, and the engine then
+ *  refused the whole draft ("'not-a-colour' is not a hex colour"). */
+function _pilotValidateFill(fill) {
+  if (fill == null) return { ok: true };
+  if (typeof fill !== 'string')
+    return { ok: false, error: 'recolor(id, "#hex" | "@Swatch" | "linear-gradient(…)" | null)' };
+  const f = fill.trim();
+  if (HEX_RE.test(f) || /^(linear|radial|conic)-gradient\(/.test(f)) return { ok: true };
+  const sw = /^@(.+?)(?:\s+\d+(?:\.\d+)?%)?$/.exec(f);        // '@Name', '@Name 20%'
+  if (sw)
+    return (layout.swatches || {})[sw[1]] ? { ok: true }
+      : { ok: false, error: `no swatch called '${sw[1]}'` };
+  return { ok: false, error: `'${fill}' is not a colour — a #hex, a @Swatch or a gradient` };
+}
 const PILOT_BATCH_VERBS = {
-  setSlot: { validate: (d, m) => _pilotValidateSetSlot(d, m), apply: (d, m) => _pilotApplySetSlot(d, m) },
-  place: { validate: id => _pilotValidatePlace(id), apply: (id, o) => _pilotApplyPlace(id, o) },
-  recolor: { validate: () => ({ ok: true }), apply: (id, fill) => _pilotApplyRecolor(id, fill) },
+  setSlot: { validate: (d, m) => typeof m === 'string' ? _pilotValidateSetSlot(d, m)
+      : { ok: false, error: 'setSlot(key, markdown) — the words are one string' },
+    apply: (d, m) => _pilotApplySetSlot(d, m) },
+  place: { validate: (id, o) => { const v = _pilotValidatePlace(id); return v.ok ? _pilotNums(o, ['x', 'y', 'w', 'h'], 'place') : v; },
+    apply: (id, o) => _pilotApplyPlace(id, o) },
+  recolor: { validate: (id, fill) => _pilotValidateFill(fill), apply: (id, fill) => _pilotApplyRecolor(id, fill) },
   setChart: { validate: (id, p) => _pilotValidateSetChart(id, p), apply: (id, p) => _pilotApplySetChart(id, p) },
   // An empty md is refused here: the engine refuses a box with no words at
   // the next render, so accepting one left the draft unable to build.
-  addTextBox: { validate: o => (o && typeof o.md === 'string' && !o.md.trim())
-      ? { ok: false, error: 'a text box needs words — md is empty' } : _pilotPageDraws(o && o.page, 'addTextBox'),
+  addTextBox: { validate: o => {
+      if (o && typeof o.md === 'string' && !o.md.trim()) return { ok: false, error: 'a text box needs words — md is empty' };
+      const n = _pilotNums(o, ['x', 'y', 'w', 'h'], 'addTextBox');
+      return n.ok ? _pilotPageDraws(o && o.page, 'addTextBox') : n;
+    },
     apply: o => _pilotApplyAddTextBox(o) },
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
   addChart: { validate: o => _pilotValidateAddChart(o), apply: o => _pilotApplyAddChart(o) },
@@ -31998,7 +33220,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // specifically, rather than at whichever tab claims first.
       tab: PILOT_TAB,
       page: { w: PAGE_W_IN, h: PAGE_H_IN,
-              pageless: !!(layout.page && layout.page.h == null) },
+              pageless: isPageless() },
       overflow: [...new Set(lastFit.map(b => b.page))],
       selected: [...selIds], selectedPage: selPage,
       // Live collaboration, when this project has a relay: status is one of
@@ -32175,16 +33397,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
 
   /** Replace a slot's markdown. The renderer's own grammar applies — what
    *  it cannot express is flattened, the same as typing it. */
-  async setSlot(key, md) {
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
-    const v = _pilotValidateSetSlot(key, md);
-    if (!v.ok) return v;
-    pushHistory();
-    _pilotApplySetSlot(key, md);
-    markDirty();
-    await render();
-    return docsync.api.status();
-  },
+  async setSlot(key, md) { return _pilotOne('setSlot', [key, md]); },
 
   /** Move and/or size an element, in page inches. Same write path as a drag:
    *  placer() handles coordinate-space correction for elements inside
@@ -32192,28 +33405,14 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  snapping — exact coordinates were asked for. The returned box is
    *  measured from the re-rendered document, so a clamp (the page edge, same
    *  as a drag) is reported rather than pretended away. */
-  async place(id, opts = {}) {
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
-    const v = _pilotValidatePlace(id);
-    if (!v.ok) return v;
-    pushHistory();
-    _pilotApplyPlace(id, opts);
-    markDirty();
-    await render();
-    return { ...docsync.api.status(), id, box: _pilotMeasure(id) };
-  },
+  // Through the one-op batch (as addChart and addTable already are): a
+  // result the engine will not build is rolled back and refused there,
+  // where a verb on its own used to answer ok over "draft does not build".
+  async place(id, opts = {}) { return _pilotOne('place', [id, opts]); },
 
   /** Recolour anything fillable: a shape/box/mark id, or 'page.<pid>' for a
    *  page background. null resets to the design's own colour. */
-  async recolor(id, fill) {
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
-    pushHistory();
-    _pilotApplyRecolor(id, fill);
-    markDirty();
-    await render();
-    paintSel($('out').contentDocument);
-    return { ...docsync.api.status(), id, fill };
-  },
+  async recolor(id, fill) { return _pilotOne('recolor', [id, fill]); },
 
   /** Change a chart as the Chart panel would: a chart shape or an inline
    *  chart (blocks.chart / blocks.meter), by id. patch = chart keys, null
@@ -32232,16 +33431,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   },
 
   /** A new text box; returns its element id ('text.<n>') for place()/edit. */
-  async addTextBox(opts = {}) {
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
-    const v = PILOT_BATCH_VERBS.addTextBox.validate(opts);
-    if (!v.ok) return v;
-    pushHistory();
-    const { id, page } = _pilotApplyAddTextBox(opts);
-    markDirty();
-    await render();
-    return { ...docsync.api.status(), id, page };
-  },
+  async addTextBox(opts = {}) { return _pilotOne('addTextBox', [opts]); },
 
   /** A new shape (rect|ellipse|line|triangle|arrow) — what the Shapes panel
    *  places, addressable to a pilot so a hairline rule or a panel can land
@@ -32256,16 +33446,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  front — rows, plus any setTable key (headerRows, footerRows, merges,
    *  colw, colAlign, band, headerFill, cells…). Returns 'table.<id>'. */
   async addTable(opts = {}) { return _pilotOne('addTable', [opts]); },
-  async addShape(opts = {}) {
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
-    const v = _pilotValidateAddShape(opts);
-    if (!v.ok) return v;
-    pushHistory();
-    const { id, page } = _pilotApplyAddShape(opts);
-    markDirty();
-    await render();
-    return { ...docsync.api.status(), id, page };
-  },
+  async addShape(opts = {}) { return _pilotOne('addShape', [opts]); },
 
   /** Retint the report to another colour scheme — every use of the current
    *  topic colour becomes the named one. Takes a scheme id ('slate') or a
@@ -32389,13 +33570,21 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     // validated before its referent exists, so its validation runs at apply
     // time, and a failure there rolls the WHOLE batch back from the snapshot
     // pushHistory took — all-or-nothing either way, just enforced later.
-    const hasRef = a => typeof a === 'string' ? a.startsWith('@')
+    // A ref is '@' + a name an op IN THIS BATCH gives itself with `as` —
+    // nothing else. It used to be any string starting with '@', which is
+    // also how a swatch is written ('@Brand', '@Brand 20%'), so a fill was
+    // refused as "names no earlier op's 'as'"; a carve-out for swatches the
+    // report had still read '@Nope' as a ref. A forward name is refused
+    // (refs point backwards); any other '@…' is a value for its verb to judge.
+    const asNames = new Set(ops.filter(op => op && op.as != null).map(op => String(op.as)));
+    const refStr = v => typeof v === 'string' && /^@[\w-]+$/.test(v) && asNames.has(v.slice(1));
+    const hasRef = a => typeof a === 'string' ? refStr(a)
       : (a && typeof a === 'object')
-        ? Object.values(a).some(v => typeof v === 'string' && v.startsWith('@'))
+        ? Object.values(a).some(refStr)
         : false;
     const resolve = (a, named) => {
       const one = v => {
-        if (typeof v !== 'string' || !v.startsWith('@')) return v;
+        if (!refStr(v)) return v;
         if (!(v.slice(1) in named)) throw new Error(`unknown ref '${v}'`);
         return named[v.slice(1)];
       };
@@ -32439,7 +33628,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         // Every named ref must point at an EARLIER op's `as` — a forward or
         // unknown name is a spelling mistake, refused now, not at apply.
         const names = refs.flatMap(a => typeof a === 'string' ? [a]
-          : Object.values(a).filter(v => typeof v === 'string' && v.startsWith('@')));
+          : Object.values(a).filter(refStr));
         const bad = names.find(n => !defined.has(n.slice(1)));
         if (bad) return { ok: false, error: `op ${i} (${op.verb}): ref '${bad}' names `
           + `no earlier op's 'as' — refs only point backwards` };
@@ -32466,7 +33655,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         args = args.map(a => resolve(a, named));
       } catch (e) {
         // unknown ref can't happen (checked above) — belt and braces
-        const rolled = JSON.parse(past.pop());
+        withdrawStep();
+        const rolled = JSON.parse(before);
         source = rolled.source; layout = rolled.layout;
         return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
       }
@@ -32476,7 +33666,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           // Nothing has rendered yet: put source/layout back exactly as the
           // snapshot holds them and withdraw the history entry. dirty was
           // never set, so the document is untouched by every measure.
-          const rolled = JSON.parse(past.pop());
+          withdrawStep();
+          const rolled = JSON.parse(before);
           source = rolled.source; layout = rolled.layout;
           return { ok: false, error: `op ${i} (${op.verb}): ${v.error}` };
         }
@@ -32486,7 +33677,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       catch (e) {
         // A verb that finds, mid-apply, that it cannot (a merge across
         // another's edge): the whole batch is undone, as a failed check is.
-        const rolled = JSON.parse(past.pop());
+        withdrawStep();
+        const rolled = JSON.parse(before);
         source = rolled.source; layout = rolled.layout;
         return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
       }
@@ -32512,10 +33704,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (unseen.length) {
       const st = JSON.parse(before);
       source = st.source; layout = st.layout;
-      if (!collab) past.pop();
+      withdrawStep();
       markDirty();
       await render();
-      syncHistoryButtons();
       const drawn = _pilotDrawnPages();
       return { ok: false, error: `${unseen.map(a => a.id).join(', ')} would be saved and never seen: page `
         + `${unseen[0].page} does not draw ${unseen[0].verb.replace(/^add/, '').toLowerCase()}s, so nothing was changed`
@@ -32525,10 +33716,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       const why = renderError;
       const st = JSON.parse(before);
       source = st.source; layout = st.layout;
-      if (!collab) past.pop();
+      withdrawStep();
       markDirty();
       await render();
-      syncHistoryButtons();
       return { ok: false, error: 'the engine would not build the result, so nothing was changed'
         + (why ? ` — ${why}` : '') };
     }
@@ -33019,7 +34209,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       items.push({ id, page: pg ? pg.dataset.page : null, b: m });
     });
     const tol = 0.05;
-    const pageH = (layout.page && layout.page.h === null) ? Infinity : PAGE_H_IN;
+    const pageH = isPageless() ? Infinity : PAGE_H_IN;
     items.forEach(({ id, page, b }) => {
       if (b.x < -tol || b.y < -tol
           || b.x + b.w > PAGE_W_IN + tol || b.y + b.h > pageH + tol)

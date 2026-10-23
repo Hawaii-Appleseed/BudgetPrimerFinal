@@ -633,7 +633,14 @@ class Footnotes:
         fn = ' data-fn="{n}"' if pop else ""
 
         def repl(m):
-            nums = re.findall(r"\d+", m.group(1))
+            inner = m.group(1)
+            # A marker that already IS a link — the red "?" resolve() draws
+            # for a citation naming no source — stays as drawn. The digits
+            # of its colour (#C0392B) used to be read as note numbers, and
+            # the "?" came out as inert "0392".
+            if "<a" in inner:
+                return m.group(0)
+            nums = re.findall(r"\d+", re.sub(r"<[^>]+>", "", inner))
             if not nums:
                 return m.group(0)
             out = [f'<a class="fn" href="#en{n}"{fn.format(n=n)}>{n}</a>'

@@ -229,7 +229,7 @@ def _editor(e: dict | None, where: str) -> Editor | None:
         engine=[ROOT / f for f in (e.get("engine") or [])],
         out=ROOT / _require(e, "out", where + " editor"),
         dir=ROOT / _require(e, "dir", where + " editor"),
-        page=(float(page[0]), float(page[1])),
+        page=(float(page[0]), None if page[1] is None else float(page[1])),
         margins=(float(margins[0]), float(margins[1])),
         assets=ROOT / e["assets"] if e.get("assets") else None,
         palette=list(e.get("palette") or []),

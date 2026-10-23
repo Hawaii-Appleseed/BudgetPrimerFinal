@@ -321,7 +321,7 @@ html = f"""<!DOCTYPE html>
 <title>{C.text("title")}</title>
 <style>
   body {{ margin:0; background:#EDF1EE; }}
-  .page {{ width:{L.page_w}in; min-height:{L.page_h}in; margin:0 auto;
+  .page {{ width:{L.page_w}in; min-height:{L.page_min_h}in; margin:0 auto;
            background:#fff; position:relative; overflow:hidden; }}
   {STYLE}
   {EDIT_CSS}

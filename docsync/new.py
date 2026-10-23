@@ -329,6 +329,18 @@ class NewProjectError(Exception):
     pass
 
 
+def _apply_title(layout: dict, name: str) -> None:
+    """A template's placeholder title ("Your report title here" on the cover,
+    "N · YOUR REPORT" in the footers) becomes the title the person typed."""
+    short = name if len(name) <= 28 else name[:27].rstrip() + "…"
+    for b in layout.get("boxes", []):
+        md = b.get("md", "")
+        if b.get("id") == "tpl-title":
+            b["md"] = name
+        elif md.endswith(" · YOUR REPORT"):
+            b["md"] = md[: -len("YOUR REPORT")] + short.upper()
+
+
 def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
            root: Path = ROOT, pages: int = 1, notices=None,
            layout: dict | None = None, template: str = "",
@@ -405,6 +417,7 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
         pages = t["pages"]
         # A scheme-less template (the one-pager) takes no colour argument.
         layout = t["layout"](color) if color else t["layout"]()
+        _apply_title(layout, name.strip())
         palette = t["palette"]
         if color:
             # The scheme's colour leads the swatches, as the default's did.

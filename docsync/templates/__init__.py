@@ -442,7 +442,10 @@ def _onepager_layout() -> dict:
              "z": 2, "md": "![Hawaiʻi Appleseed](assets/appleseed-logo.svg)"},
             {"id": "tpl-foot", "page": 1, "x": 5.4, "y": 10.25, "w": 2.48,
              "z": 2, "md": "hiappleseed.org",
-             "style": {"font": "Poppins", "size": 10, "color": grey,
+             # 11, not 10: 10px is 7.5pt in print, under layout.py's
+             # legibility floor, and the one-pager's first build refused
+             # it — "+ New report" then left a half-made project behind.
+             "style": {"font": "Poppins", "size": 11, "color": grey,
                        "align": "right"}},
         ],
         "tables": [],
