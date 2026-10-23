@@ -621,18 +621,104 @@ class _WarmChrome:
                      " res(r ? [r.left + scrollX, r.top + scrollY, r.width, r.height] : null); })))")
             x, y, bw, bh = box or (0, 0, w, 1056)
             k = w / bw if bw else 1                  # 1, or 0.8 under a 1.25 zoom
-            r = self.call("Page.captureScreenshot",
-                          {"format": "png", "captureBeyondViewport": True,
-                           "clip": {"x": x, "y": y, "width": bw,
-                                    "height": min(bh, 16000 / scale / k), "scale": k}},
-                          s, deadline)
-            return base64.b64decode(r["data"])
+            # Chrome will not draw a texture taller than ~16384 device px, so a
+            # long page (a pageless report at scale 2 is 30,000+) used to be cut
+            # at 16000. It is shot in strips, each under the limit, and the
+            # strips are joined into one PNG (_stitch_pngs).
+            strip = max(1.0, TILE_PX / scale / k)
+            tiles, off = [], 0.0
+            while off < bh - 0.01:
+                h = min(strip, bh - off)
+                r = self.call("Page.captureScreenshot",
+                              {"format": "png", "captureBeyondViewport": True,
+                               "clip": {"x": x, "y": y + off, "width": bw,
+                                        "height": h, "scale": k}},
+                              s, deadline)
+                tiles.append(base64.b64decode(r["data"]))
+                off += h
+            return _stitch_pngs(tiles)
         finally:
             try:
                 self.call("Target.closeTarget", {"targetId": tid},
                           deadline=time.time() + 5)
             except Exception:                                # noqa: BLE001
                 pass
+
+
+TILE_PX = 12000        # device px per PNG strip: well under Chrome's ~16384 texture limit
+
+
+def _stitch_pngs(tiles: list) -> bytes:
+    """One PNG from strips of equal width stacked top to bottom (8-bit,
+    non-interlaced, as Chrome writes them). No image library: a PNG row is
+    filtered against the row above it, so the rows of a later strip can be
+    appended as they are EXCEPT its first, which was filtered against nothing.
+    That one row is unfiltered here and stored raw; every row after it
+    decodes to the same pixels, because the row above it is unchanged."""
+    import struct
+    import zlib
+    if len(tiles) == 1:
+        return tiles[0]
+    sig = b"\x89PNG\r\n\x1a\n"
+
+    def parse(png):
+        if png[:8] != sig:
+            raise ValueError("not a PNG")
+        pos, ihdr, idat = 8, None, []
+        while pos < len(png):
+            n, typ = struct.unpack(">I4s", png[pos:pos + 8])
+            body = png[pos + 8:pos + 8 + n]
+            if typ == b"IHDR":
+                ihdr = body
+            elif typ == b"IDAT":
+                idat.append(body)
+            pos += 12 + n
+        w, h, depth, ctype, _, _, inter = struct.unpack(">IIBBBBB", ihdr)
+        if depth != 8 or inter or ctype not in (2, 6):
+            raise ValueError("unsupported PNG layout")
+        return w, h, ctype, b"".join(idat)
+
+    def first_row_raw(row, bpp):
+        """Row 0 of a strip, unfiltered (the row above it is all zero)."""
+        f, d = row[0], bytearray(row[1:])
+        if f == 0:
+            return bytes(d)
+        for i in range(len(d)):
+            a = d[i - bpp] if i >= bpp else 0
+            if f == 1:
+                d[i] = (d[i] + a) & 255
+            elif f == 3:
+                d[i] = (d[i] + (a >> 1)) & 255
+            elif f == 4:                       # Paeth with b = c = 0 picks a
+                d[i] = (d[i] + a) & 255
+            # f == 2 (Up): the row above is zero, so the byte is already final
+        return bytes(d)
+
+    total = 0
+    co = zlib.compressobj(6)
+    out, width, ctype0 = [], None, None
+    for i, t in enumerate(tiles):
+        w, h, ctype, z = parse(t)
+        if width is None:
+            width, ctype0 = w, ctype
+        elif (w, ctype) != (width, ctype0):
+            raise ValueError("strips differ in width")
+        bpp = 4 if ctype == 6 else 3
+        raw = zlib.decompress(z)
+        if len(raw) != h * (1 + w * bpp):
+            raise ValueError("bad PNG data")
+        if i:
+            rl = 1 + w * bpp
+            raw = b"\x00" + first_row_raw(raw[:rl], bpp) + raw[rl:]
+        out.append(co.compress(raw))
+        total += h
+    out.append(co.flush())
+    ihdr = struct.pack(">IIBBBBB", width, total, 8, ctype0, 0, 0, 0)
+
+    def chunk(typ, body):
+        return (struct.pack(">I", len(body)) + typ + body
+                + struct.pack(">I", zlib.crc32(typ + body) & 0xFFFFFFFF))
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"".join(out)) + chunk(b"IEND", b"")
 
 
 WARM_CHROME: list = [None]
