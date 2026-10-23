@@ -22834,7 +22834,10 @@ async function collabFieldFirstTheirs() {
 /** Say whose words won, once the render that adopted them has been. */
 function collabFieldNote(settled, what) {
   if (settled !== 'theirs' || !collabFieldGave) return;
-  $('stat').textContent = `kept ${collabFieldGave} ${what} — your version was not saved`;
+  // sayNowAndAfterRender, not a bare write: the held update lands as a render
+  // of its own right after this one, and its idle hint ("unsaved changes")
+  // took the row back before the note could be read.
+  sayNowAndAfterRender(`kept ${collabFieldGave} ${what} — your version was not saved`);
   collabFieldGave = null;
 }
 
@@ -27836,8 +27839,12 @@ async function hubRestore(v) {
     if (collab) { collab.forgetHistory(); collab.setBaseSha(j.version, { restored: true }); }
     clearDraftCache();
     markDirty();
-    $('stat').textContent = `restored — the version from ${fmtWhen(v.updated_at)} is the current one now`
-      + (kept.length ? `; unsaved words in ${kept.length === 1 ? 'a paragraph' : kept.length + ' paragraphs'} it did not change were kept — Save to keep them` : '');
+    // Not a bare write: a render still queued behind this one (the collab
+    // adoption of the other editor's words) starts after it and claims the row
+    // with "rendering…" and its idle hint, and the confirmation was gone
+    // before it could be read. This one outlives the render about to start.
+    sayNowAndAfterRender(`restored — the version from ${fmtWhen(v.updated_at)} is the current one now`
+      + (kept.length ? `; unsaved words in ${kept.length === 1 ? 'a paragraph' : kept.length + ' paragraphs'} it did not change were kept — Save to keep them` : ''));
   } catch (e) {
     $('stat').textContent = 'restore failed: ' + e.message;
   }
