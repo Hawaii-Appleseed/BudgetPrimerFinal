@@ -3398,6 +3398,78 @@ with _tempfile.TemporaryDirectory() as _d:
              _hidden_text(_hubd, _proj, live=lambda p: (_ for _ in ()).throw(AssertionError("asked"))), [])
     check_eq("a test rig's copy of the hub is not a ship", _is_ship(_hubd), False)
 
+# ---- the hub: a ship whose renderer reads slots the live report lacks ------
+# 2026-10-23: uhero-trc-summary shipped a renderer reading 14 keys its seeded
+# room had never had, and the live page drew "new slot" markers for each.
+from docsync.hub import new_slots as _new_slots, seed_slots as _seed_slots, SeedRefused as _SeedRefused, by_hand as _by_hand  # noqa: E402
+
+with _tempfile.TemporaryDirectory() as _d:
+    _root = Path(_d)
+    _hubd = _root / "hub"
+    _src = _root / "src"
+    _old = _hubd / "primer" / "r" / "engine" / "projects" / "r"
+    _new = _src / "engine" / "projects" / "r"
+    for _p in (_old, _new):
+        _p.mkdir(parents=True)
+    (_src / "engine" / "manifest.json").write_text('{"content": "projects/r/content.md"}')
+    (_old / "content.md").write_text("[[a]]\nkept\n\n[[sources]]\n- x: y\n")
+    (_new / "content.md").write_text("[[a]]\nkept\n\n[[miss.h]]\nWhat the draft leaves out\n\n"
+                                     "[[adv.b1]]\nFirst **advocate** point.\n\n[[unread]]\nnobody draws this\n\n[[sources]]\n- x: y\n")
+    _proj = [{"id": "r", "dir": _src, "repo": "O/R", "drawn": ["a", "miss.h", "adv.b1", "label.default"]}]
+    check_eq("a key the renderer reads that the live report lacks is named, with the project's words",
+             _new_slots(_hubd, _proj, live=lambda p: {"a": "typed"}),
+             [("r", "adv.b1", "First **advocate** point."), ("r", "miss.h", "What the draft leaves out")])
+    check_eq("a key read with a default (text_or) and not in content.md is no marker, so not named",
+             [k for _, k, _ in _new_slots(_hubd, _proj, live=lambda p: {"a": "typed"})].count("label.default"), 0)
+    check_eq("a key in content.md the renderer never reads is left alone too",
+             [k for _, k, _ in _new_slots(_hubd, _proj, live=lambda p: {"a": "typed"})].count("unread"), 0)
+    check_eq("the live report already has one: only the other is named",
+             _new_slots(_hubd, _proj, live=lambda p: {"a": "typed", "miss.h": "they typed it"}),
+             [("r", "adv.b1", "First **advocate** point.")])
+    check_eq("a report never saved holds the hub's seed, so the seed's keys count",
+             _new_slots(_hubd, _proj, live=lambda p: None),
+             [("r", "adv.b1", "First **advocate** point."), ("r", "miss.h", "What the draft leaves out")])
+    _nolog = [{**_proj[0], "drawn": None}]
+    check_eq("a build that could not be logged compares every key the file carries",
+             [k for _, k, _ in _new_slots(_hubd, _nolog, live=lambda p: {"a": "typed"})], ["adv.b1", "miss.h", "unread"])
+    _fresh = [{"id": "r2", "dir": _src, "repo": "O/R", "drawn": ["a", "miss.h"]}]
+    check_eq("a report new to the hub has no room to lack anything",
+             _new_slots(_hubd, _fresh, live=lambda p: (_ for _ in ()).throw(AssertionError("asked"))), [])
+    (_new / "content.md").write_text((_old / "content.md").read_text())
+    check_eq("nothing new, nothing asked of the live store",
+             _new_slots(_hubd, _proj, live=lambda p: (_ for _ in ()).throw(AssertionError("asked"))), [])
+
+    # The seed: what goes to the hub, and what each answer means.
+    _sent = []
+    def _hub(status, ctype, body):
+        def post(url, payload, headers):
+            _sent.append((url, payload, headers))
+            return status, ctype, body if isinstance(body, str) else json.dumps(body)
+        return post
+    _p = {"id": "r", "repo": "Hawaii-Appleseed/Cider"}
+    _tok = {"CF_ACCESS_CLIENT_ID": "id.access", "CF_ACCESS_CLIENT_SECRET": "s"}
+    _j = _seed_slots(_p, {"miss.h": "W"}, hub_url="https://hub.test", token=_tok,
+                     post=_hub(200, "application/json", {"ok": True, "applied": "store+room", "added": ["miss.h"], "version": "v"}))
+    check_eq("the seed goes to the hub's docs-seed route, room-named", _sent[-1][0], "https://hub.test/api/docs-seed/Hawaii-Appleseed~Cider~r")
+    check_eq("with the slots and their words", _sent[-1][1], {"slots": {"miss.h": "W"}})
+    check_eq("as the service token", _sent[-1][2].get("CF-Access-Client-Id"), "id.access")
+    check_eq("and the hub's answer comes back", _j.get("applied"), "store+room")
+    def _refused(post):
+        try:
+            _seed_slots(_p, {"miss.h": "W"}, hub_url="https://hub.test", token=_tok, post=post)
+        except _SeedRefused as e:
+            return str(e)
+        return None
+    _m = _refused(_hub(302, "text/html", "<html>login</html>"))
+    check("Access turning the token away says the prefix needs its own Access application", _m, "own Access application")
+    check("…and gives the by-hand recipe", _m, "History ▸ Restore")
+    _m = _refused(_hub(409, "application/json", {"error": "somebody has the report open", "reason": "occupied", "open": "https://hub.test/primer/edit.html?project=r"}))
+    check("somebody in the report: refused with the editor link", _m, "open: https://hub.test/primer/edit.html?project=r")
+    _m = _refused(_hub(502, "application/json", {"error": "the room could not be reached"}))
+    check("the room out of reach: the by-hand recipe", _m, "PUT /api/docs/")
+    check("…with the blocks to add", _m, "[[miss.h]]\nW\n")
+    check("the recipe names the report's editor link", _by_hand("r", {"k": "v"}), "edit.html?project=r")
+
 # ---- the hub: which slots are on the page --------------------------------
 # docsync.hub builds each report once in edit mode and records the keys its
 # renderer READ into the hub's manifest (`drawn`), so the connector can tell a

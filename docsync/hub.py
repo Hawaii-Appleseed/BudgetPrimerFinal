@@ -53,6 +53,39 @@ project waiting on its own go-ahead must not ride along. The post-commit hook
 runs it only where vendor.local.yml names a hub, and Devin's machine names
 none on purpose (2026-10-21): the hub's own folder is shared and usually on
 somebody's branch, and a hook writing primer/** there put Cider work into it.
+
+Two checks stand between a ship and the live reports, both read against the
+hub's store (R2 `primer-docs`, `docs/<room>/content.md`, through wrangler —
+Cloudflare access, so Devin's) and both REFUSALS, not warnings:
+
+  hidden_text   the new renderer stops drawing a slot that holds live words
+                (a rename, a dropped box): the room keeps the words, nobody
+                sees them. `--allow-hidden <report>[:<key>]` when that is the
+                point.
+  new_slots     the new renderer READS a slot the live report has not got
+                (a new box, a new label): a room is seeded once and never
+                takes a key from a later deployment, so the live page would
+                show "⚠ new slot [[key]] — click and type to fill it" for
+                each and the connector would refuse them as unknown
+                (2026-10-23, uhero-trc-summary, 14 keys, fixed by hand).
+                `--seed-new` makes the ship legal: each missing slot, with
+                the words the project's content.md carries for it, is added
+                to the hub document BEFORE anything is vendored — through
+                the hub's `POST /api/docs-seed/<room>`, which saves a new
+                version in the store AND brings the room up to it the way
+                the connector's own edit lands (refused while anyone has the
+                report open, with the editor link; a room that was never
+                seeded takes it from the store next time). The call carries
+                the hub's Access service token from this Mac's Keychain
+                (apps-script:CF_ACCESS_CLIENT_ID / _SECRET). When the hub's
+                door or the room cannot be reached, the refusal spells out
+                the by-hand recipe: PUT the content with the blocks added
+                (store only), then History ▸ Restore in the open editor,
+                which is the one path that pushes a saved version into the
+                live room. `--allow-new <report>[:<key>]` ships with the
+                marker, when that is the point.
+
+`--no-live-check` skips both, knowing nothing: Devin's call, never a way round.
 """
 from __future__ import annotations
 
@@ -384,7 +417,7 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
         _sync_tree(sdir / "engine", pdir / "engine", changed, dry=dry, skip=("manifest.json",))
         m = json.loads((sdir / "engine" / "manifest.json").read_text())
         m["repo"] = p["repo"]
-        drawn = drawn_slots(p.get("render"))
+        drawn = p["drawn"] if "drawn" in p else drawn_slots(p.get("render"))
         if drawn is not None:
             m["drawn"] = drawn
         _write(pdir / "engine" / "manifest.json",
@@ -549,6 +582,148 @@ def hidden_text(hub: Path, projects: list[dict], live=live_text) -> list[tuple[s
     return out
 
 
+def new_slots(hub: Path, projects: list[dict], live=live_text) -> list[tuple[str, str, str]]:
+    """Slots this ship's renderer READS that the live report has not got:
+    (report, key, the words the project's content.md carries for it). The
+    mirror of hidden_text. A room is seeded once, from the content.md the hub
+    served when somebody first opened the report, and never takes a key from
+    a later deployment — so a renderer that reads a key the room lacks draws
+    "⚠ new slot [[key]] — click and type to fill it" on the live page for
+    each, and the connector's edit_report refuses them as unknown (2026-10-23,
+    uhero-trc-summary: 14 of them, fixed by hand). The keys compared are the
+    ones the renderer read when the ship built it (`p["drawn"]`, from
+    DOCSYNC_SLOTLOG) that the project's content.md also carries — a key read
+    through C.text_or() with the renderer's own default, and so never a
+    marker, is in the log but not in the file, and is left alone; a build
+    that could not be logged compares every key the file carries. The live
+    side is the store's content.md, or the hub's current seed for a report
+    nobody has saved (the same reading hidden_text makes: a room seeded from
+    an older deployment than the hub's current copy cannot be seen from here,
+    so a key the hub's current copy carries is taken as in the room, and only
+    the keys new to the deployment are looked up). A report new to the hub
+    has no room to lack anything."""
+    out = []
+    for p in projects:
+        sdir = p["dir"]
+        try:
+            rel = json.loads((sdir / "engine" / "manifest.json").read_text())["content"]
+        except Exception:                                # noqa: BLE001 - no manifest: nothing to compare
+            continue
+        old, new = hub / "primer" / p["id"] / "engine" / rel, sdir / "engine" / rel
+        if not old.is_file() or not new.is_file():
+            continue
+        carried = _keys(new)
+        drawn = p.get("drawn")
+        reads = set(carried) & set(drawn) if drawn is not None else set(carried)
+        # A key the hub's current copy already carries is taken as in the room
+        # (hidden_text's reading too); only the keys new to the deployment are
+        # looked up in the live document, which may have had them typed in.
+        fresh = reads - set(_keys(old))
+        if not fresh:
+            continue
+        held = live(p)
+        if held is None:
+            held = _keys(old)
+        for k in sorted(fresh - set(held)):
+            out.append((p["id"], k, carried.get(k) or ""))
+    return out
+
+
+HUB_URL = "https://staff-updates-internal.pages.dev"
+# This Mac's Keychain holds the hub's Cloudflare Access service token under
+# these names (the hub's README, "Apps Script: never ask anyone to paste a
+# key"); the environment may carry them instead.
+KEYCHAIN = {"CF_ACCESS_CLIENT_ID": "apps-script:CF_ACCESS_CLIENT_ID",
+            "CF_ACCESS_CLIENT_SECRET": "apps-script:CF_ACCESS_CLIENT_SECRET"}
+
+
+class SeedRefused(RuntimeError):
+    """The hub would not, or could not, take the slots: the message says what to do."""
+
+
+def by_hand(pid: str, key_text: dict[str, str], hub_url: str = HUB_URL) -> str:
+    """The recipe used on 2026-10-23, spelled out for the report at hand."""
+    return (f"By hand, for {pid}:\n"
+            f"  1. With nobody in the report, from a signed-in browser on the hub (the console on "
+            f"{hub_url}/primer/edit.html?project={pid} will do), PUT /api/docs/<owner~repo~{pid}> "
+            f"{{content: <the saved content.md with these blocks added>, base: <the current version from GET>}}. "
+            "That writes the STORE only.\n"
+            f"  2. Open {hub_url}/primer/edit.html?project={pid} and History ▸ Restore the version you just saved — "
+            "Restore is the one path that pushes a saved version into the live room, slot by slot.\n"
+            "  The blocks to add:\n" + "".join(f"\n[[{k}]]\n{v}\n" for k, v in key_text.items()))
+
+
+def service_token() -> dict[str, str] | None:
+    """{client id, secret} from the environment or the Keychain, else None."""
+    out = {}
+    for var, svc in KEYCHAIN.items():
+        v = os.environ.get(var)
+        if not v:
+            r = subprocess.run(["security", "find-generic-password", "-s", svc, "-w"],
+                               capture_output=True, text=True)
+            v = r.stdout.strip() if r.returncode == 0 else ""
+        if not v:
+            return None
+        out[var] = v
+    return out
+
+
+def seed_slots(p: dict, key_text: dict[str, str], *, hub_url: str = HUB_URL,
+               token: dict[str, str] | None = None, post=None) -> dict:
+    """Add these slots to the report's live document on the hub, through
+    POST /api/docs-seed/<room> (the hub's functions/api/docs-seed): the
+    current document — the room's copy while it is seeded, else the store's
+    — with each missing key appended, saved as a new version AND pushed into
+    the room the way the connector's own edit lands when nobody is in.
+    Returns the hub's answer; raises SeedRefused with the whole story (what
+    the hub said, and the by-hand recipe when the room is out of reach).
+    `post(url, body, headers) -> (status, content_type, text)` is for tests."""
+    owner, repo = str(p["repo"]).split("/", 1)
+    room = f"{owner}~{repo}~{p['id']}"
+    url = f"{hub_url}/api/docs-seed/{room}"
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["CF-Access-Client-Id"] = token["CF_ACCESS_CLIENT_ID"]
+        headers["CF-Access-Client-Secret"] = token["CF_ACCESS_CLIENT_SECRET"]
+    recipe = by_hand(p["id"], key_text, hub_url)
+    status, ctype, text = (post or _post)(url, {"slots": key_text}, headers)
+    if "json" not in (ctype or ""):
+        # Access answered, not the route: a login page, or a redirect to one.
+        raise SeedRefused(
+            f"{p['id']}: the hub's Access door turned the request away ({status}, {ctype or 'no content type'}) — "
+            "the service token is not admitted to /api/docs-seed. Access policies are per application: that "
+            "prefix needs its own Access application (Zero Trust → Access → Applications: path "
+            "/api/docs-seed, the same 'Apps Script service auth' Service Auth policy plus the staff Allow "
+            "policy, the way /api/blog-board/ingest has one; the hub's README, 'Apps Script: never ask anyone "
+            "to paste a key'). Until then:\n" + recipe)
+    try:
+        j = json.loads(text)
+    except json.JSONDecodeError:
+        raise SeedRefused(f"{p['id']}: the hub answered {status} with something other than JSON:\n{text[:300]}\n{recipe}")
+    if status == 409 and j.get("reason") == "occupied":
+        raise SeedRefused(f"{p['id']}: {j.get('error')}\n  open: {j.get('open')}")
+    if status == 502:
+        raise SeedRefused(f"{p['id']}: {j.get('error')}\n{recipe}")
+    if status >= 400:
+        raise SeedRefused(f"{p['id']}: the hub refused ({status}): {j.get('error') or text[:300]}\n{recipe}")
+    return j
+
+
+def _post(url: str, body: dict, headers: dict) -> tuple[int, str, str]:
+    import urllib.error                                # noqa: PLC0415
+    import urllib.request                              # noqa: PLC0415
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):           # a 302 to the Access login is an answer, not a path
+            return None
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+    try:
+        with urllib.request.build_opener(NoRedirect).open(req, timeout=60) as r:
+            return r.status, r.headers.get("content-type", ""), r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("content-type", ""), e.read().decode("utf-8", "replace")
+
+
 def is_ship(hub: Path) -> bool:
     """A git checkout of the real hub — not a test rig's temporary copy,
     which has no history and no live documents behind it."""
@@ -564,6 +739,14 @@ def main() -> int:
     ap.add_argument("--allow-hidden", action="append", default=[], metavar="REPORT[:KEY]",
                     help="ship even though this report (or this one slot of it) holds live "
                          "words the new renderer no longer draws — say so only when that is the point")
+    ap.add_argument("--allow-new", action="append", default=[], metavar="REPORT[:KEY]",
+                    help="ship even though this report (or this one slot of it) will show a 'new slot' "
+                         "marker until somebody fills it — say so only when that is the point")
+    ap.add_argument("--seed-new", action="store_true",
+                    help="before shipping, add every slot the new renderer reads and the live report lacks "
+                         "to the hub document, with the project's own words — store AND room, through the "
+                         "hub's /api/docs-seed (needs the service token in this Mac's Keychain)")
+    ap.add_argument("--hub-url", default=HUB_URL, help=f"the hub (default {HUB_URL})")
     ap.add_argument("--no-live-check", action="store_true",
                     help="skip reading the live documents (when the hub's store cannot be reached)")
     a = ap.parse_args()
@@ -586,13 +769,20 @@ def main() -> int:
         print("no projects to vendor", file=sys.stderr)
         return 1
 
-    # Before anything is written: would this ship hide words people typed?
-    # Only for a real hub checkout (a test rig's copy has nothing live), and
-    # refused rather than warned, because a warning scrolls past and the words
-    # do not come back by themselves.
+    # What each renderer reads, built once here: the manifest's `drawn` and
+    # the new-slot check below both want it.
+    for p in projects:
+        p["drawn"] = drawn_slots(p.get("render"))
+
+    # Before anything is written: would this ship hide words people typed, or
+    # draw "new slot" markers over a live report? Only for a real hub checkout
+    # (a test rig's copy has nothing live), and refused rather than warned,
+    # because a warning scrolls past and the words do not come back by
+    # themselves.
     if is_ship(hub) and not a.no_live_check:
         try:
             hidden = hidden_text(hub, projects)
+            new = new_slots(hub, projects)
         except LiveUnknown as err:
             print(f"could not read the live documents ({err}).\n"
                   "This check reads the hub's Cloudflare R2, and only Devin Thomas has Cloudflare "
@@ -612,6 +802,43 @@ def main() -> int:
             print("\nKeep the key, move the words to a slot that is drawn (edit_report), or, if "
                   "hiding them is the point, pass --allow-hidden <report>[:<key>] for each.",
                   file=sys.stderr)
+            return 3
+        allowed = set(a.allow_new)
+        new = [n for n in new if n[0] not in allowed and f"{n[0]}:{n[1]}" not in allowed]
+        if new and a.seed_new:
+            token = service_token()
+            if not token:
+                print("--seed-new: no service token — set CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET, or "
+                      "put them in the Keychain as apps-script:CF_ACCESS_CLIENT_ID / "
+                      "apps-script:CF_ACCESS_CLIENT_SECRET (the hub's README says how).", file=sys.stderr)
+                return 3
+            by_id = {p["id"]: p for p in projects}
+            for pid in sorted({n[0] for n in new}):
+                key_text = {k: w for q, k, w in new if q == pid}
+                if a.dry_run:
+                    print(f"  {pid}: would seed {len(key_text)} slot(s) on the hub — " + ", ".join(key_text))
+                    continue
+                try:
+                    j = seed_slots(by_id[pid], key_text, hub_url=a.hub_url, token=token)
+                except SeedRefused as err:
+                    print(f"REFUSED — the hub did not take the new slots for {pid}:\n{err}", file=sys.stderr)
+                    return 3
+                print(f"  {pid}: seeded {len(j.get('added') or [])} slot(s) on the hub "
+                      f"({j.get('applied')}, version {j.get('version')})")
+                if j.get("warning"):
+                    print(f"    {j['warning']}", file=sys.stderr)
+                    return 3
+            new = [] if not a.dry_run else new
+        if new:
+            print("REFUSED — the new renderer reads slots these live reports have not got.\n"
+                  "Shipping would draw '⚠ new slot [[key]] — click and type to fill it' on the page "
+                  "for each, and the connector would refuse them as unknown:\n", file=sys.stderr)
+            for pid, key, words in new:
+                print(f"  {pid}  [[{key}]]  {words[:70]!r}", file=sys.stderr)
+            print("\nPass --seed-new to add them to the hub document first, with these words "
+                  "(the hub's /api/docs-seed: a new version in the store, and the room brought up to it "
+                  "while nobody has the report open), or type them into the report on the hub yourself; "
+                  "if a marker is the point, --allow-new <report>[:<key>] for each.", file=sys.stderr)
             return 3
 
     missing: list[str] = []
