@@ -717,6 +717,11 @@
      reads as the drop target going away. Set by the same drag handlers that
      already track the reorder. */
   @media (prefers-reduced-motion:reduce) { #rail { transition:none; } }
+  .open-row { display:flex; align-items:center; }
+  .open-row .shp { flex:1; min-width:0; }
+  .open-forget { flex:none; border:0; background:none; color:#8A9A92; cursor:pointer;
+          font:16px/1 system-ui; padding:4px 8px; border-radius:6px; }
+  .open-forget:hover { color:#B3261E; background:rgba(179,38,30,.1); }
   #rail-list { display:flex; align-items:flex-start; gap:2px; }
   /* Insert point between two pages: a hit strip that shows a small + and a
      guide line only on hover, so thirteen of them add no standing noise. It
@@ -15311,11 +15316,23 @@ async function railThumbs() {
   // One pass over the sheets, addressed by node rather than re-queried per chip
   // by an attribute most renderers never stamp.
   const sheets = new Map(docSheets().map(s => [String(s.id), s.pg]));
+  // Incremental + lazy: a chip is built only when it is on (or near) the
+  // visible part of the strip, and a sheet that has not changed since its
+  // last preview reuses that preview instead of being cloned again. The strip
+  // scrolls sideways, so "near" is a horizontal window of the strip plus one
+  // screen either side.
+  const rr = $('rail').getBoundingClientRect(), pad = rr.width;
+  for (const k of [...thumbCache.keys()]) if (!sheets.has(k)) thumbCache.delete(k);
+  const sheetKey = sheet || null;
   $('rail-list').querySelectorAll('.chip').forEach(c => {
     const host = c.querySelector('.chip-view');
     const frame = c.querySelector('.chip-thumb');
     if (!host) return;
     const sec = sheets.get(c.dataset.pid);
+    if (sec) {
+      const cr = c.getBoundingClientRect();
+      if (cr.width && (cr.right < rr.left - pad || cr.left > rr.right + pad)) return;
+    }
     if (!sec) { frame.classList.add('empty'); if (host.shadowRoot) host.shadowRoot.replaceChildren(); return; }
     const pw = sec.offsetWidth, ph = sec.offsetHeight;
     if (!pw || !ph) { frame.classList.add('empty'); return; }
@@ -15327,6 +15344,13 @@ async function railThumbs() {
     frame.classList.remove('empty');
     const sr = host.shadowRoot || host.attachShadow({ mode: 'open' });
     if (sheet) sr.adoptedStyleSheets = [sheet];
+    const sig = [pw, ph, host.clientWidth, b.fontFamily, b.fontSize, b.color,
+                 sec.innerHTML].join('|');
+    const hit = thumbCache.get(c.dataset.pid);
+    if (hit && hit.sig === sig && hit.sheet === sheetKey) {
+      if (sr.firstChild !== hit.wrap) sr.replaceChildren(hit.wrap);
+      return;
+    }
     // Scale to WIDTH: a page is portrait and the frame matches, so height
     // follows; a page far taller than 8.5x11 overflows and is clipped to its
     // top by .chip-view's overflow:hidden, rather than shrinking to a sliver.
@@ -15347,8 +15371,17 @@ async function railThumbs() {
     clone.style.margin = '0';
     wrap.appendChild(clone);
     sr.replaceChildren(wrap);
+    thumbCache.set(c.dataset.pid, { sig, sheet: sheetKey, wrap });
   });
 }
+// pid -> {sig, sheet, wrap}: the last built preview of each page.
+const thumbCache = new Map();
+// Chips scrolled into view get their preview now (railThumbs skips far ones).
+let thumbScrollT = 0;
+$('rail').addEventListener('scroll', () => {
+  clearTimeout(thumbScrollT);
+  thumbScrollT = setTimeout(railThumbs, 80);
+}, { passive: true });
 
 /** Light up the page the canvas is actually looking at, the way Canva's strip
  *  tracks the scroll — the chip was only ever marked on click before, so it
@@ -15356,7 +15389,19 @@ async function railThumbs() {
 let railRAF = 0;
 function railScrollSync() {
   if (railRAF) return;                 // one sync per frame, not per scroll tick
-  railRAF = requestAnimationFrame(() => { railRAF = 0; railSyncActive(); });
+  railRAF = requestAnimationFrame(() => {
+    railRAF = 0; railSyncActive(); layersFollow();
+  });
+}
+
+/** The Layers panel lists the page you are looking at, so when the canvas
+ *  scrolls to another page while it is open, it moves with it. */
+let layersPid = null;
+function layersFollow() {
+  if ($('layerspop').hidden) return;
+  if (String(visiblePageId()) === layersPid) return;
+  if ($('layers-list').querySelector('.lrow.dragging')) return;   // not mid-drag
+  layersRender();
 }
 
 function railSyncActive() {
@@ -17331,6 +17376,7 @@ function layersRender() {
   if (!d || !d.querySelector('section.page')) return;
   const pg = pageEl(d);
   const pid = visiblePageId();
+  layersPid = String(pid);
   $('layers-title').textContent =
     `Layers — page ${pageOrder().indexOf(pid) + 1 || '?'}`;
   host.innerHTML = '';
@@ -17353,8 +17399,11 @@ function layersRender() {
       jumpTo(el, 'center');
       layersRender();
     });
-    r.addEventListener('dragstart', e =>
-      e.dataTransfer.setData('text/plain', o.id));
+    r.addEventListener('dragstart', e => {
+      r.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', o.id);
+    });
+    r.addEventListener('dragend', () => r.classList.remove('dragging'));
     dropTarget(r);
     return r;
   };
@@ -20741,9 +20790,14 @@ function typeOnClick(d, el, e0) {
     showType(key);
     edit(d, key, slot, at);
     opened = editing;
-  } else if (id.startsWith('text.') && boxOf(id)) {
+  } else if (id.startsWith('text.') && boxOf(id)
+             && (el.textContent.trim() || !el.querySelector('img'))) {
     // Inside a group the double-click drills in first (see dragify); a text
-    // box that is already the selection on its own simply types.
+    // box that is already the selection on its own simply types. A box that
+    // holds only a picture has no words to type in — the templates' cover
+    // photo is one, full-bleed, and a click anywhere on the cover that missed
+    // the title used to open it with the caret beside the image. It selects;
+    // a double-click still edits it.
     editBox(d, el, at);
     opened = editing;
   }
@@ -21787,6 +21841,13 @@ async function boot() {
   const manifestGuess = get((guessBase ? guessBase + '/' : '') + 'engine/manifest.json');
   manifestGuess.catch(() => {});
   await loadRegistry();
+  // A registry that exists and lists nothing (every report forgotten) has no
+  // default report to open: the engine next door is somebody else's, not a
+  // fallback. Start page, where "+ New report" and adopting live.
+  if (REGISTRY && !Object.keys(REGISTRY).length && !onHub()) {
+    location.replace('start.html');
+    await new Promise(() => {});           // the page is leaving; boot nothing
+  }
   M = JSON.parse(await (PBASE.replace(/\/+$/, '') === guessBase
     ? manifestGuess : get(withBase('engine/manifest.json'))));
   checkStage2();
@@ -30405,6 +30466,8 @@ function renderOpenList() {
     return;
   }
   ids.forEach(id => {
+    const row = document.createElement('div');
+    row.className = 'open-row';
     const b = document.createElement('button');
     b.className = 'shp';
     b.dataset.open = id;
@@ -30421,7 +30484,17 @@ function renderOpenList() {
     t.className = 'shp-t';
     t.textContent = (REGISTRY[id] || {}).name || id;
     b.appendChild(t);
-    host.appendChild(b);
+    row.appendChild(b);
+    // Forgetting only means something where there is a server keeping the list.
+    if (local) {
+      const x = document.createElement('button');
+      x.className = 'open-forget'; x.dataset.forget = id;
+      x.textContent = '×';
+      x.setAttribute('aria-label', 'Forget ' + ((REGISTRY[id] || {}).name || id));
+      x.title = 'Forget this report (its files stay on disk)';
+      row.appendChild(x);
+    }
+    host.appendChild(row);
   });
 }
 
@@ -31020,7 +31093,31 @@ function docImportReview(j) {
 
 $('open-all').onclick = () => { location.href = 'start.html'; };
 
+/** Take a report off this machine's list. Nothing on disk is touched: the
+ *  server writes a tombstone to the registry, and adopting the folder again
+ *  brings the report back. Forgetting the last one lands on the start page. */
+async function forgetProject(id) {
+  const name = (REGISTRY[id] || {}).name || id;
+  const isActive = id === activeProjectId();
+  if (!await dsConfirm('Forget ' + name + '? It leaves this list; its files stay '
+      + 'where they are, and adopting the folder again brings it back.'
+      + (isActive && dirty ? ' Unsaved edits here are lost.' : ''),
+      { okLabel: 'Forget', danger: true })) return;
+  try {
+    const r = await fetch('/__forget', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: id }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'refused');
+  } catch (e) { $('stat').textContent = 'could not forget ' + name + ': ' + e.message; return; }
+  delete REGISTRY[id];
+  if (isActive || !Object.keys(REGISTRY).length) { location.href = 'start.html'; return; }
+  renderOpenList();
+  $('stat').textContent = 'forgot ' + name;
+}
+
 $('open-list').onclick = async (e) => {
+  const f = e.target.closest('[data-forget]');
+  if (f) return forgetProject(f.dataset.forget);
   const b = e.target.closest('[data-open]');
   if (!b) return;
   const id = b.dataset.open;

@@ -1536,6 +1536,10 @@ class Handler(SimpleHTTPRequestHandler):
                     overrides = {}
                 for pid, entry in overrides.items():
                     registry[pid] = {**registry.get(pid, {}), **entry}
+            # A forgotten project (/__forget) stays served by id but is not
+            # listed: the tombstone is what keeps the synthesised default from
+            # bringing it straight back.
+            registry = {k: v for k, v in registry.items() if not v.get("forgotten")}
             return self._json(200, registry)
         for mpid, mount_dir in EXTERNAL_MOUNTS.items():
             prefix = f"/_repo-{mpid}/"
@@ -1928,7 +1932,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"ok": True, "clients": len(CLIENTS)})
         if path not in ("/__save", "/__push", "/__publish", "/__export", "/__upload",
                         "/__update", "/__rollback", "/__window", "/__quit",
-                        "/__scaffold", "/__adopt", "/__connect", "/__pull",
+                        "/__scaffold", "/__adopt", "/__forget", "/__connect", "/__pull",
                         "/__doc", "/__doc/import", "/__linkcheck", "/__library",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
                         "/__agent/change", "/__agent/undo", "/__agent/seen",
@@ -2040,6 +2044,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._doc(path, req)
         if path == "/__adopt":
             return self._adopt(req)
+        if path == "/__forget":
+            return self._forget(req)
         if path.startswith("/__oauth/"):
             return self._oauth(path, req)
         if path == "/__update":
@@ -2291,6 +2297,31 @@ class Handler(SimpleHTTPRequestHandler):
             return unmake(err)
         return self._json(200, {"ok": True, "slug": slug})
 
+    def _forget(self, req):
+        """Take a project off this machine's list. A tombstone in projects.json
+        (read-modify-write under the host lock, like adopt): the files, the
+        binding and the running mount are untouched, and /__adopt of the same
+        folder clears it."""
+        pid = str(req.get("project") or "").strip()
+        if not pid or pid not in _default_registry() and pid not in PROJECTS:
+            reg_ok = False
+        else:
+            reg_ok = True
+        reg = DOCS / "primer" / "projects.json"
+        with _host_lock():
+            try:
+                registry = json.loads(reg.read_text()) if reg.is_file() else {}
+            except json.JSONDecodeError:
+                registry = {}
+            if not reg_ok and pid not in registry:
+                return self._json(200, {"ok": False, "error": f"unknown project '{pid}'"})
+            registry[pid] = {**registry.get(pid, {}), "forgotten": True}
+            reg.parent.mkdir(parents=True, exist_ok=True)
+            tmp = reg.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(registry, indent=2) + "\n")
+            tmp.replace(reg)
+        return self._json(200, {"ok": True, "forgot": pid})
+
     def _adopt(self, req):
         """Register a docsync repo ALREADY ON THIS DISK — the "add the live
         report later" path. Nothing is written into the adopted repo; this
@@ -2321,6 +2352,7 @@ class Handler(SimpleHTTPRequestHandler):
             pass
         reg = DOCS / "primer" / "projects.json"
         added = []
+        revived = False
         already = []          # served from THIS same checkout — adopt is a no-op
         # The registry read-modify-write sits under the host lock; the
         # rebuilds happen AFTER release — a build takes seconds, and holding
@@ -2350,6 +2382,11 @@ class Handler(SimpleHTTPRequestHandler):
                     # have the name.
                     if cur["root"] == root:
                         already.append(pid)
+                        if registry.get(pid, {}).get("forgotten"):
+                            # Adopting a forgotten report is how it comes back.
+                            registry[pid].pop("forgotten")
+                            _default_registry.cache_clear()
+                            revived = True
                         continue
                     if cur["root"].exists():
                         continue
@@ -2364,7 +2401,7 @@ class Handler(SimpleHTTPRequestHandler):
                                  **({"repo": origin} if origin else {}),
                                  "local_root": str(root)}
                 added.append(pid)
-            if added:
+            if added or revived:
                 reg.parent.mkdir(parents=True, exist_ok=True)
                 # Atomic: a reader that lands mid-write sees the OLD file,
                 # never a truncated one — a partial read parsed as {} made

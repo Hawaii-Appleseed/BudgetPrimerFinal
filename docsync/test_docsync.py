@@ -5293,6 +5293,24 @@ check_eq("the primer's data under docs/js is its own (engine: in its binding)",
 check_eq("a folder prefix is a folder, not a string prefix",
          _bp.is_own("projects/rxkids-fiscal/content.md", _bpb["rxkids"]["own"]), False)
 
+# --- a new report from a template carries the typed title everywhere ---------
+for _tn in ("appleseed-report", "appleseed-brief", "appleseed-onepager"):
+    _tl = TEMPLATES[_tn]["layout"]()
+    _new._apply_title(_tl, "Kūpuna Care Gap")
+    _mds = [b["md"] for b in _tl["boxes"]]
+    check_eq(f"{_tn}: no placeholder title left",
+             [m for m in _mds if "YOUR REPORT" in m or "title here" in m], [])
+    check_eq(f"{_tn}: the cover title is the typed one",
+             [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-title"], ["Kūpuna Care Gap"])
+_tl = TEMPLATES["appleseed-report"]["layout"]()
+_new._apply_title(_tl, "Kūpuna Care Gap")
+check_eq("report footers read page · TITLE",
+         [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-foot2"], ["2 · KŪPUNA CARE GAP"])
+_tl = TEMPLATES["appleseed-report"]["layout"]()
+_new._apply_title(_tl, "A very long report title that would wrap the footer")
+check("a long title is shortened in footers only",
+      [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-foot2"][0], "…")
+
 try:
     sheet_inner("<html><body><p>no sheet</p></body></html>")
     FAILS.append("a render with no sheet must be refused")
