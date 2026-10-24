@@ -11340,7 +11340,7 @@ function findElOf(t) {
  *  occurrence number among this target's hits, accepted only if it reads the
  *  same words (a hit inside a link's URL or a marker has no rendered twin,
  *  and the whole node is flashed instead). */
-function findRangeOf(el, hit) {
+function findRangeOf(el, hit, ord) {
   if (!hit || !hit.hit) return null;
   const d = el.ownerDocument;
   const nodes = [];
@@ -11352,7 +11352,7 @@ function findRangeOf(el, hit) {
   }
   let re;
   try { re = findRe(findState.needle, findState); } catch (e) { return null; }
-  const ord = findState.hits.filter(h => h.target.key === hit.target.key && h.at < hit.at).length;
+  if (ord === undefined) ord = findState.hits.filter(h => h.target.key === hit.target.key && h.at < hit.at).length;
   const found = [];
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -11390,15 +11390,46 @@ let findShowTimer = 0;
  *  highlight over a Range), or the whole slot/box/cell when those words have
  *  no rendered twin or the browser has no highlight API. */
 function findShow(t, hit) {
-  if (t.key === 'sources') { openSources(); return; }
+  if (t.key === 'sources') {
+    // A source hit's place on the page is its endnote: the sources slot has
+    // no [data-slot], but each cited source renders as an entry carrying
+    // endnote.<id>. Jump there and light it up; a source nothing cites is on
+    // no page, so the manager is the only place to show it.
+    const en = findEndnoteOf(hit);
+    if (en) { findFlash(en.el, hit, en.ord); return; }
+    openSources();
+    return;
+  }
   const el = findElOf(t);
   if (!el) { $('stat').textContent = `${t.label} is not on a page right now`; return; }
+  findFlash(el, hit);
+}
+/** The endnote entry on the page for a hit in the sources slot: the `[id]:`
+ *  line the hit sits on, and its [data-el="endnote.<id>"]. `ord` is which
+ *  occurrence within that line the hit is, so the right words light up. */
+function findEndnoteOf(hit) {
+  const d = $('out').contentDocument;
+  if (!d || !hit) return null;
+  const text = readSlot('sources');
+  const start = text.lastIndexOf('\n', hit.at - 1) + 1;
+  let end = text.indexOf('\n', hit.at);
+  if (end < 0) end = text.length;
+  const m = /^\[([^\]]+)\]:/.exec(text.slice(start, end));
+  if (!m) return null;
+  const el = d.querySelector(`[data-el="${CSS.escape('endnote.' + m[1])}"]`);
+  if (!el) return null;
+  const ord = findState.hits.filter(h => h.target.key === 'sources' && h.at >= start && h.at < hit.at).length;
+  return { el, ord };
+}
+/** Scroll `el` into view and highlight the hit's words in it (or outline the
+ *  element when the words are not in its text). */
+function findFlash(el, hit, ord) {
   jumpTo(el, 'center');
   const d = el.ownerDocument;
   clearTimeout(findShowTimer);
   findUnshow(d);
   const win = d.defaultView;
-  const range = findRangeOf(el, hit);
+  const range = findRangeOf(el, hit, ord);
   el.setAttribute('data-find-flash', '');
   if (range && win.CSS && win.CSS.highlights && win.Highlight) {
     const st = d.createElement('style');

@@ -5364,6 +5364,29 @@ _new._apply_title(_tl, "A very long report title that would wrap the footer")
 check("a long title is shortened in footers only",
       [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-foot2"][0], "…")
 
+# ...and the RENDERED report too: the page's <title> (what a browser tab, a
+# bookmark and the exported HTML show), the footers, and the binding's name
+# (what the editor's export names the file by) are all the typed title; no
+# placeholder word is left anywhere in the output.
+_troot = Path(_tempfile.mkdtemp())
+(_troot / "docsync").symlink_to(Path(__file__).resolve().parent)
+(_troot / "docsync.yml").write_text(Path("docsync.yml").read_text())
+_tproj = _new.create("kupuna-gap", "Kūpuna Care Gap", template="appleseed-report", root=_troot)
+_tout = _troot / "out.html"
+import subprocess as _subp                                        # noqa: E402
+_tr = _subp.run([sys.executable, str(_tproj / "render_report.py")],
+              env={**os.environ, "DOCSYNC_OUT": str(_tout),
+                   "PYTHONPATH": str(Path(__file__).resolve().parent.parent)},
+              capture_output=True, text=True)
+_th = _tout.read_text() if _tout.exists() else ""
+check_eq("new report: the template renders", (_tout.is_file(), _tr.stderr[-300:]), (True, ""))
+check("new report: the page <title> is the typed title", _th, "<title>Kūpuna Care Gap</title>")
+check("new report: the footers carry it", _th, "KŪPUNA CARE GAP")
+check_eq("new report: no placeholder title in the output",
+         [w for w in ("YOUR REPORT", "title here") if w in _th], [])
+check("new report: the binding names the file by the title",
+      (_troot / "docsync.yml").read_text(), 'name: "Kūpuna Care Gap"')
+
 # --- a written document laid out on a template (docsync.compose) ------------
 from docsync import compose as _cp                               # noqa: E402
 from docsync.templates import section_pattern                    # noqa: E402
