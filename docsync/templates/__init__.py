@@ -582,6 +582,76 @@ def style_guide() -> dict:
     }
 
 
+# The page each template repeats, as docsync.compose lays a written document
+# out: which placed elements ARE the pattern (replaced by the first real
+# section), the styles to place new ones in, and where a body column runs.
+# Read off the template's own elements, never restated, so a template change
+# reaches every scaffold made from text.
+_SECTION = {
+    "appleseed-report": {
+        "first_page": 4, "heading": "tpl-h4", "rule": "tpl-rule4",
+        "body": "tpl-body4a", "sub": "tpl-sub4", "footer": "tpl-foot4",
+        "quote": "tpl-pull3",
+        "drop": ["tpl-h4", "tpl-rule4", "tpl-body4a", "tpl-sub4", "tpl-body4b",
+                 "tpl-foot4"],
+        "intro": {"id": "tpl-body3", "max_h": 3.45, "title": "Executive summary"},
+        "intro_title": "Executive summary",
+        "toc": "tpl-toc2",
+        "meta": {"subtitle": "tpl-sub", "date": "tpl-date", "author": "tpl-author2"},
+    },
+    "appleseed-brief": {
+        "first_page": 2, "heading": "tpl-h2", "rule": "tpl-rule2",
+        "body": "tpl-body2", "sub": None, "footer": "tpl-foot", "quote": None,
+        "drop": ["tpl-h2", "tpl-rule2", "tpl-body2", "tpl-rec2", "tpl-foot"],
+        "intro": None, "intro_title": "Summary", "toc": None,
+        "meta": {"date": "tpl-date"},
+    },
+}
+
+
+def section_pattern(template: str, color: str | None = None) -> dict | None:
+    """What docsync.compose needs to lay text out on `template`: geometry and
+    styles taken from the template's placed elements (built with `color`, the
+    scheme's topic colour). None for a template that has no repeating page
+    (the one-pager)."""
+    spec = _SECTION.get(template)
+    t = TEMPLATES.get(template)
+    if not spec or not t:
+        return None
+    lay = t["layout"](color) if color else t["layout"]()
+    box = {b["id"]: b for b in lay["boxes"]}
+    shape = {s["id"]: s for s in lay["shapes"]}
+    h, body, foot = box[spec["heading"]], box[spec["body"]], box[spec["footer"]]
+    rule = shape[spec["rule"]]
+    sub = box[spec["sub"]] if spec["sub"] else None
+    quote = box[spec["quote"]] if spec["quote"] else None
+    topic = rule["fill"] if template == "appleseed-report" else (
+        color or _HOUSE["charcoal"])
+    sub_style = dict(sub["style"]) if sub else {"font": "Barlow", "weight": 700,
+                                               "size": 22, "color": topic}
+    quote_style = dict(quote["style"]) if quote else {
+        "font": "Source Sans 3", "size": 21, "color": topic, "leading": 1.35}
+    return {
+        "first_page": spec["first_page"],
+        "drop": spec["drop"],
+        "x": h["x"], "w": h["w"],
+        "heading": {"y": h["y"], "w": h["w"], "style": dict(h["style"])},
+        "rule": {k: rule[k] for k in ("kind", "x", "y", "w", "h", "fill")},
+        "body": dict(body["style"]),
+        "body_top": body["y"],
+        "cont_top": h["y"],
+        "bottom": foot["y"] - 0.35,
+        "sub": sub_style,
+        "quote": quote_style,
+        "footer": {"x": foot["x"], "y": foot["y"], "w": foot["w"],
+                   "style": dict(foot["style"])},
+        "intro": spec["intro"],
+        "intro_title": spec["intro_title"],
+        "toc": spec["toc"],
+        "meta": spec["meta"],
+    }
+
+
 def listing() -> list[dict]:
     """What a picker needs, in registry order — no layout payloads. Each
     template's schemes come resolved (id, name, swatch colour), its own

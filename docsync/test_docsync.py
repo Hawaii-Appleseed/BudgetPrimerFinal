@@ -1219,6 +1219,38 @@ check("the style rides out with the first layer", _L.layer(1), "<style>")
 check_eq("and only once", _L.layer(2), "")
 check_eq("a report with no override renders exactly as before", _layout({}).layer(1), "")
 
+# A report BUILT pageless (the web-page reports: our-mission, wfc-credits,
+# rxkids, tfc-2027-priorities pass page=(12.5, None)) is the same as one whose
+# layout.json says h:null — and its stylesheet must not carry the sentinel as a
+# min-height (that was the 160in sheet: 11 letter pages, 8 empty).
+def _built_pageless():
+    t = _tmp_json(); t.write_text("{}")
+    return Layout(t, page=(12.5, None))
+_BP = _built_pageless()
+check_eq("built pageless: page_h is the sentinel", _BP.page_h, PAGELESS_H)
+check_eq("built pageless: the .page min-height is 0, not the sentinel", _BP.page_min_h, 0)
+check("built pageless: the sheet is `Win auto`", _BP.page_style(), "@page{size:12.5in auto;margin:0}")
+check_eq("a fixed page keeps its own min-height",
+         _layout({"page": {"w": 8.5, "h": 11}}).page_min_h, 11.0)
+check_eq("a layout override of a built-pageless report wins",
+         _layout({"page": {"w": 8.5, "h": 11}}).page_h, 11.0)
+# The shipped renderers, rebuilt: no min-height of 160in/84in/38.5in left.
+import subprocess as _sp
+for _slug in ("our-mission", "wfc-credits", "rxkids", "tfc-2027-priorities"):
+    _out = Path(tempfile.mkdtemp()) / "out.html"
+    _r = _sp.run([sys.executable, str(Path(__file__).resolve().parent.parent / "projects" / _slug / "render_report.py")],
+                 env={**os.environ, "DOCSYNC_OUT": str(_out)}, capture_output=True, text=True)
+    _h = _out.read_text() if _out.exists() else ""
+    check(f"{_slug} builds", _r.stdout, "wrote")
+    check(f"{_slug}: .page has no fixed height", _h, ".page{width:12.5in;min-height:0}")
+    check(f"{_slug}: the print sheet is 12.5in wide with auto height", _h, "@page{size:12.5in auto")
+    if "min-height:160in" in _h or "min-height:84.0in" in _h or "min-height:38.5in" in _h:
+        FAILS.append(f"{_slug}: a fixed sheet height is still in the stylesheet")
+    if _slug == "tfc-2027-priorities" and "size: letter" in _h:
+        FAILS.append("tfc prints on its own letter @page again; it is pageless")
+    if _slug == "rxkids" and "break-before: page" in _h:
+        FAILS.append("rxkids forces a page break between tabs; a pageless sheet runs on")
+
 check_page_raises("a non-object page is refused", {"page": [8.5, 11]}, "must be an object")
 check_page_raises("a non-numeric width is refused", {"page": {"w": "wide", "h": 11}},
                   "is not a number")
@@ -3064,6 +3096,12 @@ with tempfile.TemporaryDirectory() as _td:
              ["chrome bit"])
     check_eq("editability defaults to warn", _bs["t-plain"].editability,
              "warn")
+
+    _reg.write_text("bindings:\n  - id: t-web\n    content: c.md\n    editor:\n"
+                    "      dir: d\n      render: r.py\n      out: o.html\n"
+                    "      page: [12.5, null]\n")
+    check_eq("a manifest page of [w, null] is pageless",
+             load_registry(_reg)[0].editor.page, (12.5, None))
     _reg.write_text("bindings:\n  - id: t-bad\n    content: c.md\n"
                     "    editability: loose\n")
     try:
@@ -5310,6 +5348,148 @@ _tl = TEMPLATES["appleseed-report"]["layout"]()
 _new._apply_title(_tl, "A very long report title that would wrap the footer")
 check("a long title is shortened in footers only",
       [b["md"] for b in _tl["boxes"] if b["id"] == "tpl-foot2"][0], "…")
+
+# --- a written document laid out on a template (docsync.compose) ------------
+from docsync import compose as _cp                               # noqa: E402
+from docsync.templates import section_pattern                    # noqa: E402
+
+_TXT = """# Kūpuna Care Gap
+Subtitle: What older adults pay for care
+Date: March 2027
+Author: Devin Thomas
+
+Hawaiʻi has the longest life expectancy of any state, and the highest share
+of households caring for a relative.[^ahr] This report measures the gap.
+
+## Who is caring
+
+More than 154,000 people provide unpaid care.[^aarp] Most hold a job.
+
+### Where the money goes
+
+- Home health aide: $36 an hour
+- Nursing home: $14,200 a month
+
+> Families are choosing which parent's savings to spend first.
+
+Most families cover these costs by cutting back on work.
+
+## Recommendations
+
+The Legislature can close most of the gap.
+
+[^ahr]: America's Health Rankings 2026 — https://example.org/ahr
+[^aarp]: AARP, Valuing the Invaluable
+"""
+_d = _cp.parse(_TXT)
+check_eq("compose: the # line is the title", _d.title, "Kūpuna Care Gap")
+check_eq("compose: the lines under it are metadata",
+         _d.meta, {"subtitle": "What older adults pay for care",
+                   "date": "March 2027", "author": "Devin Thomas"})
+check_eq("compose: paragraphs before the first ## are the summary",
+         [b.kind for b in _d.intro], ["para"])
+check_eq("compose: each ## is a section", [s.title for s in _d.sections],
+         ["Who is caring", "Recommendations"])
+check_eq("compose: ###, bullets and > inside a section are typed blocks",
+         [b.kind for b in _d.sections[0].blocks],
+         ["para", "sub", "list", "quote", "para"])
+check_eq("compose: a wrapped bullet is one item",
+         _d.sections[0].blocks[2].md.count("\n"), 1)
+check_eq("compose: source lines are lifted out of the prose",
+         sorted(_d.sources), ["aarp", "ahr"])
+check_eq("compose: citations are found", sorted(_d.citations()), ["aarp", "ahr"])
+check("compose: sources normalise to the engine's shape",
+      _cp.sources_block(_d), "[ahr]: America's Health Rankings 2026 — https://example.org/ahr")
+check_eq("compose: a lead-in is the first words in bold capitals",
+         _cp._lead_in("More than 154,000 people provide unpaid care. Most hold a job."),
+         "**MORE THAN 154,000 PEOPLE PROVIDE UNPAID** care. Most hold a job.")
+check_eq("compose: a lead-in stops at a clause",
+         _cp._lead_in("In total, the finding is this."), "**IN TOTAL,** the finding is this.")
+check_eq("compose: an opening already in bold is left alone",
+         _cp._lead_in("**Already** bold."), "**Already** bold.")
+check_eq("compose: the one-pager has no page to repeat",
+         section_pattern("appleseed-onepager"), None)
+
+for _tn, _first in (("appleseed-report", 4), ("appleseed-brief", 2)):
+    _pat = section_pattern(_tn, SCHEMES["teal"]["color"])
+    _lay = TEMPLATES[_tn]["layout"](SCHEMES["teal"]["color"])
+    _before = {b["id"] for b in _lay["boxes"]}
+    _res = _cp.lay_out(_lay, _pat, _cp.parse(_TXT), "Kūpuna Care Gap")
+    _ids = {b["id"] for b in _lay["boxes"]}
+    check_eq(f"{_tn}: the pattern page's placeholders are gone",
+             sorted(_before & set(_pat["drop"]) & _ids), [])
+    _heads = [(b["page"], b["md"]) for b in _lay["boxes"] if b["id"].startswith("txt-h-")]
+    check_eq(f"{_tn}: one headline per section, from the first pattern page on",
+             _heads[0][0], _first)
+    check_eq(f"{_tn}: sections in order",
+             [m for _, m in _heads][-2:], ["Who is caring", "Recommendations"])
+    _rules = [s for s in _lay["shapes"] if s["id"].startswith("txt-rule-")]
+    check_eq(f"{_tn}: a hairline under every headline, in the pattern's fill",
+             [(s["page"], s["fill"]) for s in _rules],
+             [(p, _pat["rule"]["fill"]) for p, _ in _heads])
+    _foot = sorted((b["page"], b["md"]) for b in _lay["boxes"] if b["id"].startswith("txt-foot-"))
+    check_eq(f"{_tn}: every new page has a footer the title step rewrites",
+             [m for _, m in _foot], [f"{p} · YOUR REPORT" for p, _ in _foot])
+    check_eq(f"{_tn}: pages == the last page used", _res["pages"], max(p for p, _ in _foot))
+    for b in _lay["boxes"]:
+        if b["id"].startswith("txt-") and not b["id"].startswith("txt-foot-") \
+                and b["y"] + 0.2 > _pat["footer"]["y"]:
+            FAILS.append(f"{_tn}: {b['id']} starts at {b['y']}in, under the footer")
+    _new._apply_title(_lay, "Kūpuna Care Gap")
+    check_eq(f"{_tn}: no placeholder footer survives",
+             [b["md"] for b in _lay["boxes"] if "YOUR REPORT" in b["md"] or "YOUR BRIEF" in b["md"]], [])
+    # The result is a draft the engine accepts: every element on its page.
+    import json as _json, tempfile as _tf
+    _tp = Path(_tf.mktemp(suffix=".json"))
+    _tp.write_text(_json.dumps(_lay))
+    try:
+        _L = Layout(_tp, page=(8.5, 11))
+        check_eq(f"{_tn}: the laid-out draft passes check_bounds", _L.check_bounds(), [])
+    finally:
+        _tp.unlink()
+
+_lay = TEMPLATES["appleseed-report"]["layout"]()
+_pat = section_pattern("appleseed-report")
+_cp.lay_out(_lay, _pat, _cp.parse(_TXT), "T")
+_bx = {b["id"]: b for b in _lay["boxes"]}
+check("report: a short summary lands in the template's own summary box",
+      _bx["tpl-body3"]["md"], "**HAWAIʻI HAS THE LONGEST LIFE EXPECTANCY** of any state")
+check_eq("report: the contents page lists the sections with their pages",
+         _bx["tpl-toc2"]["md"], "Executive summary — 3\n\nWho is caring — 4\n\nRecommendations — 5")
+check_eq("report: the cover takes the text's subtitle and date",
+         (_bx["tpl-sub"]["md"], _bx["tpl-date"]["md"]),
+         ("What older adults pay for care", "MARCH 2027"))
+check_eq("report: the inside cover names the author", _bx["tpl-author2"]["md"], "Author: Devin Thomas")
+# A two-line headline moves its hairline and body down, never under itself.
+_lay = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_lay, _pat, _cp.parse("## A headline long enough to wrap onto a second line\n\nBody."), "T")
+_rule = [s for s in _lay["shapes"] if s["id"].startswith("txt-rule-")][0]
+_body = [b for b in _lay["boxes"] if b["id"].startswith("txt-body-")][0]
+check_eq("report: a wrapped headline pushes the hairline down", _rule["y"] > _pat["rule"]["y"], True)
+check_eq("...and the body with it", _body["y"] > _pat["body_top"], True)
+# A long summary does not squeeze into the narrow summary column: it gets a page.
+_lay = TEMPLATES["appleseed-report"]["layout"]()
+_long = "# T\n\n" + ("A sentence of ordinary length that says something. " * 60) + "\n\n## S\n\nBody."
+_cp.lay_out(_lay, _pat, _cp.parse(_long), "T")
+_bx = {b["id"]: b for b in _lay["boxes"]}
+check("report: a long summary becomes a section page of its own",
+      [b["md"] for b in _lay["boxes"] if b["id"].startswith("txt-h-")][0], "Executive summary")
+check_eq("...and the template's summary box keeps its words", "YOUR FIRST WORDS" in _bx["tpl-body3"]["md"], True)
+# Text that outruns a page continues on the next, under no headline.
+_lay = TEMPLATES["appleseed-brief"]["layout"]()
+_cp.lay_out(_lay, section_pattern("appleseed-brief"),
+            _cp.parse("## S\n\n" + "\n\n".join(["Paragraph " * 40] * 12)), "T")
+_pages = sorted({b["page"] for b in _lay["boxes"] if b["id"].startswith("txt-body-")})
+check_eq("brief: a long section runs onto more pages", len(_pages) > 1, True)
+check_eq("brief: the continuation pages carry no second headline",
+         len([b for b in _lay["boxes"] if b["id"].startswith("txt-h-")]), 1)
+# The scaffold refuses what it cannot lay out, and names the project for the hub.
+try:
+    _new.create("zz-x", "T", template="", text="## S\n\nBody.", root=Path("/nonexistent"))
+    FAILS.append("new: text on a blank canvas must be refused")
+except _new.NewProjectError as e:
+    check("new: text needs a template", str(e), "needs a template")
+check("new: the binding carries a name for the hub's list", _new._BINDING, '    name: "{name}"')
 
 try:
     sheet_inner("<html><body><p>no sheet</p></body></html>")

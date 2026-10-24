@@ -114,6 +114,14 @@ def t_style_guide(_args: dict) -> dict:
     return _get("/__templates")
 
 
+def t_new_report(args: dict) -> dict:
+    """Scaffold a report from a template, laying `text` out on its pages."""
+    body = {k: args.get(k) for k in ("slug", "name", "template", "scheme",
+                                     "text", "subtitle", "date", "author")
+            if args.get(k)}
+    return _post("/__scaffold", body, timeout=120)
+
+
 def t_inventory(args: dict) -> dict:
     """The whole report as data. `elements` costs a render; skip it when the
     question is only about text."""
@@ -244,6 +252,25 @@ TOOLS = [
                     "building a properly styled report from a user's text. "
                     "START HERE when asked to create or extend a report.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "new_report", "fn": t_new_report,
+     "description": "CREATE a report from a house template, with a written "
+                    "document laid out on its pages in one call: `# title`, "
+                    "optional `Subtitle:`/`Date:`/`Author:` lines, paragraphs "
+                    "before the first `##` as the executive summary, each `##` "
+                    "a section page in the house pattern (headline, hairline, "
+                    "body, footer), `###` a subheading, `> ` a pull quote, "
+                    "`[^id]` citations with `[^id]: source — url` lines. The "
+                    "editor opens on the finished pages; run pilot audit() "
+                    "next, since pagination is an estimate. Use this instead "
+                    "of addPage/addTextBox when the text already exists.",
+     "inputSchema": {"type": "object", "required": ["slug", "template"], "properties": {
+         "slug": {"type": "string", "description": "report id: lowercase, digits, hyphens"},
+         "name": {"type": "string", "description": "the title; defaults to the text's # title"},
+         "template": {"type": "string", "enum": ["appleseed-report", "appleseed-brief"]},
+         "scheme": {"type": "string", "description": "blue | slate | teal | charcoal"},
+         "text": {"type": "string", "description": "the document, markdown"},
+         "subtitle": {"type": "string"}, "date": {"type": "string"},
+         "author": {"type": "string"}}}},
     {"name": "inventory", "fn": t_inventory,
      "description": "The whole report as data: every slot's markdown, every source "
                     "with its citation count, the geometry of everything placed, and "

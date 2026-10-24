@@ -1200,6 +1200,9 @@
           pointer-events:auto;   /* the card is the only part that takes clicks */
           background:var(--chrome2); scrollbar-width:thin; }
   #type > *, #arrange > * { flex:none; }
+  /* The strip scrolls sideways at phone width, and B / I / U sat 630px along
+     it, four swipes from a selection. They lead there. */
+  @media (max-width:600px) { #type > #ty-marks { order:-1; } }
   /* display:flex would silently beat the hidden attribute's display:none */
   #ar-fxbtn, #ar-pos { font:12.5px system-ui; padding:4px 11px; }
   .ar-slide { display:flex; align-items:center; gap:8px; font:11px system-ui;
@@ -2231,7 +2234,7 @@
        DRAFT branch you are on. detectLocal() hides it for the live local
        report, where it only ever repeated the project id. -->
   <span id="title" class="ds-id"></span>
-  <span id="stat">loading the render engine…</span>
+  <span id="stat" role="status" aria-live="polite">loading the render engine…</span>
   <!-- Staying current, in two parts. The chip says which build is running —
        without it "what version are you on?" has no answer, which makes every
        support conversation guesswork. The button appears only when there is
@@ -3440,17 +3443,46 @@ const OKINA_RULES = (() => {
   return [
     [`Hawai${B}i`, 'Hawaiʻi'], [`O${B}ahu`, 'Oʻahu'], [`Kaua${B}i`, 'Kauaʻi'],
     [`Moloka${B}i`, 'Molokaʻi'], [`L[āa]na${B}i`, 'Lānaʻi'], [`Kaho${B}olawe`, 'Kahoʻolawe'],
+    [`Ni${B}ihau`, 'Niʻihau'],
     [`Wai${B}anae`, 'Waiʻanae'], [`Kaka${B}ako`, 'Kakaʻako'], [`Ka${B}anapali`, 'Kaʻanapali'],
     [`Ha${B}ik[ūu]`, 'Haʻikū'], [`Pa${B}ia`, 'Paʻia'], [`Pu${B}uhonua`, 'Puʻuhonua'],
     [`${BI}[āa]ina\\b`, 'ʻāina'], [`${BI}ohana\\b`, 'ʻohana'],
     [`${BI}[ōo]lelo\\b`, 'ʻōlelo'], [`${BI}okina\\b`, 'ʻokina'],
-  ].map(([p, good]) => [new RegExp(p, 'g'), good]);
+  ].map(([p, good]) => [new RegExp(p, 'gi'), good]);
 })();
+// The rules match any case ("HAWAI'I" in a heading, "'Ōlelo" opening a
+// sentence), and the fix keeps the typed case letter by letter: the good form
+// has the same length as the match (a quote becomes ʻ, a plain vowel its
+// kahakō), so each character is the good one, upper-cased where it was typed
+// upper-cased.
+const okinaCase = (m, good) => Array.from(m, (c, i) =>
+  c !== c.toLowerCase() && c === c.toUpperCase() ? good[i].toUpperCase() : good[i]).join('');
 function fixOkina(s) {
-  if (typeof s !== 'string' || !/['\u2018\u2019\u02BC`\u00B4]/.test(s)) return s;
+  if (typeof s !== 'string') return s;
+  // A kahakō typed as a letter plus U+0304 (what a Mac file name, a PDF or a
+  // dictation can paste) draws as a detached bar in most of the report's
+  // fonts and is not the letter a search for ā looks for: one precomposed
+  // character, the way the editor's own keys type it.
+  if (/[\u0300-\u036F]/.test(s)) s = s.normalize('NFC');
+  if (!/['\u2018\u2019\u02BC`\u00B4]/.test(s)) return s;
   let out = s;
-  for (const [re, good] of OKINA_RULES) out = out.replace(re, good);
+  for (const [re, good] of OKINA_RULES) out = out.replace(re, m => okinaCase(m, good));
   return out;
+}
+// The same, down through a layout's own words — a chart's title, labels and
+// series names, a table's cells and caption — which no writer of theirs
+// passed through fixOkina (the pilot's addChart/addTable/setTable, the Chart
+// panel and a pasted grid all wrote straight). renderOnce runs it over the
+// layout, the one place every one of those writes has to pass. Ids, paths
+// and links are not words and are left as typed.
+const OKINA_SKIP_KEYS = new Set(['id', 'src', 'href', 'url', 'path', 'font', 'fill', 'stroke', 'use', 'kind', 'type', 'page', 'anchor']);
+function fixOkinaDeep(v, key) {
+  if (typeof v === 'string') return OKINA_SKIP_KEYS.has(key) ? v : fixOkina(v);
+  if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) { const w = fixOkinaDeep(v[i], key); if (w !== v[i]) v[i] = w; } return v; }
+  if (v && typeof v === 'object') {
+    for (const k of Object.keys(v)) { const w = fixOkinaDeep(v[k], k); if (w !== v[k]) v[k] = w; }
+  }
+  return v;
 }
 
 const writeSlot = (k, v) => {
@@ -5234,6 +5266,30 @@ async function uploadImageFile(d, onDone) {
   inp.addEventListener('change', () => uploadImageBlob(inp.files[0], onDone));
   inp.click();
 }
+/** A name the layout keeps as ASCII (a swatch, a cell style, a section's
+ *  short name): a kahakō folds to its plain vowel and an ʻokina goes, so
+ *  "Ōhiʻa red" is "Ohia red" and not a refusal ("letters, digits, spaces…")
+ *  or, for a section, "-hi-a". Trimmed. */
+const foldHaw = raw => asciiName(raw).toLowerCase();
+const asciiName = raw => String(raw || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[\u02BB\u2018\u2019'`]/g, '').trim();
+/** An uploaded picture's file name: lower-case ASCII, the way the server
+ *  keeps it. A kahakō folds to its plain vowel and an ʻokina or apostrophe
+ *  goes, as in a report's URL ("Hōkūleʻa.JPG" → hokulea.jpg); it used to
+ *  become hyphens ("h-k-le-a.jpg"). */
+function assetFileName(raw) {
+  return String(raw || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u02BB\u2018\u2019'`]/g, '').toLowerCase()
+    .replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '');
+}
+/** Eight hex characters of a file's bytes (a clock tick where there is no
+ *  crypto.subtle, as on a file: page). */
+async function fileTag(file) {
+  try {
+    const h = await crypto.subtle.digest('SHA-1', await file.arrayBuffer());
+    return [...new Uint8Array(h)].slice(0, 4).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return Date.now().toString(36); }
+}
 /** The upload itself — for a picked file, a pasted one or a dropped one. */
 async function uploadImageBlob(file, onDone) {
     if (!file) return;
@@ -5243,8 +5299,15 @@ async function uploadImageBlob(file, onDone) {
     file = await compressImageFile(file);
     const afterKB = file.size / 1024;
     const shrunk = afterKB < beforeKB * 0.95;   // ignore noise-level changes
-    const name = file.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-')
-                          .replace(/^-|-$/g, '');
+    let name = assetFileName(file.name);
+    // A name the report already uses is another picture's: every pasted
+    // screenshot is "image.png", a phone's is "IMG_0001.jpg", and the server
+    // (and the hub) write by name, so the second one replaced the first
+    // everywhere the first was placed. The new one is named for its bytes.
+    if (projectImages().includes(name)) {
+      const dot = name.lastIndexOf('.');
+      name = `${name.slice(0, dot)}-${await fileTag(file)}${name.slice(dot)}`;
+    }
     const path = assetPath(name);
     const dataUrl = await new Promise(r => {
       const fr = new FileReader();
@@ -5675,12 +5738,12 @@ function swatchRow(d, host, current, onPick, opts = {}) {
     add.className = 'ds-sw ds-sw-eye'; add.textContent = '+'; add.title = 'Save this colour as a named swatch';
     add.addEventListener('click', async () => {
       const got = await dsForm('New swatch', [{ name: 'name', type: 'text', label: `Name for ${current}`, value: '' }],
-        { okLabel: 'Save', validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(v.name.trim()) ? '' : 'letters, digits, spaces, - and _' });
+        { okLabel: 'Save', validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(asciiName(v.name)) ? '' : 'letters, digits, spaces, - and _' });
       if (got == null) return;
       pushHistory();
-      (layout.swatches = layout.swatches || {})[got.name.trim()] = current.toUpperCase();
+      (layout.swatches = layout.swatches || {})[asciiName(got.name)] = current.toUpperCase();
       markDirty(); await render();
-      $('stat').textContent = `swatch "${got.name.trim()}" saved — it is in every colour menu now`;
+      $('stat').textContent = `swatch "${asciiName(got.name)}" saved — it is in every colour menu now`;
     });
     row.appendChild(add);
   }
@@ -5865,10 +5928,10 @@ function fillRow(d, m, id) {
     save.textContent = 'Save as gradient swatch…';
     save.addEventListener('click', async () => {
       const got = await dsForm('New gradient swatch', [{ name: 'name', type: 'text', label: 'Name', value: '' }],
-        { okLabel: 'Save', validate: v => !/^[A-Za-z0-9 _-]{1,30}$/.test(v.name.trim()) ? 'letters, digits, spaces, - and _'
-          : swatches()[v.name.trim()] ? 'there is already a swatch by that name' : '' });
+        { okLabel: 'Save', validate: v => !/^[A-Za-z0-9 _-]{1,30}$/.test(asciiName(v.name)) ? 'letters, digits, spaces, - and _'
+          : swatches()[asciiName(v.name)] ? 'there is already a swatch by that name' : '' });
       if (got == null) return;
-      const n = got.name.trim();
+      const n = asciiName(got.name);
       g.stops.sort((a, b) => a.at - b.at);
       pushHistory();
       (layout.swatches = layout.swatches || {})[n] = clone(g);
@@ -6798,6 +6861,10 @@ function layerMenu(d, el, e) {
       uploadImageFile(d, async path => {
         pushHistory();
         ig().src = path;
+        // The crop framed the OLD picture: laid over one of another shape it
+        // shows the wrong part, or zooms in on nothing. The frame, the fit
+        // and the filters stay; the new picture starts uncropped.
+        delete ig().crop;
         markDirty(); await render();
       });
     });
@@ -7458,7 +7525,7 @@ function startResize(d, el, e0, dir) {
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
     w = Math.min(w, PAGE_W_IN - x);
-    h = Math.min(h, PAGE_H_IN - y);
+    h = Math.min(h, pageBottomIn(page) - y);
     const vertical = dir.includes('s') || dir.includes('n');
     if (shapeId) {
       const sh = shapeOf(shapeId);
@@ -8058,6 +8125,7 @@ function togglePop(pop, anchor) {
   // popover, and opening Layers or Download must not blank it out.
   document.querySelectorAll('.pop:not(.docked)').forEach(p => { p.hidden = true; });
   if (!wasHidden) return;
+  pop.__opener = anchor;        // where focus goes back to when Escape closes it
   // Fixed coordinates from the anchor's on-screen rect — the pop lives inside
   // a fixed-height row whose overflow would clip an absolute panel.
   const r = anchor.getBoundingClientRect();
@@ -8123,7 +8191,13 @@ addEventListener('keydown', e => {
   const t = e.target;
   if (!open.length || (t.closest && t.closest('.pop') && t.matches('input, textarea, select, [contenteditable]'))) return;
   e.preventDefault(); e.stopPropagation();
+  // Focus was inside the menu it is about to hide; hidden, it falls to <body>
+  // and the next Tab starts again from the top of the window. Back to the
+  // button that opened it, so a keyboard carries on from where it was.
+  const inside = open.find(p => p.contains(document.activeElement));
   open.forEach(p => { if (p.id === 'glyphpop') closeGlyphs(); else p.hidden = true; });
+  const back = inside && inside.__opener;
+  if (back && back.isConnected) back.focus();
 }, true);
 
 /** The same rule, for clicks on the REPORT. The canvas is an iframe, and a
@@ -8893,10 +8967,10 @@ function tableMenu(d, td, e) {
         const look = pick({ ...((t.cells || {})[`${ri},${ci}`] || {}) }, CELL_STYLE_KEYS);
         if (!Object.keys(look).length) { $('stat').textContent = 'this cell has no look of its own to save — give it a fill or bold first'; return false; }
         const got = await dsForm('New cell style', [{ name: 'name', label: 'Name', value: '' }], { okLabel: 'Save',
-          validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(v.name.trim()) ? '' : 'a name of letters, digits, spaces, - and _' });
+          validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(asciiName(v.name)) ? '' : 'a name of letters, digits, spaces, - and _' });
         if (got == null) return false;
-        defineCellStyle(got.name.trim(), look);
-        applyCellStyle(t, keys, got.name.trim());
+        defineCellStyle(asciiName(got.name), look);
+        applyCellStyle(t, keys, asciiName(got.name));
       });
     });
   }
@@ -8976,7 +9050,20 @@ function reindexMerges(t, kind, at, delta) {
   }
   if (kind === 'row') {
     if (t.rowh) { delta > 0 ? t.rowh.splice(at, 0, null) : t.rowh.splice(at, 1); if (!t.rowh.some(v => v != null)) delete t.rowh; }
-    const n = t.rows.length + delta;
+    const was = t.rows.length, n = was + delta;
+    // A line deleted from inside the header (or footer) takes one off its
+    // count, as in Word and InDesign; it used to leave the count at 2 and so
+    // turn the first BODY row into a header. A line added inside one joins it.
+    const hr = t.headerRows != null ? t.headerRows : (t.header ? 1 : 0);
+    const fr = t.footerRows || 0;
+    if (delta < 0) {
+      if (at < hr) { if (t.headerRows != null) t.headerRows = hr - 1; else t.header = false; }
+      if (fr && at >= was - fr) t.footerRows = fr - 1;
+    } else {
+      if (t.headerRows != null && at > 0 && at < hr) t.headerRows = hr + 1;
+      if (fr && at > was - fr && at < was) t.footerRows = fr + 1;
+    }
+    if (!t.footerRows) delete t.footerRows;
     ['headerRows', 'footerRows'].forEach(k => { if (t[k] != null && t[k] > n) t[k] = n; });
     if ((t.headerRows || 0) + (t.footerRows || 0) > n) t.footerRows = Math.max(0, n - (t.headerRows || 0));
   }
@@ -11208,6 +11295,14 @@ function findTargets() {
         read: () => readSlot(k), write: v => writeSlot(k, v) });
     });
   }
+  // The citation list is a slot with no [data-slot] on the page (it renders as
+  // the endnotes, or nowhere), so the DOM walk above never met it: a source's
+  // title or URL gave "Nothing found", and renaming a citation id renamed the
+  // [^id] tokens in the words but left its "[id]:" line behind.
+  if (/^\[\[sources\]\]/m.test(source) && !out.some(t => t.key === 'sources')) {
+    out.push({ kind: 'slot', key: 'sources', label: 'sources', use: () => undefined,
+      read: () => readSlot('sources'), write: v => writeSlot('sources', v) });
+  }
   (layout.boxes || []).forEach(b => out.push({
     kind: 'box', key: b.id, label: b.id, use: () => (b.style || {}).use,
     read: () => b.md || '', write: v => { b.md = fixOkina(v); },
@@ -11218,8 +11313,104 @@ function findTargets() {
       use: () => (t.style || {}).use,
       read: () => String(t.rows[r][c] ?? ''),
       write: v => { t.rows[r][c] = fixOkina(v); },
+      cellAt: [t.id, r, c],
     }))));
   return out;
+}
+
+/** The node on the page a Find target lives in, or null (the sources list has none). */
+function findElOf(t) {
+  const d = $('out').contentDocument;
+  if (!d) return null;
+  const q = id => d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+  if (t.kind === 'slot') return d.querySelector(`[data-slot="${CSS.escape(t.key)}"]`);
+  if (t.kind === 'box') return q('text.' + t.key) || q(t.key);
+  if (t.kind === 'cell') {
+    const [id, r, c] = t.cellAt;
+    const tbl = q('table.' + id) || q(id);
+    const tr = tbl && (tbl.matches('table') ? tbl : tbl.querySelector('table'));
+    const row = tr && tr.rows[r];
+    return (row && row.cells[c]) || tbl;
+  }
+  return null;
+}
+/** The Range over the exact words a hit matched, in the rendered node, or null.
+ *  The hit is an offset in the AUTHORED markdown; the page holds the rendered
+ *  text, so the hit is found again there: the same pattern, the same
+ *  occurrence number among this target's hits, accepted only if it reads the
+ *  same words (a hit inside a link's URL or a marker has no rendered twin,
+ *  and the whole node is flashed instead). */
+function findRangeOf(el, hit) {
+  if (!hit || !hit.hit) return null;
+  const d = el.ownerDocument;
+  const nodes = [];
+  let text = '';
+  const w = d.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    nodes.push({ n, from: text.length });
+    text += n.nodeValue;
+  }
+  let re;
+  try { re = findRe(findState.needle, findState); } catch (e) { return null; }
+  const ord = findState.hits.filter(h => h.target.key === hit.target.key && h.at < hit.at).length;
+  const found = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m[0] === '') { re.lastIndex += 1; continue; }
+    found.push([m.index, m.index + m[0].length, m[0]]);
+    if (found.length > 400) break;
+  }
+  const same = f => f[2].toLowerCase() === hit.hit.toLowerCase();
+  const pick = (found[ord] && same(found[ord]) && found[ord]) || found.find(same);
+  if (!pick) return null;
+  const at = off => {
+    for (let i = nodes.length - 1; i >= 0; i--) if (nodes[i].from <= off) return [nodes[i].n, off - nodes[i].from];
+    return null;
+  };
+  const s0 = at(pick[0]), e0 = at(pick[1] - 1);
+  if (!s0 || !e0) return null;
+  const r = d.createRange();
+  r.setStart(s0[0], s0[1]);
+  r.setEnd(e0[0], e0[1] + 1);
+  return r;
+}
+/** Take down whatever a "Show me" put up, in the page's own document. */
+function findUnshow(d) {
+  if (!d) return;
+  try { d.defaultView.CSS.highlights.delete('find-show'); } catch (e) { /* no highlight API */ }
+  const st = d.getElementById('find-show-style');
+  if (st) st.remove();
+  d.querySelectorAll('[data-find-flash]').forEach(n => {
+    n.removeAttribute('data-find-flash');
+    if (n.dataset.findWas !== undefined) { n.style.outline = n.dataset.findWas; delete n.dataset.findWas; }
+  });
+}
+let findShowTimer = 0;
+/** Scroll to a hit's place and make it show: the exact words matched (CSS
+ *  highlight over a Range), or the whole slot/box/cell when those words have
+ *  no rendered twin or the browser has no highlight API. */
+function findShow(t, hit) {
+  if (t.key === 'sources') { openSources(); return; }
+  const el = findElOf(t);
+  if (!el) { $('stat').textContent = `${t.label} is not on a page right now`; return; }
+  jumpTo(el, 'center');
+  const d = el.ownerDocument;
+  clearTimeout(findShowTimer);
+  findUnshow(d);
+  const win = d.defaultView;
+  const range = findRangeOf(el, hit);
+  el.setAttribute('data-find-flash', '');
+  if (range && win.CSS && win.CSS.highlights && win.Highlight) {
+    const st = d.createElement('style');
+    st.id = 'find-show-style';
+    st.textContent = '::highlight(find-show){background:#E8A317;color:#000}';
+    d.head.appendChild(st);
+    win.CSS.highlights.set('find-show', new win.Highlight(range));
+  } else {
+    el.dataset.findWas = el.style.outline;
+    el.style.outline = '3px solid #E8A317';
+  }
+  findShowTimer = setTimeout(() => { findUnshow(d); }, 2200);
 }
 
 const findRe = (needle, { cased, whole, grep }) => {
@@ -11474,15 +11665,9 @@ function paintFindList() {
       b.textContent = h.hit;
       p.append(document.createTextNode(h.before), b,
         document.createTextNode(h.after));
-      if (h.target.kind === 'slot') {
-        p.classList.add('find-go');
-        p.title = 'Show me';
-        p.addEventListener('click', () => {
-          const d = $('out').contentDocument;
-          const el = d && d.querySelector(`[data-slot="${CSS.escape(h.target.key)}"]`);
-          if (el) jumpTo(el, 'center');
-        });
-      }
+      p.classList.add('find-go');
+      p.title = 'Show me';
+      p.addEventListener('click', () => findShow(h.target, h));
       g.appendChild(p);
     });
     list.appendChild(g);
@@ -14408,16 +14593,31 @@ function pageStack(d, pg) {
 }
 function selectNextObject(d, dir) {
   const cur = selEls(d)[0];
+  const sheets = [...d.querySelectorAll('section.page')];
   const pg = (cur && cur.closest('section.page'))
     || docSheets().find(s => String(s.id) === String(visiblePageId()))?.pg
-    || d.querySelector('section.page');
+    || sheets[0];
   if (!pg) return;
-  const stack = pageStack(d, pg);
-  if (!stack.length) return;
+  let stack = pageStack(d, pg);
   const at = cur ? stack.indexOf(cur) : -1;
-  const next = at < 0 ? stack[dir > 0 ? 0 : stack.length - 1]
-    : stack[(at + dir + stack.length) % stack.length];
+  let next;
+  if (at < 0) next = stack.length ? stack[dir > 0 ? 0 : stack.length - 1] : null;
+  else if (at + dir >= 0 && at + dir < stack.length) next = stack[at + dir];
+  // Past the last object of a page the walk goes on to the next page's first
+  // (back from the first: the previous page's last), wrapping at the ends of
+  // the report. It used to wrap WITHIN the page, so a keyboard alone could
+  // never leave page 1 — the pointer was the only way to the other eleven.
+  if (!next) {
+    let i = sheets.indexOf(pg);
+    for (let n = 0; n < sheets.length && !next; n++) {
+      i = (i + dir + sheets.length) % sheets.length;
+      stack = pageStack(d, sheets[i]);
+      if (stack.length) next = stack[dir > 0 ? 0 : stack.length - 1];
+    }
+  }
+  if (!next) return;
   setSel(d, [idOf(next)]);
+  if (next.closest('section.page') !== pg) jumpTo(next, 'center');
   $('stat').textContent = `${idOf(next)} · layer ${zOf(idOf(next))}`;
 }
 
@@ -20582,7 +20782,7 @@ function placer(d, el, page) {
     x = Math.min(Math.max(x, Math.min(0, box.x)),
                  Math.max(PAGE_W_IN - Math.min(box.w, PAGE_W_IN), box.x));
     y = Math.min(Math.max(y, Math.min(0, box.y)),
-                 Math.max(PAGE_H_IN - Math.min(box.h, PAGE_H_IN), box.y));
+                 Math.max(pageBottomIn(page) - Math.min(box.h, pageBottomIn(page)), box.y));
     if (shapeId) {
       const sh = shapeOf(shapeId);
       if (sh) {
@@ -20898,7 +21098,7 @@ function startDrag(d, el, e0, drillIn = false) {
     if (sy) { gy = +sy.at.toFixed(3); hy = sy.line; }
     else if (ey) { gy = +ey.at.toFixed(3); gaps.push(...ey.gaps); }
     gx = Math.min(Math.max(gx, 0), PAGE_W_IN - Math.min(group.w, PAGE_W_IN));
-    gy = Math.min(Math.max(gy, 0), PAGE_H_IN - Math.min(group.h, PAGE_H_IN));
+    gy = Math.min(Math.max(gy, 0), pageBottomIn(page) - Math.min(group.h, pageBottomIn(page)));
     Ps.forEach((P, i) => {
       at[i] = P.put(starts[i].x - group.x + gx, starts[i].y - group.y + gy, false);
     });
@@ -21859,7 +22059,9 @@ async function boot() {
   // never draws. Only a manifest with no `pages` key at all keeps the
   // Budget Primer default below.
   if (Array.isArray(M.pages)) EXTRA_PAGES = M.pages;
-  PAGE_W_IN = M.page.w; PAGE_H_IN = M.page.h;
+  PAGE_W_IN = M.page.w;
+  // A report BUILT pageless (docsync.yml page: [w, null]) has no bottom: the same sentinel as File > Resize > Pageless.
+  PAGE_H_IN = M.page.h == null ? PAGELESS_H : M.page.h;
   MARGIN_IN = M.margins.side; TOP_IN = M.margins.top;
   $('title').textContent = M.id;
   // The window/tab title is the report, not the tool. Several of these are
@@ -22792,7 +22994,10 @@ async function collabFieldFirstTheirs() {
 /** Say whose words won, once the render that adopted them has been. */
 function collabFieldNote(settled, what) {
   if (settled !== 'theirs' || !collabFieldGave) return;
-  $('stat').textContent = `kept ${collabFieldGave} ${what} — your version was not saved`;
+  // sayNowAndAfterRender, not a bare write: the held update lands as a render
+  // of its own right after this one, and its idle hint ("unsaved changes")
+  // took the row back before the note could be read.
+  sayNowAndAfterRender(`kept ${collabFieldGave} ${what} — your version was not saved`);
   collabFieldGave = null;
 }
 
@@ -23329,7 +23534,7 @@ async function startCollab() {
       return { ok: true, inventory: { project: inv.project, pageOrder: inv.pageOrder,
                                       styles: inv.styles,
                                       pages: inv.pages.map(p => ({ id: p.id, index: p.index, slots: p.slots, elements: p.elements })) },
-               page: { w: PAGE_W_IN, h: PAGE_H_IN, pageless: !!(layout.page && layout.page.h == null) },
+               page: { w: PAGE_W_IN, h: PAGE_H_IN, pageless: isPageless() },
                fit: fitReport() };
     },
     presence: collabPresence,
@@ -23384,7 +23589,7 @@ async function collabBranchStillOurs() {
 /** A collaborator saved: their commit holds this document (to within a
  *  keystroke), so from here "unsaved changes" means changed since THEIR
  *  save — and the room's draft branch exists now, whoever created it. */
-function collabSaved(sha, info) {
+async function collabSaved(sha, info) {
   if (!collab || !sha) return;
   const f = collab.files();
   // A RESTORE by someone else replaced the whole document — unsaved words
@@ -23394,6 +23599,18 @@ function collabSaved(sha, info) {
   const restored = info && info.restored;
   const hadMine = restored && (source !== original || layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}')));
   original = f.content; layoutOrig = f.layoutText;
+  // A restore is applied as a per-slot diff, so the room may still hold words
+  // the restored version does not: the saved baseline is the version itself,
+  // not what the room holds, or those words would read as saved and Save
+  // would stay grey over them.
+  if (restored && docStore()) {
+    try {
+      const [c, l] = await Promise.all([
+        fetch(`${docStore()}/history/${sha}/content`, { cache: 'no-store' }),
+        M.layout ? fetch(`${docStore()}/history/${sha}/layout`, { cache: 'no-store' }) : null]);
+      if (c.ok && (!l || l.ok)) { original = await c.text(); if (l) layoutOrig = await l.text(); }
+    } catch (e) { /* the room's copy stands as the baseline */ }
+  }
   if (docStore()) { docVersion = sha; hubMarkSeen(sha); }
   if (collabShared() && !draftBranch && !docStore()) {
     draftBranch = sharedDraftBranch();
@@ -23404,8 +23621,11 @@ function collabSaved(sha, info) {
   markDirty();
   if (restored) {
     sayNowAndAfterRender(hadMine
-      ? 'a collaborator restored an earlier version, which replaced the edits you had not saved — '
-        + 'ask them, or bring the newer version back from History'
+      ? (dirty
+        ? 'a collaborator restored an earlier version: edits you had not saved in paragraphs it changed were replaced '
+          + '(ask them, or bring the newer version back from History); the rest are kept — Save to keep them'
+        : 'a collaborator restored an earlier version, which replaced the edits you had not saved — '
+          + 'ask them, or bring the newer version back from History')
       : 'a collaborator restored an earlier version — it is what is on screen now');
     if (hadMine) { $('stat').classList.add('err'); setTimeout(() => $('stat').classList.remove('err'), 12000); }
     return;
@@ -24691,6 +24911,7 @@ async function renderOnce() {
   // local edit becomes a document transaction the room can see. Idempotent:
   // a render that follows an adopted remote change finds nothing to write.
   if (collab && !(suggesting && !suggestApplying)) collabFlush();
+  fixOkinaDeep(layout);
   py.globals.set('SRC', source);
   py.globals.set('LAYOUT', JSON.stringify(layout, null, 2));
   py.globals.set('CONTENT', M.content);
@@ -26001,9 +26222,25 @@ function makeEndnotesSection() {
   return box;
 }
 
+/** Where the sheet really ends, in inches. A paged report's is PAGE_H_IN. A
+ *  pageless one has no such number (PAGELESS_H, 200, is a sentinel), and every
+ *  clamp that used it let a box be put 175 inches below the last line — drawn
+ *  past the end of a sheet that is overflow:hidden, so gone: place() and
+ *  paste did it by the pilot's hand, a handle drag past the bottom by the
+ *  person's. The drawn sheet (plus an inch of give) is the limit. */
+const PAGELESS_GIVE_IN = 1;
+function pageBottomIn(page) {
+  if (!isPageless() || !page || !page.getBoundingClientRect) return PAGE_H_IN;
+  const h = page.getBoundingClientRect().height / (DPI * zoomOf(page));
+  // An inch of give past the drawn end: a web-page report's last card is moved
+  // and nudged down like any other (the sweep and arrange.spec do), and the
+  // sheet follows what flows. Farther than that is a box nobody will find.
+  return h > 0.5 ? Math.min(PAGE_H_IN, h + PAGELESS_GIVE_IN) : PAGE_H_IN;
+}
 /** True when this document is one continuous sheet rather than pages. */
 const isPageless = () =>
-  !!(layout.page && (layout.page.h === null || layout.page.h === undefined));
+  layout.page ? (layout.page.h === null || layout.page.h === undefined)
+              : !!(M && M.page && (M.page.h === null || M.page.h === undefined));
 
 /** Set when a citation is placed with no endnotes section in the document:
  *  the section is created when that edit COMMITS, inside its own render. */
@@ -26145,7 +26382,8 @@ function renderSources() {
   const rows = all.filter(s => {
     if (srcUnusedOnly && citeCount(s.id)) return false;
     if (!srcQuery) return true;
-    return (s.id + ' ' + s.text + ' ' + s.url).toLowerCase().includes(srcQuery);
+    // Folded, so "aina" finds ʻāina and "hawaii" finds Hawaiʻi.
+    return foldHaw(s.id + ' ' + s.text + ' ' + s.url).includes(foldHaw(srcQuery));
   });
   if (!rows.length) {
     list.innerHTML = '<p class="srcempty">Nothing matches that.</p>';
@@ -26354,12 +26592,12 @@ $('add').onclick = async () => {
       options: EXTRA_PAGES.map(([id, label]) => ({ value: id, label })) },
     { name: 'slug', label: 'Short name (letters, numbers, hyphens)', type: 'text', required: true },
   ], { okLabel: 'Add', validate: vals =>
-    vals.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    asciiName(vals.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       ? '' : 'A short name is required.' });
   if (!r) return;
   const page = r.page;
   const label = (EXTRA_PAGES.find(([id]) => id === page) || [, page])[1];
-  let slug = r.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  let slug = asciiName(r.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   if (!slug) return;
   const base = slug;
   for (let n = 2; source.includes(`[[extra.${page}.${slug}]]`); n++) slug = `${base}-${n}`;
@@ -27693,26 +27931,82 @@ $('hpanel-close').onclick = () => hubHistoryToggle(false);
 $('hpanel-named').onclick = () => { hubHistoryNamedOnly = !hubHistoryNamedOnly; hubHistoryRender(); };
 $('hpanel-show').onchange = () => hubHistoryPaint($('out') && $('out').contentDocument);
 /** Bring a version back: a new version on top, everyone in the session gets it. */
+/** Who in the room holds words no Save has recorded, and which paragraphs of
+ *  them a restore to `v` would replace, as a sentence for the confirm. Empty
+ *  when nobody does. Asked of the room's presence (each editor says `unsaved`
+ *  when it wrote words no Save has recorded), and the paragraphs from the
+ *  same per-slot diff the restore itself applies. */
+async function hubRestoreWarning(v) {
+  const names = collab && collab.unsavedPeers ? collab.unsavedPeers().map(p => p.name || p.login || 'someone') : [];
+  const mine = source !== original || (M.layout && layoutSaid(layout) !== layoutSaid(JSON.parse(layoutOrig || '{}')));
+  let m = null;
+  if (collab && collab.mergeRestore) {
+    try {
+      const [c, l] = await Promise.all([
+        fetch(`${docStore()}/history/${v.version}/content`, { cache: 'no-store' }),
+        M.layout ? fetch(`${docStore()}/history/${v.version}/layout`, { cache: 'no-store' }) : null]);
+      if (c.ok && (!l || l.ok)) {
+        m = collab.mergeRestore({ content: original, layout: layoutOrig || '{}' },
+          { content: await c.text(), layout: l ? await l.text() : (layoutOrig || '{}') },
+          { content: source, layout: layout });
+      }
+    } catch (e) { /* the generic sentence below is true without it */ }
+  }
+  // A slot added since the saved version has no place in the restored one: it goes.
+  const lost = m && m.dropped && m.dropped.length
+    ? `This version does not have ${m.dropped.length === 1 ? 'the paragraph' : 'the paragraphs'} added since it was saved (${m.dropped.slice(0, 4).join(', ')}${m.dropped.length > 4 ? ', …' : ''}), so ${m.dropped.length === 1 ? 'it' : 'they'} will be dropped.\n\n`
+    : '';
+  if (!names.length && !mine) return lost;
+  const who = [...new Set(names)];
+  if (mine) who.push('you');
+  const list = who.length > 1 ? who.slice(0, -1).join(', ') + ' and ' + who[who.length - 1] : who[0];
+  let detail = '';
+  if (m) {
+    detail = m.taken.length
+      ? ` Words in ${m.taken.length === 1 ? 'this paragraph' : m.taken.length + ' paragraphs'} would be replaced (${m.taken.slice(0, 4).join(', ')}${m.taken.length > 4 ? ', …' : ''}); every other paragraph keeps what is typed in it.`
+      : ' Nothing they typed is in a paragraph this version changes, so it all stays.';
+  }
+  return `${list.charAt(0).toUpperCase() + list.slice(1)} ${who.length > 1 || who[0] === 'you' && who.length === 1 ? 'have' : 'has'} unsaved words in this session.${detail || ' A paragraph this version changes is replaced; the others keep what is typed in them.'}\n\n${lost}`;
+}
 async function hubRestore(v) {
+  const warn = await hubRestoreWarning(v);
   if (!await dsConfirm(`Bring back the version from ${fmtWhen(v.updated_at)}${v.label ? ` ("${v.label}")` : ''}?\n\n`
+      + warn
       + 'It becomes the current version — a new Save on top of the others, so nothing is lost. '
       + 'Everyone in this session gets it.', { okLabel: 'Restore' })) return;
   $('stat').textContent = 'restoring…';
   try {
+    if (collab) await collab.drainNow();   // a collaborator's words still held back by an open box count
     const r = await fetch(`${docStore()}/restore`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v.version }) });
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     // Adopt the files the way a collaborator's change lands, then record the
     // version the way a Save does: the room learns it through baseSha.
+    // As a per-slot diff: a paragraph the restored version does not change
+    // (against the version it goes on top of) keeps whatever is typed in it,
+    // so a colleague's unsaved words elsewhere survive. The hub's restore()
+    // leaves the room to the editor on purpose; this is where it is handled.
+    let kept = [];
+    if (collab && collab.mergeRestore) {
+      try {
+        const m = collab.mergeRestore({ content: original, layout: layoutOrig || '{}' },
+          { content: j.content, layout: j.layout != null ? j.layout : (layoutOrig || '{}') },
+          { content: source, layout: layout });
+        kept = m.kept;
+        j.__merged = m;
+      } catch (e) { j.__merged = null; }
+    }
     pushHistory();
-    source = j.content;
+    source = j.__merged ? j.__merged.content : j.content;
     if (M.layout && j.layout != null) {
-      layout = JSON.parse(j.layout);
+      layout = j.__merged ? j.__merged.layout : JSON.parse(j.layout);
       layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
       syncPageSize();
     }
-    original = source; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
+    // The saved baseline is the restored version itself; `source` may carry
+    // colleagues' unsaved words the diff kept, and those stay unsaved.
+    original = j.content; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
     docVersion = j.version;
     hubMarkSeen(j.version);
     await render();
@@ -27722,7 +28016,12 @@ async function hubRestore(v) {
     if (collab) { collab.forgetHistory(); collab.setBaseSha(j.version, { restored: true }); }
     clearDraftCache();
     markDirty();
-    $('stat').textContent = `restored — the version from ${fmtWhen(v.updated_at)} is the current one now`;
+    // Not a bare write: a render still queued behind this one (the collab
+    // adoption of the other editor's words) starts after it and claims the row
+    // with "rendering…" and its idle hint, and the confirmation was gone
+    // before it could be read. This one outlives the render about to start.
+    sayNowAndAfterRender(`restored — the version from ${fmtWhen(v.updated_at)} is the current one now`
+      + (kept.length ? `; unsaved words in ${kept.length === 1 ? 'a paragraph' : kept.length + ' paragraphs'} it did not change were kept — Save to keep them` : ''));
   } catch (e) {
     $('stat').textContent = 'restore failed: ' + e.message;
   }
@@ -28516,7 +28815,8 @@ function hubMentionWire(ta) {
     at = v.length - m[2].length - 1;
     const q = m[2].toLowerCase();
     const roster = await hubRosterLoad();
-    matches = roster.filter(s => !q || s.name.toLowerCase().includes(q) || s.email.startsWith(q)).slice(0, 6);
+    const fq = foldHaw(q);
+    matches = roster.filter(s => !q || foldHaw(s.name).includes(fq) || s.email.startsWith(q)).slice(0, 6);
     if (!matches.length) { close(); return; }
     idx = 0; paint();
   });
@@ -30395,6 +30695,7 @@ function currentDocSize() {
     return DOC_SIZES.find(d => Math.abs(d.w - p.w) < 0.02
       && (pageless ? d.h === null : d.h !== null && Math.abs(d.h - p.h) < 0.02)) || null;
   }
+  if (isPageless()) return DOC_SIZES.find(d => d.h === null && Math.abs(d.w - PAGE_W_IN) < 0.02) || null;
   return DOC_SIZES.find(d => d.h !== null
     && Math.abs(d.w - PAGE_W_IN) < 0.02 && Math.abs(d.h - PAGE_H_IN) < 0.02) || null;
 }
@@ -31104,9 +31405,10 @@ async function forgetProject(id) {
       + (isActive && dirty ? ' Unsaved edits here are lost.' : ''),
       { okLabel: 'Forget', danger: true })) return;
   try {
-    const r = await fetch('/__forget', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project: id }) });
-    const j = await r.json();
+    // postLocal, not a bare fetch: a server that has gone, or answers with an
+    // error page, is said in words ("the live server is not answering"), not
+    // as the parser's "Unexpected token '<'".
+    const j = await postLocal('/__forget', { project: id });
     if (!j.ok) throw new Error(j.error || 'refused');
   } catch (e) { $('stat').textContent = 'could not forget ' + name + ': ' + e.message; return; }
   delete REGISTRY[id];
@@ -31151,8 +31453,8 @@ $('size-list').onclick = async (e) => {
  *  to one that was resized and put back. */
 async function applyDocSize(d) {
   const built = M.page || {};
-  const isBuilt = d.h !== null && Math.abs(d.w - built.w) < 0.02
-                               && Math.abs(d.h - built.h) < 0.02;
+  const isBuilt = Math.abs(d.w - built.w) < 0.02
+    && (d.h === null ? built.h == null : built.h != null && Math.abs(d.h - built.h) < 0.02);
   if (isBuilt) delete layout.page;
   else layout.page = d.h === null ? { w: d.w, h: null } : { w: d.w, h: d.h };
   syncPageSize();
@@ -31176,7 +31478,7 @@ function syncPageSize() {
   // A pageless document has no bottom. The rules that keep content on the page
   // still need a number, so they get one no report will reach — the same
   // sentinel layout.py uses, so the two sides agree.
-  PAGE_H_IN = p ? (p.h === null || p.h === undefined ? PAGELESS_H : p.h) : M.page.h;
+  PAGE_H_IN = p ? (p.h === null || p.h === undefined ? PAGELESS_H : p.h) : (M.page.h == null ? PAGELESS_H : M.page.h);
 }
 
 $('download').onclick = () => {
@@ -31208,7 +31510,9 @@ function exportPages() {
     if (a < 1 || hi < a) return `pages: ${part.trim()} is not a range from 1 upward`;
     for (let k = a; k <= hi; k++) keep.add(k);
   }
-  if (Math.max(...keep) > n) return `pages: the report has ${n} page${n === 1 ? '' : 's'}`;
+  if (Math.max(...keep) > n) return isPageless()
+    ? 'pages: this report is one continuous page, so there is nothing to pick from — leave the field empty'
+    : `pages: the report has ${n} page${n === 1 ? '' : 's'}`;
   return [...keep].sort((a, b) => a - b);
 }
 // A report's own on-page "Download PDF" button (docsync.blocks.pdf_button)
@@ -31272,7 +31576,13 @@ const asDataUrl = async url => {
  *  <style>, images as data: URIs. A file that reaches for assets/ is only
  *  identical while it sits next to them — and a Squarespace block never
  *  does. Session uploads already live in memory as data URLs. */
-async function inlineEverything(doc) {
+async function inlineEverything(doc, opts = {}) {
+  // What the caller may want to tell the user: opts.fonts / opts.scripts turn
+  // the two network-or-folder inlinings on (a Squarespace block keeps its font
+  // links and takes no script, so they are off by default).
+  const res = { fonts: [], fontsLinked: [], scriptsInlined: 0, scriptsLeft: [] };
+  if (opts.fonts) await inlineWebFonts(doc, res);
+  if (opts.scripts) await inlineScripts(doc, res);
   for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"]')]) {
     const href = link.getAttribute('href') || '';
     // A web font's stylesheet stays a link — it is fetched from the web
@@ -31300,6 +31610,82 @@ async function inlineEverything(doc) {
     if (/^(data:|https?:|#)/i.test(src)) continue;
     try { img.setAttribute('href', localImages.get(src) || await asDataUrl(withBase(src))); }
     catch (e) { /* keep the relative path */ }
+  }
+  return res;
+}
+
+/** Google Fonts links -> @font-face rules with the woff2 files inline as data:
+ *  URIs, so the exported file sets itself in its fonts with no network (the
+ *  families are SIL OFL, which allows redistributing them). Only the latin and
+ *  latin-ext subsets are kept: the other subsets (cyrillic, greek, vietnamese…)
+ *  are most of the bytes and no Hawaiian-policy report uses them; the ʻokina
+ *  is in latin. A stylesheet whose CSS or any file will not fetch is left as
+ *  its <link> — the web copy beats a half-embedded one — and listed in
+ *  res.fontsLinked so the package can say so. res.fonts collects every face's
+ *  bytes for the package's fonts/ folder. */
+// A fetch that gives up: fonts.googleapis.com on a blocked or blackholed
+// network never answers, and the package export waited on it as long as the
+// browser would (minutes), with the status line saying only "preparing".
+// A stylesheet or face that has not arrived by then stays a <link>, and the
+// README says so, exactly as for a refusal.
+let FONT_FETCH_MS = 10000;
+const fetchWithin = (url, ms = FONT_FETCH_MS) => fetch(url, { signal: AbortSignal.timeout(ms) });
+async function inlineWebFonts(doc, res) {
+  for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"]')]) {
+    const href = link.getAttribute('href') || '';
+    if (!/^(https?:)?\/\/fonts\.googleapis\.com\//i.test(href)) continue;
+    try {
+      const r = await fetchWithin(href.startsWith('//') ? 'https:' + href : href);
+      if (!r.ok) throw new Error('css ' + r.status);
+      const css = await r.text();
+      const faces = [];
+      for (const m of css.matchAll(/(?:\/\*\s*([\w-]+)\s*\*\/\s*)?@font-face\s*{([^}]*)}/g)) {
+        if (m[1] && !/^latin(-ext)?$/.test(m[1])) continue;
+        const body = m[2];
+        const get = k => ((new RegExp(k + '\\s*:\\s*([^;]+)', 'i')).exec(body) || [])[1];
+        const url = /url\((['"]?)(https?:[^'")]+)\1\)/.exec(body);
+        if (!url) continue;
+        const fr = await fetchWithin(url[2]);
+        if (!fr.ok) throw new Error('font ' + fr.status);
+        const buf = new Uint8Array(await fr.arrayBuffer());
+        faces.push({ family: (get('font-family') || 'font').replace(/['"]/g, '').trim(),
+                     weight: (get('font-weight') || '400').trim(),
+                     style: (get('font-style') || 'normal').trim(),
+                     subset: m[1] || '', url: url[2], bytes: buf, rule: m[0].replace(/^\/\*[^*]*\*\/\s*/, '') });
+      }
+      if (!faces.length) throw new Error('no faces');
+      let inline = '';
+      for (const f of faces) {
+        const uri = await new Promise(ok => {
+          const fr = new FileReader();
+          fr.onload = () => ok(fr.result);
+          fr.readAsDataURL(new Blob([f.bytes], { type: 'font/woff2' }));
+        });
+        inline += f.rule.replace(f.url, uri) + '\n';
+      }
+      const st = doc.createElement('style');
+      st.setAttribute('data-ds-fonts', '');
+      st.textContent = inline;
+      link.replaceWith(st);
+      res.fonts.push(...faces);
+    } catch (e) { res.fontsLinked.push(href); }     // keep the <link>
+  }
+}
+
+/** A relative <script src> (the primer's primer.js) -> an inline script, so
+ *  the file does not need the folder it was exported from. */
+async function inlineScripts(doc, res) {
+  for (const sc of [...doc.querySelectorAll('script[src]')]) {
+    const src = sc.getAttribute('src') || '';
+    if (/^(data:|https?:|\/\/)/i.test(src)) { res.scriptsLeft.push(src); continue; }
+    try {
+      const r = await fetch(withBase(src));
+      if (!r.ok) throw new Error(r.status);
+      const code = await r.text();
+      sc.removeAttribute('src');
+      sc.textContent = code.replace(/<\/script/gi, '<\\/script');
+      res.scriptsInlined++;
+    } catch (e) { res.scriptsLeft.push(src); }      // keep the reference
   }
 }
 
@@ -31535,7 +31921,7 @@ async function exportHtml(forSquarespace) {
   try {
     const raw = await renderClean();
     const doc = new DOMParser().parseFromString(raw, 'text/html');
-    await inlineEverything(doc);
+    await inlineEverything(doc, { scripts: !forSquarespace });
 
     let out, name;
     if (!forSquarespace) {
@@ -31806,27 +32192,35 @@ async function exportPackage() {
     Object.entries(unzipSync(new Uint8Array(await (await exportBlob({ fmt: 'png' })).arrayBuffer())))
       .forEach(([n, b]) => { files[`pages/${n}`] = b; });
     const doc = new DOMParser().parseFromString(await renderClean(), 'text/html');
-    await inlineEverything(doc);
+    const inl = await inlineEverything(doc, { fonts: true, scripts: true });
     files[`${slug}.html`] = strToU8('<!DOCTYPE html>\n' + doc.documentElement.outerHTML);
+    // Faces whose bytes inlineWebFonts already holds, plus any @font-face still
+    // pointing at a URL (fetched here, as before).
     const css = [...doc.querySelectorAll('style')].map(n => n.textContent).join('\n');
-    const faces = fontFaces(css);
+    const faces = [...inl.fonts, ...fontFaces(css)];
     let fontCss = '', got = 0;
     const names = new Set();
     for (const [i, f] of faces.entries()) {
       const ext = (/\.(woff2?|ttf|otf)(\?|$)/i.exec(f.url) || [, 'woff2'])[1].toLowerCase();
-      let n = `${f.family.replace(/[^A-Za-z0-9]+/g, '-')}-${f.weight.replace(/\s+/g, '_')}${f.style === 'italic' ? '-italic' : ''}`;
+      let n = `${f.family.replace(/[^A-Za-z0-9]+/g, '-')}-${f.weight.replace(/\s+/g, '_')}${f.style === 'italic' ? '-italic' : ''}${f.subset ? '-' + f.subset : ''}`;
       if (names.has(n)) n += `-${i}`;
       names.add(n);
       try {
-        const r = await fetch(f.url);
-        if (!r.ok) continue;
-        files[`fonts/${n}.${ext}`] = new Uint8Array(await r.arrayBuffer());
+        const bytes = f.bytes || new Uint8Array(await (await fetch(f.url)).arrayBuffer());
+        if (!bytes.length) continue;
+        files[`fonts/${n}.${ext}`] = bytes;
         fontCss += f.rule.replace(f.url, `${n}.${ext}`) + '\n';
         got++;
       } catch (e) { /* a font that will not download is named in the README */ }
     }
     if (fontCss) files['fonts/fonts.css'] = strToU8(fontCss);
     const fams = [...new Set(faces.map(f => f.family))];
+    const fontNote = inl.fontsLinked.length
+      ? `Fonts NOT embedded: ${inl.fontsLinked.length} Google Fonts stylesheet${inl.fontsLinked.length === 1 ? '' : 's'} could not be fetched, so the HTML still links ${inl.fontsLinked.length === 1 ? 'it' : 'them'} (it needs a connection to show those fonts).`
+      : (inl.fonts.length ? 'Fonts: embedded in the HTML as woff2 (latin and latin-ext subsets), and in fonts/.' : '');
+    const scriptNote = inl.scriptsLeft.length
+      ? `Scripts still loaded from elsewhere: ${inl.scriptsLeft.join(', ')}.`
+      : (inl.scriptsInlined ? `${inl.scriptsInlined} script${inl.scriptsInlined === 1 ? '' : 's'} inlined into the HTML.` : '');
     files['README.txt'] = strToU8([
       `${slug} — package from the draft editor, ${new Date().toISOString().slice(0, 10)}`, '',
       `${slug}.pdf          the report as printed`,
@@ -31835,9 +32229,15 @@ async function exportPackage() {
       'fonts/               the font files the report loads, and fonts.css pointing at them',
       '', 'Fonts: ' + (fams.join(', ') || 'none beyond the system\'s'),
       `${got} of ${faces.length} font file${faces.length === 1 ? '' : 's'} included.`,
+      ...(fontNote ? [fontNote] : []), ...(scriptNote ? [scriptNote] : []),
       'The Google Fonts used here are under the SIL Open Font License; check any other font\'s licence before passing it on.',
     ].join('\n') + '\n');
     saveBlob(new Blob([zipSync(files, { level: 6 })], { type: 'application/zip' }), `${slug}-package.zip`);
+    // Said in the status line too, not only the README: a fallback is a decision
+    // the person should see without opening the zip.
+    $('stat').textContent += ` — ${got} font file${got === 1 ? '' : 's'} embedded`
+      + (inl.fontsLinked.length ? `; fonts LINKED, not embedded (could not fetch ${inl.fontsLinked.length})` : '')
+      + (inl.scriptsLeft.length ? '; a script is still external' : '');
   } catch (e) { $('stat').textContent = 'package failed: ' + e.message; }
 }
 
@@ -32165,6 +32565,14 @@ function _pilotValidateAddTable(o) {
   }
   for (const k of ['x', 'y', 'w'])
     if (o[k] != null && !(typeof o[k] === 'number' && isFinite(o[k]))) return _bad(`addTable: ${k} is inches, a number`);
+  // A chart, a shape and a box that sit off the page are refused by the
+  // engine ("extends past page 3"). A table is not, so x:50, y:800 was saved
+  // where nobody can see it (the sheet is overflow:hidden) and only audit()
+  // knew. Say it here, as the others do.
+  const w = o.w != null ? o.w : 3.5;
+  if ((o.x != null && (o.x < 0 || o.x + w > PAGE_W_IN + 0.01)) || (o.y != null && (o.y < 0 || o.y > PAGE_H_IN - 0.2)))
+    return _bad(`addTable: x ${o.x ?? '—'}, y ${o.y ?? '—'}, w ${w} puts the table off the page — the page is `
+      + `${PAGE_W_IN} × ${isPageless() ? 'unbounded' : PAGE_H_IN}in`);
   return { ok: true };
 }
 function _pilotApplyAddTable(o) {
@@ -32500,6 +32908,7 @@ function _pilotApplyDropStyle(scope, name) {
 // retext one. This is that missing write.
 function _pilotValidateSetBoxText(id, md) {
   if (!boxOf(id)) return { ok: false, error: `no text box '${id}' — check inventory()` };
+  if (typeof md !== 'string') return { ok: false, error: 'setBoxText(id, markdown) — the words are one string' };
   if (!(md || '').trim())
     return { ok: false, error: 'md must be non-empty — remove(id) is how a box goes away' };
   return { ok: true };
@@ -32684,6 +33093,29 @@ async function _pilotArrange(ids, o, run) {
     boxes[id] = { x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) };
   }
   return { ...docsync.api.status(), boxes, key: keyOf() };
+}
+/** Verbs that are not one op of a batch (setStyle, setChart, fit) still own
+ *  the same promise: a result the ENGINE will not build is put back and
+ *  refused with its words, never answered ok over "This draft does not
+ *  build" (setStyle('x', {size: 'abc'}) and setChart(id, {series: []}) did).
+ *  A draft that was already broken is left alone: this may be the fix. */
+async function _pilotGuarded(apply) {
+  const before = snapshot(), wasFailed = renderFailed;
+  pushHistory();
+  const r = apply();
+  markDirty();
+  await render();
+  if (renderFailed && !wasFailed) {
+    const why = renderError;
+    const st = JSON.parse(before);
+    source = st.source; layout = st.layout;
+    withdrawStep();
+    markDirty();
+    await render();
+    return { ok: false, error: 'the engine would not build the result, so nothing was changed'
+      + (why ? ` — ${why}` : '') };
+  }
+  return r;
 }
 async function _pilotOne(verb, args) {
   const r = await docsync.api.batch([{ verb, args }]);
@@ -33013,7 +33445,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // specifically, rather than at whichever tab claims first.
       tab: PILOT_TAB,
       page: { w: PAGE_W_IN, h: PAGE_H_IN,
-              pageless: !!(layout.page && layout.page.h == null) },
+              pageless: isPageless() },
       overflow: [...new Set(lastFit.map(b => b.page))],
       selected: [...selIds], selectedPage: selPage,
       // Live collaboration, when this project has a relay: status is one of
@@ -33215,10 +33647,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateSetChart(id, patch);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplySetChart(id, patch);
-    markDirty();
-    await render();
+    const r = await _pilotGuarded(() => _pilotApplySetChart(id, patch));
+    if (r.ok === false) return r;
     const t = chartOf(r.id);
     return { ...docsync.api.status(), id: r.id, chart: t ? t.chart : null };
   },
@@ -33539,10 +33969,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateSetStyle(key, patch);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplySetStyle(key, patch);
-    markDirty();
-    await render();
+    const r = await _pilotGuarded(() => _pilotApplySetStyle(key, patch));
+    if (r.ok === false) return r;
     return { ...docsync.api.status(), ...r };
   },
 
@@ -33567,10 +33995,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateFit(id, mode, align);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyFit(id, mode, align);
-    markDirty();
-    await render();
+    const r = await _pilotGuarded(() => _pilotApplyFit(id, mode, align));
+    if (r.ok === false) return r;
     return { ...docsync.api.status(), ...r };
   },
 
@@ -34002,7 +34428,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       items.push({ id, page: pg ? pg.dataset.page : null, b: m });
     });
     const tol = 0.05;
-    const pageH = (layout.page && layout.page.h === null) ? Infinity : PAGE_H_IN;
+    const pageH = isPageless() ? Infinity : PAGE_H_IN;
     items.forEach(({ id, page, b }) => {
       if (b.x < -tol || b.y < -tol
           || b.x + b.w > PAGE_W_IN + tol || b.y + b.h > pageH + tol)

@@ -4971,6 +4971,14 @@ class Layout:
     def __init__(self, path: Path, page: tuple[float, float] = (PAGE_W_IN, PAGE_H_IN)):
         self.path = path
         self.page_w, self.page_h = page
+        # A report BUILT pageless passes (w, None): a fixed width, no bottom.
+        # Treated as if layout.json had said {"h": null} — page_h gets the
+        # sentinel the clamps measure against, and `page` is set so page_style()
+        # sends out `@page{size:Win auto}` with the first layer().
+        self.built_pageless = page[1] is None
+        if self.built_pageless:
+            self.page = (float(page[0]), None)
+            self.page_h = PAGELESS_H
         # Set by Content's constructor (bind_footnotes) when one is built
         # against this Layout. None means nobody did — a Layout used on its
         # own, in a test or a tool — and an endnotes box then renders its
@@ -4988,7 +4996,7 @@ class Layout:
         # report was BUILT at; layout.json may override it, which is what
         # File > Resize writes. Read before anything else, because every
         # geometry rule below measures against it.
-        self.page = _check_page(raw.get("page"), path.name)
+        self.page = _check_page(raw.get("page"), path.name) or getattr(self, "page", None)
         if self.page:
             self.page_w = self.page[0]
             self.page_h = self.page[1] if self.page[1] is not None else PAGELESS_H
@@ -7460,6 +7468,13 @@ class Layout:
         return next((t for t in self.tables if t.get("id") == table_id), None)
 
     # ---- shapes ----------------------------------------------------------
+
+    @property
+    def page_min_h(self) -> float:
+        """The `.page` min-height for a renderer's own stylesheet: 0 for a
+        pageless report (the sheet is as tall as its content, never the
+        sentinel), else the page height."""
+        return 0 if (self.page and self.page[1] is None) else self.page_h
 
     def page_style(self) -> str:
         """The page-size override as CSS, or "" when there is none.

@@ -303,6 +303,7 @@ Sources
 _BINDING = """
   # Added by "+ New report" (docsync/new.py) — {origin}.
   - id: {slug}
+    name: "{name}"
     content: projects/{slug}/content.md
     # Editability findings (dead text / frozen prose) are build ERRORS for
     # this project — see docsync.check. Name deliberate exceptions in an
@@ -344,8 +345,17 @@ def _apply_title(layout: dict, name: str) -> None:
 def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
            root: Path = ROOT, pages: int = 1, notices=None,
            layout: dict | None = None, template: str = "",
-           scheme: str = "", data: Path | str | None = None) -> Path:
+           scheme: str = "", data: Path | str | None = None,
+           text: str = "", meta: dict | None = None) -> Path:
     """Write the project and register it in docsync.yml. Returns its dir.
+
+    `text` is a written document (markdown: `# title`, `## sections`,
+    `[^id]` citations with their `[^id]: source` lines — docsync.compose
+    says what it reads) laid out on the template's pages at creation, so
+    the editor opens on a report and not on a pattern page. It needs a
+    template with a repeating page (report or brief). `meta` overrides the
+    text's own `Subtitle:` / `Date:` / `Author:` lines; a missing `name`
+    is the text's `# title`.
 
     Refuses rather than overwrites: an existing binding or directory means
     the slug is taken, and "create" must never be a way to lose work.
@@ -367,7 +377,26 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     """
     palette = _DEFAULT_PALETTE
     tpl_assets: list = []
-    content_md = _CONTENT_MD.format(name=name.strip())
+    doc = None
+    if text and text.strip():
+        if not template:
+            raise NewProjectError(
+                "laying text out needs a template (--template "
+                "appleseed-report or appleseed-brief); the blank canvas has "
+                "no page pattern to repeat")
+        if data is not None:
+            raise NewProjectError("a testimony project takes its words from "
+                                  "report_data.json, not from --text")
+        from .compose import parse as _parse
+        doc = _parse(text)
+        if meta:
+            doc.meta.update({k: v for k, v in meta.items() if v})
+        if not (name or "").strip():
+            name = doc.title
+        if not doc.intro and not doc.sections:
+            raise NewProjectError("the text has no paragraphs or ## sections "
+                                  "to lay out")
+    content_md = _CONTENT_MD.format(name=(name or "").strip())
     origin = "a blank local project"
     figures: dict | None = None
     if data is not None:
@@ -417,6 +446,17 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
         pages = t["pages"]
         # A scheme-less template (the one-pager) takes no colour argument.
         layout = t["layout"](color) if color else t["layout"]()
+        laid = None
+        if doc is not None:
+            from .compose import lay_out as _lay_out, sources_block as _sources
+            from .templates import section_pattern
+            pattern = section_pattern(template, color)
+            if pattern is None:
+                raise NewProjectError(
+                    f'the "{t["name"]}" template has no page to repeat — '
+                    "lay text out on appleseed-report or appleseed-brief")
+            laid = _lay_out(layout, pattern, doc, name.strip())
+            pages = max(pages, laid["pages"])
         _apply_title(layout, name.strip())
         palette = t["palette"]
         if color:
@@ -427,13 +467,21 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
             if not src.is_file():
                 raise NewProjectError(f"template asset missing: {a}")
         content_md = TPL_CONTENT_MD.format(name=name.strip(), label=t["name"])
-        origin = f'from the "{t["name"]}" template'
+        if doc is not None and doc.sources:
+            # The text's own sources stand in for the placeholder line.
+            content_md = content_md.replace(
+                "[example]: Replace or delete this placeholder source — "
+                "https://example.com", _sources(doc))
+        origin = f'from the "{t["name"]}" template' + (
+            f", {len(doc.sections)} section(s) laid out from text"
+            if doc is not None else "")
     if not SLUG_RE.match(slug):
         raise NewProjectError(
             f"'{slug}' is not a usable id — lowercase letters, digits and "
             "hyphens, starting with a letter or digit")
-    if not name.strip():
-        raise NewProjectError("the report needs a title")
+    if not (name or "").strip():
+        raise NewProjectError("the report needs a title (--name, or a `# title` "
+                              "line at the top of the text)")
     try:
         w, h = float(w), float(h)
     except (TypeError, ValueError) as e:
@@ -506,7 +554,20 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--id", required=True, dest="slug")
-    ap.add_argument("--name", required=True)
+    ap.add_argument("--name", default="",
+                    help="the title; with --text, defaults to its `# title`")
+    ap.add_argument("--text", default=None, metavar="FILE",
+                    help="a markdown document (- for stdin) laid out on the "
+                         "template's pages: paragraphs before the first ## are "
+                         "the summary, each ## is a section page, ### a "
+                         "subheading, > a pull quote, [^id] a citation with its "
+                         "[^id]: source line anywhere. Needs --template.")
+    ap.add_argument("--subtitle", default="", help="cover subtitle (with --text)")
+    ap.add_argument("--date", default="", help='cover date, e.g. "March 2027"')
+    ap.add_argument("--author", default="", help="inside-cover author line")
+    ap.add_argument("--build", action="store_true",
+                    help="render and stage the new project, so it opens at "
+                         "once and a layout the engine refuses is found now")
     ap.add_argument("--w", type=float, default=8.5)
     ap.add_argument("--h", type=float, default=11.0)
     ap.add_argument("--template", default="",
@@ -520,14 +581,48 @@ def main(argv=None) -> int:
                          "docsync.testimony_report renderer, and a heading "
                          "slot seeded per measured argument")
     a = ap.parse_args(argv)
+    text = ""
+    if a.text is not None:
+        try:
+            text = (sys.stdin.read() if a.text == "-"
+                    else Path(a.text).expanduser().read_text(encoding="utf-8"))
+        except OSError as e:
+            print(f"  new: cannot read --text: {e}", file=sys.stderr)
+            return 1
     try:
         proj = create(a.slug, a.name, a.w, a.h, template=a.template,
-                      scheme=a.scheme, data=a.data)
+                      scheme=a.scheme, data=a.data, text=text,
+                      meta={"subtitle": a.subtitle, "date": a.date,
+                            "author": a.author})
     except NewProjectError as e:
         print(f"  new: {e}", file=sys.stderr)
         return 1
     print(f"  created {proj.relative_to(ROOT)} and registered '{a.slug}' in docsync.yml")
-    print(f"  stage it:  python3 -m docsync.stage --id {a.slug}")
+    if text:
+        from .compose import parse as _parse
+        d = _parse(text)
+        dangling = sorted(d.citations() - set(d.sources))
+        if dangling:
+            print("  cited but not declared (they render as a red ? until "
+                  "added in the Sources panel): " + ", ".join(dangling))
+    if a.build:
+        import subprocess
+        r = subprocess.run([sys.executable, str(proj / "render_report.py")],
+                           cwd=ROOT, capture_output=True, text=True)
+        if r.returncode:
+            print(f"  new: the first build failed — the files are in place, "
+                  f"fix and rerun it:\n{r.stderr.strip()}", file=sys.stderr)
+            return 1
+        r = subprocess.run([sys.executable, "-m", "docsync.stage", "--id", a.slug],
+                           cwd=ROOT, capture_output=True, text=True)
+        if r.returncode:
+            print(f"  new: staged nothing:\n{r.stderr.strip()}", file=sys.stderr)
+            return 1
+        print(f"  built and staged: open ?project={a.slug} in the editor "
+              f"(docs/{a.slug}/edit.html), then audit() for overflow")
+    else:
+        print(f"  stage it:  python3 -m docsync.stage --id {a.slug}"
+              + ("   (or rerun with --build)" if text else ""))
     return 0
 
 

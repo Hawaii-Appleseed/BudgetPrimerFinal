@@ -512,7 +512,8 @@ class _WarmChrome:
                   {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
                   s, deadline)
 
-    def pdf(self, url: str, budget_ms: int = 12000, timeout: float = 45) -> bytes:
+    def pdf(self, url: str, budget_ms: int = 12000, timeout: float = 45,
+            width_px: int | None = None) -> bytes:
         """What `--virtual-time-budget=12000 --no-pdf-header-footer
         --print-to-pdf` wrote, byte for byte bar the timestamps: load, then
         budget_ms of fast-forwarded page time for timers, fonts and
@@ -527,6 +528,10 @@ class _WarmChrome:
             on = lambda ev: (lambda d: d.get("method") == ev and d.get("sessionId") == s)
             self.call("Page.enable", None, s, deadline)
             self._still(s, deadline)
+            if width_px:     # a pageless sheet is laid out at ITS width, not the window's
+                self.call("Emulation.setDeviceMetricsOverride",
+                          {"width": width_px, "height": 1000, "deviceScaleFactor": 1,
+                           "mobile": False}, s, deadline)
             self.call("Page.navigate", {"url": url}, s, deadline)
             self._wait(on("Page.loadEventFired"), deadline)
             self.call("Emulation.setVirtualTimePolicy",
@@ -537,11 +542,28 @@ class _WarmChrome:
             self.call("Emulation.setVirtualTimePolicy", {"policy": "advance"}, s, deadline)
             # Tagged (Chrome's default now; asked for so it stays so) and
             # bookmarked from the headings (INDESIGN_PARITY.md 34).
-            r = self.call("Page.printToPDF", {"printBackground": True,
-                                              "preferCSSPageSize": True,
-                                              "displayHeaderFooter": False,
-                                              "generateTaggedPDF": True,
-                                              "generateDocumentOutline": True}, s, deadline)
+            args = {"printBackground": True,
+                    "preferCSSPageSize": True,
+                    "displayHeaderFooter": False,
+                    "generateTaggedPDF": True,
+                    "generateDocumentOutline": True}
+            if width_px:
+                # Pageless: one sheet as tall as the content. Chrome ignores
+                # `@page{size:Win auto}` and a script-set @page height laid out
+                # ~10% taller than it measured (a second, mostly empty page), so
+                # the sheet is measured here and handed to printToPDF as paper.
+                self.call("Emulation.setEmulatedMedia",
+                          {"media": "print",
+                           "features": [{"name": "prefers-reduced-motion", "value": "reduce"}]},
+                          s, deadline)      # measure what print will lay out
+                h = self.call("Runtime.evaluate", {
+                    "expression": "Math.ceil(Math.max(document.body.getBoundingClientRect().bottom"
+                                  "+scrollY, document.documentElement.scrollHeight))",
+                    "returnByValue": True}, s, deadline)["result"]["value"]
+                args.update({"preferCSSPageSize": False, "paperWidth": width_px / 96,
+                             "paperHeight": (h + 2) / 96, "marginTop": 0, "marginBottom": 0,
+                             "marginLeft": 0, "marginRight": 0})
+            r = self.call("Page.printToPDF", args, s, deadline)
             return base64.b64decode(r["data"])
         finally:
             try:
@@ -599,18 +621,104 @@ class _WarmChrome:
                      " res(r ? [r.left + scrollX, r.top + scrollY, r.width, r.height] : null); })))")
             x, y, bw, bh = box or (0, 0, w, 1056)
             k = w / bw if bw else 1                  # 1, or 0.8 under a 1.25 zoom
-            r = self.call("Page.captureScreenshot",
-                          {"format": "png", "captureBeyondViewport": True,
-                           "clip": {"x": x, "y": y, "width": bw,
-                                    "height": min(bh, 16000 / scale / k), "scale": k}},
-                          s, deadline)
-            return base64.b64decode(r["data"])
+            # Chrome will not draw a texture taller than ~16384 device px, so a
+            # long page (a pageless report at scale 2 is 30,000+) used to be cut
+            # at 16000. It is shot in strips, each under the limit, and the
+            # strips are joined into one PNG (_stitch_pngs).
+            strip = max(1.0, TILE_PX / scale / k)
+            tiles, off = [], 0.0
+            while off < bh - 0.01:
+                h = min(strip, bh - off)
+                r = self.call("Page.captureScreenshot",
+                              {"format": "png", "captureBeyondViewport": True,
+                               "clip": {"x": x, "y": y + off, "width": bw,
+                                        "height": h, "scale": k}},
+                              s, deadline)
+                tiles.append(base64.b64decode(r["data"]))
+                off += h
+            return _stitch_pngs(tiles)
         finally:
             try:
                 self.call("Target.closeTarget", {"targetId": tid},
                           deadline=time.time() + 5)
             except Exception:                                # noqa: BLE001
                 pass
+
+
+TILE_PX = 12000        # device px per PNG strip: well under Chrome's ~16384 texture limit
+
+
+def _stitch_pngs(tiles: list) -> bytes:
+    """One PNG from strips of equal width stacked top to bottom (8-bit,
+    non-interlaced, as Chrome writes them). No image library: a PNG row is
+    filtered against the row above it, so the rows of a later strip can be
+    appended as they are EXCEPT its first, which was filtered against nothing.
+    That one row is unfiltered here and stored raw; every row after it
+    decodes to the same pixels, because the row above it is unchanged."""
+    import struct
+    import zlib
+    if len(tiles) == 1:
+        return tiles[0]
+    sig = b"\x89PNG\r\n\x1a\n"
+
+    def parse(png):
+        if png[:8] != sig:
+            raise ValueError("not a PNG")
+        pos, ihdr, idat = 8, None, []
+        while pos < len(png):
+            n, typ = struct.unpack(">I4s", png[pos:pos + 8])
+            body = png[pos + 8:pos + 8 + n]
+            if typ == b"IHDR":
+                ihdr = body
+            elif typ == b"IDAT":
+                idat.append(body)
+            pos += 12 + n
+        w, h, depth, ctype, _, _, inter = struct.unpack(">IIBBBBB", ihdr)
+        if depth != 8 or inter or ctype not in (2, 6):
+            raise ValueError("unsupported PNG layout")
+        return w, h, ctype, b"".join(idat)
+
+    def first_row_raw(row, bpp):
+        """Row 0 of a strip, unfiltered (the row above it is all zero)."""
+        f, d = row[0], bytearray(row[1:])
+        if f == 0:
+            return bytes(d)
+        for i in range(len(d)):
+            a = d[i - bpp] if i >= bpp else 0
+            if f == 1:
+                d[i] = (d[i] + a) & 255
+            elif f == 3:
+                d[i] = (d[i] + (a >> 1)) & 255
+            elif f == 4:                       # Paeth with b = c = 0 picks a
+                d[i] = (d[i] + a) & 255
+            # f == 2 (Up): the row above is zero, so the byte is already final
+        return bytes(d)
+
+    total = 0
+    co = zlib.compressobj(6)
+    out, width, ctype0 = [], None, None
+    for i, t in enumerate(tiles):
+        w, h, ctype, z = parse(t)
+        if width is None:
+            width, ctype0 = w, ctype
+        elif (w, ctype) != (width, ctype0):
+            raise ValueError("strips differ in width")
+        bpp = 4 if ctype == 6 else 3
+        raw = zlib.decompress(z)
+        if len(raw) != h * (1 + w * bpp):
+            raise ValueError("bad PNG data")
+        if i:
+            rl = 1 + w * bpp
+            raw = b"\x00" + first_row_raw(raw[:rl], bpp) + raw[rl:]
+        out.append(co.compress(raw))
+        total += h
+    out.append(co.flush())
+    ihdr = struct.pack(">IIBBBBB", width, total, 8, ctype0, 0, 0, 0)
+
+    def chunk(typ, body):
+        return (struct.pack(">I", len(body)) + typ + body
+                + struct.pack(">I", zlib.crc32(typ + body) & 0xFFFFFFFF))
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"".join(out)) + chunk(b"IEND", b"")
 
 
 WARM_CHROME: list = [None]
@@ -628,14 +736,14 @@ def _warm_chrome() -> _WarmChrome:
     return c
 
 
-def _warm_pdf(html: Path) -> bytes | None:
+def _warm_pdf(html: Path, width_px: int | None = None) -> bytes | None:
     """html printed by the warm Chrome, or None if that failed for any reason
     — the caller then takes the cold one-shot launch, so this can only make an
     export faster, never make one fail. A failed Chrome is dropped, and the
     next export starts a fresh one."""
     with WARM_LOCK:
         try:
-            return _warm_chrome().pdf(html.resolve().as_uri())
+            return _warm_chrome().pdf(html.resolve().as_uri(), width_px=width_px)
         except Exception as e:                               # noqa: BLE001
             print(f"  warm Chrome PDF failed ({e}); using a one-shot Chrome")
             if WARM_CHROME[0] is not None:
@@ -666,6 +774,41 @@ def _page_width_px(html: str) -> int:
     the one-shot Chrome cannot measure it. Letter when there is none."""
     m = PAGE_W_RE.search(html)
     return round(float(m.group(1)) * 96) if m else 816
+
+
+PAGELESS_RE = re.compile(r"@page\{size:\s*([\d.]+)in\s+auto")
+
+# A pageless report names its sheet `@page{size:12.5in auto}`, which is what the
+# author means, but Chrome ignores an `auto` height and prints Letter (measured:
+# our-mission came out as 612x792pt pages, two of them, not one sheet). So the
+# export measures the sheet itself and states the height in inches. A script,
+# not a CDP call, so the warm Chrome and the cold one-shot both get it; it
+# re-measures on a timer because charts, fonts and count-ups change the height
+# after load (the virtual-time budget fast-forwards the timer).
+PAGELESS_SIZE_JS = """<script data-ds-pageless>(function(){var W=%s;
+function f(){var m=document.body.getBoundingClientRect().bottom+scrollY;
+document.querySelectorAll('section.page').forEach(function(p){
+var r=p.getBoundingClientRect();m=Math.max(m,r.bottom+scrollY);});
+if(!m)return;var h=(Math.ceil(m)+2)/96,s=document.getElementById('ds-pageless-size');
+if(!s){s=document.createElement('style');s.id='ds-pageless-size';document.head.appendChild(s);}
+s.textContent='@page{size:'+W+'in '+h.toFixed(3)+'in;margin:0}';}
+f();setInterval(f,200);addEventListener('load',f);})();</script>"""
+
+
+def _pageless_width_in(html: str):
+    """The sheet width in inches when the HTML is a pageless report, else None."""
+    m = PAGELESS_RE.search(html)
+    return float(m.group(1)) if m else None
+
+
+def _size_pageless(html: str) -> str:
+    """The export's HTML with the sheet-measuring script added, if pageless."""
+    w = _pageless_width_in(html)
+    if w is None:
+        return html
+    tag = PAGELESS_SIZE_JS % w
+    k = html.rfind("</body>")
+    return html[:k] + tag + html[k:] if k >= 0 else html + tag
 
 
 def _leave_background():
@@ -2239,6 +2382,10 @@ class Handler(SimpleHTTPRequestHandler):
         # one alongside "Blank canvas" (its select has no reason to reset),
         # so it is dropped here rather than refused there.
         scheme = str(req.get("scheme") or "").strip() if template else ""
+        # A written document to lay out on the template's pages (docsync.compose):
+        # the MCP server's new_report and a script pass it; the form does not.
+        text = str(req.get("text") or "")
+        meta = {k: str(req.get(k) or "").strip() for k in ("subtitle", "date", "author")}
         size = req.get("size") or {}
         try:
             w = float(size.get("w", 8.5))
@@ -2255,7 +2402,7 @@ class Handler(SimpleHTTPRequestHandler):
             with _host_lock():
                 yml_before = yml.read_text() if yml.is_file() else ""
                 create(slug, name, w, h, root=SELF_ROOT, template=template,
-                       scheme=scheme)
+                       scheme=scheme, text=text, meta=meta)
         except NewProjectError as e:
             return self._json(200, {"ok": False, "error": str(e)})
         except Exception as e:                   # noqa: BLE001 — report it
@@ -2951,6 +3098,7 @@ class Handler(SimpleHTTPRequestHandler):
                     if isinstance(keep, str):
                         return self._json(400, {"ok": False, "error": keep})
                     out_html.write_text(_only_pages(html, keep))
+                out_html.write_text(_size_pageless(out_html.read_text()))
                 data = self._chrome_pdf(out_html)
                 return self._bytes(200, "application/pdf", data, f"{pid}.pdf")
             html = out_html.read_text()
@@ -3037,13 +3185,16 @@ class Handler(SimpleHTTPRequestHandler):
         prof = Path(tempfile.mkdtemp(prefix="primer-chrome-"))
         pdf = prof / "out.pdf"
         try:
-            data = _warm_pdf(out_html)
+            wi = _pageless_width_in(out_html.read_text())
+            wpx = round(wi * 96) if wi else None
+            data = _warm_pdf(out_html, wpx)
             if data:
                 return data
             if not self._chrome_capture(
                 [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
                  "--no-first-run", f"--user-data-dir={prof}",
                  "--virtual-time-budget=12000", "--no-pdf-header-footer",
+                 *([f"--window-size={wpx},1000"] if wpx else []),
                  "--export-tagged-pdf", "--generate-pdf-document-outline",
                  f"--print-to-pdf={pdf}", out_html.resolve().as_uri()],
                 pdf, deadline=50, settle=2.0):
