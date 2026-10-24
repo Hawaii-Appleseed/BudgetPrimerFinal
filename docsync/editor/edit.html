@@ -31024,11 +31024,30 @@ async function newReport(intoNewWindow) {
   }
   fields.push({ name: 'size', label: 'Page size (blank canvas)', type: 'select',
     value: 'letter', options: NEW_REPORT_SIZES });
+  if (templates.length) {
+    // A written document, laid out on the template's pages at creation
+    // (docsync.compose): the summary, a section page per ##, the contents
+    // and the sources filled, so Create lands on a report rather than on
+    // the pattern page. The server estimates the pagination; audit() after.
+    fields.push({ name: 'text', type: 'textarea',
+      label: 'Paste the document (optional, with a template): # title, '
+           + 'paragraphs as the summary, ## a section per page, ### a '
+           + 'subheading, > a pull quote, [^id] citations with their '
+           + '[^id]: source lines',
+      placeholder: '# Kūpuna Care Gap\n\nThe summary…\n\n## Who is caring\n\n'
+                 + 'Body text.[^aarp]\n\n[^aarp]: AARP 2025 — https://…' });
+  }
   const r = await dsForm('New report', fields, { okLabel: 'Create',
-       validate: v => slugifyReport(v.slug || v.name || '')
-         ? null : 'a title (or a short id) is needed' });
+       validate: v => !slugifyReport(v.slug || v.name || '')
+           && !/^#\s+\S/m.test(v.text || '')
+         ? 'a title (or a short id) is needed'
+         : (v.text || '').trim() && !v.template
+           ? 'pasted text needs a template to lay it out on (Start from)'
+           : null });
   if (!r) return;
-  const name = r.name.trim();
+  const text = (r.text || '').trim();
+  const name = r.name.trim()
+    || ((text.match(/^#\s+(.+)$/m) || [])[1] || '').trim();
   const slug = slugifyReport(r.slug || name);
   const size = NEW_REPORT_SIZES.find(s => s.value === r.size) || NEW_REPORT_SIZES[0];
   $('stat').textContent = `creating "${name}"…`;
@@ -31038,7 +31057,7 @@ async function newReport(intoNewWindow) {
     // than as "Unexpected token '<'"; a template's first build can take a
     // while, hence the ceiling.
     j = await postLocal('/__scaffold', { name, slug, template: r.template || '',
-                                         scheme: r.scheme || '',
+                                         scheme: r.scheme || '', text,
                                          size: { w: size.w, h: size.h } }, 120000);
   } catch (e) {
     $('stat').textContent = 'could not create it: ' + e.message;

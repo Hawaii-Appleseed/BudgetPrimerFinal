@@ -5405,6 +5405,9 @@ check_eq("compose: a lead-in is the first words in bold capitals",
          "**MORE THAN 154,000 PEOPLE PROVIDE UNPAID** care. Most hold a job.")
 check_eq("compose: a lead-in stops at a clause",
          _cp._lead_in("In total, the finding is this."), "**IN TOTAL,** the finding is this.")
+check_eq("compose: a citation inside the lead-in keeps its id",
+         _cp._lead_in("Costs rose.[^aarp] Most hold a job."),
+         "**COSTS ROSE.[^aarp] MOST HOLD A JOB.**")
 check_eq("compose: an opening already in bold is left alone",
          _cp._lead_in("**Already** bold."), "**Already** bold.")
 check_eq("compose: the one-pager has no page to repeat",

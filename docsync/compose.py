@@ -209,7 +209,11 @@ def _lead_in(md: str) -> str:
             n = j + 1
             break
     head, tail = " ".join(words[:n]), " ".join(words[n:])
-    lead = f"**{head.upper()}**"
+    # Capitals for the words only: a [^id] token inside the lead-in keeps
+    # its id, or the citation stops matching its source.
+    up = "".join(p if _CITE.fullmatch(p) else p.upper()
+                 for p in re.split(r"(\[\^[A-Za-z0-9_.-]+\])", head))
+    lead = f"**{up}**"
     return (lead + (" " + tail if tail else "")) + (sep + rest if sep else "")
 
 
