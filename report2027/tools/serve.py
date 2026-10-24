@@ -540,6 +540,11 @@ class _WarmChrome:
             self._wait(on("Emulation.virtualTimeBudgetExpired"), deadline)
             # Budget spent leaves time paused, and a paused page cannot print.
             self.call("Emulation.setVirtualTimePolicy", {"policy": "advance"}, s, deadline)
+            # Every face the text asked for, arrived: a font still in flight
+            # prints as its fallback (measured: Manrope as Lucida Grande).
+            self.call("Runtime.evaluate", {
+                "expression": "document.fonts.ready.then(function(){return document.fonts.status})",
+                "awaitPromise": True, "returnByValue": True}, s, deadline)
             # Tagged (Chrome's default now; asked for so it stays so) and
             # bookmarked from the headings (INDESIGN_PARITY.md 34).
             args = {"printBackground": True,
@@ -774,6 +779,87 @@ def _page_width_px(html: str) -> int:
     the one-shot Chrome cannot measure it. Letter when there is none."""
     m = PAGE_W_RE.search(html)
     return round(float(m.group(1)) * 96) if m else 816
+
+
+# ---- web fonts: carried by the export, not fetched by Chrome at print time ----
+# A web-page report (our-mission, rxkids, tfc-2027-priorities, wfc-credits) sets
+# its type from Google Fonts by a <link>. Printed that way, the PDF was set in
+# the fallbacks: measured on our-mission, Manrope never arrived before the warm
+# Chrome printed (Lucida Grande in its place), and rxkids' Libre Franklin came
+# out as Arial. Both paths load a font only when text first needs it, which
+# under a virtual-time budget can be after the print. So the export carries the
+# faces itself: each Google Fonts stylesheet becomes a <style> of @font-face
+# rules with the files inline as data: URIs (latin and latin-ext only, as the
+# editor's package export keeps them — the ʻokina is in latin), cached under
+# ~/.cider/fonts so the second export needs no network, and a PDF exported
+# offline is still set in its faces. A stylesheet or file that will not fetch
+# keeps its <link>: Chrome then does what it always did.
+FONT_LINK_RE = re.compile(
+    r"""<link\b[^>]*\bhref\s*=\s*["'](?:https?:)?//fonts\.googleapis\.com/css2?\?[^"']+["'][^>]*>""", re.I)
+FONT_FACE_RE = re.compile(r"(?:/\*\s*([\w-]+)\s*\*/\s*)?@font-face\s*{([^}]*)}")
+FONT_URL_RE = re.compile(r"""url\((['"]?)(https?:[^'")]+)\1\)""")
+FONT_FETCH_S = 10
+# Google serves woff2 with per-subset @font-face rules only to a browser it
+# knows; urllib's own name gets one TTF per family.
+FONT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+
+def _font_cache_dir() -> Path:
+    return Path(os.environ.get("CIDER_FONT_CACHE") or Path.home() / ".cider" / "fonts")
+
+
+def _font_fetch(url: str) -> bytes:
+    """The bytes at `url`, from the cache or the network (then cached). Raises
+    on any failure, and the caller keeps the <link>."""
+    import urllib.request
+    cache = _font_cache_dir() / hashlib.sha1(url.encode()).hexdigest()
+    if cache.is_file():
+        return cache.read_bytes()
+    req = urllib.request.Request(url, headers={"User-Agent": FONT_UA})
+    with urllib.request.urlopen(req, timeout=FONT_FETCH_S) as r:
+        data = r.read()
+    if not data:
+        raise RuntimeError(f"empty answer from {url}")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache.with_suffix(".part")
+    tmp.write_bytes(data)
+    tmp.replace(cache)
+    return data
+
+
+def _inline_webfonts(html: str) -> str:
+    """Every Google Fonts <link> in `html` -> a <style data-ds-fonts> of its
+    latin/latin-ext @font-face rules with the files inline, or the <link> as
+    it was when anything will not fetch."""
+    def one(m):
+        tag = m.group(0)
+        href = re.search(r"""\bhref\s*=\s*["']([^"']+)["']""", tag, re.I).group(1).replace("&amp;", "&")
+        if href.startswith("//"):
+            href = "https:" + href
+        try:
+            css = _font_fetch(href).decode("utf-8", "replace")
+            rules = []
+            for fm in FONT_FACE_RE.finditer(css):
+                if fm.group(1) and not re.fullmatch(r"latin(-ext)?", fm.group(1)):
+                    continue
+                um = FONT_URL_RE.search(fm.group(2))
+                if not um:
+                    continue
+                data = _font_fetch(um.group(2))
+                ext = (re.search(r"\.(woff2?|ttf|otf)(?:\?|$)", um.group(2)) or [None, "woff2"])[1]
+                mime = {"woff2": "font/woff2", "woff": "font/woff", "ttf": "font/ttf", "otf": "font/otf"}[ext.lower()]
+                rule = fm.group(0)
+                if fm.group(1):
+                    rule = rule[rule.index("@font-face"):]
+                rules.append(rule.replace(um.group(2), f"data:{mime};base64," + base64.b64encode(data).decode()))
+            if not rules:
+                raise RuntimeError("no faces")
+            return "<style data-ds-fonts>" + "\n".join(rules) + "</style>"
+        except Exception as e:                                   # noqa: BLE001
+            print(f"  fonts stay linked ({href[:60]}…): {e}")
+            return tag
+    return FONT_LINK_RE.sub(one, html)
 
 
 PAGELESS_RE = re.compile(r"@page\{size:\s*([\d.]+)in\s+auto")
@@ -3091,6 +3177,7 @@ class Handler(SimpleHTTPRequestHandler):
                 tail = (r.stdout + r.stderr).strip()[-2000:]
                 return self._json(200, {"ok": False,
                                         "error": "the draft does not build:\n" + tail})
+            out_html.write_text(_inline_webfonts(out_html.read_text()))
             if fmt == "pdf":
                 if req.get("pages") not in (None, ""):
                     html = out_html.read_text()

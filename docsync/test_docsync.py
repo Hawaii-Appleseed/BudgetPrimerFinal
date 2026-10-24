@@ -5133,6 +5133,21 @@ check_eq("website: script dependencies an import map or an import names are foun
                           ' await import("./lib/b.js"); import c from "https://x/c.js"</script>'),
          {"assets/vendor/three.module.js", "lib/a.mjs", "lib/b.js"})
 
+_fl = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope&display=swap">'
+_pc = '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+check_eq("website: a renderer's font links ride into a shell that had none, before its first <style>",
+         _web.carry_font_links("<html><head><title>t</title><style>a{}</style></head><body>x</body></html>",
+                               f"<html><head>{_pc}\n{_fl}<style>b{{}}</style></head><body><section class=\"page\">y</section></body></html>"),
+         f"<html><head><title>t</title>{_pc}\n{_fl}\n<style>a{{}}</style></head><body>x</body></html>")
+check_eq("website: a shell that already loads the same stylesheet gets it once",
+         _web.carry_font_links(f"<html><head>{_fl}<style>a{{}}</style></head><body>x</body></html>",
+                               f"<html><head>{_fl}</head><body>y</body></html>"),
+         f"<html><head>{_fl}<style>a{{}}</style></head><body>x</body></html>")
+check_eq("website: a renderer with no font link changes nothing",
+         _web.carry_font_links("<html><head><style>a{}</style></head><body>x</body></html>",
+                               "<html><head><style>b{}</style></head><body>y</body></html>"),
+         "<html><head><style>a{}</style></head><body>x</body></html>")
+
 # The recipe, end to end, on a real project: the address is claimed, and a second
 # project cannot take it.
 from docsync.registry import get as _get  # noqa: E402

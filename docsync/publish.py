@@ -274,7 +274,8 @@ def doctor(pid: str, *, hub_dir: Path | None = None, token_env: str = "SITE_PUBL
          "add `assets: projects/<id>/assets` under editor:")
     line(_has_name(root, pid), "the binding has a name: (docsync.hub skips a project without one)",
          "add `name: \"...\"` to the binding")
-    if "$CIDER_SITE" not in cfg.command:
+    # docsync.website takes the clone from $CIDER_SITE itself (its --site default).
+    if "$CIDER_SITE" not in cfg.command and "docsync.website" not in cfg.command:
         line(False, "the command never mentions $CIDER_SITE, so it cannot be writing into the site clone",
              "write the page under \"$CIDER_SITE/<path>\"")
     origin = _origin(cfg.repo)

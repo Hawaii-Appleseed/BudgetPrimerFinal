@@ -156,10 +156,34 @@ def build_page(binding) -> str:
     shell = binding.editor.render.parent / "original.html"
     if shell.is_file():
         try:
-            return into_shell(shell.read_text(encoding="utf-8"), semantic_tags(sheet_inner(built)))
+            page = into_shell(shell.read_text(encoding="utf-8"), semantic_tags(sheet_inner(built)))
         except ValueError:
-            pass        # a renderer that draws the whole page itself (rxkids): its build IS the page
+            return built    # a renderer that draws the whole page itself (rxkids): its build IS the page
+        return carry_font_links(page, built)
     return built
+
+
+_FONT_LINK = re.compile(r"""<link\b[^>]*\bhref\s*=\s*["'](?:https?:)?//fonts\.g(?:oogleapis|static)\.com(?:/[^"']*)?["'][^>]*>""", re.I)
+
+
+def carry_font_links(page: str, built: str) -> str:
+    """The shell page with the web-font <link>s its renderer added and the shell
+    never had (tfc-2027-priorities names Manrope and Poppins and its original
+    loaded neither, so the published page fell back to Helvetica). The shell's
+    own links are kept as they are; a renderer's that match one are not added
+    twice. Inserted before the shell's first <style>, where a font stylesheet
+    belongs, else at the end of <head>."""
+    head_end = built.lower().find("</head>")
+    have = {m.group(0) for m in _FONT_LINK.finditer(page)}
+    new = [m.group(0) for m in _FONT_LINK.finditer(built[:head_end] if head_end >= 0 else built)
+           if m.group(0) not in have]
+    if not new:
+        return page
+    links = "\n".join(dict.fromkeys(new))
+    m = re.search(r"<style\b", page, re.I) or re.search(r"</head>", page, re.I)
+    if not m:
+        return page
+    return page[:m.start()] + links + "\n" + page[m.start():]
 
 
 # Script dependencies hub.page_refs does not look for: an import map's targets
