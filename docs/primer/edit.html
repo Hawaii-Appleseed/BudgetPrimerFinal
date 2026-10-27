@@ -4015,6 +4015,7 @@ function nodeToMdInline(node, br = ' ') {
 
 /** The contenteditable's current DOM -> markdown text, the inverse of
  *  mdToHtml — same {allowLists, inline} contract. */
+const BLOCK_TAGS = /^(P|DIV|UL|OL|LI|DL|H[1-6]|BLOCKQUOTE|PRE|TABLE|SECTION|ARTICLE|FIGURE|HEADER|FOOTER|HR)$/;
 function htmlToMd(root, { allowLists = false, inline = false, br = ' ' } = {}) {
   // `br`: what a <br> becomes. A space by default, because the report's prose
   // has no line break — content.md soft-wraps, so paragraphs() cannot tell a
@@ -4023,7 +4024,19 @@ function htmlToMd(root, { allowLists = false, inline = false, br = ' ' } = {}) {
   // it. Written into content.md, a break nothing renders is a change to the
   // file that never reaches the page.
   if (inline) return fixOkina(nodeToMdInline(root, br).trim());
-  const blocks = [...root.children];
+  // Words and inline marks sitting directly in the root are one paragraph, not
+  // nothing: a few words copied from a page or from this editor arrive as a
+  // bare run (normaliseForeign unwraps the styling span that carries them),
+  // and reading only element children made that paste do nothing at all.
+  const blocks = [];
+  let loose = null;
+  for (const n of root.childNodes) {
+    if (n.nodeType === 1 && BLOCK_TAGS.test(n.tagName)) { loose = null; blocks.push(n); }
+    else if (n.nodeType === 1 || n.nodeType === 3) {
+      if (!loose) { loose = root.ownerDocument.createElement('p'); blocks.push(loose); }
+      loose.appendChild(n.cloneNode(true));
+    }
+  }
   const parts = [];
   for (const el of blocks) {
     const tag = el.tagName;
@@ -14470,6 +14483,14 @@ function copySel(d) {
   const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
     && selGroups()[0].every(id => selIds.has(id));
   clip = { items, wasGroup, pastes: 0 };
+  // The words go to the system clipboard too, so ⌘V in another app (or in a
+  // field here) gets something instead of whatever was copied last. Best
+  // effort: the object copy above is what ⌘V on the page uses.
+  const words = items.map(it => (it.kind === 'box' && it.data.md) || '').filter(Boolean).join('\n\n');
+  if (words) {
+    try { (d.defaultView.navigator.clipboard || navigator.clipboard).writeText(words).catch(() => {}); }
+    catch (e) { swallowed('copySel clipboard', e); }
+  }
   $('stat').textContent = `copied ${items.length} element${items.length > 1 ? 's' : ''} — ⌘V pastes onto the page in view`;
 }
 
@@ -15166,6 +15187,15 @@ function keysFor(d) {
       const host = d.activeElement && d.activeElement.isContentEditable ? d.activeElement : null;
       if (host && (e.code === 'KeyC' ? textPaintCopy(d, host) : textPaintPaste(d, host))) { e.preventDefault(); e.stopPropagation(); }
       return;
+    }
+    // A click opens a box's words, so ⌘C right after one is still on the BOX:
+    // with no words selected there is nothing for the browser to copy, and
+    // the copy used to do nothing at all (⌘V after it too — only Escape first
+    // made it work). With words selected it is the browser's, as ever.
+    if (editing && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key || '').toLowerCase() === 'c'
+        && selIds.size === 1) {
+      const s = d.getSelection();
+      if (s && s.isCollapsed) { e.preventDefault(); copySel(d); return; }
     }
     if (editing) return;
     if (inField(e.target)) return;
@@ -25674,6 +25704,11 @@ function wire(roots) {
       outline:1px dashed #95B7A2; outline-offset:3px; }
     [data-slot] { cursor:text; }
     [data-el] svg [data-slot] { cursor:grab; }
+    /* While the words are open the whole box is a text field: a press there
+       places the caret, and only the grip under the box moves it. Without
+       this the box's padding, and words inside a drawing, kept the grab hand
+       over a field you are typing in. */
+    [data-el]:has(.ds-edit), [data-el]:has(.ds-edit) *, .ds-edit, .ds-edit * { cursor:text; }
     /* ONE ring per object. A movable element's ring (hover dashed, selected
        solid) belongs to the [data-el] wrapper; the slot INSIDE it drawing its
        own hover ring painted a second, inner box on the same visual object.
