@@ -15756,7 +15756,7 @@ function chip(pid, pos, label, isHidden) {
   if (!isHidden) c.addEventListener('click', () => {
     const sec = (docSheets().find(s => String(s.id) === String(pid)) || {}).pg;
     if (sec) jumpTo(sec, 'start');
-    list.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
+    $('rail-list').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c));
   });
   // Drag to reorder — only where an order is honoured.
   if (!isHidden && pagesDeclared) {
