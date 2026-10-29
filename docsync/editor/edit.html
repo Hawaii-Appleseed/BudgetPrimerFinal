@@ -4896,6 +4896,13 @@ function textMenu(d, host, e) {
     add('Print (the PDF)', 'print'); add('Web (on screen)', 'web');
     add('Another condition…', '?'); add('Always (no condition)', null);
   });
+  // An open text box's words answer the right-click, so the box's own menu
+  // (and its Delete text box) was out of reach until the words were closed.
+  const openBox = !host.dataset.slot && boxOf(host.dataset.el || '');
+  if (openBox && !masterItemOf('text.' + openBox.id)) {
+    sep();
+    item('Delete text box', () => deleteOpenBox(d, 'text.' + openBox.id));
+  }
   d.body.appendChild(m); menuUp(true);
   const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
   if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
@@ -7318,6 +7325,17 @@ function showHandles(d, page, el) {
   // button it labels.
   if (!dirs.length) return;
   const b = shapeBox(el, page);
+  // On a shape under ~36 screen pixels across (a thin bar, a rule), the
+  // corner squares and the edge handle between them overlap, and a press
+  // took whichever happened to win: hit-or-miss. Drop the corners there —
+  // the edges still resize each axis, and the lone rotate stem stands in.
+  // Shapes only: a one-line heading is as short, and its words open on a
+  // press where a corner used to be.
+  const pxIn = DPI * zoomOf(page);
+  if (el.dataset.shape && (b.w * pxIn < 36 || b.h * pxIn < 36)) {
+    const narrow = dirs.filter(dir => dir.length === 1);
+    if (narrow.length) dirs.splice(0, dirs.length, ...narrow);
+  }
   const ov = d.createElement('div');
   ov.className = 'ds-handles';
   ov.style.cssText = `left:${b.x}in;top:${b.y}in;width:${b.w}in;height:${b.h}in`;
@@ -7397,6 +7415,28 @@ function showHandles(d, page, el) {
       });
       ov.insertBefore(band, ov.firstChild);
     });
+    // A text box's own delete, beside the move grip. Delete lives on the
+    // mini toolbar, and the mini toolbar never shows while the words are
+    // open — and a click on a box opens its words — so deleting one meant
+    // Escape (or a shift-click) first, then finding the toolbar. "That
+    // selection is finicky." A designed field has nothing to delete.
+    const bx = boxOf(idOf(el));
+    if (bx && !masterItemOf('text.' + bx.id)) {
+      const del = d.createElement('div');
+      del.className = 'ds-h ds-delgrip' + (b.x < 0.4 ? ' ds-movegrip-r' : '');
+      del.title = 'Delete this text box (⌘Z brings it back)';
+      del.setAttribute('aria-label', 'Delete text box');
+      del.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">'
+        + '<path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.6 6.5v4.5M9.4 6.5v4.5"'
+        + ' fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"'
+        + ' stroke-linejoin="round"/></svg>';
+      del.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        deleteOpenBox(d, 'text.' + bx.id);
+      });
+      ov.appendChild(del);
+    }
   }
   // Typing: the box is a text field now, so the chrome steps back from the
   // words (see .ds-typing). Escape closes the words and brings it all back.
@@ -7407,6 +7447,19 @@ function showHandles(d, page, el) {
 
 const hideHandles = d => d.querySelectorAll('.ds-handles, .ds-mini')
   .forEach(h => h.remove());       // the mini bar rides the handles' lifecycle
+
+/** Delete a text box whose words are open, in one gesture: close the words
+ *  (blur commits them — the box's undo step), then delete it as Delete on
+ *  the selection would, in the document that commit rendered. */
+async function deleteOpenBox(d, id) {
+  const a = d.activeElement;
+  if (a && a.isContentEditable) a.blur();
+  await renderIdle();
+  const d2 = $('out').contentDocument;
+  if (!boxOf(id)) return;
+  setSel(d2, [id]);
+  await deleteSel(d2);
+}
 
 // ---------------------------------------------------- resizable sections
 // A colored background band (data-sec, from L.sec in the renderer) is not a
@@ -7624,8 +7677,13 @@ function startResize(d, el, e0, dir) {
     if (dir.includes('w')) w = b.w - dx;
     if (dir.includes('s')) h = b.h + dy;
     if (dir.includes('n')) h = b.h - dy;
-    w = Math.max(MIN_IN, w);
-    h = Math.max(MIN_IN, h);
+    // The floor never makes a thing BIGGER than it was. It was MIN_IN on
+    // both axes, whichever handle moved: a rule or a one-line heading under
+    // 0.4in tall grew to 0.4in on any resize, and a thin vertical bar dragged
+    // by its top or bottom went 0.4in WIDE ("shortening a thin element just
+    // makes it wide"). An axis the handle does not move stays as it was.
+    w = Math.max(Math.min(MIN_IN, b.w), w);
+    h = Math.max(Math.min(MIN_IN, b.h), h);
     if (dir.includes('w')) x = b.x + b.w - w;   // opposite (east) edge stays put
     if (dir.includes('n')) y = b.y + b.h - h;   // opposite (south) edge stays put
     // Never let a resize push content off the page — same rule as the drag.
@@ -7664,7 +7722,14 @@ function startResize(d, el, e0, dir) {
       markDirty();                        // the scale is already on the store
     } else if (!shapeId) {
       P.commit({ x: size.x, y: size.y });
-      commitSize(d, el, { w: size.w, h: (dir.includes('s') || dir.includes('n')) ? size.h : undefined });
+      const vertical = dir.includes('s') || dir.includes('n');
+      commitSize(d, el, { w: size.w, h: vertical ? size.h : undefined });
+      // Words dragged down to their floor save NO height (commitSize): take
+      // the live floor off too, or the page keeps showing a height the
+      // document no longer has — a one-line heading stood 0.4in tall over
+      // the paragraph under it until the next render.
+      const st = storeOf(id) || {};
+      if (vertical && wordy && st.h == null) el.style.minHeight = '';
     } else {
       markDirty();
     }
@@ -20625,6 +20690,16 @@ function dragify(d, roots) {
       e.preventDefault();
       e.stopPropagation();
       const id = idOf(el);
+      // A section already in hand moves from anywhere on it, its words
+      // included: a panel like a recommendation box is nearly all text, and
+      // only its few pixels of padding used to drag it ("hard to drag").
+      // A click that never travels still means the piece under the pointer
+      // (startDrag's clickTo): its words open, as they would have.
+      const held = heldFrame(el);
+      if (held && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        startDrag(d, held, e, false, el);
+        return;
+      }
       if (frameSurfacePress(d, el, e)) return;
       // Was this element's whole group ALREADY the selection before this
       // click? If so a second, movement-free click drills into the piece
@@ -21288,7 +21363,21 @@ function typeOnClick(d, el, e0) {
   return opened;
 }
 
-function startDrag(d, el, e0, drillIn = false) {
+/** The section (L.frame) around `el` that is the selection on its own, or
+ *  null — the one a press on anything inside it moves (see dragify). */
+function heldFrame(el) {
+  if (selIds.size !== 1) return null;
+  for (let p = el.parentElement && el.parentElement.closest('[data-frame]'); p;
+       p = p.parentElement && p.parentElement.closest('[data-frame]')) {
+    if (selIds.has(idOf(p))) return p;
+  }
+  return null;
+}
+
+/** `clickTo`: the piece inside a held section that was pressed (heldFrame).
+ *  A press that travels moves the section; one that does not is a click on
+ *  that piece, exactly as if the section had not been in hand. */
+function startDrag(d, el, e0, drillIn = false, clickTo = null) {
   const page = el.closest('section.page') || d.querySelector('section.page');
   const refusal = dragRefusal(d, el, page);
   let refused = false;
@@ -21423,6 +21512,12 @@ function startDrag(d, el, e0, drillIn = false) {
           ? 'key object — Align and Distribute keep it still; click it again to clear'
           : 'key object cleared';
         clearGuides(d); paintSel(d); return;
+      }
+      if (clickTo) {
+        const picked = selectClick(d, idOf(clickTo), e0);
+        clearGuides(d); paintSel(d);
+        if (picked) { openPanelOnClick(idOf(clickTo)); typeOnClick(d, clickTo, e0); }
+        return;
       }
       clearGuides(d); paintSel(d);
       openPanelOnClick(idOf(el));
@@ -23253,13 +23348,23 @@ function peerBox(d, page, p, id, b, label) {
 // compared with the value this editor started from: if somebody changed it
 // meanwhile, the person is told whose words are on the other side and
 // chooses. Nothing is lost without a person choosing to lose it.
-let collabFieldFrom = null;   // {read, value} — what this inline editor opened on
+let collabFieldFrom = null;   // {read, value, room} — what this inline editor opened on
 
 /** An inline editor on a layout-backed field is opening. `read(layout)` pulls
  *  that one field out of a layout object, so the same function can ask this
- *  editor's copy and the room's. */
+ *  editor's copy and the room's.
+ *
+ *  Both are recorded. "Somebody changed it" means the ROOM moved while this
+ *  editor was open — not that the room differs from this editor's copy. The
+ *  two can differ before anyone opens anything: an edit made while
+ *  Suggesting stays here as a proposal and never reaches the room, so the
+ *  next edit to that box was asked about the person's own older words, and
+ *  named "somebody" because nobody else was there. */
 function collabFieldOpen(read) {
-  collabFieldFrom = collab ? { read, value: read(layout) } : null;
+  if (!collab) { collabFieldFrom = null; return; }
+  let room;
+  try { room = read(collab.netFiles().layout); } catch (e) { room = undefined; }
+  collabFieldFrom = { read, value: read(layout), room };
 }
 
 /**
@@ -23277,8 +23382,11 @@ async function collabFieldSettle(mine, what) {
   try { theirs = from.read(collab.netFiles().layout); }
   catch (e) { return 'mine'; }               // unreadable: behave as before
   // Nobody touched it, or they arrived at the same words, or they removed the
-  // thing entirely (then this editor's own value is all there is).
+  // thing entirely (then this editor's own value is all there is). The room
+  // is compared with what the ROOM held at the open: a room that has not
+  // moved since is nobody's change, whatever this editor's copy said.
   if (theirs === undefined || theirs === from.value || theirs === mine) return 'mine';
+  if (from.room !== undefined && theirs === from.room) return 'mine';
   const who = collabPeers.filter(p => !p.idle).map(p => p.name || fmtWho(p.login) || 'someone');
   const named = who.length ? who.join(' and ') : 'somebody';
   const keep = await dsConfirm(
@@ -26201,15 +26309,24 @@ function wire(roots) {
     .ds-movegrip.ds-movegrip-r { left:auto; right:-33px; }
     .ds-movegrip:hover { color:#fff; }
     .ds-movegrip svg { display:block; pointer-events:none; }
+    /* A text box's delete, under the move grip on the same side. */
+    .ds-delgrip { left:-33px; top:50%; width:22px; height:22px; margin-top:15px;
+                  border-radius:50%; display:grid; place-items:center;
+                  color:#9B2C2C; cursor:pointer; box-shadow:0 1px 4px rgba(20,30,35,.25); }
+    .ds-delgrip.ds-movegrip-r { left:auto; right:-33px; }
+    .ds-delgrip:hover { background:#9B2C2C; color:#fff; }
+    .ds-delgrip svg { display:block; pointer-events:none; }
     /* The edge bands beside the grip, also only while typing: invisible until
        the pointer is on one, then a tint and the move cursor say "this moves
-       the box". 7px, flush outside each side; the resize handles sit on top. */
+       the box". Flush outside each side; the resize handles sit on top. */
     .ds-moveedge { position:absolute; pointer-events:auto; cursor:move; }
     .ds-moveedge:hover { background:rgba(107,158,120,.22); }
-    .ds-moveedge-n { left:-7px; right:-7px; top:-7px; height:7px; }
-    .ds-moveedge-s { left:-7px; right:-7px; bottom:-7px; height:7px; }
-    .ds-moveedge-w { top:0; bottom:0; left:-7px; width:7px; }
-    .ds-moveedge-e { top:0; bottom:0; right:-7px; width:7px; }
+    /* 11px: at 7 a reach for the edge landed in the words as often as on
+       it ("hard to drag text boxes"). Still wholly outside the box. */
+    .ds-moveedge-n { left:-11px; right:-11px; top:-11px; height:11px; }
+    .ds-moveedge-s { left:-11px; right:-11px; bottom:-11px; height:11px; }
+    .ds-moveedge-w { top:0; bottom:0; left:-11px; width:11px; }
+    .ds-moveedge-e { top:0; bottom:0; right:-11px; width:11px; }
     /* the rotate grip hangs above the box on a short stem — only for elements
        with no corner to rotate from (a width-only prose slot, a table) */
     .ds-rot { top:-20px; left:50%; width:11px; height:11px; margin-left:-6px;
