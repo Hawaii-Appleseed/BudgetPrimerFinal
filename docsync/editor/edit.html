@@ -23494,7 +23494,11 @@ function collabChip() {
       // lie about the other.
       const away = collabPeers.filter(x => x.idle).length;
       const at = Math.max(1, s.peers - away);
-      text = '● live' + (s.peers > 1 ? ' · ' + at : '') + (hubRole === 'viewer' ? ' · view only' : '');
+      // "Live" is the status line's word now (setStatLive, above), so the
+      // chip says only who is here; alone, an editor's chip has nothing to
+      // say and hides (Devin, 2026-10-28: the bar said "live" twice).
+      text = [s.peers > 1 ? at + ' here' : '', hubRole === 'viewer' ? 'view only' : '']
+        .filter(Boolean).join(' · ');
       title = (s.peers > 1 ? `${at} editor${at > 1 ? 's' : ''} in this session${who}`
                               + (asleep.length ? `. ${asleep.join(', ')} ${asleep.length > 1 ? 'have' : 'has'} it open, `
                                                  + 'with no input for five minutes.' : '.')
@@ -23531,7 +23535,7 @@ function collabChip() {
   }
   if (s.status === 'live' && collabFollow) {
     const f = collabPeers.find(p => p.login === collabFollow);
-    if (f) text += ' · following ' + (f.name || fmtWho(f.login) || 'someone');
+    if (f) text = [text, 'following ' + (f.name || fmtWho(f.login) || 'someone')].filter(Boolean).join(' · ');
   }
   c.textContent = text;
   // One avatar per collaborator - an initial in their colour, the same colour
@@ -23560,6 +23564,7 @@ function collabChip() {
       av.onclick = e => { e.stopPropagation(); collabAvatarClick(p); };
       c.appendChild(av);
     }
+    c.hidden = !c.textContent;
   }
   c.title = title;
   c.classList.toggle('live', s.status === 'live');

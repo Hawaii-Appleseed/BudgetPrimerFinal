@@ -21,7 +21,8 @@
  * 3. Everything that is actual report data or a write (engine/*, the GitHub
  *    API, drafts) — network-only. Caching a stale content.md would make a
  *    collaborator's real edit invisible; that failure mode is worse than
- *    "the editor needs a connection to open a report."
+ *    "the editor needs a connection to open a report." A report's BUILT page
+ *    is the same and more so: it is what a reader came for (isPublishedPage).
  *
  * Bump CACHE_VERSION on any shell change that should evict old entries
  * outright rather than wait for revalidation (e.g. a renamed file).
@@ -36,7 +37,16 @@
 // moment ago came back open from the stale copy until the poll after. The
 // rule below now leaves /api/ alone; the rename evicts the copies already
 // stored.
-const CACHE_VERSION = 'primer-shell-v8';
+// v9: a report's BUILT page was answered from this cache. The rule that kept
+// the published report out of it named /primer/index.html, the one report the
+// editor once lived beside, and on the hub every report is a directory of its
+// own, /primer/<id>/. So the page came from the last visit, revalidated
+// behind, and the hub door's previews stored a REDIRECTED copy under every
+// <id>/index.html, which turned a tab opened on that URL into the browser's
+// error page (isPublishedPage has the whole story). The rule now goes by what
+// a request is, not by where a report lives; the rename evicts the copies
+// already stored.
+const CACHE_VERSION = 'primer-shell-v9';
 const PYODIDE_CACHE = 'primer-pyodide-v1';
 
 const SHELL_FILES = [
@@ -79,15 +89,6 @@ self.addEventListener('activate', event => {
 
 const isPyodide = url => url.hostname === 'cdn.jsdelivr.net' && url.pathname.includes('/pyodide/');
 
-// Never cache: report content, layout, the renderer's own data files, any
-// GitHub call, or — importantly — index.html itself. That file is not part
-// of this app; it is the PUBLISHED, publicly readable report (built by CI
-// from content.md), served from the very same directory as the editor. A
-// reader who never opened the editor never registers this worker, but anyone
-// who DID (this scope is the whole docs/primer/ directory) would otherwise
-// have the worker intercept their next visit to the report page too — a
-// stale copy of what a reader actually came here to read is a much worse
-// failure than "the app shell recaches its own five files."
 // The app's own code: fresh wins, cache is the offline fallback (tier 2).
 //
 // collab-client.js belongs here for exactly the reason the HTML pages do, and
@@ -112,6 +113,42 @@ const isPyodide = url => url.hostname === 'cdn.jsdelivr.net' && url.pathname.inc
 const isShellPage = url => /\/(edit|start)(\.html)?$/.test(url.pathname)
                         || /\/collab-client\.js$/.test(url.pathname);
 
+// Never answered here at all: a page that is not this app's, above all a
+// report's BUILT page. That page is not part of the editor; it is the
+// PUBLISHED report, served from the same directory tree as the editor. A
+// reader who never opened the editor never registers this worker, but anyone
+// who DID (its scope is the editor's whole directory) would otherwise have
+// the worker intercept their next visit to the report page too — a stale copy
+// of what a reader actually came here to read is a much worse failure than
+// "the app shell recaches its own five files."
+//
+// That promise used to be one path, /primer/index.html, from when the editor
+// lived beside the single report it edited. On the hub the editor is /primer/
+// and each report is a directory under it, /primer/<id>/, and nothing
+// matched: every report page a staff member opened came from this cache and
+// was revalidated behind (measured 2026-10-28, right after hub f92185b:
+// /primer/our-mission/ was the pre-ship page on two loads in a row, while
+// fetch(…, {cache:'no-store'}) had the new one). So the rule goes by what the
+// request IS: a navigation to anything but the editor's own pages, or a
+// script's fetch of a directory's index — the hub door fetches <id>/index.html
+// to draw each report's preview.
+//
+// Untouched rather than network-first: a worker that answers a page at all
+// has to get its redirects right, and that was the second failure. Pages
+// answers <id>/index.html with a 308 to <id>/. The door's fetch followed it,
+// and the generic branch below stored what came back — a response that HAS
+// BEEN REDIRECTED — under the index.html URL. A navigation handles its own
+// redirects, so the browser refuses such a response for one ("a redirected
+// response was used for a request whose redirect mode is not 'follow'"): a
+// tab opened on <id>/index.html showed Chrome's error page, for every report
+// the door had drawn. A page this worker never answers redirects the way any
+// page does.
+const isPublishedPage = (req, url) =>
+  (req.mode === 'navigate' && !isShellPage(url)) ||
+  /\/(index(\.html)?)?$/.test(url.pathname);
+
+// Never cache: report content, layout, the renderer's own data files, or any
+// GitHub call (tier 3).
 const isNetworkOnly = url =>
   url.hostname === 'api.github.com' ||
   url.hostname === 'raw.githubusercontent.com' ||
@@ -131,8 +168,7 @@ const isNetworkOnly = url =>
   // The hub's API: the document store (comments, versions, the share list),
   // /api/me, presence. Every answer is live state and every caller already
   // says {cache:'no-store'} — which a worker overrides unless it steps aside.
-  /^\/api\//.test(url.pathname) ||
-  /\/primer\/(index(\.html)?)?$/.test(url.pathname);
+  /^\/api\//.test(url.pathname);
 
 self.addEventListener('fetch', event => {
   const req = event.request;
@@ -155,6 +191,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  if (isPublishedPage(req, url)) return;          // a reader's page: as if this worker were not here
   if (isNetworkOnly(url)) return;                 // let the browser handle it untouched
 
   if (url.origin === location.origin) {
