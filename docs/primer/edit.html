@@ -22272,19 +22272,40 @@ function wireTooltips(doc) {
 }
 wireTooltips(document);
 
-/** Fade the ONE status message that never changes, and only that one.
+/** Rest the status line on the messages that never change, and only those.
  *
  *  #stat is written from about forty places, nearly all of them transient
- *  ("page 3 copied", "cover.logo -> 125%"). The exception is the live-mode
- *  sentence, re-written on every render, identical every time — so it is the
- *  only one that becomes furniture. Watching the text rather than touching
- *  forty call sites keeps that a property of the MESSAGE, not a flag every
- *  future caller has to remember to pass.
+ *  ("page 3 copied", "cover.logo -> 125%"). The exceptions say the same thing
+ *  every time — the live-mode sentence, the hub room's, and the hint every
+ *  render ends on — so they are the ones that become furniture. Watching the
+ *  text rather than touching forty call sites keeps that a property of the
+ *  MESSAGE, not a flag every future caller has to remember to pass.
  *
  *  The fade waits, so a render does not blink the line at you; a real message
  *  cancels it outright.
  */
 const IDLE_STAT = 'live — edits here and from Claude land in the same files';
+/** The row's other ways of saying nothing new. A hub tab never says
+ *  IDLE_STAT, which is about a local server's files: its room says
+ *  ROOM_IDLE_STAT (or who else is in it), and every render after that ends on
+ *  RENDER_HINT, so on the hub the row never once came to rest as "Live"
+ *  (found on the live hub, 2026-10-28). */
+const ROOM_IDLE_STAT = 'live session — edits here are shared as you make them';
+const RENDER_HINT = 'click text to type · drag to move · Esc selects the box';
+const atRest = t => t === IDLE_STAT || t === ROOM_IDLE_STAT || t === RENDER_HINT
+  || t.startsWith('joined the live session — ');
+/** Whether "Live" is true of this editor: a local server's live mode, or a hub
+ *  room that is connected. Never a published draft editor, and not a room that
+ *  has dropped, though both say the hint. Set where each is decided
+ *  (detectLocal, collabChip) rather than read off `local` and `collabInfo`,
+ *  which are declared further down: the observer's first look runs before
+ *  either exists. */
+let statLive = false, syncStat = () => {};
+function setStatLive(on) {
+  if (on === statLive) return;
+  statLive = on;
+  syncStat();
+}
 /** The idle sentence, said only when nothing is wrong: a standing warning
  *  (the file watcher dead, the server running old code — both wear .err)
  *  stays. Two writers used to put the sentence straight over it, so whether
@@ -22303,9 +22324,10 @@ function sayIdle() {
     clearTimeout(timer); timer = null;
     // Said as a green dot and "Live" at once (the CSS), the sentence one
     // hover away. An attribute, so this observer does not hear itself.
-    const idle = el.textContent === IDLE_STAT;
+    const t = el.textContent;
+    const idle = statLive && atRest(t);
     el.classList.toggle('live-idle', idle);
-    if (idle) el.dataset.tip = IDLE_STAT; else delete el.dataset.tip;
+    if (idle) el.dataset.tip = t; else delete el.dataset.tip;
     if (idle) {
       // Already faded? Leave it — re-arming on every render would restart the
       // delay forever and the line would never actually settle.
@@ -22316,6 +22338,7 @@ function sayIdle() {
       el.classList.remove('idle');
     }
   };
+  syncStat = sync;
   new MutationObserver(sync).observe(el, { childList: true, characterData: true,
                                            subtree: true });
   sync();
@@ -23433,7 +23456,7 @@ async function collabAdopt(files, why) {
   if (why === 'adopt' && collabInfo.status === 'live') {
     renderSays(collabInfo.peers > 1
       ? `joined the live session — ${collabInfo.peers - 1} other${collabInfo.peers > 2 ? 's' : ''} here`
-      : 'live session — edits here are shared as you make them');
+      : ROOM_IDLE_STAT);
     // The room was built from one version and the store now holds another
     // (a Save from outside the session, a restore while the room slept):
     // what is on screen is the room's. Said now, not at the first Save.
@@ -23445,6 +23468,9 @@ async function collabAdopt(files, why) {
 }
 
 function collabChip() {
+  // Every change of the room's status comes through here, so this is where
+  // the status line learns whether "Live" is still true.
+  setStatLive(local || (collabInfo.on && collabInfo.status === 'live'));
   const c = $('collab');
   if (!c) return;
   const s = collabInfo;
@@ -24100,6 +24126,7 @@ async function detectLocal() {
     } catch (e) { swallowed('first ping was not JSON', e); } }
   } catch (e) { local = false; }
   if (!local) return;
+  setStatLive(true);
   sayHello();                   // there is a server to tell, now that we know
   // Local mode is the dev loop: files on disk are the truth, and a Save
   // commits them here — Push is the separate, explicit trip to GitHub.
@@ -25302,8 +25329,7 @@ open('/repo/' + OUT).read()
       sc.scrollTop = keepAt.top; sc.scrollLeft = keepAt.left;
     }
     schedulePreviewStore(html);
-    renderSays(dirty ? 'unsaved changes'
-                     : 'click text to type · drag to move · Esc selects the box');
+    renderSays(dirty ? 'unsaved changes' : RENDER_HINT);
     return;
   }
   // DOUBLE-BUFFERED: the new document loads in a hidden twin while the old one
@@ -25386,8 +25412,7 @@ open('/repo/' + OUT).read()
     nu.srcdoc = html;
     old.parentNode.appendChild(nu);
   });
-  renderSays(dirty ? 'unsaved changes'
-                   : 'click text to type · drag to move · Esc selects the box');
+  renderSays(dirty ? 'unsaved changes' : RENDER_HINT);
 }
 // The HTML currently standing in #out. An incremental render diffs the new
 // output against THIS rather than against the live DOM, because the live DOM
