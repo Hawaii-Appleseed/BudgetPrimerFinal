@@ -7293,7 +7293,7 @@ function showHandles(d, page, el) {
   // taking focus, and the drop commits a position, not the text.
   if (editing && richHost && (el === richHost || el.contains(richHost))) {
     const g = d.createElement('div');
-    g.className = 'ds-h ds-movegrip';
+    g.className = 'ds-h ds-movegrip' + (b.x < 0.4 ? ' ds-movegrip-r' : '');
     g.title = 'Drag to move — the words stay open';
     g.setAttribute('aria-label', 'Move');
     g.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">'
@@ -7306,7 +7306,27 @@ function showHandles(d, page, el) {
       startDrag(d, el, e);
     });
     ov.appendChild(g);
+    // The grip alone was too easy to miss: a person reaches for the box's
+    // EDGE, as in PowerPoint or Keynote, and got the caret or a selection of
+    // words instead. So a thin band just outside each side moves it too. Put
+    // first in the overlay, so every resize handle (later, same stacking
+    // context) keeps the pixels they share; outside the box, so no letter
+    // loses a click to it.
+    ['n', 's', 'e', 'w'].forEach(side => {
+      const band = d.createElement('div');
+      band.className = 'ds-moveedge ds-moveedge-' + side;
+      band.title = 'Drag to move — the words stay open';
+      band.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        startDrag(d, el, e);
+      });
+      ov.insertBefore(band, ov.firstChild);
+    });
   }
+  // Typing: the box is a text field now, so the chrome steps back from the
+  // words (see .ds-typing). Escape closes the words and brings it all back.
+  if (editing && richHost && (el === richHost || el.contains(richHost))) ov.classList.add('ds-typing');
   ov.dataset.for = el.dataset.shape || el.dataset.el;
   page.appendChild(ov);
 }
@@ -19842,7 +19862,19 @@ const DPI = 96;                        // CSS px per inch — the one real const
 // at boot; the defaults are only what a letter-portrait report happens to use.
 let PAGE_W_IN = 8.5, PAGE_H_IN = 11;
 let MARGIN_IN = 0.62, TOP_IN = 0.75;
-const SNAP_IN = 0.06;                  // how close before it pulls into line
+// How close before it pulls into line, in SCREEN pixels: the same feel at
+// every zoom. setSnapZoom() turns them into inches when a drag picks up; the
+// defaults are the 100% values.
+const SNAP_PX = 4, SNAP_DENSE_PX = 2;
+let SNAP_IN = SNAP_PX / DPI;
+const SNAP_DENSE_WIN_IN = 0.5;         // a probe with more than SNAP_DENSE_N lines this close is in a dense list
+const SNAP_DENSE_N = 2;
+let SNAP_DENSE_IN = SNAP_DENSE_PX / DPI; // ...and there it pulls from this far, to a line of its own kind only
+const setSnapZoom = z => { SNAP_IN = SNAP_PX / (DPI * z); SNAP_DENSE_IN = SNAP_DENSE_PX / (DPI * z); };
+// A line you have just pulled a box off takes it back only from half the
+// usual distance until the box is this far clear of it (axisSnap).
+const SNAP_ESCAPE_IN = 0.15;
+const SNAP_REACH_IN = 1;               // a neighbour's line only counts within this of the box, across
 const NUDGE_IN = 0.05, NUDGE_BIG_IN = 0.25;
 
 /**
@@ -19865,18 +19897,41 @@ const inchBox = (el, page) => {
  * of everything else on the page. Alignment you can feel is the difference
  * between arranging and fiddling.
  */
+const SNAP_SEL = '[data-el], [data-shape], h1, h2.sub, .card, .branch, .photo';
 function snapLines(d, page, moving) {
   const skip = Array.isArray(moving) ? moving : [moving];   // a group skips itself
   const xs = [0, MARGIN_IN, PAGE_W_IN / 2, PAGE_W_IN - MARGIN_IN, PAGE_W_IN];
   const ys = [0, TOP_IN, PAGE_H_IN / 2, PAGE_H_IN - 0.9, PAGE_H_IN];
   const boxes = [];                 // for equal spacing (spaceSnap)
-  page.querySelectorAll('[data-el], [data-shape], h1, h2.sub, .card, .branch, .photo')
-      .forEach(el => {
+  // Snap to SIBLINGS: what sits at the same nesting level as the thing being
+  // moved, plus the container it is in. The edges of every field inside every
+  // other card are not alignment targets - on a page of tally rows there were
+  // hundreds of them, so any position was within reach of one and a box
+  // snapped nearly everywhere (a bullet list "snaps in the wrong place").
+  const holder = el => {
+    const p = el.parentElement && el.parentElement.closest(SNAP_SEL);
+    return p && page.contains(p) ? p : null;
+  };
+  // A neighbour's line carries the span it runs along, so a box is only pulled
+  // by lines of things it is actually beside (snapAxis checks the reach).
+  const addLines = b => {
+    for (const k of [0, 0.5, 1]) {
+      const kind = k === 0 ? 1 : k === 1 ? 4 : 2;
+      xs.push({ v: b.x + b.w * k, a: b.y, b: b.y + b.h, k: kind });
+      ys.push({ v: b.y + b.h * k, a: b.x, b: b.x + b.w, k: kind });
+    }
+  };
+  const level = skip[0] ? holder(skip[0]) : null;
+  if (level) {
+    const lb = inchBox(level, page);
+    if (lb.w >= 0.1 && lb.h >= 0.1) addLines(lb);
+  }
+  page.querySelectorAll(SNAP_SEL).forEach(el => {
     if (skip.some(m => el === m || m.contains(el) || el.contains(m))) return;
+    if (holder(el) !== level) return;
     const b = inchBox(el, page);
     if (b.w < 0.1 || b.h < 0.1) return;
-    xs.push(b.x, b.x + b.w / 2, b.x + b.w);
-    ys.push(b.y, b.y + b.h / 2, b.y + b.h);
+    addLines(b);
     // Spacing is between SIBLINGS: a box inside another one (a card's title
     // in its card) is not a neighbour of anything beside the card.
     if (!boxes.some(o => o.el.contains(el))) {
@@ -19892,7 +19947,19 @@ function snapLines(d, page, moving) {
     const mg = marginGuides(sheet ? sheet.id : null);
     if (mg) { xs.push(mg.l, mg.r, ...mg.cols); ys.push(mg.t, mg.b); }
   }
-  return { xs, ys, boxes };
+  // Lines a hundredth apart are one line: fewer targets to land near.
+  const uniq = a => {
+    const m = new Map();
+    for (const l of a) {
+      const k = Math.round((l.v ?? l) * 100), o = m.get(k);
+      if (!o) m.set(k, l);
+      else if (typeof o === 'object' && typeof l === 'object')
+        m.set(k, { v: o.v, a: Math.min(o.a, l.a), b: Math.max(o.b, l.b), k: o.k | l.k });
+      else m.set(k, typeof o === 'object' ? l : o);   // a page line has no span: always counts
+    }
+    return [...m.values()];
+  };
+  return { xs: uniq(xs), ys: uniq(ys), boxes };
 }
 
 /**
@@ -19949,17 +20016,63 @@ function spaceSnap(boxes, axis, x, y, w, h) {
   return best;
 }
 
-/** Nearest line within the threshold, given the three edges we align on. */
-function snapAxis(lines, lo, size) {
+/**
+ * Nearest line within the threshold, given the three edges we align on. A box
+ * longer than SNAP_MID_MAX on this axis (a column of bullets, a tall card)
+ * has no centre probe: its middle sits wherever the text happens to fall, so
+ * it grabbed any stray line there and the box snapped to the wrong place.
+ */
+const SNAP_MID_MAX = 3;                // inches
+function snapAxis(lines, lo, size, clo = null, csize = 0, ignore = null) {
   let best = null;
-  for (const probe of [[lo, 0], [lo + size / 2, size / 2], [lo + size, size]]) {
-    for (const line of lines) {
+  const probes = [[lo, 0, 1], [lo + size, size, 4]];     // [position, offset, kind]
+  if (size <= SNAP_MID_MAX) probes.splice(1, 0, [lo + size / 2, size / 2, 2]);
+  // Lines a box can be pulled by from where it is: the page's own and ruler
+  // guides always; a neighbour's only while the box is beside it.
+  const near = clo === null ? lines : lines.filter(l => typeof l === 'number'
+    || !(clo > l.b + SNAP_REACH_IN || clo + csize < l.a - SNAP_REACH_IN));
+  for (const probe of probes) {
+    // In a dense list (tally rows, stacked bullets) a box is within reach of
+    // some edge at nearly every position, so it snapped everywhere. There a
+    // probe only takes an exact-ish line of its own kind: top to top, bottom
+    // to bottom, centre to centre - or butted against, bottom to a top.
+    let crowd = 0;
+    for (const l of near) if (typeof l === 'object' && Math.abs(l.v - probe[0]) <= SNAP_DENSE_WIN_IN) crowd++;
+    const dense = crowd > SNAP_DENSE_N, tol = dense ? SNAP_DENSE_IN : SNAP_IN;
+    for (const l of near) {
+      const line = typeof l === 'number' ? l : l.v;
+      if (ignore !== null && Math.abs(line - ignore) < 1e-6) continue;
+      if (dense && typeof l === 'object'
+          && !(l.k & probe[2]) && !(probe[2] === 4 && l.k & 1) && !(probe[2] === 1 && l.k & 4)) continue;
       const d = Math.abs(probe[0] - line);
-      if (d <= SNAP_IN && (!best || d < best.d)) best = { d, at: line - probe[1], line };
+      if (d <= tol && (!best || d < best.d)) best = { d, at: line - probe[1], line };
     }
   }
   return best;
 }
+
+/**
+ * snapAxis with intent, for one axis of one drag. Pull a box off a line and
+ * that line only takes it back from half the usual distance - a deliberate
+ * return - until the box is SNAP_ESCAPE_IN clear of it. Setting something
+ * just off an alignment used to fail on a hand's twitch: a pixel back toward
+ * the line and it snapped home again. `st` is the drag's own {held, esc}.
+ */
+function axisSnap(st, lines, lo, size, clo, csize) {
+  let ignore = null;
+  const e = st.esc;
+  if (e) {
+    const dist = Math.abs(lo - e.at);
+    if (dist > SNAP_ESCAPE_IN) st.esc = null;
+    else if (dist > SNAP_IN / 2) ignore = e.line;
+  }
+  const r = snapAxis(lines, lo, size, clo, csize, ignore);
+  if (r) st.esc = null;
+  else if (st.held) st.esc = { line: st.held.line, at: st.held.at };
+  st.held = r ? { line: r.line, at: r.at } : null;
+  return r;
+}
+const snapState = () => ({ x: { held: null, esc: null }, y: { held: null, esc: null } });
 
 function showGuides(d, page, vx, hy, gaps = [], measures = []) {
   d.querySelectorAll('.ds-guide').forEach(g => g.remove());
@@ -20280,8 +20393,11 @@ function shownUnder(d, e) {
  *  So: commit the words, wait out that render, then replay the press as a
  *  click on the same spot in whatever document is current — the ordinary
  *  path from there, so it selects, opens a panel, or types where it landed.
- *  A press held into a drag across the switch is taken as a click; the next
- *  press drags.
+ *  A press still held when the render is done is replayed as a press alone,
+ *  so the drag it turns into moves the object: it used to count as a click,
+ *  and the first drag of a box after typing in another moved nothing. The
+ *  replay is marked (dsReplay) so startDrag ends it on the first move with
+ *  no button down — a release that fell inside the swap was never heard.
  *
  *  The replay goes to the same spot IN the object, not the same spot on the
  *  screen: the page can settle a few pixels differently after a render (on
@@ -20292,9 +20408,17 @@ async function pressPastEditor(d, el, e, active) {
   const id = idOf(el);
   const r0 = el.getBoundingClientRect();
   const dx = e.clientX - r0.left, dy = e.clientY - r0.top;
+  // Heard from the old document and the window above; a release inside a
+  // document the render swapped in is caught by startDrag instead.
+  let held = true;
+  const release = () => { held = false; };
+  d.addEventListener('mouseup', release, { once: true });
+  window.addEventListener('mouseup', release, { once: true });
   active.blur();                          // commits: finish() ends `editing` at once
   await new Promise(r => setTimeout(r, 0));
   await renderIdle();
+  d.removeEventListener('mouseup', release);
+  window.removeEventListener('mouseup', release);
   if (editing) return;                    // a dialog kept the words open
   const d2 = $('out').contentDocument;
   if (!d2) return;
@@ -20310,8 +20434,10 @@ async function pressPastEditor(d, el, e, active) {
   const target = hit && el2.contains(hit) ? hit : (el2.querySelector('[data-slot]') || el2);
   const ev = type => new MouseEvent(type, { bubbles: true, cancelable: true, composed: true,
     view: d2.defaultView, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, ...at });
-  target.dispatchEvent(ev('mousedown'));
-  target.dispatchEvent(ev('mouseup'));
+  const down = ev('mousedown');
+  down.dsReplay = held;
+  target.dispatchEvent(down);
+  if (!held) target.dispatchEvent(ev('mouseup'));
 }
 
 function dragify(d, roots) {
@@ -20383,6 +20509,7 @@ function dragify(d, roots) {
           e.preventDefault(); e.stopPropagation();
           const ev = new MouseEvent('mousedown', e);
           ev.dsRedirected = true;
+          ev.dsReplay = e.dsReplay;
           under.dispatchEvent(ev);
           return;
         }
@@ -20805,7 +20932,8 @@ function placer(d, el, page) {
   // and nudges, Align and Distribute call put(..., false) and never consult
   // it. Built on the first put that snaps, not per placer.
   let linesMemo = null;
-  const lines = () => linesMemo || (linesMemo = snapLines(d, page, el));
+  const lines = () => linesMemo || (setSnapZoom(zoomOf(page)), linesMemo = snapLines(d, page, el));
+  const held = snapState();
 
   // One rule for the width, used by the drag AND by what gets saved — they had
   // two, and the drag's was "none". An absolutely positioned block with no
@@ -20824,8 +20952,8 @@ function placer(d, el, page) {
   const put = (x, y, snap = true) => {
     let vx = null, hy = null, gaps = [];
     if (snap) {
-      const sx = snapAxis(lines().xs, x, box.w);
-      const sy = snapAxis(lines().ys, y, box.h);
+      const sx = axisSnap(held.x, lines().xs, x, box.w, y, box.h);
+      const sy = axisSnap(held.y, lines().ys, y, box.h, x, box.w);
       // An edge or centre line wins; equal spacing is tried on an axis that
       // found none, so the two never fight over one pixel.
       const gx = sx ? null : spaceSnap(lines().boxes, 'x', x, sy ? sy.at : y, box.w, box.h);
@@ -21097,7 +21225,7 @@ function startDrag(d, el, e0, drillIn = false) {
   // nor jumps.
   const DEAD_PX = 4;
   let started = false, cloned = false;
-  let Ps, starts, group, glines, at;
+  let Ps, starts, group, glines, gheld, at;
   let lastPt = { x: e0.clientX, y: e0.clientY };   // where the drop landed
 
   const begin = () => {
@@ -21120,7 +21248,9 @@ function startDrag(d, el, e0, drillIn = false) {
               y: Math.min(...starts.map(s => s.y)) };
     group.w = Math.max(...Ps.map((P, i) => starts[i].x + P.box.w)) - group.x;
     group.h = Math.max(...Ps.map((P, i) => starts[i].y + P.box.h)) - group.y;
+    if (members.length > 1) setSnapZoom(zoomOf(page));
     glines = members.length > 1 ? snapLines(d, page, members) : null;
+    gheld = snapState();
     at = starts.map(s => ({ ...s }));
     members.forEach(m => m.classList.add('ds-lifted'));
     d.body.classList.add('ds-grabbing');
@@ -21133,6 +21263,11 @@ function startDrag(d, el, e0, drillIn = false) {
   // buy nothing and cost a frame of lag. It also stops firing in a hidden
   // document, which turns a drag into a silent no-op.
   const move = e => {
+    // A press replayed past an open editor (pressPastEditor) may have been
+    // let go while the render swapped documents, unheard: no button down
+    // means it is over. Only there — a synthetic drag elsewhere sends no
+    // buttons at all.
+    if (e0.dsReplay && e.buttons === 0) { up(); return; }
     lastPt = { x: e.clientX, y: e.clientY };
     if (!started) {
       if (refused) return;
@@ -21145,15 +21280,17 @@ function startDrag(d, el, e0, drillIn = false) {
     }
     const dx = (e.clientX - grab.x) / px, dy = (e.clientY - grab.y) / px;
     if (members.length === 1) {
-      at[0] = Ps[0].put(starts[0].x + dx, starts[0].y + dy);
+      at[0] = Ps[0].put(starts[0].x + dx, starts[0].y + dy, !(e.metaKey || e.ctrlKey));
       return;
     }
     // Group: snap and clamp the GROUP box, then place members by their offsets.
     let gx = group.x + dx, gy = group.y + dy, vx = null, hy = null;
     const gaps = [];
-    const sx = snapAxis(glines.xs, gx, group.w), sy = snapAxis(glines.ys, gy, group.h);
-    const ex = sx ? null : spaceSnap(glines.boxes, 'x', gx, sy ? sy.at : gy, group.w, group.h);
-    const ey = sy ? null : spaceSnap(glines.boxes, 'y', sx ? sx.at : gx, gy, group.w, group.h);
+    const free = e.metaKey || e.ctrlKey;      // hold ⌘/Ctrl to move without snapping
+    const sx = free ? null : axisSnap(gheld.x, glines.xs, gx, group.w, gy, group.h);
+    const sy = free ? null : axisSnap(gheld.y, glines.ys, gy, group.h, gx, group.w);
+    const ex = free || sx ? null : spaceSnap(glines.boxes, 'x', gx, sy ? sy.at : gy, group.w, group.h);
+    const ey = free || sy ? null : spaceSnap(glines.boxes, 'y', sx ? sx.at : gx, gy, group.w, group.h);
     if (sx) { gx = +sx.at.toFixed(3); vx = sx.line; }
     else if (ex) { gx = +ex.at.toFixed(3); gaps.push(...ex.gaps); }
     if (sy) { gy = +sy.at.toFixed(3); hy = sy.line; }
@@ -25782,6 +25919,13 @@ function wire(roots) {
     .ds-lifted { box-shadow:0 12px 32px rgba(47,62,70,.28) !important;
                  transform:scale(1.015); opacity:.96;
                  outline:2px solid #6B9E78 !important; outline-offset:2px; }
+    /* A RESIZE does not lift. The 1.5% scale grew the box about its centre, so
+       its edge sat a few pixels past the pointer (0.75% of a wide box) and the
+       handles, measured off the scaled box, followed it: the edge you were
+       dragging never landed where the cursor was, and the frame it left behind
+       was that scaled size. An inline transform (a rotated or scaled piece)
+       still wins over this, as it should. */
+    body.ds-resizing .ds-lifted { transform:none; }
     /* …but none of that survives contact with an SVG child: the outline paints
        around the whole page-sized viewport (the recurring giant box — this was
        its FOURTH appearance, during drag and resize), and a CSS scale on an
@@ -25906,6 +26050,12 @@ function wire(roots) {
             border:1.5px solid #6B9E78; border-radius:4px;
             box-shadow:0 1px 3px rgba(20,30,35,.28); }
     .ds-h:hover { background:#6B9E78; }
+    /* While the words are open the overlay's own hairline goes (it doubled the
+       selection ring a pixel or two from the first and last letters) and the
+       rotate stem, which hangs over the line above. Every resize handle
+       STAYS: a box is sized with the caret still in it. */
+    .ds-handles.ds-typing { outline:none; }
+    .ds-typing .ds-rot { display:none; }
     .ds-h-ne, .ds-h-nw, .ds-h-se, .ds-h-sw { border-radius:50%; }
     .ds-h-e { right:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
     .ds-h-w { left:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
@@ -25916,13 +26066,28 @@ function wire(roots) {
     .ds-h-ne { right:-9px; top:-9px; width:9px; height:9px; cursor:nesw-resize; }
     .ds-h-sw { left:-9px; bottom:-9px; width:9px; height:9px; cursor:nesw-resize; }
     /* The move grip, only while the box's words are open (showHandles): a
-       round four-arrow button hanging under the box, clear of the south
-       handle, the one place a press moves the box instead of the caret. */
-    .ds-movegrip { left:50%; bottom:-31px; width:22px; height:22px; margin-left:-11px;
+       round four-arrow button, the one place a press moves the box instead
+       of the caret. It hangs off the SIDE, level with the middle, clear of
+       the west handle. It used to hang under the box, which is where the
+       next paragraph's first line is: the grip sat on top of the words below
+       the one being edited. A side margin is empty; a box that starts within
+       a grip's width of the page's left edge flips it to the right side
+       (showHandles adds .ds-movegrip-r). */
+    .ds-movegrip { left:-33px; top:50%; width:22px; height:22px; margin-top:-11px;
                    border-radius:50%; display:grid; place-items:center;
                    color:#2F3E46; cursor:move; box-shadow:0 1px 4px rgba(20,30,35,.25); }
+    .ds-movegrip.ds-movegrip-r { left:auto; right:-33px; }
     .ds-movegrip:hover { color:#fff; }
     .ds-movegrip svg { display:block; pointer-events:none; }
+    /* The edge bands beside the grip, also only while typing: invisible until
+       the pointer is on one, then a tint and the move cursor say "this moves
+       the box". 7px, flush outside each side; the resize handles sit on top. */
+    .ds-moveedge { position:absolute; pointer-events:auto; cursor:move; }
+    .ds-moveedge:hover { background:rgba(107,158,120,.22); }
+    .ds-moveedge-n { left:-7px; right:-7px; top:-7px; height:7px; }
+    .ds-moveedge-s { left:-7px; right:-7px; bottom:-7px; height:7px; }
+    .ds-moveedge-w { top:0; bottom:0; left:-7px; width:7px; }
+    .ds-moveedge-e { top:0; bottom:0; right:-7px; width:7px; }
     /* the rotate grip hangs above the box on a short stem — only for elements
        with no corner to rotate from (a width-only prose slot, a table) */
     .ds-rot { top:-20px; left:50%; width:11px; height:11px; margin-left:-6px;
@@ -32543,7 +32708,7 @@ function _pilotApplySetChart(id, patch) {
 
 function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', style, fill } = {}) {
   md = fixOkina(md);
-  const pid = page != null ? page : visiblePageId();
+  const pid = page != null ? _pilotPageId(page) : visiblePageId();
   const id = freeBoxId();
   const box = { id, page: pid, x: x != null ? +x : placeX(w), y: y != null ? +y : 2,
                 w: +w, z: nextZ(1, pid), md };
@@ -32561,6 +32726,14 @@ function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', st
 // behind the editor or fake a table out of a text box. Same objects the tools
 // make (a chart is a kind:"chart" shape, a table a layout.json table), so the
 // person gets the same panel, menus and handles as for one they drew.
+// A caller (the staff-hub connector sends JSON) may say page "1" for the page
+// whose id is the number 1; an object saved with the string never matched its
+// sheet and was refused as "would be saved and never seen". Use the page's own id.
+const _pilotPageId = pid => {
+  if (pid == null) return pid;
+  const hit = pageOrder().find(p => String(p) === String(pid));
+  return hit != null ? hit : pid;
+};
 const _pilotPageKnown = pid => pid == null
   || pageOrder().map(String).includes(String(pid))
   || designedPages.some(p => String(p.id) === String(pid))
@@ -32613,7 +32786,7 @@ function _pilotValidateAddChart(o) {
   return { ok: true };
 }
 function _pilotApplyAddChart({ page, x, y, w = 4, h = 2.8, chart, fill } = {}) {
-  const pid = page != null ? page : visiblePageId();
+  const pid = page != null ? _pilotPageId(page) : visiblePageId();
   const id = freeShapeId('chart');
   const spec = chart ? clone(chart)
     : { labels: ['First', 'Second', 'Third'], series: [{ name: 'Series 1', data: [12, 19, 8] }],
@@ -32661,7 +32834,7 @@ function _pilotValidateAddTable(o) {
   return { ok: true };
 }
 function _pilotApplyAddTable(o) {
-  const pid = o.page != null ? o.page : visiblePageId();
+  const pid = o.page != null ? _pilotPageId(o.page) : visiblePageId();
   const id = freeTableId();
   // Ragged rows are padded, numbers become the text they read as: a table's
   // cells are words, and the engine refuses a grid that is not rectangular.
@@ -32723,11 +32896,13 @@ function _pilotValidateAddShape(o = {}) {
              error: `'${kind}' is not a shape — one of ${PILOT_SHAPE_KINDS.join(', ')}` };
   const n = _pilotNums(o, ['x', 'y', 'w', 'h'], 'addShape', { zeroH: kind === 'line' });
   if (!n.ok) return n;
+  if (o && o.r != null && !(typeof o.r === 'number' && isFinite(o.r) && o.r >= 0 && o.r <= 0.4))
+    return { ok: false, error: 'addShape: r is a corner radius in inches, 0 to 0.4' };
   return _pilotPageDraws(page, 'addShape');
 }
 function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
-                               stroke, sw, z, rx, data } = {}) {
-  const pid = page != null ? page : visiblePageId();
+                               stroke, sw, z, rx, r, data } = {}) {
+  const pid = page != null ? _pilotPageId(page) : visiblePageId();
   const id = freeShapeId(kind);
   // Same defaults as the Shapes panel (solid, on top, sage) so an argless
   // call lands exactly what a panel click lands.
@@ -32739,6 +32914,8 @@ function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
                sw: sw != null ? +sw : 0.02,
                z: z != null ? +z : nextZ(2, pid) };
   if (rx != null) sh.rx = +rx;
+  // A rectangle's corner radius, in inches — the engine reads `r` (rx is not a rect key).
+  if (r != null && kind === 'rect' && +r > 0) sh.r = +r;
   if (kind === 'qr') { sh.data = String(data || 'https://www.hiappleseed.org'); sh.fill = fill || '#000000'; sh.stroke = 'none'; if (h == null) sh.h = sh.w; }
   if (kind === 'polygon') sh.sides = 6;
   if (kind === 'star') { sh.points = 5; sh.inner = 0.5; }
@@ -32754,8 +32931,9 @@ function _pilotValidateSetStyle(key, patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch))
     return { ok: false, error: 'style patch must be an object, e.g. { size: 14, color: "#2F3E46" }' };
   const isBox = (key || '').startsWith('text.') && boxOf(key);
-  if (!isBox && !slotRe(key).test(source))
-    return { ok: false, error: `no slot or text box '${key}' — check inventory()` };
+  const isTable = (key || '').startsWith('table.') && tableOfId(String(key));
+  if (!isBox && !isTable && !slotRe(key).test(source))
+    return { ok: false, error: `no slot, text box or table '${key}' — check inventory()` };
   // A `use` naming a style that does not exist is refused by the engine at
   // LOAD, so writing one here would not set a style — it would produce a
   // document that will not open, several steps away from the call that did it.
@@ -32769,6 +32947,13 @@ function _pilotValidateSetStyle(key, patch) {
   return { ok: true };
 }
 function _pilotApplySetStyle(key, patch) {
+  // A table's type is its own `style` (setTable's style option); setStyle used to
+  // refuse a table id outright, so the same words were spelled two ways.
+  if ((key || '').startsWith('table.') && tableOfId(String(key))) {
+    const t = tableOfId(String(key));
+    t.style = { ...(t.style || {}), ...patch };
+    return { key, style: clone(t.style) };
+  }
   setStyle(key, patch);
   return { key, style: styleOf(key) };
 }
@@ -33281,6 +33466,38 @@ const PILOT_BATCH_VERBS = {
   setNotes: { validate: (k, notes) => (slotRe(k || '').test(source) && Array.isArray(notes) && notes.every(n => typeof n === 'string'))
       ? { ok: true } : { ok: false, error: 'setNotes(slotKey, [note text, …]) — a slot that exists' },
     apply: (k, notes) => { setSlotNotes(k, notes); return { key: k, notes: slotNotes(k).map(NOTE_BODY) }; } },
+  // A shape's own look, after it exists: corner radius (rectangles), outline and
+  // stacking. recolor() does the fill and place() the box; this is the rest of
+  // what the right-click menu's border and layer rows set.
+  setShape: { validate: (id, p) => {
+      const s = shapeOf(id);
+      if (!s) return { ok: false, error: `no shape '${id}' — setShape works on shapes; a text box styles through setStyle` };
+      if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+      if (!p || typeof p !== 'object' || Array.isArray(p))
+        return { ok: false, error: 'setShape(id, {r, stroke, sw, z}) — r: corner radius in inches (rectangles), stroke: #hex | "none", sw: outline width in inches, z: stacking order' };
+      const bad = Object.keys(p).filter(k => !['r', 'stroke', 'sw', 'z'].includes(k));
+      if (bad.length) return { ok: false, error: `setShape: ${bad.join(', ')} not settable here — r, stroke, sw, z` };
+      if ('r' in p) {
+        if (s.kind !== 'rect') return { ok: false, error: `setShape: only rectangles have corners, '${id}' is a ${s.kind}` };
+        if (typeof p.r !== 'number' || !isFinite(p.r) || p.r < 0 || p.r > 0.4)
+          return { ok: false, error: 'setShape: r is a corner radius in inches, 0 to 0.4 (0 for square)' };
+      }
+      if ('sw' in p && !(typeof p.sw === 'number' && isFinite(p.sw) && p.sw >= 0))
+        return { ok: false, error: 'setShape: sw is a width in inches, 0 or more' };
+      if ('z' in p && !(typeof p.z === 'number' && isFinite(p.z)))
+        return { ok: false, error: 'setShape: z is a number — higher is nearer the front; text boxes sit at 3' };
+      if ('stroke' in p && !(p.stroke === 'none' || (typeof p.stroke === 'string' && HEX_RE.test(p.stroke.trim()))))
+        return { ok: false, error: 'setShape: stroke is a #hex or "none"' };
+      return { ok: true };
+    },
+    apply: (id, p) => {
+      const s = shapeOf(id);
+      if ('r' in p) { if (p.r) s.r = p.r; else delete s.r; }
+      if ('stroke' in p) s.stroke = p.stroke.trim();
+      if ('sw' in p) s.sw = p.sw;
+      if ('z' in p) s.z = p.z;
+      return { id, r: s.r || 0, stroke: s.stroke, sw: s.sw, z: s.z };
+    } },
   flip: { validate: (id, f) => {
       const v = _pilotValidatePlace(id);
       if (!v.ok) return v;
@@ -33376,6 +33593,16 @@ const PILOT_BATCH_VERBS = {
       Object.entries(patch).forEach(([k, v]) => { if (v == null) delete t[k]; else t[k] = clone(v); });
       return { id: 'table.' + t.id };
     } },
+  // A cell's words, in place: setTable takes every option but rows, so renaming
+  // one header meant deleting the table and building it again.
+  setCell: { validate: (id, r, c, md) => {
+      const t = tableOfId(String(id || ''));
+      if (!t) return { ok: false, error: `no table '${id}'` };
+      if (!(Number.isInteger(r) && Number.isInteger(c) && r >= 0 && c >= 0 && r < t.rows.length && c < t.rows[0].length))
+        return { ok: false, error: `setCell(id, row, col, md) — a cell inside a ${t.rows.length}x${t.rows[0].length} table, counting from 0` };
+      if (typeof md !== 'string' && typeof md !== 'number') return { ok: false, error: 'setCell: the words are a string' };
+      return { ok: true };
+    }, apply: (id, r, c, md) => { const t = tableOfId(id); t.rows[r][c] = String(md); return { id: 'table.' + t.id, row: r, col: c }; } },
   splitCell: { validate: (id, r, c, dir) => {
       const t = tableOfId(String(id || ''));
       if (!t) return { ok: false, error: `no table '${id}'` };
@@ -33867,7 +34094,10 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  fresh addTextBox's id does not exist to place() until the batch's own
    *  render has run) — call addTextBox alone first, then batch the rest. */
   async batch(ops) {
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    // Someone is typing: give them a few seconds to click out (a person asking
+    // Claude for a change is usually mid-sentence in a box) before refusing.
+    for (let i = 0; editing && i < 30; i++) await new Promise(r => setTimeout(r, 250));
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first (click outside the box, or press Esc), then send the same call again' };
     if (!Array.isArray(ops) || !ops.length)
       return { ok: false, error: 'batch needs a non-empty array of {verb, args}' };
     // An op may carry `as: 'name'`; later ops may say '@name' where an id
@@ -33923,6 +34153,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       if (verb === 'defineStyle')
         return a0 && a0.from && pendingStyles.has(a0.scope + ':' + a0.from);
       if (verb === 'dropStyle') return pendingStyles.has(a0 + ':' + a1);
+      if (verb === 'cellStyle') return typeof args[2] === 'string' && pendingStyles.has('cell:' + args[2]);
       return false;
     };
     for (let i = 0; i < ops.length; i++) {
@@ -33949,6 +34180,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       }
       if (op.verb === 'defineStyle' && args[0] && args[0].scope && args[0].name)
         pendingStyles.add(args[0].scope + ':' + String(args[0].name).trim());
+      if (op.verb === 'defineCellStyle' && typeof args[0] === 'string' && args[1] != null)
+        pendingStyles.add('cell:' + args[0]);
       if (op.as) defined.add(String(op.as));
     }
     const before = snapshot(), wasFailed = renderFailed;
@@ -34204,6 +34437,10 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async setNotes(k, notes) { return _pilotOne('setNotes', [k, notes]); },
   /** flip(id, 'h' | 'v' | 'hv' | null) — on shapes, boxes, tables, placed pieces. */
   async flip(id, f) { return _pilotOne('flip', [id, f]); },
+  /** setCell(id, row, col, md) — one table cell's words. */
+  async setCell(id, r, c, md) { return _pilotOne('setCell', [id, r, c, md]); },
+  /** setShape(id, {r, stroke, sw, z}) — a shape's corner radius (inches, rectangles), outline and stacking order. */
+  async setShape(id, p) { return _pilotOne('setShape', [id, p]); },
   /** Style housekeeping (76): unusedStyles() — {text, object, cell,
    *  swatches} nothing uses; dropUnusedStyles(kinds?) deletes them;
    *  duplicateStyle(scope, name, newName?); overrides() — text whose own keys

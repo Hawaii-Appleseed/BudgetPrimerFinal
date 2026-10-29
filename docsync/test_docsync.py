@@ -5194,6 +5194,18 @@ check_eq("website: the publish settings come from the record, with the engine's 
          (_p.repo, _p.branch, _p.paths, _p.home, _p.when, _p.url, _p.command),
          ("Org/reports", "main", ["my-page"], "hub", "save", "https://org.github.io/reports/my-page/",
           "python3 -m docsync.website --id my-page --write"))
+from docsync.registry import Publish as _Pub  # noqa: E402
+_B3 = type("_B3", (), {"id": "x", "editor": None, "publish": _Pub(
+    repo="Org/reports", branch="main", command="python3 -m docsync.website --id my-page --write",
+    paths=["my-page"], home="hub")})
+_dp = _web.designation_from_publish(_B3(), _sites)
+check_eq("website: a publish: block that runs docsync.website designates the page without a layout record",
+         (_dp["site"].name, _dp["slug"], _dp["home"]), ("reports", "my-page", "hub"))
+_B4 = type("_B4", (), {"id": "x", "editor": None, "publish": _Pub(
+    repo="Org/reports", branch="main", command="python3 other.py", paths=["my-page"])})
+check_eq("website: a publish: block with some other command designates nothing",
+         _web.designation_from_publish(_B4(), _sites), None)
+check_eq("website: no publish: block designates nothing", _web.designation_from_publish(_B(), _sites), None)
 check_eq("website: a page with neither a publish: block nor a record publishes nowhere",
          _web.publish_for(_B(), {}, _sites), None)
 _B2 = type("_B2", (), {"id": "x", "editor": None, "publish": "EXPLICIT"})

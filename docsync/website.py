@@ -114,6 +114,28 @@ def designation(layout: dict | None, sites: dict[str, Site]) -> dict | None:
     return {"site": sites[site], "slug": slug, "home": home}
 
 
+def designation_from_publish(binding, sites: dict[str, Site]) -> dict | None:
+    """The target a binding's own `publish:` block names, when that block runs THIS command.
+
+    A project whose docsync.yml binding has an explicit `publish:` block (command
+    `python3 -m docsync.website …`) cannot be given a layout record from the editor,
+    which hides File ▸ Publish as a website… for any page that has a block of its own.
+    So a saved document that never got the record (a hub room is seeded once and
+    takes no key from a deployment) would fail every publish with "not set up as a
+    website". The block already says which site, address and home, so use it."""
+    pub = getattr(binding, "publish", None)
+    if not pub or "docsync.website" not in (pub.command or "") or not pub.paths:
+        return None
+    for site in sites.values():
+        if site.repo != pub.repo or site.branch != pub.branch:
+            continue
+        path = str(pub.paths[0]).strip("/")
+        slug = path[len(site.folder) + 1:] if site.folder and path.startswith(site.folder + "/") else path
+        if SLUG_RE.match(slug):
+            return {"site": site, "slug": slug, "home": pub.home or "local"}
+    return None
+
+
 def read_layout(binding) -> dict | None:
     ed = binding.editor
     if not ed or not ed.layout or not Path(ed.layout).is_file():
@@ -228,7 +250,8 @@ def page_files(binding, html: str) -> dict[str, Path]:
 
 def publish(binding, site_root: Path, *, write: bool, fidelity: bool = True,
             sites: dict[str, Site] | None = None) -> str:
-    d = designation(read_layout(binding), load_sites() if sites is None else sites)
+    sites = load_sites() if sites is None else sites
+    d = designation(read_layout(binding), sites) or designation_from_publish(binding, sites)
     if d is None:
         raise WebsiteError(f"{binding.id} is not set up as a website (File ▸ Publish as a website…)")
     dest = site_root / target_path(d)
