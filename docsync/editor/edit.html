@@ -150,32 +150,46 @@
      and passing over the bar brings it back. */
   #stat.idle:not(.err) { opacity:.34; }
   #bar:hover #stat.idle:not(.err) { opacity:.9; }
+  /* …and it is said in one word, with the sentence on hover (data-tip): a
+     green dot and "Live" are the answer to the question it answers, and the
+     forty-odd other messages, which do change, get the width it held
+     (Devin, 2026-10-28). The words stay the element's text, so a screen
+     reader still reads them; only their glyphs are taken off the row. Short
+     enough not to need the fade. */
+  /* As wide as "● Live" and no wider, the slack going to an auto margin
+     instead: the hover chip then sits under the word, and the empty stretch
+     of bar beside it is not a tooltip target. */
+  #stat.live-idle:not(.err) { font-size:0; opacity:.9; padding-left:4px;
+        flex:0 0 auto; margin-right:auto; }
+  #stat.live-idle:not(.err)::before { content:''; display:inline-block; width:7px; height:7px;
+        border-radius:50%; background:#5FC27E; margin-right:6px; vertical-align:1px; }
+  #stat.live-idle:not(.err)::after { content:'Live'; font-size:12px; color:#CFE0D8; }
   #bar > button, #bar > span:not(#stat) { flex:none; }
   /* Zoom (Fit / 100 / 125 / 150) hidden for now — kept in the DOM so wiring
      stays intact. !important beats the later #zoom{display:inline-flex} rule;
      delete this one line to bring the zoom controls back. */
   #zoom { display:none !important; }
   /* Canva's zoom control: a track between two end dots, a round handle, and
-     the level read out beside it. Sized to sit on the bar's 30px button row
-     without setting its own height. */
-  #zoombar { display:inline-flex; align-items:center; gap:5px; flex:none;
-             padding:0 2px; }
+     the level read out beside it. It lives in #zoompop now (2026-10-28), one
+     click from the bar's "100% ▾" instead of 156px of the bar itself, so it
+     is drawn for the white menu: one row, inset to the menu's label axis. */
+  #zoombar { display:flex; align-items:center; gap:8px; padding:4px 10px 8px; }
   /* The two ends of the track are the step buttons — one click per rung of
      ZOOM_STEPS, the same ladder ⌘+ / ⌘- walk. They replaced a pair of purely
      decorative dots: the ends of a zoom track are exactly where a hand
      reaches, so spending them on ornament was a waste of the only two
-     obvious targets the control has. #bar's button styling is a CHILD
-     selector, so these need their own rules. */
-  .zb-step { flex:none; width:18px; height:18px; padding:0; display:grid;
-            place-items:center; border:1px solid var(--ctl-line); border-radius:50%;
-            background:var(--ctl); color:var(--txt); cursor:pointer;
+     obvious targets the control has. Pressing one leaves the menu open, so
+     a few presses walk the ladder. */
+  .zb-step { flex:none; width:22px; height:22px; padding:0; display:grid;
+            place-items:center; border:1px solid #C9D6CD; border-radius:50%;
+            background:#fff; color:var(--ink); cursor:pointer;
             font:15px/1 system-ui; transition:background .12s, border-color .12s; }
-  .zb-step:hover:not(:disabled) { border-color:var(--sage); background:#4B5B68; }
+  .zb-step:hover:not(:disabled) { border-color:var(--sage); background:#EAF2EC; }
   .zb-step:disabled { opacity:.4; cursor:default; }
   .zb-step:focus-visible { outline:2px solid rgba(107,158,120,.55); outline-offset:2px; }
-  #zb-range { -webkit-appearance:none; appearance:none; width:68px; height:5px;
-             border-radius:99px; background:var(--ctl-line); cursor:pointer;
-             flex:none; margin:0; }
+  #zb-range { -webkit-appearance:none; appearance:none; height:5px; min-width:0;
+             border-radius:99px; background:#D5DFD9; cursor:pointer;
+             flex:1; margin:0; }
   #zb-range::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
              width:15px; height:15px; border-radius:50%; background:#fff;
              border:1px solid rgba(20,30,35,.28);
@@ -188,7 +202,10 @@
   /* Tabular figures: the readout changes constantly while dragging, and
      proportional digits make the whole bar twitch as it does. */
   #zb-val { font:11.5px system-ui; font-variant-numeric:tabular-nums;
-            color:var(--dim); min-width:32px; text-align:right; flex:none; }
+            color:#5B6E66; min-width:34px; text-align:right; flex:none; }
+  /* The bar's end of it: the scale in effect, tabular so 90% and 100% do not
+     shift the buttons beside it. */
+  #zoombtn .zb-pct { font-variant-numeric:tabular-nums; min-width:32px; text-align:right; }
   /* +Section, hidden for now. Same treatment as the zoom segment above: the
      button and every handler stay live, so bringing it back is deleting this
      one line — not rebuilding a feature. */
@@ -282,13 +299,13 @@
   /* Was a filled #C0392B pill: the most saturated thing in the window, held
      there permanently by a condition you fix when you get to it. A standing
      alarm stops being read — the same argument docsync/check.py makes about
-     warnings that can never be got to green. Outlined and muted here; the
-     page it is ABOUT carries the mark, which is the part that was missing. */
-  #fit { background:rgba(192,57,43,.14); color:#F0B4AC; padding:3px 10px;
-         border:1px solid rgba(240,180,172,.42); border-radius:99px;
-         font:12px system-ui; cursor:help;
-         transition:background .14s, color .14s, border-color .14s; }
-  #fit:hover { background:#C0392B; color:#fff; border-color:#C0392B; }
+     warnings that can never be got to green. Then an outlined pill on the
+     bar; since 2026-10-28 the first row of Check ▾, whose badge carries the
+     count — the page it is ABOUT carries the mark either way. Wraps rather
+     than ellipsising: in a menu there is room to name every page. */
+  .pop.menu #fit { background:#FBE9E5; color:#8E2A1E; font:12.5px/1.35 system-ui;
+        white-space:normal; text-align:left; align-items:flex-start; }
+  .pop.menu #fit:hover, .pop.menu #fit:focus-visible { background:#F6D8D1; color:#7A2318; }
   /* The corner mark on the page chip whose content is cut. Sits opposite the
      number so the two never collide. */
   .chip.cut .chip-thumb { border-color:#C0392B; }
@@ -394,21 +411,25 @@
   #comments.on .cmt-n { color:#fff; }
   #cupd[disabled] { opacity:.6; cursor:default; }
   #upd[disabled] { opacity:.6; cursor:default; }
-  /* The three chips whose text is written at runtime, and which therefore
-     have no width of their own to budget for: an update headline, a
-     cut-in-print warning naming every offending page. Each is a SUMMARY with
-     its detail on title= and its action on click, so an ellipsis costs
-     nothing — where being pushed off the end of an unwrapping row cost the
-     whole control. */
+  /* The chips whose text is written at runtime, and which therefore have no
+     width of their own to budget for: an update headline, newer report
+     content, the two amber notices (#s2, #immov). Each is a SUMMARY with its
+     detail on title= and its action on click, so an ellipsis costs nothing —
+     where being pushed off the end of an unwrapping row cost the whole
+     control. They give way first when the row is short: "⚠ 23 text boxes
+     can't move yet" was 195px of a 1100px window, and pushed the zoom button
+     off the end on a machine whose fonts run wider (2026-10-28). (The
+     cut-in-print warning was one of these; it is a row of Check ▾ now.) */
   /* display:inline-block, not the row's inline-flex: an ellipsis belongs to
      an inline box, and a flex container's anonymous text item never gets
      one. line-height replaces the centring flex was doing. */
-  #bar > #upd, #bar > #cupd, #bar > #fit {
+  #bar > #upd, #bar > #cupd, #bar > #s2, #bar > #immov {
         max-width:14rem; overflow:hidden; text-overflow:ellipsis;
-        white-space:nowrap; display:inline-block; line-height:16px; }
+        white-space:nowrap; display:inline-block; line-height:16px;
+        flex:0 1 auto; min-width:5.5rem; }
   /* …and a display of any kind beats the hidden attribute's own display:none.
      The same trap as #bar > button[hidden] below. */
-  #bar > #upd[hidden], #bar > #cupd[hidden], #bar > #fit[hidden] { display:none; }
+  #bar > #upd[hidden], #bar > #cupd[hidden], #bar > #s2[hidden], #bar > #immov[hidden] { display:none; }
   /* A caution, not an offer — amber rather than #upd/#cupd's inviting sage/
      blue, since clicking it does not fix anything, only dismisses the notice
      (checkStage2()). */
@@ -427,11 +448,6 @@
                 background:var(--ctl); color:var(--txt); border:1px solid var(--ctl-line);
                 border-radius:var(--r-ctl); padding:5px 9px; cursor:pointer; height:28px;
                 transition:background .12s, border-color .12s, transform .08s; }
-  /* The icon-only buttons are square: a 14px glyph in a 13px-per-side text
-     button was mostly padding, and four of them side by side spent more of
-     the row than any label does. Two ids each: "#bar > button" is (id + type) and
-     outranks a bare id, the same trap #agentnote fell into above. */
-  #bar > #reload, #bar > #guides, #bar > #layers, #bar > #present { padding:5px 6px; }
   #bar > button:active:not(:disabled) { transform:translateY(1px); }
   /* The flex rule above beats [hidden]'s own (non-!important) display:none —
      Share/Publish/Push all render anyway once "hidden" is only an attribute.
@@ -442,8 +458,15 @@
   #bar > button:disabled { opacity:.45; cursor:default; border-color:var(--ctl-line);
                          background:var(--ctl); }
   #bar > button.on { background:var(--sage); border-color:var(--sage); color:#fff; }
-  #undo, #redo, #steps { font-size:15px; line-height:1; padding:4px 6px; }
-  #steps { font-size:13px; }
+  #undo, #redo { font-size:15px; line-height:1; padding:4px 6px; }
+  /* Check ▾'s badge: Preflight's count, or the notes' when nothing is wrong
+     (syncCheckBadge) — the same chip each wore on its own icon. */
+  #check { position:relative; }
+  #check-count { position:absolute; top:-4px; right:-5px; min-width:15px; height:15px; padding:0 3px;
+        box-sizing:border-box; border-radius:8px; background:#B42318; color:#fff;
+        font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
+  #check-count.warn { background:#B54708; }
+  #check-count.note { background:#8E6BBF; }
   #histpop { width:340px; max-height:60vh; overflow:auto; }
   #histpop .hrow { display:flex; gap:8px; align-items:baseline; width:100%; text-align:left; border:0; background:none;
         padding:6px 8px; border-radius:6px; font:12.5px system-ui; color:inherit; cursor:pointer; }
@@ -1516,12 +1539,22 @@
         border-top:1px solid #E8EEEA; border-radius:8px 8px 0 0; }
   /* the layers panel: this page's objects, top of the stack first */
   #layerspop { min-width:230px; max-height:420px; overflow-y:auto; }
-  #preflight, #notes { position:relative; }
-  #notes-count { position:absolute; top:-4px; right:-5px; min-width:15px; height:15px; padding:0 3px;
-                 box-sizing:border-box; border-radius:8px; background:#8E6BBF; color:#fff;
-                 font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
-  #hiddenchars { font:600 13px/1 Georgia, serif; }
-  #hiddenchars.on { background:rgba(91,155,213,.18); }
+  /* Notes' count, and Preflight's below: a pill at the end of the row in
+     Check ▾ (the bar's #check-count says the same thing from outside). */
+  #notes-count { flex:none; min-width:17px; height:17px; padding:0 5px;
+                 box-sizing:border-box; border-radius:9px; background:#8E6BBF; color:#fff;
+                 font:600 10px/17px system-ui, sans-serif; text-align:center; pointer-events:none; }
+  /* A menu row's keyboard shortcut, at its right end, quieter than its words. */
+  .pop.menu .shp-k { flex:none; font:11.5px system-ui; color:#8DA098; letter-spacing:.3px; }
+  /* A glyph standing in for a row's icon (Hidden characters' ¶): the same
+     16px box and the same quiet colour as an .shp-i drawing. */
+  .shp-glyph { display:inline-block; text-align:center; font:600 14px/16px Georgia, serif; }
+  /* A row that is a SWITCH (Rulers & guides, Hidden characters, the zoom size
+     in effect) says it is on with a tick at its end — the .on its handler
+     has always toggled, which on the bar filled the whole button. */
+  .pop.menu .shp.on::after { content:''; flex:none; width:9px; height:5px; margin:0 3px 3px 2px;
+        border-left:1.8px solid var(--sage); border-bottom:1.8px solid var(--sage);
+        transform:rotate(-45deg); }
   #colourspop { min-width:300px; max-width:380px; max-height:460px; overflow-y:auto; }
   .cl-row { display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:center; padding:5px 2px;
             border-top:1px solid rgba(0,0,0,.07); font-size:12px; }
@@ -1536,9 +1569,9 @@
   .nt-text { white-space:pre-wrap; margin:2px 0 4px; }
   .nt-acts { display:flex; gap:4px; }
   .nt-acts button { font-size:11px; padding:2px 6px; }
-  #pf-count { position:absolute; top:-4px; right:-5px; min-width:15px; height:15px; padding:0 3px;
-              box-sizing:border-box; border-radius:8px; background:#B42318; color:#fff;
-              font:600 9px/15px system-ui, sans-serif; text-align:center; pointer-events:none; }
+  #pf-count { flex:none; min-width:17px; height:17px; padding:0 5px;
+              box-sizing:border-box; border-radius:9px; background:#B42318; color:#fff;
+              font:600 10px/17px system-ui, sans-serif; text-align:center; pointer-events:none; }
   #pf-count.warn { background:#B54708; }
   #preflightpop, #hyperlinkspop { min-width:320px; max-width:420px; max-height:460px; overflow-y:auto; }
   .pf-group { margin:6px 0 2px; font-size:11px; font-weight:600; color:#374151; }
@@ -2102,20 +2135,13 @@
     <button class="shp" id="file-website-off" hidden><svg class="shp-i" viewBox="0 0 16 16"
       ><circle cx="8" cy="8" r="5.6"/><path d="M3.9 12.1 12.1 3.9"/></svg
       ><span class="shp-t">Stop publishing as a website…</span></button>
-    <!-- Sources and Share MOVED here from the bar (same ids, same handlers).
-         Neither is a per-selection act: Sources is the report's citation list
-         and Share is who may open the document — both belong with Resize and
-         Download, and taking them off the row is what let the rest of it fit
-         a normal window. -->
+    <!-- Sources MOVED here from the bar (same id, same handler): not a
+         per-selection act but the report's citation list, so it belongs with
+         Resize and Download. Share came here with it and went back to the bar
+         once View ▾ and Check ▾ made the room (2026-10-28). -->
     <button class="shp" id="sources" aria-label="View, edit, reorder and remove citations"
       ><svg class="shp-i" viewBox="0 0 16 16"><path d="M2.6 3.4h10.8M2.6 8h10.8M2.6 12.6h6.6"
       /></svg><span class="shp-t">Sources…</span></button>
-    <button class="shp" id="share" disabled
-      aria-label="Copy a link that shows this draft to anyone"
-      ><svg class="shp-i" viewBox="0 0 16 16"><circle cx="11.9" cy="3.9" r="2"/><circle
-        cx="4.1" cy="8" r="2"/><circle cx="11.9" cy="12.1" r="2"/><path
-        d="m5.9 7.05 4.2-2.1M5.9 8.95l4.2 2.1"/></svg
-      ><span class="shp-t">Share…</span></button>
     <!-- Where this report's prose was DRAFTED. Most writing here starts in a
          Google Doc, with comments and three colleagues in it, and only becomes
          a report once the words settle. These two rows are that hand-off: one
@@ -2191,10 +2217,85 @@
     <p class="pop-h">Doc size</p>
     <div class="sizegrid" id="size-list"></div>
   </div>
+  <!-- View ▾ and Check ▾ (Devin, 2026-10-28) hold the tools you open now and
+       then — ten unlabelled icons at the far end of the bar until then. On the
+       hub that row ran 80px past a 1280px window and 260px past 1100px, so
+       seven of them were simply off-screen, with no scrollbar to say so. View
+       is how you look at the page; Check is what is in it and what is wrong
+       with it, and its badge carries Preflight's count so a problem never goes
+       quiet. Every tool kept its id and its handler; only its button moved,
+       and togglePop() opens its panel under the menu it came from.
+       Each button sits right before its own menu, after File's: the menus are
+       out of the row's flow, so the bar looks the same, and Tab from an open
+       menu's button goes INTO that menu rather than on to the next button. -->
+  <button id="view" aria-label="View — rulers, hidden characters, layers, undo history, present">View ▾</button>
+  <!-- data-owner: the bar button a menu hangs from. A row's own panel opens
+       there (togglePop), since the row is hidden along with its menu. -->
+  <div class="pop menu" id="viewpop" hidden data-owner="view">
+    <p class="pop-h">Show</p>
+    <!-- Switches, not panels: a tick when on (.on), and the menu closes. -->
+    <button class="shp" id="guides"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="1.5" y="1.5" width="11" height="11" rx="1"/><path
+        d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"/></svg
+      ><span class="shp-t">Rulers &amp; guides</span></button>
+    <button class="shp" id="hiddenchars"><span class="shp-i shp-glyph" aria-hidden="true">¶</span
+      ><span class="shp-t">Hidden characters</span><span class="shp-k">⌥⌘I</span></button>
+    <button class="shp" id="layers"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M7 1.8L12.6 4.6 7 7.4 1.4 4.6z"/><path
+        d="M1.4 7.2L7 10l5.6-2.8M1.4 9.8L7 12.6l5.6-2.8"/></svg
+      ><span class="shp-t">Layers</span></button>
+    <!-- Every step you can undo, to jump back to one: the bar's ⏱. Undo and
+         Redo themselves stay on the bar, being what you reach for most. -->
+    <button class="shp" id="steps"><svg class="shp-i" viewBox="0 0 14 14"
+      ><circle cx="7" cy="8" r="4.8"/><path d="M7 8V5.4M5.6 1.6h2.8M11 3.6l.9-.9"/></svg
+      ><span class="shp-t">Undo history</span></button>
+    <p class="pop-h">This window</p>
+    <button class="shp" id="present"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="1.5" y="2" width="11" height="8" rx="1.2"/><path
+        d="M5.8 4.4l3.1 1.6-3.1 1.6z" fill="currentColor" stroke="none"/><path
+        d="M7 10v1.4M4.6 13h4.8"/></svg
+      ><span class="shp-t">Present</span></button>
+    <!-- An --app window has no browser chrome, so this row is the only
+         visible way to refresh one (see the handler). -->
+    <button class="shp" id="reload"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M12 7a5 5 0 1 1-1.6-3.7"/><path d="M12.2 1.6v2.9H9.3"/></svg
+      ><span class="shp-t">Reload editor</span><span class="shp-k">⌘R</span></button>
+  </div>
+  <button id="check" aria-label="Check — preflight, hyperlinks, picture links, colours and notes">Check ▾<span id="check-count" hidden></span></button>
+  <div class="pop menu" id="checkpop" hidden data-owner="check">
+    <p class="pop-h">Problems</p>
+    <!-- The print warning, which used to take 175px of the bar to say what
+         the page strip already marks in red. reportFit() writes its words and
+         its title (which element, how far past the trim); a click goes to the
+         first one. -->
+    <button class="shp" id="fit" hidden></button>
+    <button class="shp" id="preflight"><svg class="shp-i" viewBox="0 0 14 14"
+      ><circle cx="7" cy="7" r="5.5"/><path d="M4.6 7.1l1.7 1.7 3.2-3.4"/></svg
+      ><span class="shp-t">Preflight</span><span id="pf-count" hidden></span></button>
+    <p class="pop-h">In this report</p>
+    <button class="shp" id="hyperlinks"><svg class="shp-i" viewBox="0 0 14 14"
+      ><circle cx="7" cy="7" r="5.5"/><path
+        d="M1.5 7h11M7 1.5c-2 2.2-2 8.8 0 11M7 1.5c2 2.2 2 8.8 0 11"/></svg
+      ><span class="shp-t">Hyperlinks</span></button>
+    <!-- InDesign's "Links": the pictures, each pointing at a file. Named for
+         what it lists, beside the row for the other kind of link. -->
+    <button class="shp" id="links"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M6 8a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/><path
+        d="M8 6a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/></svg
+      ><span class="shp-t">Picture links</span></button>
+    <button class="shp" id="colours"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M7 1.5a5.5 5.5 0 1 0 0 11c.9 0 1.2-.7.9-1.3-.4-.8.1-1.7 1-1.7H10a2.5 2.5 0 0 0 2.5-2.5C12.5 3.9 10.1 1.5 7 1.5z"/><circle
+        cx="4.5" cy="6" r=".8" fill="currentColor"/><circle cx="7" cy="4.2" r=".8" fill="currentColor"/><circle
+        cx="9.5" cy="6" r=".8" fill="currentColor"/></svg
+      ><span class="shp-t">Colours in use</span></button>
+    <button class="shp" id="notes"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M2.5 2h9v6.5L8.5 11.5h-6z"/><path d="M8.5 11.5V8.5h3"/></svg
+      ><span class="shp-t">Notes</span><span id="notes-count" hidden></span></button>
+  </div>
   <span class="bar-sep"></span>
   <button id="undo" disabled aria-label="Undo (⌘Z) — the last 200 steps are kept" title="Undo (⌘Z) — the last 200 steps are kept">↶</button>
   <button id="redo" disabled aria-label="Redo (⌘⇧Z)">↷</button>
-  <button id="steps" aria-label="History — every step you can undo, to jump back to one">⏱</button>
+  <span class="bar-sep"></span>
   <button id="save" disabled>Save draft</button>
   <button id="push" hidden disabled aria-label="Send commits saved locally to GitHub">Push</button>
   <!-- Publish sits with Save and Push because it is the same kind of act —
@@ -2218,13 +2319,6 @@
        could not say WHERE. Clicking walks the changed paragraphs; the x
        clears the marks. -->
   <button id="sincechip" hidden aria-label="Paragraphs that changed since you last looked"></button>
-  <span class="bar-sep"></span>
-  <!-- The document's own panels and its editing mode. Left of #stat, which is
-       the bar's one flexible item and so reads as the gap between what acts on
-       the document and what only changes your view of it. -->
-  <button id="mode" hidden aria-label="Editing or suggesting — whether your edits change the document or propose a change">Editing ▾</button>
-  <button id="comments" hidden aria-label="Comments on this document">Comments</button>
-  <button id="history" hidden aria-label="Every saved version of this document">History</button>
   <!-- Discard is off the local bar: undo covers stepping an edit back. It is
        NOT redundant on a saved draft, where it is the only way to throw the
        draft branch away and return to the live report, so detectLocal() hides
@@ -2248,7 +2342,6 @@
        (see agentTouch). Lives in every mode; a live session relays it. -->
   <span id="agentlive" hidden title=""></span>
   <span id="ver" hidden title=""></span>
-  <span id="fit" hidden title="">⚠</span>
   <!-- A project imported via docsync.scaffold + docsync.propose (an engine
        file named body.slotted.html is the tell — see checkStage2()) gets its
        PROSE wired as editable slots automatically, and free-standing images
@@ -2270,43 +2363,51 @@
        (checkImmovable); the same finding docsync.check fails a strict build
        on. Its words, and the keys, are set there. -->
   <button id="immov" hidden></button>
-  <!-- Text / Shape / Icon / Table live in the left rail (#leftrail) now.
-       Token moved into the File menu. -->
+  <!-- The people end of the bar: who is here (#collab, just left of this),
+       whether your edits change the document or propose a change, its
+       comments, its saved versions, and who may open it. Together, the way
+       a document app groups them (Devin, 2026-10-28) — they were left of
+       #stat, between Publish and the status line. The hub shows all four;
+       locally only Share's absence is news. -->
+  <button id="mode" hidden aria-label="Editing or suggesting — whether your edits change the document or propose a change">Editing ▾</button>
+  <button id="comments" hidden aria-label="Comments on this document">Comments</button>
+  <!-- "Versions", not "History": the undo-step list is also a history, and
+       the two sat side by side. The panel itself is Version history. -->
+  <button id="history" hidden aria-label="Every saved version of this document">Versions</button>
+  <!-- Back on the bar from the File menu, which it had been moved into to
+       make room: on the hub it is who may open this document, the question a
+       shared document is asked most. detectLocal() hides it locally. -->
+  <button id="share" disabled aria-label="Copy a link that shows this draft to anyone">Share</button>
   <!-- Zoom (Fit / 100 / 125 / 150) is hidden for now via CSS (#zoom{display:none}). -->
   <span id="zoom" title="Zoom">
     <button data-z="fit">Fit</button><button data-z="1">100</button><button
       data-z="1.25">125</button><button data-z="1.5">150</button>
   </span>
-  <!-- The zoom control proper. The four preset buttons above stay in the DOM,
-       hidden, because several handlers and tests still address them by
-       data-z — this replaces them on screen, not in the wiring. -->
-  <span id="zoombar">
-    <button id="zb-out" class="zb-step" aria-label="Zoom out (⌘−)">−</button>
-    <input id="zb-range" type="range" min="25" max="200" step="1" value="100"
-           aria-label="Zoom" title="Zoom — ⌘+ / ⌘- to step, ⌘0 to fit">
-    <button id="zb-in" class="zb-step" aria-label="Zoom in (⌘+)">+</button>
-    <output id="zb-val" for="zb-range">100%</output>
-  </span>
-  <!-- Reload the editor. An --app window has NO browser chrome — no address
-       bar, no reload button — so the only way to refresh one was ⌘R, which
-       assumes you know the window is a browser at all. And refreshing is the
-       fix for the two states the editor cannot fix from inside: a page served
-       stale from the offline cache (which draws perfectly and then fails on
-       its engine files) and a boot that failed before the app existed. -->
-  <button id="reload" aria-label="Refresh the editor (⌘R) — reloads this window">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 7a5 5 0 1 1-1.6-3.7"/><path d="M12.2 1.6v2.9H9.3"/></svg></button>
-  <button id="guides" aria-label="Rulers and snap guides — drag from a ruler to add one">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" rx="1"/>
-      <path d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"
-        stroke-linecap="round"/></svg></button>
-  <button id="colours" aria-label="Colours in use — every colour the report sets; name them, find them, replace one everywhere">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-      <path d="M7 1.5a5.5 5.5 0 1 0 0 11c.9 0 1.2-.7.9-1.3-.4-.8.1-1.7 1-1.7H10a2.5 2.5 0 0 0 2.5-2.5C12.5 3.9 10.1 1.5 7 1.5z"/>
-      <circle cx="4.5" cy="6" r=".8" fill="currentColor"/><circle cx="7" cy="4.2" r=".8" fill="currentColor"/>
-      <circle cx="9.5" cy="6" r=".8" fill="currentColor"/></svg></button>
+  <!-- The zoom control proper lives in #zoompop; this is what opens it, and
+       it always reads the scale in effect. -->
+  <button id="zoombtn" aria-label="Zoom — fit, step in or out, or pick a size"><span class="zb-pct">100%</span> ▾</button>
+  <!-- Zoom, one click away instead of 156px of the bar: the same − / slider /
+       + (#zoombar: same ids, same handlers), then the sizes people pick. The
+       button on the bar shows the scale in effect (syncZoomBar). Right after
+       its button, so Tab goes into it. -->
+  <div class="pop menu" id="zoompop" hidden data-owner="zoombtn">
+    <p class="pop-h">Zoom</p>
+    <span id="zoombar">
+      <button id="zb-out" class="zb-step" aria-label="Zoom out (⌘−)">−</button>
+      <input id="zb-range" type="range" min="25" max="200" step="1" value="100"
+             aria-label="Zoom" title="Zoom — ⌘+ / ⌘- to step, ⌘0 to fit">
+      <button id="zb-in" class="zb-step" aria-label="Zoom in (⌘+)">+</button>
+      <output id="zb-val" for="zb-range">100%</output>
+    </span>
+    <button class="shp" data-zset=""><span class="shp-t">Fit to width</span><span class="shp-k">⌘0</span></button>
+    <p class="pop-h">Size</p>
+    <button class="shp" data-zset="0.5"><span class="shp-t">50%</span></button>
+    <button class="shp" data-zset="0.75"><span class="shp-t">75%</span></button>
+    <button class="shp" data-zset="1"><span class="shp-t">100%</span></button>
+    <button class="shp" data-zset="1.25"><span class="shp-t">125%</span></button>
+    <button class="shp" data-zset="1.5"><span class="shp-t">150%</span></button>
+    <button class="shp" data-zset="2"><span class="shp-t">200%</span></button>
+  </div>
   <div class="pop" id="histpop" hidden>
     <p class="pop-h">History — click a step to go back to it</p>
     <div id="hist-list"></div>
@@ -2321,43 +2422,23 @@
     <div id="cl-tools"></div>
     <div id="cl-list"></div>
   </div>
-  <button id="notes" aria-label="Notes — the writers' notes in this report, never published">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 2h9v6.5L8.5 11.5h-6z"/><path d="M8.5 11.5V8.5h3"/></svg><span id="notes-count" hidden></span></button>
   <div class="pop" id="notespop" hidden>
     <p class="pop-h">Notes</p>
     <div id="notes-list"></div>
   </div>
-  <button id="hiddenchars" aria-label="Show hidden characters and text threads (⌥⌘I)">¶</button>
-  <button id="preflight" aria-label="Preflight — every problem in the report, in one list">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="5.5"/>
-      <path d="M4.6 7.1l1.7 1.7 3.2-3.4"/></svg><span id="pf-count" hidden></span></button>
   <div class="pop" id="preflightpop" hidden>
     <p class="pop-h">Preflight</p>
     <div id="pf-list"></div>
   </div>
-  <button id="hyperlinks" aria-label="Hyperlinks — every link in the report; check for broken ones">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.3" stroke-linecap="round"><circle cx="7" cy="7" r="5.5"/>
-      <path d="M1.5 7h11M7 1.5c-2 2.2-2 8.8 0 11M7 1.5c2 2.2 2 8.8 0 11"/></svg></button>
   <div class="pop" id="hyperlinkspop" hidden>
     <p class="pop-h">Hyperlinks</p>
     <div id="hl-tools"></div>
     <div id="hl-list"></div>
   </div>
-  <button id="links" aria-label="Links — every picture in the report, missing ones flagged; relink a file everywhere it is used">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.3" stroke-linecap="round"><path d="M6 8a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/>
-      <path d="M8 6a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/></svg></button>
   <div class="pop" id="linkspop" hidden>
     <p class="pop-h">Links</p>
     <div id="links-list"></div>
   </div>
-  <button id="layers" aria-label="Layers — this page's objects in stacking order; drag to restack">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.3" stroke-linejoin="round"><path d="M7 1.8L12.6 4.6 7 7.4 1.4 4.6z"/>
-      <path d="M1.4 7.2L7 10l5.6-2.8M1.4 9.8L7 12.6l5.6-2.8"/></svg></button>
   <div class="pop" id="layerspop" hidden>
     <p class="pop-h">Document layers</p>
     <div id="doclayers"></div>
@@ -2368,19 +2449,10 @@
        control is a presentation decision, and deleting its markup would make
        bringing it back a code change instead of a CSS one. -->
   <button id="add" aria-label="Add a new prose section to a page">+ Section</button>
-  <button id="present" aria-label="Present — fullscreen, one page at a time; arrows or click advance, Esc exits">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-      stroke-width="1.4"><rect x="1.5" y="2" width="11" height="8" rx="1.2"/>
-      <path d="M5.8 4.4l3.1 1.6-3.1 1.6z" fill="currentColor" stroke="none"/>
-      <path d="M7 10v1.4M4.6 13h4.8" stroke-linecap="round"/></svg></button>
-  <!-- Mode / Comments / History / Discard / Publish MOVED up, into the group
-       that begins with undo (same ids, same handlers). They were the LAST
-       things on the row — Publish, the one act that changes the live report,
-       sat to the right of three unlabelled view icons, while a disabled
-       "Saved · just now" held the slot nearest the canvas. That was markup
-       history, not a decision: everything here acts on the DOCUMENT, so it
-       belongs with the other document verbs and left of #stat, and the view
-       controls (fit, zoom, reload, guides, present) keep the right end. -->
+  <!-- Discard and Publish sit in the group that begins with undo: Publish,
+       the one act that changes the live report, once sat at the far end
+       behind three unlabelled view icons. The view icons are in View ▾ now,
+       and the right end is the people (mode, comments, versions, share). -->
   <!-- Download moved into the File menu; its popover stays here. -->
   <div class="pop menu" id="downloadpop" hidden>
     <p class="pop-h">Download this draft</p>
@@ -5053,7 +5125,9 @@ function openGlyphs(d, host, range) {
   glyphRender();
   const pop = $('glyphpop');
   pop.hidden = false;
-  const anchor = $('steps');
+  // Under the bar's left end. It hung from ⏱ until that went into View ▾; a
+  // hidden anchor measures 0,0, so it hangs from Redo, which is where ⏱ was.
+  const anchor = $('redo');
   const r = anchor.getBoundingClientRect();
   pop.style.position = 'fixed'; pop.style.top = (r.bottom + 6) + 'px';
   pop.style.left = Math.max(8, Math.min(innerWidth - 380, r.left - 160)) + 'px';
@@ -8011,13 +8085,14 @@ function reportFit(d) {
   const bad = fitCheck(d);
   paintCut(d, bad);
   lastFit = bad;
-  if (!bad.length) { $('fit').hidden = true; markCutChips([]); return; }
+  if (!bad.length) { $('fit').hidden = true; markCutChips([]); syncCheckBadge(); return; }
   const pages = [...new Set(bad.map(b => b.page))];
   $('fit').hidden = false;
   $('fit').textContent = `⚠ ${pages.length} page${pages.length > 1 ? 's' : ''} cut in print: `
                        + pages.join(', ');
   $('fit').title = bad.map(b => `page ${b.page}: ${b.who} is ${b.over}in past the ${b.side === 'right' ? 'right edge' : 'cut'}`).join('\n');
   markCutChips(pages);
+  syncCheckBadge();
 }
 
 /** Put the warning ON the pages it is about.
@@ -8153,6 +8228,12 @@ function seedFlowTable(key) {
 /** One popover open at a time, anchored under its button; any click that is
  *  not inside a popover (or on its trigger) closes them. */
 function togglePop(pop, anchor) {
+  // A row of a menu (View ▸ Layers, Check ▸ Preflight, File ▸ Download) opens
+  // its panel where the menu was: the row is about to be hidden along with
+  // the menu, and a hidden anchor measures 0,0 — the panel landed over the
+  // bar's top-left corner. data-owner names the bar button a menu hangs from.
+  const menu = anchor && anchor.closest && anchor.closest('.pop.menu');
+  if (menu && menu !== pop) anchor = menu.__opener || $(menu.dataset.owner || '') || anchor;
   const wasHidden = pop.hidden;
   // :not(.docked) — a picker that lives in the left panel is not a transient
   // popover, and opening Layers or Download must not blank it out.
@@ -8181,7 +8262,7 @@ function togglePop(pop, anchor) {
 // own entries are inside .pop already, and #guides is a plain toggle, not an
 // anchor — listing either would just stop a click there from closing anything.
 const POP_ANCHORS = '#ty-colorbtn, #ty-spacebtn, #ty-parabtn, #text, #shape, #icon, #layers,'
-  + ' #download, #file, #ar-img';
+  + ' #download, #file, #view, #check, #zoombtn, #ar-img';
 
 // The rail's PICKERS — the panels that exist to put a new object on the page.
 // They are menus, and a menu closes when you click away from it.
@@ -16539,6 +16620,10 @@ function syncZoomBar() {
   const out = $('zb-out'), inn = $('zb-in');
   if (out) out.disabled = curScale <= ZOOM_STEPS[0] + 0.001;
   if (inn) inn.disabled = curScale >= ZOOM_STEPS[ZOOM_STEPS.length - 1] - 0.001;
+  // The bar's "100% ▾" and the size ticked in its menu.
+  $('zoombtn').querySelector('.zb-pct').textContent = pct + '%';
+  document.querySelectorAll('#zoompop [data-zset]').forEach(x =>
+    x.classList.toggle('on', x.dataset.zset === zoomChoice));
 }
 
 /** Set the zoom and tell everything that cares. '' means auto (fit the width,
@@ -17856,6 +17941,7 @@ function drawNoteMarksNow(d) {
   notesList().forEach(n => { if (n.key) by.set(n.key, (by.get(n.key) || []).concat(n.text)); });
   const count = notesList().length;
   $('notes-count').hidden = !count; $('notes-count').textContent = String(count);
+  syncCheckBadge();
   by.forEach((texts, k) => {
     const el = d.querySelector(`[data-slot="${CSS.escape(k)}"]`);
     const pg = el && el.closest('section.page');
@@ -18660,6 +18746,7 @@ function schedulePreflight() {
     b.textContent = list.length > 99 ? '99+' : String(list.length);
     b.classList.toggle('warn', !errs);
     $('preflight').title = list.length ? `${errs} error${errs === 1 ? '' : 's'}, ${list.length - errs} warning${list.length - errs === 1 ? '' : 's'}` : 'no problems found';
+    syncCheckBadge();
     if (!$('preflightpop').hidden) preflightRender(list);
   }, 1200);
 }
@@ -22214,7 +22301,12 @@ function sayIdle() {
   let timer = null;
   const sync = () => {
     clearTimeout(timer); timer = null;
-    if (el.textContent === IDLE_STAT) {
+    // Said as a green dot and "Live" at once (the CSS), the sentence one
+    // hover away. An attribute, so this observer does not hear itself.
+    const idle = el.textContent === IDLE_STAT;
+    el.classList.toggle('live-idle', idle);
+    if (idle) el.dataset.tip = IDLE_STAT; else delete el.dataset.tip;
+    if (idle) {
       // Already faded? Leave it — re-arming on every render would restart the
       // delay forever and the line would never actually settle.
       if (!el.classList.contains('idle')) {
@@ -27760,7 +27852,7 @@ function docStoreDecide() {
   $('mode').hidden = false;
   $('share').hidden = false;
   $('share').disabled = false;
-  rowLabel('share', 'Share…');
+  rowLabel('share', 'Share');
   $('share').setAttribute('aria-label', 'Who may open this document, and as what');
   $('share').title = 'Who may open this document, and as what';
   hubSaveLabel();   // sets the face AND whether Save is on the bar at all
@@ -31067,6 +31159,47 @@ $('file').onclick = () => {
   rowLabel('file-website', layout.website ? 'Website: ' + websiteUrl(layout.website) : 'Publish as a website…');
   togglePop($('filepop'), $('file'));
 };
+
+// ---- View ▾, Check ▾ and the zoom menu (Devin, 2026-10-28) ----------------
+// Their rows are the bar's old buttons, ids and handlers and all, so a menu
+// only has to open, and close once a row has done its thing. A row that
+// opens a panel has swapped the menu for it already (togglePop); a switch —
+// Rulers, Hidden characters, a zoom size — is closed here, after its own
+// handler has run, the way a menu closes when you pick from it. The zoom
+// track's − / + are not rows, so a few presses walk the ladder in one visit.
+$('view').onclick = () => togglePop($('viewpop'), $('view'));
+$('check').onclick = () => togglePop($('checkpop'), $('check'));
+$('zoombtn').onclick = () => togglePop($('zoompop'), $('zoombtn'));
+['viewpop', 'checkpop', 'zoompop'].forEach(id => $(id).addEventListener('click', e => {
+  if (e.target.closest('.shp')) $(id).hidden = true;
+}));
+document.querySelectorAll('#zoompop [data-zset]').forEach(b =>
+  b.addEventListener('click', () => setZoom(b.dataset.zset)));
+// The print warning goes to the first thing it is about.
+$('fit').addEventListener('click', () => {
+  const f = (lastFit || [])[0];
+  if (f) goToIssue({ ids: f.who ? [f.who] : [], page: f.page });
+});
+
+/** Check ▾ wears what its rows would: Preflight's count (red for an error,
+ *  amber for warnings only), or, with nothing wrong, how many notes there are
+ *  — the chips each of them wore on its own icon on the bar. Until Preflight
+ *  has made its first pass, the pages cut in print stand in for its count. */
+function syncCheckBadge() {
+  const b = $('check-count');
+  const pf = $('pf-count'), nt = $('notes-count');
+  const cut = new Set((lastFit || []).map(f => f.page)).size;
+  let n = '', cls = '';
+  if (!pf.hidden) { n = pf.textContent; cls = pf.classList.contains('warn') ? 'warn' : ''; }
+  else if (cut) n = String(cut);
+  else if (!nt.hidden) { n = nt.textContent; cls = 'note'; }
+  b.hidden = !n;
+  b.textContent = n;
+  b.className = cls;
+  const what = cls === 'note' ? `${n} note${n === '1' ? '' : 's'}; ` : n ? `${n} to look at; ` : '';
+  $('check').setAttribute('aria-label',
+    `Check — ${what}preflight, hyperlinks, picture links, colours and notes`);
+}
 
 // ---- File ▸ Publish as a website (docsync/website.py) ----
 const WEBSITE_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])$/;   // website.SLUG_RE
