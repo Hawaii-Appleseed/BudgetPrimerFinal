@@ -7647,6 +7647,7 @@ function startResize(d, el, e0, dir) {
   const baseScale = graphic ? ((storeOf(id) || {}).scale || 1) : 1;
   const wordy = !shapeId && !graphic && (isHeadingEl(el) || isTextEl(el));
   const grab = { x: e0.clientX, y: e0.clientY };
+  const priorSize = !shapeId && !graphic ? placementOf([id]) : null;
   el.classList.add('ds-lifted');
   d.body.classList.add('ds-resizing');
 
@@ -7730,6 +7731,8 @@ function startResize(d, el, e0, dir) {
       // the paragraph under it until the next render.
       const st = storeOf(id) || {};
       if (vertical && wordy && st.h == null) el.style.minHeight = '';
+      // Sized with the words open: ⌘Z there undoes the size, as for a move.
+      if (editing && richHost && priorSize) undoMoveFromWords(richHost, priorSize);
     } else {
       markDirty();
     }
@@ -21368,6 +21371,17 @@ function typeOnClick(d, el, e0) {
  *  stayed where it was dropped — "undoing a drag sometimes doesn't work".
  *  Until the next keystroke that types, ⌘Z there closes the words and
  *  undoes the move, which is the last thing the person did. */
+/** Where and how big each of `ids` is now, in the form undoMoveFromWords
+ *  puts back: a text box's own x/y/w/h, a designed element's whole
+ *  placement (or its absence). */
+function placementOf(ids) {
+  return ids.map(id => {
+    const bx = boxOf(id);
+    if (bx) return { id, box: { x: bx.x, y: bx.y, w: bx.w, h: bx.h } };
+    return { id, pos: layout.positions[id] ? JSON.parse(JSON.stringify(layout.positions[id])) : null };
+  });
+}
+
 function undoMoveFromWords(host, prior) {
   const key = async e => {
     if (!((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z')) return;
@@ -21377,13 +21391,16 @@ function undoMoveFromWords(host, prior) {
     await renderIdle();
     pushHistory();
     prior.forEach(p => {
-      if (p.box) { const bx = boxOf(p.id); if (bx) Object.assign(bx, p.box); }
+      if (p.box) {
+        const bx = boxOf(p.id);
+        if (bx) { Object.assign(bx, p.box); if (p.box.h == null) delete bx.h; }
+      }
       else if (p.pos) layout.positions[p.id] = p.pos;
       else delete layout.positions[p.id];
     });
     markDirty();
     await render();
-    $('stat').textContent = 'move undone';
+    $('stat').textContent = 'undone';
   };
   const off = () => { host.removeEventListener('keydown', key, true);
                       host.removeEventListener('input', off); };
@@ -21444,11 +21461,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     pushHistory();
     // What this move will change, so ⌘Z with the words open can put back
     // exactly that and leave the words alone (undoMoveFromWords).
-    priorPlace = members.map(m => {
-      const id = idOf(m), bx = boxOf(id);
-      return bx ? { id, box: { x: bx.x, y: bx.y } }
-        : { id, pos: layout.positions[id] ? JSON.parse(JSON.stringify(layout.positions[id])) : null };
-    });
+    priorPlace = placementOf(members.map(idOf));
     if (e0.altKey) {
       const copies = altClone(d, members, page);
       if (copies) { members = copies; cloned = true; setSel(d, copies.map(idOf)); }
