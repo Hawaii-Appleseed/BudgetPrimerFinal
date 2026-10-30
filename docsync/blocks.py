@@ -36,7 +36,7 @@ import re
 from html.parser import HTMLParser
 
 from .content import merge_attrs, split_style
-from .layout import fill_css, fill_repr
+from .layout import PRINT_EXACT_CSS, fill_css, fill_repr
 
 
 def is_light_bg(hexc) -> bool:
@@ -116,8 +116,7 @@ def print_css(L, pad: str = "", link_ink: str = "") -> str:
         f"<style>@page{{size:{sheet};margin:0}}@media print{{"
         # Must hang off a selector — a bare declaration inside @media is
         # invalid and gets dropped silently.
-        "*,*::before,*::after{-webkit-print-color-adjust:exact !important;"
-        "print-color-adjust:exact !important}"
+        f"{PRINT_EXACT_CSS}"
         "body{background:#fff}"
         # The engine-wide opt-out for on-screen chrome: toolbars, download
         # buttons, tooltips — anything that is part of the web page but not

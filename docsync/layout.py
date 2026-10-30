@@ -46,6 +46,15 @@ PAGE_W_IN, PAGE_H_IN = 8.5, 11.0
 # caller.
 PAGELESS_H = 200.0
 
+# Chrome's print dialog has "Background graphics" off by default, and with it
+# off Chrome DARKENS light text (white -> #ABABAB) while shapes still print,
+# because they force themselves to. Exact colour on every box keeps the
+# document as designed whichever way the reader leaves that box. It must hang
+# off a selector: a bare declaration inside @media is dropped silently. One
+# source of truth: blocks.print_css() uses this too.
+PRINT_EXACT_CSS = ("*,*::before,*::after{-webkit-print-color-adjust:exact !important;"
+                   "print-color-adjust:exact !important}")
+
 # Stamped on everything this module takes out of the flow and pins by inch —
 # placed designed elements, boxes, buttons, tables. It is what mobile_css()
 # releases on a screen too narrow to hold the sheet, and it has to be an
@@ -5002,6 +5011,7 @@ class Layout:
             self.page_h = self.page[1] if self.page[1] is not None else PAGELESS_H
         self._page_style_sent = False
         self._mobile_css_sent = False
+        self._print_color_sent = False
         self._chart_tip_sent = False
         self.positions = raw.get("positions") or {}
         # Inline charts, keyed by element id. A chart SHAPE is pinned by inch
@@ -7604,6 +7614,15 @@ class Layout:
                else "")
             + "}</style>")
 
+    def _print_color_once(self) -> str:
+        """Rides out with the first layer() of every render, whatever the
+        report placed or sized, so a plain report's PDF (File > Download > PDF
+        prints the artboard through the browser) keeps its true text colours."""
+        if self._print_color_sent:
+            return ""
+        self._print_color_sent = True
+        return f"<style>@media print{{{PRINT_EXACT_CSS}}}</style>"
+
     def _mobile_css_once(self) -> str:
         """Rides out with the first layer(), like _page_style_once() and for
         the same reason.
@@ -7674,7 +7693,7 @@ class Layout:
         are none, so a report without shapes renders exactly as before — except
         for the page-size override, which has to reach the document even on a
         page that holds no shapes."""
-        head = (self._mobile_css_once() + self._page_style_once()
+        head = (self._print_color_once() + self._mobile_css_once() + self._page_style_once()
                 + self._chart_tip_once() + self._anchor_once() + self._type_once()
                 + self._vars_once() + self._breaks_once() + self._char_once()
                 + self._bleed_once() + self._grid_once() + self._wrapshape_once()

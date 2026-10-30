@@ -14,6 +14,18 @@ after it, and it is the record for whoever next asks why a published page
 is not what it was. Charts have `docsync/CHART_PARITY.md` for the same
 reason.
 
+## 2026-10-29 — every report prints in its true colours
+
+Every bound report moved (all 15 that `docsync.build_parity` builds). Each page's first `layer()` now carries one extra
+`<style>@media print{*,*::before,*::after{-webkit-print-color-adjust:exact
+!important;print-color-adjust:exact !important}}</style>` (`Layout.
+_print_color_once`, the rule is `layout.PRINT_EXACT_CSS`, which
+`blocks.print_css()` now reuses). Nothing on screen changes; it only affects
+print. Why: File > Download > PDF in the hosted editor prints the artboard
+through the browser, and with Chrome's "Background graphics" off Chrome
+darkens light text (white -> #ABABAB) while card backgrounds still print.
+Only pages carrying the PDF button had the rule before.
+
 ## 2026-10-21 — the check begins
 
 Nothing moved. Every bound report built identically from `main` and from the

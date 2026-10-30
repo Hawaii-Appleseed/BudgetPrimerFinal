@@ -280,9 +280,14 @@ def _layout_error_at(fn):
     return "no error raised"
 
 
+from docsync.layout import PRINT_EXACT_CSS as _PEC                # noqa: E402
+# The one thing every report's first layer() carries, whatever it places:
+# exact print colour (see "a plain report forces exact print colour" below).
+_PRINT_ONLY = f"<style>@media print{{{_PEC}}}</style>"
+
 empty = _layout({"positions": {}, "shapes": []})
 check_eq("an empty layout adds no attributes", empty.attr("x.y"), "")
-check_eq("an empty layout adds no shape layer", empty.layer(3), "")
+check_eq("an empty layout adds no shape layer", empty.layer(3), _PRINT_ONLY)
 check_eq("an unmoved element keeps the renderer's own placement",
          empty.style("lc.dec", "left:1in;top:2in"), "left:1in;top:2in")
 
@@ -1011,7 +1016,7 @@ check("a group of one is not a group",
 check("an element cannot be in two groups",
       _layout_error({"groups": [["a", "b"], ["b", "c"]]}), "at most one")
 check_eq("a group never reaches the rendered page",
-         _layout({"groups": [["a", "b"]]}).layer(3), "")
+         _layout({"groups": [["a", "b"]]}).layer(3), _PRINT_ONLY)
 
 # Ruler guides are editor-only — the renderer never emits one, so an empty
 # guides block cannot move a byte, but a malformed one still fails at load.
@@ -1022,7 +1027,7 @@ check("a guide off the page is caught",
 check("a guide that is not a number is caught",
       _layout_error({"guides": {"y": ["top"]}}), "not a number")
 check_eq("a guide never reaches the rendered page",
-         _layout({"guides": {"x": [1.2]}}).layer(3), "")
+         _layout({"guides": {"x": [1.2]}}).layer(3), _PRINT_ONLY)
 
 filled = _layout({"fill": {"card.a": "#2F3E46"}})
 check_eq("a fill overrides the designed colour", filled.fill("card.a", "#6B9E78"), "#2F3E46")
@@ -1217,7 +1222,8 @@ check_eq("pageless clamps against a sentinel",
 _L = _layout({"page": {"w": 8.5, "h": None}})
 check("the style rides out with the first layer", _L.layer(1), "<style>")
 check_eq("and only once", _L.layer(2), "")
-check_eq("a report with no override renders exactly as before", _layout({}).layer(1), "")
+check_eq("a report with no override adds only the exact-colour print rule",
+         _layout({}).layer(1), _PRINT_ONLY)
 
 # A report BUILT pageless (the web-page reports: our-mission, wfc-credits,
 # rxkids, tfc-2027-priorities pass page=(12.5, None)) is the same as one whose
@@ -1295,6 +1301,19 @@ check("print css hides on-screen chrome", css, ".noprint{display:none !important
 # as a bare declaration — it has to hang off a selector.
 check("print css forces background graphics", css,
       "*,*::before,*::after{-webkit-print-color-adjust:exact !important")
+# Every report prints through the browser (File > Download > PDF), pdf_button
+# or not, and Chrome darkens light text when "Background graphics" is off
+# unless colour is forced exact. A plain report must carry the rule too.
+_plain = _layout({"positions": {}, "shapes": [], "page": {"w": 8.5, "h": 11}})
+_plain_head = _plain.layer(1)
+check("a plain report (no pdf_button) forces exact print colour", _plain_head,
+      "@media print{*,*::before,*::after{-webkit-print-color-adjust:exact !important;"
+      "print-color-adjust:exact !important}}")
+check_eq("the exact-colour rule is sent once per render",
+         (_plain_head + _plain.layer(2)).count("print-color-adjust:exact"), 2)
+check_eq("a report with nothing set still carries it",
+         "print-color-adjust:exact" in _layout({"boxes": []}).layer(1), True)
+check_eq("print_css reuses the one rule", "print-color-adjust:exact !important}" in css, True)
 check_eq("links are left alone unless asked for", "text-decoration:underline" in css, False)
 check("link_ink underlines and recolours for print",
       print_css(letter, link_ink="#354F52"), "a{color:#354F52;text-decoration:underline}")
