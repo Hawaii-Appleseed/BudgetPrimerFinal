@@ -21363,6 +21363,34 @@ function typeOnClick(d, el, e0) {
   return opened;
 }
 
+/** A move made with the words still open (the grip, an edge band): ⌘Z went
+ *  to the open field, which had nothing of its own to undo, and the box
+ *  stayed where it was dropped — "undoing a drag sometimes doesn't work".
+ *  Until the next keystroke that types, ⌘Z there closes the words and
+ *  undoes the move, which is the last thing the person did. */
+function undoMoveFromWords(host, prior) {
+  const key = async e => {
+    if (!((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z')) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    off();
+    host.blur();                       // the words commit, as any close does
+    await renderIdle();
+    pushHistory();
+    prior.forEach(p => {
+      if (p.box) { const bx = boxOf(p.id); if (bx) Object.assign(bx, p.box); }
+      else if (p.pos) layout.positions[p.id] = p.pos;
+      else delete layout.positions[p.id];
+    });
+    markDirty();
+    await render();
+    $('stat').textContent = 'move undone';
+  };
+  const off = () => { host.removeEventListener('keydown', key, true);
+                      host.removeEventListener('input', off); };
+  host.addEventListener('keydown', key, true);
+  host.addEventListener('input', off);
+}
+
 /** The section (L.frame) around `el` that is the selection on its own, or
  *  null — the one a press on anything inside it moves (see dragify). */
 function heldFrame(el) {
@@ -21401,7 +21429,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
   // nor jumps.
   const DEAD_PX = 4;
   let started = false, cloned = false;
-  let Ps, starts, group, glines, gheld, at;
+  let Ps, starts, group, glines, gheld, at, priorPlace = null;
   let lastPt = { x: e0.clientX, y: e0.clientY };   // where the drop landed
 
   const begin = () => {
@@ -21414,6 +21442,13 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     // that types into the words moves nothing.
     collabWarnHeld(idOf(el));
     pushHistory();
+    // What this move will change, so ⌘Z with the words open can put back
+    // exactly that and leave the words alone (undoMoveFromWords).
+    priorPlace = members.map(m => {
+      const id = idOf(m), bx = boxOf(id);
+      return bx ? { id, box: { x: bx.x, y: bx.y } }
+        : { id, pos: layout.positions[id] ? JSON.parse(JSON.stringify(layout.positions[id])) : null };
+    });
     if (e0.altKey) {
       const copies = altClone(d, members, page);
       if (copies) { members = copies; cloned = true; setSel(d, copies.map(idOf)); }
@@ -21530,6 +21565,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     });
     d.defaultView.setTimeout(() =>
       members.forEach(m => m.classList.remove('ds-settling')), 160);
+    if (editing && richHost && priorPlace && !cloned) undoMoveFromWords(richHost, priorPlace);
     d.body.classList.remove('ds-grabbing');
     // An endnote REORDERS rather than parks: it is one row of a numbered list,
     // and a citation floating loose over the page while still numbered in
