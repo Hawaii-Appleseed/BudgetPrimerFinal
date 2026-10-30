@@ -18747,7 +18747,7 @@ const PF_LABEL = { 'print-overflow': 'Cut off in print', 'off-sheet': 'Off the p
   'alt-is-filename': 'Described by its file name', 'overset': 'Text runs out of frames',
   'immovable-text': 'Text that cannot be moved', 'missing-image': 'Missing picture',
   'low-res': 'Low resolution for print', 'no-alt': 'No description', 'low-contrast': 'Low contrast',
-  'font-failed': 'Font did not load' };
+  'font-failed': 'Font did not load', cramped: 'Text squeezed in its box' };
 const rgbaOf = c => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null;
   const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v[3] ?? 1]; };
 const lumOf = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
@@ -24029,34 +24029,7 @@ async function startCollab() {
     // editor applies them the way the local /__pilot relay does: one
     // docsync.api.batch(), one undo step, the same validation as typing, the
     // agent chip for the room — and answers with what happened.
-    onPilot: async msg => {
-      const ops = Array.isArray(msg.ops) ? msg.ops : [];
-      if (!ops.length) return { ok: false, error: 'no ops' };
-      if (hubViewOnly()) return { ok: false, error: 'the editor that was asked is view only' };
-      if (editing) return { ok: false, error: 'an inline text editor is open in the editor that would apply this — close it and try again' };
-      const why = msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : ''));
-      agentTouch({ by: msg.by ? `Claude, for ${String(msg.by).replace(/@.*$/, '')}` : 'Claude',
-                   what: why,
-                   target: typeof (ops[0].args || [])[0] === 'string' ? ops[0].args[0] : null });
-      if (msg.what) pendingSaveWhy = (pendingSaveWhy ? pendingSaveWhy + ' ' : '') + String(msg.what).trim();
-      // One op whose verb batch() cannot take — remove, duplicate, addPage,
-      // applyScheme, addEndnotesSection push their own history — runs as
-      // the single call it is, the same verb a local /__pilot would run.
-      // Anything else is a batch: one undo step, one render.
-      let r;
-      const one = ops.length === 1 ? ops[0] : null;
-      if (one && !PILOT_BATCH_VERBS[one.verb] && PILOT_SINGLE_VERBS.has(one.verb)) {
-        const args = Array.isArray(one.args) ? one.args : [one.args];
-        r = await docsync.api[one.verb](...args);
-        if (r && r.ok) r = { results: [{ verb: one.verb, ...r }] };
-      } else {
-        r = await docsync.api.batch(ops);
-      }
-      // batch() awaits its own render, and wire() runs reportFit(), so the
-      // fit below is this edit's, not the one before it.
-      return r && r.ok !== false ? { ok: true, results: r.results || null, fit: fitReport() }
-                                 : { ok: false, error: (r && r.error) || 'the editor refused the batch' };
-    },
+    onPilot: hubPilot,
     // A question, not a change: the room relays it here because this editor
     // is the only thing in the system that has the page laid out in inches.
     // A view-only editor answers too — it renders the same page.
@@ -34133,7 +34106,75 @@ const PILOT_BATCH_VERBS = {
 // and renders nothing — it is here because this set is also the allowlist of
 // what a room message may reach, and asking what styles exist has to be
 // possible before dressing anything in one.
-const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles']);
+const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute']);
+
+/** A pilot op relayed by the hub's room — the connector's arrange_report —
+ *  applied here as docsync.api.batch(), one undo step, the same validation
+ *  as typing, the agent chip for the room — and answered with what happened. */
+async function hubPilot(msg) {
+  const ops = Array.isArray(msg.ops) ? msg.ops : [];
+  if (!ops.length) return { ok: false, error: 'no ops' };
+  if (hubViewOnly()) return { ok: false, error: 'the editor that was asked is view only' };
+  if (editing) return { ok: false, error: 'an inline text editor is open in the editor that would apply this — close it and try again' };
+  const why = msg.what || (ops[0].verb + (typeof (ops[0].args || [])[0] === 'string' ? ' ' + ops[0].args[0] : ''));
+  agentTouch({ by: msg.by ? `Claude, for ${String(msg.by).replace(/@.*$/, '')}` : 'Claude',
+               what: why,
+               target: typeof (ops[0].args || [])[0] === 'string' ? ops[0].args[0] : null });
+  if (msg.what) pendingSaveWhy = (pendingSaveWhy ? pendingSaveWhy + ' ' : '') + String(msg.what).trim();
+  // One op whose verb batch() cannot take — remove, duplicate, addPage,
+  // applyScheme, addEndnotesSection push their own history — runs as
+  // the single call it is, the same verb a local /__pilot would run.
+  // Anything else is a batch: one undo step, one render.
+  let r;
+  const was = layoutIssues();
+  const one = ops.length === 1 ? ops[0] : null;
+  if (one && !PILOT_BATCH_VERBS[one.verb] && PILOT_SINGLE_VERBS.has(one.verb)) {
+    const args = Array.isArray(one.args) ? one.args : [one.args];
+    r = await docsync.api[one.verb](...args);
+    if (r && r.ok) r = { results: [{ verb: one.verb, ...r }] };
+  } else {
+    r = await docsync.api.batch(ops);
+  }
+  // batch() awaits its own render, and wire() runs reportFit(), so the
+  // fit below is this edit's, not the one before it. So is `layout`:
+  // what this edit made overlap, spill or squeeze, measured on the page
+  // it rendered — the connector's Claude places by inches, blind, and
+  // without this learned of a collision only when a person saw it.
+  if (!(r && r.ok !== false))
+    return { ok: false, error: (r && r.error) || 'the editor refused the batch' };
+  const lay = layoutDiff(was, layoutIssues());
+  return { ok: true, results: r.results || null, fit: fitReport(), ...(lay ? { layout: lay } : {}) };
+}
+
+/** What an edit did to the page's layout, for an agent that placed things
+ *  by inches and cannot see the result: audit()'s geometry findings, minus
+ *  overlaps with a decorative shape (a card behind its words, a rule under
+ *  a heading — composition, not collision). onPilot diffs this before and
+ *  after, so the hub's connector is told what THIS edit broke. */
+const LAYOUT_ISSUE_KINDS = new Set(['overlap', 'covers-flow', 'off-sheet', 'overset',
+  'rule-through-glyph', 'cramped', 'print-overflow']);
+const DECOR_SHAPES = new Set(['rect', 'ellipse', 'line', 'triangle', 'arrow', 'path']);
+function layoutIssues() {
+  let r;
+  try { r = docsync.api.audit(); } catch (e) { swallowed('layoutIssues: audit', e); return null; }
+  const decor = id => {
+    const s = (layout.shapes || []).find(x => x.id === id);
+    return !!s && DECOR_SHAPES.has(s.kind);
+  };
+  return (r.issues || []).filter(i => LAYOUT_ISSUE_KINDS.has(i.kind)
+    && !(i.kind === 'overlap' && (i.ids || []).some(decor)));
+}
+const layoutIssueKey = i => `${i.kind}:${[...(i.ids || [])].sort().join('|')}:${i.page ?? ''}`;
+/** The issues in `after` that `before` did not have, and how many stood
+ *  already. Null when either side could not be measured. */
+function layoutDiff(before, after) {
+  if (!before || !after) return null;
+  const had = new Set(before.map(layoutIssueKey));
+  const fresh = after.filter(i => !had.has(layoutIssueKey(i)));
+  return { new: fresh.slice(0, 15).map(({ kind, page, ids, note }) => ({ kind, page, ids, note })),
+           ...(fresh.length > 15 ? { more: fresh.length - 15 } : {}),
+           standing: after.length - fresh.length };
+}
 
 window.docsync = Object.assign(window.docsync || {}, { api: {
   version: 1,
@@ -35316,6 +35357,51 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         ids: [f.dataset.el || ('text.' + f.dataset.thread)],
         note: 'the thread runs out of frames — enlarge one, or thread(this, another box)' });
     });
+    // ---- words squeezed into a box too narrow for them -----------------
+    // A width typed in inches rather than dragged by eye: a word wider than
+    // its box spills out of it, and a box a word or two wide stacks its
+    // words into a column. Judged on the lines as DRAWN — line boxes counted
+    // from the text's own client rects, a word's spill from scrollWidth —
+    // for what has a width of its own: a text box, or a designed element
+    // given a width.
+    try {
+      const rg = d.createRange();
+      const judge = (id, el, page) => {
+        const txt = (el.textContent || '').trim();
+        if (!txt || !el.clientWidth) return;
+        if (el.scrollWidth > el.clientWidth + 2) {
+          issues.push({ kind: 'cramped', page, ids: [id],
+            note: 'a word is wider than the box and spills out of it — widen it, or set the words smaller' });
+          return;
+        }
+        const tops = [];
+        const tw = d.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+          if (!n.textContent.trim()) continue;
+          rg.selectNodeContents(n);
+          for (const r of rg.getClientRects()) if (r.width) tops.push(r.top);
+        }
+        // Runs of another size on one line sit a few px apart: a new line
+        // is a step of more than half the box's own type size.
+        const step = (parseFloat(getComputedStyle(el).fontSize) || 12) * 0.5;
+        tops.sort((a, b) => a - b);
+        const lines = tops.filter((t, i) => i === 0 || t - tops[i - 1] > step).length;
+        const words = txt.split(/\s+/).length;
+        if (lines >= 3 && words / lines < 1.6)
+          issues.push({ kind: 'cramped', page, ids: [id],
+            note: `${words} words stacked on ${lines} lines — the box is too narrow for them; widen it` });
+      };
+      boxes().forEach(bx => {
+        const el = d.querySelector(`[data-el="text.${CSS.escape(bx.id)}"]`);
+        if (el) judge('text.' + bx.id, el, bx.page);
+      });
+      Object.entries(layout.positions || {}).forEach(([id, p]) => {
+        if (!p || p.w == null || id.startsWith('text.')) return;
+        const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
+        const pg = el && el.closest('section[data-page]');
+        if (el) judge(id, el, pg ? pg.dataset.page : undefined);
+      });
+    } catch (e) { swallowed('audit: cramped text', e); }
     stuckBy.forEach((keys, page) => issues.push({ kind: 'immovable-text', page, ids: keys,
       note: `${keys.length} text field${keys.length === 1 ? '' : 's'} can be typed into but `
         + 'not moved or resized — the renderer gives no data-el on or around them' }));
