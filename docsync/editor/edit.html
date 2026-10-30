@@ -1727,6 +1727,9 @@
   #hpanel[hidden] { display:none; }
   #hpanel.gutter { right:0; bottom:0; width:var(--cmt-gutter, 384px); border-radius:var(--r-edge) 0 0 0; border-right:0; border-bottom:0; box-shadow:none; background:#EEF2EF; }
   #hpanel-named { border:1px solid #C9D6CD; background:#fff; font:600 11px system-ui; color:#5B6E66; padding:3px 9px; border-radius:999px; cursor:pointer; margin-left:auto; margin-right:8px; }
+  .hub-history-older { display:block; margin:10px auto 14px; border:1px solid #C9D6CD; background:#fff; font:600 12px system-ui; color:#2F3E46; padding:6px 14px; border-radius:999px; cursor:pointer; }
+  .hub-history-older:hover:not(:disabled) { background:#E8EDE6; }
+  .hub-history-older:disabled { opacity:.6; cursor:default; }
   #hpanel-named:hover { background:#E8EDE6; color:var(--ink); }
   #hpanel-named.on { background:#2D5A3D; border-color:#2D5A3D; color:#fff; }
   .hpanel-show { display:flex; align-items:center; gap:6px; font:12px system-ui; color:#5B6E66; padding:4px 14px 8px; border-bottom:1px solid #E1E8E3; cursor:pointer; }
@@ -4788,8 +4791,8 @@ function endnoteMenu(d, host, e) {
   // Keep the editor focused when a menu button is pressed — otherwise the
   // click blurs it, commits the edit, and the caret this menu targets is gone.
   m.addEventListener('mousedown', menuKeepFocus);
-  m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
-  m.style.top = (e.clientY + d.defaultView.scrollY) + 'px';
+  m.style.left = (e.clientX + (d.defaultView || window).scrollX) + 'px';
+  m.style.top = (e.clientY + (d.defaultView || window).scrollY) + 'px';
   const head = d.createElement('div');
   head.className = 'ds-menu-head'; head.textContent = 'Endnote'; m.appendChild(head);
   const item = (label, fn) => {
@@ -4801,9 +4804,9 @@ function endnoteMenu(d, host, e) {
   buildEndnoteRows(d, m, host, range);
   d.body.appendChild(m); menuUp(true);
   // Nudge back on-screen if it would spill off the right/bottom edge.
-  const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
-  if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
-  if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
+  const r = m.getBoundingClientRect(), vw = (d.defaultView || window).innerWidth, vh = (d.defaultView || window).innerHeight;
+  if (r.right > vw) m.style.left = (e.clientX + (d.defaultView || window).scrollX - r.width) + 'px';
+  if (r.bottom > vh) m.style.top = (e.clientY + (d.defaultView || window).scrollY - r.height) + 'px';
 }
 
 /** Right-clicking prose. It used to open the endnote menu and nothing else,
@@ -4817,8 +4820,8 @@ function textMenu(d, host, e) {
   const m = d.createElement('div');
   m.className = 'ds-menu';
   m.addEventListener('mousedown', menuKeepFocus);
-  m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
-  m.style.top = (e.clientY + d.defaultView.scrollY) + 'px';
+  m.style.left = (e.clientX + (d.defaultView || window).scrollX) + 'px';
+  m.style.top = (e.clientY + (d.defaultView || window).scrollY) + 'px';
 
   const item = (label, fn, on = true) => {
     const b = d.createElement('button');
@@ -4904,9 +4907,9 @@ function textMenu(d, host, e) {
     item('Delete text box', () => deleteOpenBox(d, 'text.' + openBox.id));
   }
   d.body.appendChild(m); menuUp(true);
-  const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
-  if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
-  if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
+  const r = m.getBoundingClientRect(), vw = (d.defaultView || window).innerWidth, vh = (d.defaultView || window).innerHeight;
+  if (r.right > vw) m.style.left = (e.clientX + (d.defaultView || window).scrollX - r.width) + 'px';
+  if (r.bottom > vh) m.style.top = (e.clientY + (d.defaultView || window).scrollY - r.height) + 'px';
 }
 
 /** Insert ▸ — the text variables, at the caret. "Page of" lists the
@@ -6148,15 +6151,15 @@ function submenuRow(d, parent, label, build) {
     build(child);
     d.body.appendChild(child);
     const r = b.getBoundingClientRect();
-    const sx = d.defaultView.scrollX, sy = d.defaultView.scrollY;
+    const sx = (d.defaultView || window).scrollX, sy = (d.defaultView || window).scrollY;
     child.style.left = (r.right + sx - 2) + 'px';
     child.style.top = (r.top + sy - 4) + 'px';
     // Flip to the parent's left / lift it up rather than run off the viewport.
     const cr = child.getBoundingClientRect();
-    if (cr.right > d.defaultView.innerWidth) {
+    if (cr.right > (d.defaultView || window).innerWidth) {
       child.style.left = (r.left + sx - cr.width + 2) + 'px';
     }
-    if (cr.bottom > d.defaultView.innerHeight) {
+    if (cr.bottom > (d.defaultView || window).innerHeight) {
       child.style.top = Math.max(0, r.bottom + sy - cr.height) + 'px';
     }
   };
@@ -6181,8 +6184,8 @@ function pageMenu(d, pg, e) {
   setSelPage(d, pid);           // right-click selects, so the strip agrees
   const m = d.createElement('div');
   m.className = 'ds-menu';
-  m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
-  m.style.top = (e.clientY + d.defaultView.scrollY) + 'px';
+  m.style.left = (e.clientX + (d.defaultView || window).scrollX) + 'px';
+  m.style.top = (e.clientY + (d.defaultView || window).scrollY) + 'px';
   const item = (label, fn, on = true) => {
     const b = d.createElement('button');
     b.textContent = label;
@@ -6233,9 +6236,9 @@ function pageMenu(d, pg, e) {
   sep();
   submenuRow(d, m, 'Page colour ▸', sub => fillRow(d, sub, pageFillId(pid)));
   d.body.appendChild(m); menuUp(true);
-  const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
-  if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
-  if (r.bottom > vh) m.style.top = (e.clientY + d.defaultView.scrollY - r.height) + 'px';
+  const r = m.getBoundingClientRect(), vw = (d.defaultView || window).innerWidth, vh = (d.defaultView || window).innerHeight;
+  if (r.right > vw) m.style.left = (e.clientX + (d.defaultView || window).scrollX - r.width) + 'px';
+  if (r.bottom > vh) m.style.top = (e.clientY + (d.defaultView || window).scrollY - r.height) + 'px';
 }
 
 /** The accessible description attached to this element, if it has one.
@@ -6497,8 +6500,8 @@ function layerMenu(d, el, e) {
   if (!surface) selectForMenu(d, id);
   const m = d.createElement('div');
   m.className = 'ds-menu';
-  m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
-  m.style.top = (e.clientY + d.defaultView.scrollY) + 'px';
+  m.style.left = (e.clientX + (d.defaultView || window).scrollX) + 'px';
+  m.style.top = (e.clientY + (d.defaultView || window).scrollY) + 'px';
 
   const item = (label, fn, on = true) => {
     const b = d.createElement('button');
@@ -7471,7 +7474,7 @@ async function deleteOpenBox(d, id) {
 function wireSections(d, roots) {
   within(d, roots, '[data-sec]').forEach(el => {
     const id = el.dataset.sec;
-    if (d.defaultView.getComputedStyle(el).position === 'static') {
+    if ((d.defaultView || window).getComputedStyle(el).position === 'static') {
       el.style.position = 'relative';           // anchors the grip; edit-only render
     }
     const grip = d.createElement('div');
@@ -8081,7 +8084,7 @@ function fitCheck(d) {
       // counting them here would flag every folio (which sits by design in the
       // bottom padding). Asked only of a candidate - a computed style per
       // element per page per render was most of this check's cost.
-      const pos = d.defaultView.getComputedStyle(el).position;
+      const pos = (d.defaultView || window).getComputedStyle(el).position;
       if (pos === 'absolute' || pos === 'fixed') return;
       low = b; who = el.dataset.slot || el.tagName.toLowerCase();
     });
@@ -8494,7 +8497,7 @@ async function addTextBox(kind) {
  *  this logic inside layout.py's observer script, reading the same data
  *  attributes, so the three can never mean different things by "play". */
 function replayAnims(d, root) {
-  if (d.defaultView.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if ((d.defaultView || window).matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const els = root.matches && root.matches('[data-ds-anim]')
     ? [root] : [...root.querySelectorAll('[data-ds-anim]')];
   els.forEach(el => {
@@ -8621,11 +8624,11 @@ function openTglSpeedPopover(d, anchorBtn, tb) {
   m.appendChild(w);
   d.body.appendChild(m); menuUp(true);
   const rect = anchorBtn.getBoundingClientRect();
-  const sx = d.defaultView.scrollX, sy = d.defaultView.scrollY;
+  const sx = (d.defaultView || window).scrollX, sy = (d.defaultView || window).scrollY;
   m.style.left = (rect.left + sx) + 'px';
   m.style.top = (rect.bottom + sy + 6) + 'px';
   const mr = m.getBoundingClientRect();
-  if (mr.right > d.defaultView.innerWidth) {
+  if (mr.right > (d.defaultView || window).innerWidth) {
     m.style.left = Math.max(0, rect.right + sx - mr.width) + 'px';
   }
 }
@@ -8812,7 +8815,7 @@ function deafenStickyChrome(d) {
   d.querySelectorAll('body > *:not(script):not(style)').forEach(el => {
     if (el.id === 'ds-edit-css' || (el.className || '').toString().startsWith('ds-')) return;
     if (el.tagName === 'SECTION' && el.classList.contains('page')) return;
-    const cs = d.defaultView.getComputedStyle(el);
+    const cs = (d.defaultView || window).getComputedStyle(el);
     // Only what is ON SCREEN when this runs. A report's transient popovers are
     // fixed-position children of <body> too, but they are hidden until the
     // pointer summons them — they are not standing chrome, they ARE a response
@@ -9055,8 +9058,8 @@ function tableMenu(d, td, e) {
   selectCell(idOf(tableEl), ri, ci);
   const m = d.createElement('div'); m.className = 'ds-menu ds-tmenu';
   m.addEventListener('mousedown', menuKeepFocus);
-  m.style.left = (e.clientX + d.defaultView.scrollX) + 'px';
-  m.style.top = (e.clientY + d.defaultView.scrollY) + 'px';
+  m.style.left = (e.clientX + (d.defaultView || window).scrollX) + 'px';
+  m.style.top = (e.clientY + (d.defaultView || window).scrollY) + 'px';
   /** A menu row. `fn` may be sync (a layout edit, wrapped in history + render)
    *  or, with raw:true, something that owns its own commit. */
   const item = (icon, label, key, fn, on = true, raw = false) => {
@@ -9164,10 +9167,10 @@ function tableMenu(d, td, e) {
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
   d.body.appendChild(m); menuUp(true);
-  const r = m.getBoundingClientRect(), vw = d.defaultView.innerWidth, vh = d.defaultView.innerHeight;
-  if (r.right > vw) m.style.left = (e.clientX + d.defaultView.scrollX - r.width) + 'px';
+  const r = m.getBoundingClientRect(), vw = (d.defaultView || window).innerWidth, vh = (d.defaultView || window).innerHeight;
+  if (r.right > vw) m.style.left = (e.clientX + (d.defaultView || window).scrollX - r.width) + 'px';
   if (r.bottom > vh) m.style.top = Math.max(4,
-    e.clientY + d.defaultView.scrollY - r.height) + 'px';
+    e.clientY + (d.defaultView || window).scrollY - r.height) + 'px';
 }
 
 // =================================================== table structure edits
@@ -11010,14 +11013,14 @@ function editChartText(d, node) {
   const inp = d.createElement('input');
   inp.className = 'ds-ch-edit';
   inp.value = chLabelIn(chartText(s.chart, hook));
-  const cs = d.defaultView.getComputedStyle(node);
+  const cs = (d.defaultView || window).getComputedStyle(node);
   // The glyphs' own height, not the computed font-size: a chart's text is
   // sized in the drawing's user units — INCHES in a page's shape layer — so
   // cs.fontSize read "0.15px", the field drew its words invisibly small, and
   // a paste into it came back empty and saved the title away. editSvgSlot
   // learned this first; same rule.
-  inp.style.cssText = `position:absolute;left:${r.left + d.defaultView.scrollX - 4}px;`
-    + `top:${r.top + d.defaultView.scrollY - 3}px;height:${r.height + 6}px;`
+  inp.style.cssText = `position:absolute;left:${r.left + (d.defaultView || window).scrollX - 4}px;`
+    + `top:${r.top + (d.defaultView || window).scrollY - 3}px;height:${r.height + 6}px;`
     + `min-width:${Math.max(46, r.width + 22)}px;font-size:${Math.max(11, r.height * 0.78).toFixed(1)}px;`
     + `font-weight:${cs.fontWeight};font-family:${cs.fontFamily};text-align:${node.getAttribute('text-anchor') === 'middle'
         ? 'center' : 'left'};`;
@@ -11164,7 +11167,7 @@ function editBox(d, el, at) {
   // caret point means nothing once the words have moved, so it is dropped.
   if (inThread(b)) {
     const head = threadHead(b);
-    const w = d.defaultView;
+    const w = (d.defaultView || window);
     if (w.__dsThreadGather) w.__dsThreadGather(head.id);
     const hel = d.querySelector(`[data-el="text.${CSS.escape(head.id)}"]`);
     if (hel && hel !== el) at = undefined;
@@ -11559,7 +11562,7 @@ function findRangeOf(el, hit, ord) {
 /** Take down whatever a "Show me" put up, in the page's own document. */
 function findUnshow(d) {
   if (!d) return;
-  try { d.defaultView.CSS.highlights.delete('find-show'); } catch (e) { /* no highlight API */ }
+  try { (d.defaultView || window).CSS.highlights.delete('find-show'); } catch (e) { /* no highlight API */ }
   const st = d.getElementById('find-show-style');
   if (st) st.remove();
   d.querySelectorAll('[data-find-flash]').forEach(n => {
@@ -11610,7 +11613,7 @@ function findFlash(el, hit, ord) {
   const d = el.ownerDocument;
   clearTimeout(findShowTimer);
   findUnshow(d);
-  const win = d.defaultView;
+  const win = (d.defaultView || window);
   const range = findRangeOf(el, hit, ord);
   el.setAttribute('data-find-flash', '');
   if (range && win.CSS && win.CSS.highlights && win.Highlight) {
@@ -11781,7 +11784,7 @@ function fontsInUse() {
       const k = el.dataset.slot;
       if (seen.has(k) || ((layout.text || {})[k] || {}).font) return;
       seen.add(k);
-      const raw = (d.defaultView.getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
+      const raw = ((d.defaultView || window).getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
       add(raw, k);
     });
   }
@@ -11800,7 +11803,7 @@ function replaceFont(from, to) {
       seen.add(k);
       layout.text = layout.text || {};
       if ((layout.text[k] || {}).font) return;
-      const raw = (d.defaultView.getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
+      const raw = ((d.defaultView || window).getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
       if (raw.toLowerCase() !== from.toLowerCase()) return;
       layout.text[k] = { ...(layout.text[k] || {}), font: to };
       n++;
@@ -12025,7 +12028,7 @@ function computedType(key) {
   const el = $('out').contentDocument.querySelector(
     `[data-slot="${key}"], [data-el="${key}"]`);
   if (!el) return { size: 16, leading: 1.45, tracking: 0, family: '', weight: 400 };
-  const cs = el.ownerDocument.defaultView.getComputedStyle(el);
+  const cs = (el.ownerDocument.defaultView || window).getComputedStyle(el);
   const size = parseFloat(cs.fontSize) || 16;
   const lh = parseFloat(cs.lineHeight);
   // letter-spacing computes to the keyword 'normal' when untouched, which is
@@ -12433,7 +12436,7 @@ function anchorSrc() {
 /** Put every anchored object where its paragraph is, in the live document. */
 function placeAnchors(d) {
   if (!d || !d.querySelector('[data-anc], [data-reserve-for]')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (!w.__dsAnchor) { try { w.eval(anchorSrc()); } catch (e) { return; } }
   try { w.__dsAnchor(); } catch (e) { /* a half-built document; the next render places */ }
 }
@@ -12443,7 +12446,7 @@ function placeAnchors(d) {
 let VARS_SRC = null, VARS_KEY = '';
 function fillVars(d) {
   if (!d || !d.querySelector('.ds-var')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   // Numbering sections (54) compile into the runtime: a change recompiles it.
   const key = JSON.stringify(pageSections());
   if (key !== VARS_KEY) { VARS_SRC = null; VARS_KEY = key; w.__dsVars = null; }
@@ -12464,7 +12467,7 @@ function fillVars(d) {
 let XREF_SRC = null;
 function fillXrefs(d) {
   if (!d || !d.querySelector('a.ds-xref')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (!w.__dsXref) {
     if (XREF_SRC === null) {
       try { XREF_SRC = py.runPython('from docsync.layout import XREF_JS\nXREF_JS'); }
@@ -12483,7 +12486,7 @@ function fillXrefs(d) {
 let GREP_SRC = null;
 function applyAuto(d) {
   if (!d || !d.querySelector('[style*="--ds-gs:"]')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (!w.__dsGrep) {
     if (GREP_SRC === null) {
       try { GREP_SRC = py.runPython('from docsync.layout import GREP_JS\nGREP_JS'); }
@@ -12500,7 +12503,7 @@ function applyAuto(d) {
 let WRAPSHAPE_SRC = null;
 function applyWrapShape(d) {
   if (!d || !d.querySelector('[data-wrap-shape]')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (!w.__dsWrapShape) {
     if (WRAPSHAPE_SRC === null) {
       try { WRAPSHAPE_SRC = py.runPython('from docsync.layout import WRAPSHAPE_JS\nWRAPSHAPE_JS'); }
@@ -12529,7 +12532,7 @@ function applyGrid(d) {
   }
   if (!d.querySelector('[style*="--ds-grid:"]')) return;
   const key = `${g.increment}|${g.start || 0}`;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (GRID_KEY !== key) {
     try {
       GRID_SRC = py.runPython(`from docsync.layout import GRID_JS\nGRID_JS % {'inc': '${+g.increment}', 'start': '${+(g.start || 0)}'}`);
@@ -12544,7 +12547,7 @@ function applyGrid(d) {
 let TABS_SRC = null;
 function applyTabs(d) {
   if (!d || !d.querySelector('[style*="--ds-tabs:"]')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (!w.__dsTabs) {
     if (TABS_SRC === null) {
       try { TABS_SRC = py.runPython('from docsync.layout import TABS_JS\nTABS_JS'); }
@@ -12575,7 +12578,7 @@ function tabKey(d, e, st) {
 let THREAD_SRC = null;
 function pourThreads(d) {
   if (!d || !d.querySelector('[data-thread]')) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (!w.__dsThread) {
     if (THREAD_SRC === null) {
       try { THREAD_SRC = py.runPython('from docsync.layout import THREAD_JS\nTHREAD_JS'); }
@@ -14717,7 +14720,7 @@ function copySel(d) {
   // effort: the object copy above is what ⌘V on the page uses.
   const words = items.map(it => (it.kind === 'box' && it.data.md) || '').filter(Boolean).join('\n\n');
   if (words) {
-    try { (d.defaultView.navigator.clipboard || navigator.clipboard).writeText(words).catch(() => {}); }
+    try { ((d.defaultView || window).navigator.clipboard || navigator.clipboard).writeText(words).catch(() => {}); }
     catch (e) { swallowed('copySel clipboard', e); }
   }
   $('stat').textContent = `copied ${items.length} element${items.length > 1 ? 's' : ''} — ⌘V pastes onto the page in view`;
@@ -15376,7 +15379,7 @@ function wirePan(d) {
   d.addEventListener('mousedown', e => {
     if (!spaceHeld || e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
-    const w = d.defaultView;
+    const w = (d.defaultView || window);
     const x0 = e.clientX, y0 = e.clientY, sx = w.scrollX, sy = w.scrollY;
     d.body.classList.add('ds-panning');
     const move = ev => w.scrollTo(sx - (ev.clientX - x0), sy - (ev.clientY - y0));
@@ -16453,7 +16456,7 @@ const placeX = w => Math.max(0.3, (PAGE_W_IN - w) / 2);
 /** Of these [{pg, id}], the one nearest the middle of the viewport. */
 function nearestToMid(pages) {
   const d = $('out').contentDocument;
-  const mid = d.defaultView.innerHeight / 2;
+  const mid = (d.defaultView || window).innerHeight / 2;
   let best = pages[0].id, dist = Infinity;
   pages.forEach(({ pg, id }) => {
     const r = pg.getBoundingClientRect();
@@ -18060,7 +18063,7 @@ async function addNoteDialog(k, i = null) {
 function drawNoteMarks(d) {
   drawNoteMarksNow(d);
   const again = () => { if ($('out').contentDocument === d) drawNoteMarksNow(d); };
-  if (d.fonts && d.fonts.ready) d.fonts.ready.then(() => d.defaultView.requestAnimationFrame(again));
+  if (d.fonts && d.fonts.ready) d.fonts.ready.then(() => (d.defaultView || window).requestAnimationFrame(again));
   [...d.images].filter(i => !i.complete).forEach(i => i.addEventListener('load', again, { once: true }));
 }
 function drawNoteMarksNow(d) {
@@ -18772,7 +18775,7 @@ function backdropOf(d, el) {
   const i = stack.indexOf(el);
   stack = i >= 0 ? stack.slice(i) : stack;
   const layers = [];
-  const win = d.defaultView;
+  const win = (d.defaultView || window);
   for (const n of stack) {
     if (n.tagName === 'IMG' || n.tagName === 'VIDEO' || n.tagName === 'CANVAS' || n.tagName === 'IMAGE') return null;
     const cs = win.getComputedStyle(n);
@@ -18792,7 +18795,7 @@ function backdropOf(d, el) {
   return layers.reverse().reduce((under, top) => over(top, under), [255, 255, 255, 1]);
 }
 function backdropStack(d, el, px, py) {
-  const win = d.defaultView;
+  const win = (d.defaultView || window);
   const zOfEl = n => { for (let x = n; x && x !== d.body; x = x.parentElement) {
     const z = parseInt(win.getComputedStyle(x).zIndex, 10); if (!isNaN(z)) return z; } return 0; };
   const anc = [];
@@ -18819,7 +18822,7 @@ function contrastIssues(d) {
     const el = n.parentElement;
     if (!el || seen.has(el) || !el.closest('section.page') || el.closest('.ds-chip, script, style, [aria-hidden="true"], .ds-gd, .ds-menu')) continue;
     seen.add(el);
-    const cs = d.defaultView.getComputedStyle(el);
+    const cs = (d.defaultView || window).getComputedStyle(el);
     if (cs.visibility === 'hidden' || +cs.opacity === 0 || cs.display === 'none') continue;
     const fg = rgbaOf(cs.color);
     if (!fg) continue;
@@ -20395,7 +20398,7 @@ function bindMeasure(d) {
     $('stat').textContent = ms.map(m => `${(m.b - m.a).toFixed(2)}in ${m.axis === 'x' ? 'across' : 'down'}`).join(' · ');
   });
   d.addEventListener('keyup', e => { if (e.key === 'Alt') clear(); });
-  d.defaultView.addEventListener('blur', clear);
+  (d.defaultView || window).addEventListener('blur', clear);
 }
 
 const clearGuides = d => d.querySelectorAll('.ds-guide').forEach(g => g.remove());
@@ -20890,7 +20893,7 @@ const trimOf = p => (p && Array.isArray(p.trim)) ? (+p.trim[0] || 0) + (+p.trim[
  *  all the way down — the layout engine already knows. */
 function flowExit(d, el, page, measured, delta, wPin, gridded, noMaxW, pinMargin) {
   const px = DPI * zoomOf(page);
-  const win = d.defaultView;
+  const win = (d.defaultView || window);
   const kids = [...el.children].filter(c => {
     const cs = win.getComputedStyle(c);
     return cs.display !== 'none' && cs.position !== 'absolute' && cs.position !== 'fixed';
@@ -20945,7 +20948,7 @@ function placer(d, el, page) {
   // for a ::before or a stacking order (our-mission: every card, step and
   // heading). Read as already placed, those went absolute with no strut left
   // behind, and the page closed up under the drag.
-  const cs0 = d.defaultView.getComputedStyle(el);
+  const cs0 = (d.defaultView || window).getComputedStyle(el);
   const heldFlow = !shapeId && (cs0.position === 'static' || cs0.position === 'relative');
   // A block split across columns (a paragraph running from the foot of one
   // column to the head of the next) measures as the union of its pieces —
@@ -20971,7 +20974,7 @@ function placer(d, el, page) {
   const inlineAlign = flowInline
     && /^(IMG|SVG|VIDEO|CANVAS|IFRAME|OBJECT|EMBED|PICTURE|INPUT)$/i.test(el.tagName)
     && cs0.verticalAlign !== 'top' ? cs0.verticalAlign : null;
-  const parCs = el.parentElement ? d.defaultView.getComputedStyle(el.parentElement) : null;
+  const parCs = el.parentElement ? (d.defaultView || window).getComputedStyle(el.parentElement) : null;
   // The grid cell its css put it in, if any (layout.py strut_extra): the strut
   // holds that cell, and the placed element leaves it (grid-area:auto) so its
   // left/top measure against the grid's own box like everything else's.
@@ -20997,7 +21000,7 @@ function placer(d, el, page) {
   // Add the delta reading stored coords in, subtract it writing them out.
   let delta = { x: 0, y: 0 };
   if (!shapeId && !boxOf(id) && !heldFlow) {
-    const cs = d.defaultView.getComputedStyle(el);
+    const cs = (d.defaultView || window).getComputedStyle(el);
     const lx = parseFloat(cs.left) / 96, ly = parseFloat(cs.top) / 96;
     if (isFinite(lx) && isFinite(ly)) {
       // Less its own margins: a margin on an absolute element offsets where
@@ -21029,7 +21032,7 @@ function placer(d, el, page) {
     const a = el.offsetParent;
     if (a && a !== page && page.contains(a)) {
       const ab = inchBox(a, page);
-      const acs = d.defaultView.getComputedStyle(a);
+      const acs = (d.defaultView || window).getComputedStyle(a);
       // Less its scroll: an absolute child is placed against a scrolled
       // ancestor's scroll ORIGIN, not its visible corner — a carousel showing
       // its second slide put a bar moved inside it a slide's width away.
@@ -21062,7 +21065,7 @@ function placer(d, el, page) {
     if ((layout.positions[id] || {}).pinMargin) return true;
     const keep = el.getAttribute('style');
     el.style.margin = '0';
-    const c = d.defaultView.getComputedStyle(el);
+    const c = (d.defaultView || window).getComputedStyle(el);
     const left = ['Top', 'Right', 'Bottom', 'Left'].some(k => (parseFloat(c['margin' + k]) || 0) !== 0);
     if (keep === null) el.removeAttribute('style'); else el.setAttribute('style', keep);
     return left;
@@ -21636,7 +21639,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
       m.classList.remove('ds-lifted');
       m.classList.add('ds-settling');      // ~120ms ease into the snapped spot
     });
-    d.defaultView.setTimeout(() =>
+    (d.defaultView || window).setTimeout(() =>
       members.forEach(m => m.classList.remove('ds-settling')), 160);
     if (editing && richHost && priorPlace && !cloned) undoMoveFromWords(richHost, priorPlace);
     d.body.classList.remove('ds-grabbing');
@@ -23866,7 +23869,7 @@ function collabViewPage(d) {
   // A rect per page, four times a second, while nothing scrolled: the
   // answer is the same until the scroll or the page count moves.
   const sc = d.scrollingElement ? d.scrollingElement.scrollTop : 0;
-  const vh = d.defaultView.innerHeight;
+  const vh = (d.defaultView || window).innerHeight;
   if (collabViewMemo && collabViewMemo.d === d && collabViewMemo.sc === sc && collabViewMemo.n === pages.length && collabViewMemo.vh === vh) return collabViewMemo.v;
   const mid = vh / 2;
   let best = 0, dist = Infinity;
@@ -25770,7 +25773,7 @@ function within(d, roots, sel) {
  *  and its smoothing, stands. Same arithmetic as hubMarginWheel, which does
  *  this for a wheel over the comments gutter. Once per report document. */
 function stageChainWire(d) {
-  const w = d && d.defaultView;
+  const w = d && (d.defaultView || window);
   if (!w || d.__dsChain) return;
   d.__dsChain = true;
   const geo = () => {
@@ -25855,7 +25858,7 @@ function jumpTo(el, block = 'start') {
  *  animation on new nodes is finished at once. Loops (a pulsing dot) run
  *  on, and so do the editor's own entrance previews (replayAnims). */
 function stillEntrances(d, roots) {
-  const CA = d.defaultView.CSSAnimation;
+  const CA = (d.defaultView || window).CSSAnimation;
   d.getAnimations().forEach(a => {
     const el = a.effect && a.effect.target;
     if (!(a instanceof CA) || !el || (roots && roots.length && !roots.some(r => r.contains(el)))) return;
@@ -25958,7 +25961,7 @@ function wire(roots) {
   // The strip follows the canvas. Listener on the iframe's own window, which
   // a full render replaces wholesale, so nothing accumulates — but a patch
   // keeps that window, so it must not be added again.
-  if (fresh) d.defaultView.addEventListener('scroll', railScrollSync, { passive: true });
+  if (fresh) (d.defaultView || window).addEventListener('scroll', railScrollSync, { passive: true });
   // Deferred for the same reason layersRender is below: wire() runs BEFORE the
   // scroll position is restored, so read the page in view after that lands.
   setTimeout(railSyncActive, 0);
@@ -26369,14 +26372,17 @@ function wire(roots) {
     .ds-handles.ds-typing { outline:none; }
     .ds-typing .ds-rot { display:none; }
     .ds-h-ne, .ds-h-nw, .ds-h-se, .ds-h-sw { border-radius:50%; }
-    .ds-h-e { right:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
-    .ds-h-w { left:-7px; top:50%; width:7px; height:18px; margin-top:-9px; cursor:ew-resize; }
-    .ds-h-s { bottom:-7px; left:50%; width:18px; height:7px; margin-left:-9px; cursor:ns-resize; }
-    .ds-h-n { top:-7px; left:50%; width:18px; height:7px; margin-left:-9px; cursor:ns-resize; }
-    .ds-h-se { right:-9px; bottom:-9px; width:9px; height:9px; cursor:nwse-resize; }
-    .ds-h-nw { left:-9px; top:-9px; width:9px; height:9px; cursor:nwse-resize; }
-    .ds-h-ne { right:-9px; top:-9px; width:9px; height:9px; cursor:nesw-resize; }
-    .ds-h-sw { left:-9px; bottom:-9px; width:9px; height:9px; cursor:nesw-resize; }
+    /* Small on purpose: at 9px corners and 7x18 sides the grips hid the
+       first and last letters of a text box's lines. Each offset is still
+       minus the grip's own size, so it stays flush outside the box. */
+    .ds-h-e { right:-5px; top:50%; width:5px; height:12px; margin-top:-6px; cursor:ew-resize; }
+    .ds-h-w { left:-5px; top:50%; width:5px; height:12px; margin-top:-6px; cursor:ew-resize; }
+    .ds-h-s { bottom:-5px; left:50%; width:12px; height:5px; margin-left:-6px; cursor:ns-resize; }
+    .ds-h-n { top:-5px; left:50%; width:12px; height:5px; margin-left:-6px; cursor:ns-resize; }
+    .ds-h-se { right:-6px; bottom:-6px; width:6px; height:6px; cursor:nwse-resize; }
+    .ds-h-nw { left:-6px; top:-6px; width:6px; height:6px; cursor:nwse-resize; }
+    .ds-h-ne { right:-6px; top:-6px; width:6px; height:6px; cursor:nesw-resize; }
+    .ds-h-sw { left:-6px; bottom:-6px; width:6px; height:6px; cursor:nesw-resize; }
     /* The move grip, only while the box's words are open (showHandles): a
        round four-arrow button, the one place a press moves the box instead
        of the caret. It hangs off the SIDE, level with the middle, clear of
@@ -26419,28 +26425,28 @@ function wire(roots) {
        centred on the same point, so the square (painted after, same stacking
        context) claims the shared centre and only the ring outside it rotates —
        exactly the affordance Canva's own corner handles give. The square's
-       centre is no longer the box corner but 4.5px diagonally outside it
-       (half of the 9px square, which now sits flush outside), so each ring's
-       offset is 4.5px further out than half its own 22px width — keep the two
+       centre is no longer the box corner but 3px diagonally outside it
+       (half of the 6px square, which now sits flush outside), so each ring's
+       offset is 3px further out than half its own 22px width — keep the two
        in step or the ring stops surrounding the square. */
     .ds-rot-corner { width:22px; height:22px; background:transparent; border:0; box-shadow:none; }
     .ds-rot-corner:hover { background:transparent; }   /* stays invisible — the cursor is the affordance */
-    .ds-rot-se { right:-15.5px; bottom:-15.5px; cursor:url('data:image/svg+xml;utf8,\
+    .ds-rot-se { right:-14px; bottom:-14px; cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">\
 <path d="M4 10a6 6 0 1 1 1.8 4.3" fill="none" stroke="%232F3E46" stroke-width="2" \
 stroke-linecap="round"/><path d="M4 10 2 7.3M4 10 1 11" fill="none" stroke="%232F3E46" \
 stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
-    .ds-rot-sw { left:-15.5px; bottom:-15.5px; cursor:url('data:image/svg+xml;utf8,\
+    .ds-rot-sw { left:-14px; bottom:-14px; cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">\
 <path d="M4 10a6 6 0 1 1 1.8 4.3" fill="none" stroke="%232F3E46" stroke-width="2" \
 stroke-linecap="round"/><path d="M4 10 2 7.3M4 10 1 11" fill="none" stroke="%232F3E46" \
 stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
-    .ds-rot-ne { right:-15.5px; top:-15.5px; cursor:url('data:image/svg+xml;utf8,\
+    .ds-rot-ne { right:-14px; top:-14px; cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">\
 <path d="M4 10a6 6 0 1 1 1.8 4.3" fill="none" stroke="%232F3E46" stroke-width="2" \
 stroke-linecap="round"/><path d="M4 10 2 7.3M4 10 1 11" fill="none" stroke="%232F3E46" \
 stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
-    .ds-rot-nw { left:-15.5px; top:-15.5px; cursor:url('data:image/svg+xml;utf8,\
+    .ds-rot-nw { left:-14px; top:-14px; cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">\
 <path d="M4 10a6 6 0 1 1 1.8 4.3" fill="none" stroke="%232F3E46" stroke-width="2" \
 stroke-linecap="round"/><path d="M4 10 2 7.3M4 10 1 11" fill="none" stroke="%232F3E46" \
@@ -27203,7 +27209,7 @@ function editSvgSlot(d, key, node) {
   const has = slotRe(key).test(source);
   const cur = has ? readSlot(key)
     : (node.textContent || '').replace(/\s+/g, ' ').trim().replace(/^\u26a0 new slot.*$/, '');
-  const win = d.defaultView;
+  const win = (d.defaultView || window);
   const r = node.getBoundingClientRect();
   const inp = d.createElement('input');
   inp.className = 'ds-ch-edit ds-svg-edit';
@@ -28190,6 +28196,12 @@ let hubHistoryVersions = [];
 let hubHistorySel = null;        // the version in hand, with its differences once loaded
 let hubHistoryNamedOnly = false;
 let hubHistoryLoading = 0;
+// The store answers the newest 100 versions at a time (and says, in
+// x-history-more, whether it holds older ones). With autosave every pause is
+// a version, so 100 is a sitting, not a document's life: without paging the
+// older ones were kept and could never be reached from here.
+let hubHistoryMore = false;
+let hubHistoryOlderBusy = false;
 const HIST_CSS = `
 @media screen {
   .ds-hist-changed { outline: 2px solid #C2703A !important; outline-offset: 3px; background: rgba(245,197,66,.16); }
@@ -28226,12 +28238,33 @@ function hubGutterSync() {
 async function hubHistoryLoad() {
   const seq = ++hubHistoryLoading;
   try {
-    const r = await fetch(`${docStore()}/history`, { cache: 'no-store' });
+    // A reload while older pages are on screen keeps them (the store allows
+    // 500 at a time): a collaborator's Save must not fold the list back to
+    // the newest hundred under someone reading it.
+    const want = Math.min(500, Math.max(100, hubHistoryVersions.length + 1));
+    const r = await fetch(`${docStore()}/history?limit=${want}`, { cache: 'no-store' });
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     if (seq !== hubHistoryLoading) return;   // a later load answered first
     hubHistoryVersions = j;
-  } catch (e) { hubHistoryVersions = []; $('stat').textContent = 'history not loaded: ' + e.message; }
+    hubHistoryMore = r.headers.get('x-history-more') === '1';
+  } catch (e) { hubHistoryVersions = []; hubHistoryMore = false; $('stat').textContent = 'history not loaded: ' + e.message; }
+  hubHistoryRender();
+}
+/** The next page back from the oldest version on screen. */
+async function hubHistoryLoadOlder() {
+  const oldest = hubHistoryVersions[hubHistoryVersions.length - 1];
+  if (!oldest || hubHistoryOlderBusy) return;
+  hubHistoryOlderBusy = true; hubHistoryRender();
+  try {
+    const r = await fetch(`${docStore()}/history?before=${encodeURIComponent(oldest.version)}`, { cache: 'no-store' });
+    const j = await hubJson(r);
+    if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
+    const have = new Set(hubHistoryVersions.map(v => v.version));
+    hubHistoryVersions = hubHistoryVersions.concat(j.filter(v => !have.has(v.version)));
+    hubHistoryMore = r.headers.get('x-history-more') === '1';
+  } catch (e) { $('stat').textContent = 'older versions not loaded: ' + e.message; }
+  hubHistoryOlderBusy = false;
   hubHistoryRender();
 }
 /** "Today", "Yesterday", else "Sep 3" this year, else the date. */
@@ -28262,15 +28295,23 @@ function hubHistoryRender() {
   const shown = hubHistoryNamedOnly ? hubHistoryVersions.filter(v => v.label) : hubHistoryVersions;
   if (!shown.length) {
     const p = document.createElement('p'); p.className = 'hub-history-empty';
-    p.textContent = hubHistoryVersions.length ? 'Nobody has named a version yet — the name box on a row does it.' : 'Nothing saved to the hub yet.';
+    p.textContent = hubHistoryVersions.length
+      ? 'Nobody has named a version yet' + (hubHistoryMore ? ' among these' : '') + ' — the name box on a row does it.'
+      : 'Nothing saved to the hub yet.';
     list.appendChild(p);
-    return;
   }
   let day = null;
   for (const v of shown) {
     const d = fmtDay(v.updated_at);
     if (d !== day) { day = d; const h = document.createElement('p'); h.className = 'hub-history-day'; h.textContent = d; list.appendChild(h); }
     list.appendChild(hubHistoryRow(v, canChange));
+  }
+  if (hubHistoryMore) {
+    const more = document.createElement('button'); more.type = 'button'; more.id = 'hpanel-older'; more.className = 'hub-history-older';
+    more.textContent = hubHistoryOlderBusy ? 'Loading older versions…' : 'Show older versions';
+    more.disabled = hubHistoryOlderBusy;
+    more.onclick = () => hubHistoryLoadOlder();
+    list.appendChild(more);
   }
 }
 function hubHistoryRow(v, canChange) {
@@ -28709,7 +28750,7 @@ function hubCommentsPaint(d) {
   $('ty-comment').classList.toggle('has', has);
   // Quoted words get a highlight; a thread on a whole paragraph or element,
   // or whose words are gone, gets the count badge instead.
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   const canHighlight = !!(w && w.Highlight && w.CSS && w.CSS.highlights);
   const plain = [], active = [];
   hubCommentRanges = [];
@@ -28981,7 +29022,7 @@ function hubCommentsBind(d) {
   d.addEventListener('keydown', e => { if (hubCommentKey(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
 
   // The cards in the margin ride with the page: repositioned, not rebuilt.
-  if (d.defaultView) d.defaultView.addEventListener('scroll', () => hubMarginQueue(false), { passive: true });
+  if (d.defaultView) (d.defaultView || window).addEventListener('scroll', () => hubMarginQueue(false), { passive: true });
   // The stage scrolls too - the clearance band under the last page (up to
   // 154px in the gutter) and a zoomed canvas's sideways range - and moves the
   // page just the same; without this the cards stood still through it.
@@ -29196,7 +29237,7 @@ function hubCommentPos(d, c) {
   const el = hubCommentEl(d, c.anchor);
   if (!el) return Number.MAX_SAFE_INTEGER;
   const r = el.getBoundingClientRect();
-  return r.top + (d.defaultView ? d.defaultView.scrollY : 0) + r.left / 1e4;
+  return r.top + (d.defaultView ? (d.defaultView || window).scrollY : 0) + r.left / 1e4;
 }
 const hubIsMe = email => !!email && !!collabInfo.login && email.toLowerCase() === collabInfo.login.toLowerCase();
 /** For you: open threads that name this person (someone else did, in the
@@ -30154,7 +30195,7 @@ function suggestPaint(d) {
   }
   suggestUnpaint(d);
   if (!docStore()) return;
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   const canHighlight = !!(w && w.Highlight && w.CSS && w.CSS.highlights);
   const dels = [];
   // One proposal that cannot be drawn inline (words inside an SVG, a
@@ -30215,7 +30256,7 @@ function suggestUnpaint(d) {
   if (!d || !d.body) return;
   d.querySelectorAll('ins.ds-suggest').forEach(n => n.remove());
   d.querySelectorAll('.ds-suggested').forEach(n => n.classList.remove('ds-suggested'));
-  const w = d.defaultView;
+  const w = (d.defaultView || window);
   if (w && w.CSS && w.CSS.highlights) w.CSS.highlights.delete('ds-suggest-del');
 }
 /** The Editing / Suggesting switch in the bar. A viewer suggests, and only
@@ -30541,7 +30582,7 @@ async function collabSavedByPeer(j) {
     await new Promise(r => setTimeout(r, 100));
   }
 }
-async function docStoreSave(layoutText, force = false, auto = false) {
+async function docStoreSave(layoutText, force = false, auto = false, leaving = false) {
   $('save').disabled = true;
   hubSaveBusy = true;
   $('stat').textContent = 'saving…';
@@ -30561,8 +30602,13 @@ async function docStoreSave(layoutText, force = false, auto = false) {
     if (body.content == null && body.layout == null) { markDirty(); return true; }
     const why = pendingSaveWhy;
     if (why) body.label = why;
+    const payload = JSON.stringify(body);
+    // A tab on its way out: keepalive lets the request outlive the page, but
+    // the browser caps those at 64KB in all, so a bigger document goes the
+    // ordinary way (a hidden tab usually stays long enough; a closing one may not).
     const r = await fetch(docStore(), {
-      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: payload,
+      keepalive: leaving && payload.length < 60000,
     });
     const j = await hubJson(r);
     if (r.status === 409) {
@@ -30702,6 +30748,23 @@ async function hubAutosaveTick() {
   if (editing || modalOpen || hubSaveBusy || collabPointerAt) { hubAutosaveSchedule(); return; }
   await docStoreSave(JSON.stringify(layout, null, 2) + '\n', false, true);
 }
+/** Leaving: the tab is hidden or going away. The quiet period and the
+ *  "not while a box is open" wait are both for someone still here; a tab
+ *  that is leaving has no later, and whatever the room holds that the store
+ *  does not would be in no version at all (a document read by someone's
+ *  Claude hours on showed edits "ahead of the store" with nobody connected).
+ *  So the pending edits are saved now. What it must still respect: autosave
+ *  turned off, a viewer, a hold after a 409 or a failure (a question only a
+ *  press of Save answers), and a Save already in flight (its finish re-arms
+ *  the normal autosave for anything newer). */
+function hubAutosaveOnLeave() {
+  if (!hubAutosaveOn() || !dirty || hubViewOnly() || hubAutosaveHold || hubSaveBusy) return;
+  clearTimeout(hubAutosaveTimer); hubAutosaveTimer = 0;
+  docStoreSave(JSON.stringify(layout, null, 2) + '\n', false, true, true);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) hubAutosaveOnLeave(); });
+window.addEventListener('pagehide', hubAutosaveOnLeave);
+
 /** The Save button's face on the store path — and whether it is on the bar at
  *  all.
  *
