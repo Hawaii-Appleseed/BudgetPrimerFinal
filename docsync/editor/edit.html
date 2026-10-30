@@ -13854,7 +13854,22 @@ function contextDodge(d) {
 // the chrome's layout.
 function showMini(d, els) {
   d.querySelectorAll('.ds-mini').forEach(m => m.remove());
-  if (!els.length || editing) return;
+  if (!els.length) return;
+  // The click that opens a box's words leaves the box selected, so it gets
+  // its strip too — until the first keystroke that types, when the strip
+  // steps back with the rest of the chrome (.ds-typing). Hidden for the whole
+  // edit, the toolbar only came up after a click outside closed the words:
+  // "click the 01, then click outside it, for the mini toolbar to pop up".
+  const open = editing && richHost && els.length === 1
+    && (els[0] === richHost || els[0].contains(richHost));
+  if (editing && (!open || typedHosts.has(richHost))) return;
+  if (open) {
+    const host = richHost;
+    host.addEventListener('input', () => {
+      typedHosts.add(host);
+      d.querySelectorAll('.ds-mini').forEach(m => m.remove());
+    }, { once: true });
+  }
   const page = els[0].closest('section.page') || d.querySelector('section.page');
   const mine = els.filter(el => (el.closest('section.page')) === page);
   if (!mine.length) return;
@@ -13881,7 +13896,11 @@ function showMini(d, els) {
     b.setAttribute('aria-label', title);
     b.innerHTML = svg;
     b.disabled = disabled;
-    b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      if (editing) miniFromWords([...bar.querySelectorAll('button')].indexOf(b));
+      else fn();
+    });
     bar.appendChild(b);
     return b;
   };
@@ -13960,6 +13979,47 @@ function showMini(d, els) {
       });
   }
   page.appendChild(bar);
+  // With the words open, the next click is as likely to be on the words
+  // beside these as on the strip, and a strip lying over them took that
+  // click: so it goes above or below, whichever covers no other words, and
+  // where both would, it waits for the words to close as it used to.
+  if (open) {
+    // The lines of words as drawn, not their elements' boxes: a field's box
+    // runs the width of its column, so boxes collided almost everywhere.
+    const own = mine[0], words = [], rg = d.createRange();
+    const tw = d.createTreeWalker(page, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      if (!n.textContent.trim() || own.contains(n) || bar.contains(n)) continue;
+      rg.selectNodeContents(n);
+      for (const r of rg.getClientRects()) if (r.width && r.height) words.push(r);
+    }
+    const clear = () => {
+      const m = bar.getBoundingClientRect();
+      return !words.some(r => r.left < m.right && r.right > m.left
+        && r.top < m.bottom && r.bottom > m.top);
+    };
+    const tops = above ? [y1 - 0.46, y2 + 0.12] : [y2 + 0.12, y1 - 0.46];
+    const fit = tops.find(t => { bar.style.top = `${t.toFixed(3)}in`; return clear(); });
+    if (fit == null) bar.remove();
+    else bar.style.top = `${fit.toFixed(3)}in`;
+  }
+}
+/** Fields whose words have been typed in since they opened: their strip
+ *  stays down for the rest of that edit (showMini). */
+const typedHosts = new WeakSet();
+/** A strip button pressed with the words open: every action on it works on
+ *  a closed box, so close the words (blur commits them, as any close does),
+ *  select the box again in the document that commit rendered, and press the
+ *  same button on the strip that selection draws. */
+async function miniFromWords(i) {
+  const ids = [...selIds];
+  const a = $('out').contentDocument.activeElement;
+  if (a && a.isContentEditable) a.blur();
+  await renderIdle();
+  const d2 = $('out').contentDocument;
+  setSel(d2, ids);
+  const bt = d2.querySelectorAll('.ds-mini button')[i];
+  if (bt && !bt.disabled) bt.click();
 }
 /** The PAGE selection, deliberately separate from selIds.
  *
@@ -21359,9 +21419,9 @@ function typeOnClick(d, el, e0) {
   // in place was REPLACED by its editor, so the handles the press painted
   // belong to an element no longer in the page; repainted, they ride the
   // editor itself (it carries the field's data-el), the move grip appears
-  // (showHandles), and the floating strip goes — showMini draws none while
-  // editing, and it sat over the line above the one being typed in. The box
-  // stays the selection throughout, and Escape keeps it so.
+  // (showHandles), and the floating strip stays until the first keystroke
+  // that types (showMini) — it sits over the line above, so it goes then.
+  // The box stays the selection throughout, and Escape keeps it so.
   if (opened) paintSel(d);
   return opened;
 }
