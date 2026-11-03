@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "docsync.yml"
 
 _ID_RE = re.compile(r"^[a-z0-9-]+$")
-MODES = ("slots", "fragment")
 
 
 class RegistryError(RuntimeError):
@@ -70,10 +69,7 @@ class Binding:
     # File ▸ Import text from the Doc reads it (docsync.docimport) and proposes
     # where each section lands. Nothing writes back to the doc.
     doc: str = ""
-    mode: str = "slots"        # slots | fragment (only meaningful with a doc)
     build: str = ""            # shell command to rebuild after an edit
-    target: Path | None = None  # fragment mode: page to inject into
-    anchor: str = "docsync"    # fragment mode: <!-- docsync:start|end -->
     pr: bool = False           # open a PR instead of committing to main
     outputs: list[str] = field(default_factory=list)  # extra paths to commit
     # Extra glob patterns (relative to ROOT) the local live server should
@@ -97,12 +93,8 @@ class Binding:
     # A public site in another repo that Save/Push also updates (publish.py).
     publish: Publish | None = None
 
-    @property
-    def state_file(self) -> Path:
-        return ROOT / "docsync" / ".state" / f"{self.id}.json"
-
     def __str__(self) -> str:
-        return f"{self.id} ({self.mode})"
+        return self.id
 
 
 def _require(d: dict, key: str, where: str):
@@ -134,16 +126,6 @@ def load_registry(path: Path = REGISTRY) -> list[Binding]:
             raise RegistryError(f"{where}: duplicate id '{bid}'")
         seen.add(bid)
 
-        # Doc-only fields are optional now that a binding can be local-only.
-        mode = b.get("mode", "slots")
-        if mode not in MODES:
-            raise RegistryError(
-                f"{where}: mode '{mode}' must be one of {', '.join(MODES)}")
-
-        target = b.get("target")
-        if mode == "fragment" and not target:
-            raise RegistryError(f"{where}: fragment mode requires 'target'")
-
         edi = str(b.get("editability", "warn"))
         if edi not in ("warn", "strict", "wip"):
             raise RegistryError(
@@ -155,11 +137,8 @@ def load_registry(path: Path = REGISTRY) -> list[Binding]:
         out.append(Binding(
             id=bid,
             doc=b.get("doc", ""),
-            mode=mode,
             content=ROOT / _require(b, "content", where),
             build=b.get("build", ""),
-            target=ROOT / target if target else None,
-            anchor=b.get("anchor", "docsync"),
             pr=bool(b.get("pr", False)),
             outputs=list(b.get("outputs") or []),
             watch=list(b.get("watch") or []),

@@ -1,7 +1,7 @@
 """Read a Google Doc, with or without credentials.
 
 Unauthenticated: the Markdown export endpoint serves any link-shared doc, which
-is what `make pull-doc` uses from a laptop — no secrets to hold.
+is what the editor's Import text from the Doc uses — no secrets to hold.
 
 Authenticated: the same endpoint with a service-account bearer token, which is
 what CI uses. It also reaches docs that are shared only with the service

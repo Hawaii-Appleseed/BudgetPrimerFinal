@@ -133,56 +133,8 @@ def _load_projects() -> dict:
 
 PROJECTS = _load_projects()
 
-# ---- GitHub sign-in (device flow, proxied) ---------------------------------
-# GitHub's login endpoints refuse cross-origin BROWSER calls, which is why the
-# hosted editor needs a relay worker. This server has no such problem: it can
-# forward the two device-flow calls itself, so a LOCAL editor signs in with no
-# worker, no Cloudflare account, nothing deployed. The client id is the one
-# per-organisation registration (docs/primer/OAUTH_SETUP.md step 1 — the app,
-# not the relay); it is public by design. Overridable bases so the test suite
-# can stand in for GitHub without network.
-def _gh_client_default() -> str:
-    """The GitHub App's public client id.
-
-    Tracked in github-app.json rather than left to an environment variable:
-    the id is public by design, and every colleague's install needs the same
-    one — an env var set on one machine helps nobody else. The environment
-    still wins, so a test (or a second App) can override it.
-    """
-    try:
-        return json.loads((SELF_ROOT / "github-app.json").read_text()).get("client_id", "")
-    except (OSError, json.JSONDecodeError):
-        return ""
-
-
-GH_CLIENT = os.environ.get("PRIMER_GH_CLIENT") or _gh_client_default()
-GH_BASE = os.environ.get("PRIMER_GH_BASE", "https://github.com")
-GH_API = os.environ.get("PRIMER_GH_API", "https://api.github.com")
-# The token the SERVER pushes with, once someone signs in. One file, account-
-# level (a token is a person, not a project), never committed (.gitignore).
-TOKEN_FILE = SELF_ROOT / ".primer-github-token"
-
-
-def _gh_token() -> dict:
-    try:
-        return json.loads(TOKEN_FILE.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def _gh_http(url: str, body: dict | None = None, token: str = "") -> dict:
-    """One JSON round-trip to GitHub (or the test stand-in). urllib, not a
-    dependency: two endpoints do not justify a package."""
-    import urllib.request
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method="POST" if data else "GET")
-    req.add_header("Accept", "application/json")
-    if data:
-        req.add_header("Content-Type", "application/json")
-    if token:
-        req.add_header("Authorization", "Bearer " + token)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode() or "{}")
+# Push and Publish use this machine's own git credentials (keychain, SSH, gh).
+# There is no stored token and no sign-in proxy.
 DEFAULT_PROJECT = "budget-primer" if "budget-primer" in PROJECTS else next(iter(PROJECTS), None)
 
 # Foreign-repo projects: nothing under THIS server's docs/ tree can reach
@@ -1177,8 +1129,8 @@ def _push_health(root: Path, deploy: str) -> dict:
             out["why"] = ("the remote has commits this checkout does not — "
                           "reconcile before pushing")
         elif re.search(r"authenticat|credential|denied|403", msg, re.I):
-            out["why"] = ("this computer has no usable GitHub credential — "
-                          "File ▸ Connect GitHub sets it up")
+            out["why"] = ("this computer has no usable git credential — "
+                          "set one up (gh auth login, SSH key or keychain) and retry")
         else:
             out["why"] = msg.strip().splitlines()[-1][:200] if msg.strip() else "push would fail"
     return out
@@ -1715,11 +1667,6 @@ class Handler(SimpleHTTPRequestHandler):
                                         "templates": []})
             finally:
                 sys.path.remove(str(SELF_ROOT))
-        if clean == "/__oauth/status":
-            t = _gh_token()
-            return self._json(200, {"ok": True, "connected": bool(t.get("token")),
-                                    "login": t.get("login", ""),
-                                    "client_id": GH_CLIENT})
         if clean == "/__events":
             return self._sse(pid)
         if clean == "/__inventory":
@@ -2107,8 +2054,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     # The server binds to loopback, so only this Mac can reach it — but every
     # web page open in the browser is on this Mac too. A page anywhere could
-    # POST to /__push (which publishes), /__quit, /__rollback or
-    # /__oauth/save with `mode: 'no-cors'` and the body would be read as
+    # POST to /__push (which publishes), /__quit or /__rollback
+    # with `mode: 'no-cors'` and the body would be read as
     # JSON regardless of its type, and nothing asked where it came from. A
     # browser always names the page an ambient request comes from (Origin;
     # the Host header is what DNS rebinding forges), so: a POST that names a
@@ -2161,12 +2108,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"ok": True, "clients": len(CLIENTS)})
         if path not in ("/__save", "/__push", "/__publish", "/__export", "/__upload",
                         "/__update", "/__rollback", "/__window", "/__quit",
-                        "/__scaffold", "/__adopt", "/__forget", "/__connect", "/__pull",
+                        "/__scaffold", "/__adopt", "/__forget", "/__pull",
                         "/__doc", "/__doc/import", "/__linkcheck", "/__library",
                         "/__pilot", "/__pilot/claim", "/__pilot/result",
-                        "/__agent/change", "/__agent/undo", "/__agent/seen",
-                        "/__oauth/device/code", "/__oauth/device/token",
-                        "/__oauth/save"):
+                        "/__agent/change", "/__agent/undo", "/__agent/seen"):
             return self._json(404, {"ok": False, "error": "unknown endpoint"})
         n = int(self.headers.get("Content-Length", 0))
         try:
@@ -2267,16 +2212,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._pull_content(req)
         if path == "/__scaffold":
             return self._scaffold(req)
-        if path == "/__connect":
-            return self._connect(req)
         if path in ("/__doc", "/__doc/import"):
             return self._doc(path, req)
         if path == "/__adopt":
             return self._adopt(req)
         if path == "/__forget":
             return self._forget(req)
-        if path.startswith("/__oauth/"):
-            return self._oauth(path, req)
         if path == "/__update":
             return self._apply_update()              # writes its own response
         if path == "/__rollback":
@@ -2659,89 +2600,6 @@ class Handler(SimpleHTTPRequestHandler):
             rebuild(pid, "adopt")
         return self._json(200, {"ok": True, "added": added})
 
-    def _connect(self, req):
-        """Point a project at a GitHub repo: manifest, registry, git remote.
-
-        The repo a project pushes to is recorded in THREE places that have to
-        agree — the staged manifest.json the editor reads, docs/primer's
-        projects.json the start page reads, and the checkout's own `origin`
-        that git actually pushes to. Setting one and not the others is how a
-        project ends up claiming a repo it cannot push to, so this does all
-        three or reports which one refused.
-
-        Creating the repo on GitHub is the browser's job (it holds the token
-        and can call the API directly); by the time this is called the repo
-        exists and only the wiring is left.
-        """
-        pid = str(req.get("project") or "").strip()
-        slug = str(req.get("repo") or "").strip().removesuffix(".git")
-        if pid not in PROJECTS:
-            return self._json(200, {"ok": False, "error": f"unknown project '{pid}'"})
-        # A segment of "." or ".." matches a naive [\w.-]+ and would build a
-        # nonsense remote (https://github.com/../evil.git). Neither is a legal
-        # GitHub name, so require at least one alphanumeric per segment.
-        if not re.fullmatch(r"(?=[^/]*[A-Za-z0-9])[\w.-]+/(?=[^/]*[A-Za-z0-9])[\w.-]+", slug):
-            return self._json(200, {"ok": False,
-                                    "error": f"'{slug}' is not an owner/name repo slug"})
-        p = PROJECTS[pid]
-        root, b = p["root"], p["binding"]
-        if not b.editor:
-            return self._json(200, {"ok": False, "error": f"'{pid}' has no editor"})
-
-        # git remote: add when absent, and only RETARGET when asked, so a
-        # checkout that already pushes somewhere is never silently redirected.
-        remote_note = "left as it was"
-        try:
-            current = _git(root, "remote", "get-url", "origin").strip()
-        except Exception:
-            current = ""
-        want = f"https://github.com/{slug}.git"
-        try:
-            if not current:
-                _git(root, "remote", "add", "origin", want)
-                remote_note = f"origin set to {slug}"
-            elif req.get("retarget") and _slug_of(current) != slug:
-                _git(root, "remote", "set-url", "origin", want)
-                remote_note = f"origin retargeted to {slug}"
-            elif _slug_of(current) != slug:
-                return self._json(200, {"ok": False, "error":
-                    f"this checkout already pushes to {_slug_of(current) or current}. "
-                    f"Choose that repo, or confirm the change to point it at {slug}.",
-                    "needs_retarget": True, "current": _slug_of(current)})
-        except Exception as e:                       # noqa: BLE001 — report it
-            return self._json(200, {"ok": False, "error": f"could not set the remote: {e}"})
-
-        # manifest.json — what the editor reads on boot
-        man = b.editor.dir / "engine" / "manifest.json"
-        try:
-            m = json.loads(man.read_text())
-            m["repo"] = slug
-            tmp = man.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(m, indent=2) + "\n")
-            tmp.replace(man)
-        except (OSError, json.JSONDecodeError) as e:
-            return self._json(200, {"ok": False, "error": f"could not write the manifest: {e}"})
-
-        # projects.json — what the start page reads. Under the host lock:
-        # this is a read-modify-write of a file /__adopt and the test
-        # suite's cleanup also read-modify-write, and unlocked concurrent
-        # writers silently lose one side's update.
-        reg = DOCS / "primer" / "projects.json"
-        with _host_lock():
-            try:
-                registry = json.loads(reg.read_text()) if reg.is_file() else {}
-            except json.JSONDecodeError:
-                registry = {}
-            entry = registry.get(pid) or dict(_default_registry().get(pid) or {})
-            entry["repo"] = slug
-            registry[pid] = entry
-            reg.parent.mkdir(parents=True, exist_ok=True)
-            tmp = reg.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(registry, indent=2) + "\n")
-            tmp.replace(reg)
-        _default_registry.cache_clear()
-        return self._json(200, {"ok": True, "repo": slug, "remote": remote_note})
-
     # ---- the Google Doc a project draws its prose from -------------------
     def _doc(self, path: str, req):
         """Link a project to a Google Doc, and read that doc's text.
@@ -2829,45 +2687,6 @@ class Handler(SimpleHTTPRequestHandler):
         out = docimport.proposals(md, slots)
         return self._json(200, {"ok": True, "doc": doc,
                                 "url": docimport.doc_url(doc), **out})
-
-    def _oauth(self, path, req):
-        """The device flow, proxied — and the token, kept for git.
-
-        /device/code and /device/token forward to GitHub with the server's
-        client id filled in (the browser cannot call GitHub's login endpoints
-        cross-origin; this server can). /save verifies whatever token the
-        browser ends up with — signed in or pasted — against the API and
-        keeps it in TOKEN_FILE, which is what lets THIS SERVER push over
-        https without the keychain ever having been set up."""
-        if path == "/__oauth/save":
-            tok = str(req.get("token") or "").strip()
-            if not tok:
-                return self._json(200, {"ok": False, "error": "no token in the request"})
-            try:
-                who = _gh_http(GH_API + "/user", token=tok)
-            except Exception as e:               # noqa: BLE001 — report it
-                return self._json(200, {"ok": False, "error": f"GitHub did not accept it: {e}"})
-            login = who.get("login") or ""
-            if not login:
-                return self._json(200, {"ok": False, "error": "token works but names no user"})
-            TOKEN_FILE.write_text(json.dumps({"token": tok, "login": login}) + "\n")
-            os.chmod(TOKEN_FILE, 0o600)
-            return self._json(200, {"ok": True, "login": login})
-        client = str(req.get("client_id") or "") or GH_CLIENT
-        if not client:
-            return self._json(200, {"ok": False, "error":
-                "no GitHub App client id configured — see docs/primer/OAUTH_SETUP.md "
-                "step 1, then set PRIMER_GH_CLIENT (or the manifest's oauth block)"})
-        target = (GH_BASE + "/login/device/code" if path.endswith("/device/code")
-                  else GH_BASE + "/login/oauth/access_token")
-        body = {k: v for k, v in req.items() if k != "client_id"}
-        body["client_id"] = client
-        if path.endswith("/device/code"):
-            body.setdefault("scope", "repo")
-        try:
-            return self._json(200, _gh_http(target, body))
-        except Exception as e:                   # noqa: BLE001 — report it
-            return self._json(200, {"error": "relay_unreachable", "detail": str(e)})
 
     def _new_window(self, req):
         """A SECOND editor window on this same server.
@@ -3461,20 +3280,6 @@ class Handler(SimpleHTTPRequestHandler):
         p = PROJECTS[pid]
         root = p["root"]
         branch = (p["binding"].editor.branch if p["binding"].editor else "main") or "main"
-        # A signed-in token (File > Connect GitHub) authenticates https pushes
-        # without the keychain ever having been set up — the exact machine a
-        # colleague's fresh install is. Inline -c, nothing persisted: an SSH
-        # remote, or a machine whose keychain already works, is untouched.
-        auth = []
-        tok = _gh_token().get("token")
-        if tok:
-            try:
-                origin_url = _git(root, "remote", "get-url", "origin").strip()
-            except RuntimeError:
-                origin_url = ""
-            if origin_url.startswith("https://github.com/"):
-                auth = ["-c", "url.https://x-access-token:" + tok
-                        + "@github.com/.insteadOf=https://github.com/"]
         # WHERE this lands, said out loud. `branch` is the deploy branch — the
         # one that builds and publishes — and it defaults to main when a
         # binding does not name one. On a checkout whose current branch is
@@ -3500,8 +3305,8 @@ class Handler(SimpleHTTPRequestHandler):
                 f"{'s' if n > 1 else ''} by fast-forwarding '{branch}' "
                 f"(the branch that builds and deploys) to match '{here}'")
         try:
-            _git(root, *auth, "push", "origin", "HEAD")              # this branch
-            _git(root, *auth, "push", "origin", f"HEAD:{branch}")    # -> deploy
+            _git(root, "push", "origin", "HEAD")              # this branch
+            _git(root, "push", "origin", f"HEAD:{branch}")    # -> deploy
         except RuntimeError as e:
             if "git-lfs" in str(e) or "git lfs" in str(e):
                 raise RuntimeError(
@@ -3545,13 +3350,7 @@ def _publish_site(pid: str, trigger):
         # the same page would just overwrite each other.
         return _pub.Result(True, False, "not published from here: this page is edited on the staff hub "
                            "(home: hub in its publish: block)", url=cfg.url)
-    # The same token the editor's Push uses (File > Connect GitHub), passed inline
-    # so nothing is persisted and a machine whose keychain already works is untouched.
-    auth = []
-    tok = _gh_token().get("token")
-    if tok:
-        auth = ["-c", "url.https://x-access-token:" + tok + "@github.com/.insteadOf=https://github.com/"]
-    return _pub.run(cfg, p["root"], pid, trigger or cfg.when, auth=auth, path_env=_tool_path())
+    return _pub.run(cfg, p["root"], pid, trigger or cfg.when, path_env=_tool_path())
 
 
 def _publish_json(r) -> dict:
@@ -3588,12 +3387,6 @@ def _tool_path() -> str:
     extra = [str(Path.home() / ".local" / "bin"), "/opt/homebrew/bin",
              "/usr/local/bin", "/opt/local/bin"]
     return os.pathsep.join(seen + [p for p in extra if p and p not in seen])
-
-
-def _slug_of(url: str) -> str:
-    """'owner/name' from either git URL form, or '' when it is neither."""
-    m = re.search(r"[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", (url or "").strip())
-    return m.group(1) if m else ""
 
 
 def _write_atomic(path: Path, text: str) -> None:
@@ -3718,18 +3511,15 @@ def _identity(root: Path) -> list:
     """`-c user.name/user.email` for a checkout whose git has no identity —
     a colleague's fresh machine, a CI runner — so a Save's commit does not
     fail with "Author identity unknown *** Please tell me who you are"
-    (found by CI on 2026-10-22). The signed-in GitHub login (File ▸ Connect
-    GitHub) is the name when there is one, with GitHub's noreply address;
-    else the account on this computer. A configured identity is untouched."""
+    (found by CI on 2026-10-22). The name is the account on this computer.
+    A configured identity is untouched."""
     try:
         if _git(root, "config", "user.email").strip():
             return []
     except RuntimeError:
         pass                                   # unset: `git config` exits 1
-    login = (_gh_token().get("login") or "").strip()
-    name = login or os.environ.get("USER") or os.environ.get("USERNAME") or "Cider editor"
-    email = (f"{login}@users.noreply.github.com" if login
-             else f"{name}@{socket.gethostname() or 'localhost'}")
+    name = os.environ.get("USER") or os.environ.get("USERNAME") or "Cider editor"
+    email = f"{name}@{socket.gethostname() or 'localhost'}"
     return ["-c", f"user.name={name}", "-c", f"user.email={email}"]
 
 

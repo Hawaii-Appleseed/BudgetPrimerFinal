@@ -1,18 +1,15 @@
-"""Google Doc <-> HTML report sync.
+"""The docsync engine: a report's prose (content.md) and layout (layout.json)
+rendered by the report's own Python, in the browser through Pyodide and in a
+repo's build alike.
 
-A binding pairs one Google Doc with one file in this repo (see docsync.yml).
-The doc is the writing surface; the committed file is what the build reads, so
-builds stay reproducible and every prose change lands as a reviewable diff.
+    content.py    [[key]] slots in content.md
+    layout.py     positions, shapes and styles as data
+    blocks.py     building blocks any renderer can import
+    registry.py   docsync.yml -> Binding objects
 
-Two modes:
-  slots    — the doc supplies text into named [[key]] slots (content.py). For
-             art-directed reports where code owns layout.
-  fragment — the whole doc becomes one HTML block injected between anchor
-             comments in a target page (fragment.py). For simple pages.
-
-Nothing is ever written unless it parses and satisfies the report: a doc that
-loses a key, or cites a source that does not exist, fails loudly instead.
+(Until 2026-10-30 this package also held a two-way Google Docs sync, with
+bind, doctor, sync, state and fragment modules. It was one-way and manual
+from 2026-09: File > Import text from the Doc is docimport.py.)
 """
 from .content import Content, ContentError                       # noqa: F401
-from .normalise import normalise                                 # noqa: F401
 from .registry import Binding, load_registry, RegistryError      # noqa: F401

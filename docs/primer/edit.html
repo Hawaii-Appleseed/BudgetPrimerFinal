@@ -556,26 +556,6 @@
   .src-foot { flex:none; padding:8px 14px; border-top:1px solid #E6ECE8;
     background:#F7FAF8; font:11.5px system-ui; color:#7A8E92; }
 
-  /* Sign in with GitHub — same family as the sources panel. */
-  #authpanel { position:fixed; right:16px; width:min(380px,92vw); background:#fff;
-    color:var(--ink); border:1px solid #C9D6CD; border-radius:8px;
-    box-shadow:0 14px 38px rgba(0,0,0,.30); z-index:70; font:13px/1.5 system-ui; }
-  #authpanel header { display:flex; align-items:center; gap:10px; padding:9px 12px;
-    background:var(--ink); color:#E8EDE6; border-radius:8px 8px 0 0; }
-  #authpanel header b { flex:1; letter-spacing:.3px; }
-  #authpanel header .x { background:var(--sage); color:#fff; border:0;
-    border-radius:4px; padding:3px 11px; cursor:pointer; font:inherit; }
-  .au-body { padding:14px 16px 12px; text-align:center; }
-  .au-msg { margin:0 0 8px; color:#5B6E66; }
-  .au-code { font:700 26px/1.3 ui-monospace,monospace; letter-spacing:3px;
-    color:var(--ink); background:#EDF1EE; border-radius:6px; padding:8px 0;
-    margin-bottom:10px; user-select:all; }
-  .au-open { background:var(--sage); color:#fff; border:0; border-radius:5px;
-    padding:8px 18px; cursor:pointer; font:600 13px system-ui; }
-  .au-open:hover { background:var(--deep); }
-  .au-hint { margin:9px 0 0; font-size:11.5px; color:#8B9A90; }
-  .au-alt { margin:12px 0 0; font-size:11px; }
-  .au-alt a { color:#8B9A90; }
   /* Two ids throughout, for the reason #bar > #publish is written out below: a
      bare #save is (1,0,0) and loses to #bar > button (1,0,1), so this sage
      never painted at all and only .dirty (1,1,0) — the amber — ever won.
@@ -2102,22 +2082,11 @@
       ><rect x="1.8" y="5" width="8.4" height="7.8" rx="1.2"/><path
         d="M6 5V4.2a1 1 0 0 1 1-1h6.2a1 1 0 0 1 1 1V10a1 1 0 0 1-1 1h-.8"
       /></svg><span class="shp-t">New window</span></button>
-    <!-- Local only, like New window: sign this COMPUTER in so the server's
-         own pushes are authorised — one code typed at github.com, no token
-         to mint, no keychain to have set up. -->
-    <!-- Both GitHub rows are local-only, so their header hides with them or a
-         hosted editor shows a section with nothing under it. -->
-    <p class="pop-h" id="file-gh-h" hidden>GitHub</p>
-    <button class="shp" id="file-ghconn" hidden><svg class="shp-i" viewBox="0 0 16 16"
-      ><path d="M6.6 9.4a2.7 2.7 0 0 0 4 .3l1.9-1.9a2.7 2.7 0 0 0-3.8-3.8l-1.1 1.1"/><path
-        d="M9.4 6.6a2.7 2.7 0 0 0-4-.3L3.5 8.2a2.7 2.7 0 0 0 3.8 3.8l1.1-1.1"
-      /></svg><span class="shp-t">Connect GitHub…</span></button>
-    <!-- WHICH repo this report pushes to. Invisible until something failed,
-         before this: the slug lives in the staged manifest, and the first sign
-         most people got that it was wrong (or empty) was a 404 mid-Push. A row
-         that always names it turns "am I pointed at the right place?" into a
-         question you can answer BEFORE publishing. -->
-    <button class="shp" id="file-repo" hidden><svg class="shp-i" viewBox="0 0 16 16"
+    <!-- WHICH repo this report pushes to — information only, no action. The
+         slug lives in the staged manifest; a row that always names it turns
+         "am I pointed at the right place?" into a question you can answer
+         BEFORE pushing. -->
+    <button class="shp" id="file-repo" hidden style="cursor:default"><svg class="shp-i" viewBox="0 0 16 16"
       ><circle cx="4.9" cy="4" r="1.6"/><circle cx="4.9" cy="12" r="1.6"/><circle
         cx="11.3" cy="4" r="1.6"/><path d="M4.9 5.6v4.8"/><path
         d="M11.3 5.6c0 2.8-2.5 3.4-4.8 3.9"/></svg
@@ -2186,10 +2155,6 @@
     <button class="shp" id="file-restore" hidden><svg class="shp-i" viewBox="0 0 16 16"
       ><path d="M3.3 6.6A5.2 5.2 0 1 1 3 9.8"/><path d="M1.7 3.4v3.4h3.4"
       /></svg><span class="shp-t">Restore deleted…</span></button>
-    <button class="shp" id="tok" aria-label="Check or replace the GitHub token used to save"
-      ><svg class="shp-i" viewBox="0 0 16 16"><circle cx="6.1" cy="9.9" r="3.1"/><path
-        d="m8.3 7.7 5.1-5.1M10.9 5.1l1.7 1.7M9.2 6.8l1.7 1.7"
-      /></svg><span class="shp-t">Token…</span></button>
     <!-- Stopping the whole thing on purpose. The server already exits by
          itself two minutes after the last window closes, so this is for the
          cases waiting does not cover: a force-quit browser sends no goodbye
@@ -5349,14 +5314,11 @@ async function compressImageFile(file) {
 /** Pick a file, push it to the repo's assets, and hand back its path — the
  *  one upload flow, whether the image lands in prose or replaces another. */
 async function uploadImageFile(d, onDone) {
-  // Local mode needs no token: the dev server writes the file into the
-  // checkout's assets dir, and the next Save's path-scoped commit takes it
-  // along. Only the hosted (GitHub API) path authenticates.
+  // Local mode: the dev server writes the file into the checkout's assets
+  // dir, and the next Save's path-scoped commit takes it along. On the hub it
+  // lands in the document store. A static page has nowhere to put it.
   if (hubViewOnly()) { $('stat').textContent = 'view only — this document is shared with you to read'; return; }
-  if (!local && !docStore()) {
-    const tok = await ensureAuth();
-    if (!tok) return;
-  }
+  if (!local && !docStore()) { $('stat').textContent = 'uploads need the local server or the staff hub'; return; }
   const inp = d.createElement('input');
   inp.type = 'file';
   inp.accept = 'image/*';
@@ -5391,7 +5353,7 @@ async function fileTag(file) {
 async function uploadImageBlob(file, onDone) {
     if (!file) return;
     if (hubViewOnly()) { $('stat').textContent = 'view only — this document is shared with you to read'; return; }
-    if (!local && !docStore() && !(await ensureAuth())) return;
+    if (!local && !docStore()) { $('stat').textContent = 'uploads need the local server or the staff hub'; return; }
     const beforeKB = file.size / 1024;
     file = await compressImageFile(file);
     const afterKB = file.size / 1024;
@@ -5445,30 +5407,6 @@ async function uploadImageBlob(file, onDone) {
         $('stat').textContent = 'upload failed: ' + e.message;
       }
       return;
-    }
-    try {
-      // Images ride the draft too: they publish with the prose that uses them
-      // instead of landing on main ahead of it. (Local mode keeps main — the
-      // dev server's git push is the truth there.)
-      const branch = local ? 'main' : await draftForUpload();
-      // Overwrite needs the blob's sha; a fresh path has none.
-      let sha;
-      try { sha = (await gh(`contents/${path}?ref=${encodeURIComponent(branch)}`)).sha; }
-      catch (e) { sha = undefined; }
-      await gh(`contents/${path}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          message: `primer: add image ${name}`,
-          content: b64, branch, ...(sha ? { sha } : {}),
-        }),
-      });
-      localImages.set('assets/' + name, dataUrl);
-      $('stat').textContent = shrunk
-        ? `${name} uploaded — shrunk from ${beforeKB.toFixed(0)}KB to ${afterKB.toFixed(0)}KB`
-        : `${name} uploaded`;
-      onDone('assets/' + name, name);
-    } catch (e) {
-      $('stat').textContent = 'upload failed: ' + e.message;
     }
 }
 
@@ -8329,7 +8267,7 @@ function togglePop(pop, anchor) {
 // Anything whose own handler already toggles: clicking one of these must not
 // be treated as "outside", or the close would race the open and the menu would
 // never appear.
-// Only the controls that OPEN one of these surfaces. #tok and the File menu's
+// Only the controls that OPEN one of these surfaces. The File menu's
 // own entries are inside .pop already, and #guides is a plain toggle, not an
 // anchor — listing either would just stop a click there from closing anything.
 const POP_ANCHORS = '#ty-colorbtn, #ty-spacebtn, #ty-parabtn, #text, #shape, #icon, #layers,'
@@ -16836,6 +16774,7 @@ async function saveFromKey() {
   await renderIdle();
   if (editing) return;                             // a dialog kept them open
   if (hubViewOnly()) { $('stat').textContent = 'view only — there is nothing of yours to save'; return; }
+  if (!local && !docStore()) { $('stat').textContent = 'nothing to save to — open this report from the local server or the staff hub'; return; }
   if (!dirty) { $('stat').textContent = 'nothing to save — every change is saved'; return; }
   if ($('save').disabled) { $('stat').textContent = 'saving…'; return; }   // one is already running
   $('save').click();
@@ -21563,7 +21502,10 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
       // It travelled, so it was a drag — and this one cannot move. Say why,
       // once, and let the release do nothing (it is not a click either).
       if (refusal) { refused = true; $('stat').textContent = refusal; return; }
-      begin();
+      // begin() sets `started` first, so one that throws partway (a page
+      // swapped out under the press) leaves `at` unset and every later move
+      // died on at[0]: once per mouse move. Give up on the drag instead.
+      try { begin(); } catch (err) { started = false; refused = true; throw err; }
     }
     const dx = (e.clientX - grab.x) / px, dy = (e.clientY - grab.y) / px;
     if (members.length === 1) {
@@ -22094,13 +22036,12 @@ function markDirty() {
   // again on every call - once per moved element per drop.
   if (layoutOrigSaidFor !== layoutOrig) { layoutOrigSaidFor = layoutOrig; layoutOrigSaid = layoutSaid(JSON.parse(layoutOrig || '{}')); }
   dirty = source !== original || layoutSaid(layout) !== layoutOrigSaid;
-  $('save').disabled = !dirty || hubViewOnly() || saving;
-  // Discard stays live while a saved draft exists: with nothing unsaved it
-  // offers to throw the whole draft away (see its handler).
-  $('revert').disabled = !dirty && !(draftBranch && !local);
-  // ...and is only ON the bar where it does something undo cannot: dropping a
-  // saved draft branch. Locally, stepping edits back is undo's job.
-  $('revert').hidden = local || !draftBranch;
+  // A static page (neither local nor hub) has nowhere to save to: Save stays
+  // off however dirty it gets.
+  if (local || docStore()) $('save').disabled = !dirty || hubViewOnly() || saving;
+  $('revert').disabled = !dirty;
+  // Stepping edits back is undo's job; Discard has no place on the bar.
+  $('revert').hidden = true;
   $('save').classList.toggle('dirty', dirty);
   // A drop, a nudge and every other commit that does not render arrive here,
   // and renderOnce() is not the only door into the room any more: without
@@ -22117,9 +22058,8 @@ function markDirty() {
 // Save. localStorage would work but is synchronous and size-limited; IndexedDB
 // — via idb-keyval, a ~1kB zero-dependency ESM wrapper loaded from the same CDN
 // as Pyodide — is the right store, and matches the offline direction
-// STANDALONE.md started. Deliberately ONLY the draft cache lives here: the
-// token and user stay in localStorage, so ensureAuth()/resolveDraft() keep
-// their synchronous reads. Local mode is exempt — there the files on disk are
+// STANDALONE.md started. It fires wherever there is no local server (the hub,
+// a static copy). Local mode is exempt — there the files on disk are
 // the truth and serve.py already persists every Save.
 let _idb = null;
 async function idbKV() {
@@ -22592,12 +22532,8 @@ async function boot() {
   const docName = (REGISTRY && REGISTRY[PROJECT] && REGISTRY[PROJECT].name) || M.id;
   document.title = docName ? docName + ' \u2014 Cider' : 'Cider';
   // Fire-and-forget, the moment the project is known: the canvas paints while
-  // the ping below and the engine compile run. A draft link skips it — that
-  // content comes from the draft branch, and flashing the live copy first
-  // would put the WRONG report on screen. (draftBranch still holds the raw
-  // URL param here; resolveDraft() runs later, and the guard wants the
-  // person's intent, not the resolution.)
-  if (!draftBranch) showWarmPreview();
+  // the ping below and the engine compile run.
+  showWarmPreview();
   // The engine's own files, in flight NOW: they wait on nothing below (the
   // ping, the store, the draft resolution), and used to queue behind all of
   // it. Reported by the Promise.all further down, not as orphans here.
@@ -22615,6 +22551,11 @@ async function boot() {
   await detectLocal();          // local live server? then Save writes to disk
   liveProbe = local ? 'local' : 'static';
   docStoreDecide();             // …or the hub's document store? then Save writes there
+  if (!local && !docStore()) {  // neither: a plain static viewer — edits stay in memory
+    $('save').disabled = true;
+    $('save').title = 'Save needs the local server or the staff hub';
+    $('share').hidden = $('publish').hidden = $('push').hidden = true;
+  }
   // Seed the build stamp with what THIS page was loaded from, then keep an
   // eye on it — a rebuild whose bump never reached this tab is exactly the
   // case a bump-driven check cannot catch, so it is also polled and checked
@@ -22632,7 +22573,6 @@ async function boot() {
       if (!document.hidden) checkBuildFresh();
     });
   }
-  await resolveDraft();         // ?draft=… in the URL, or your own saved draft
 
   // pyodideBoot has been compiling since the page parsed; a null means the
   // CDN script never arrived, and calling loadPyodide() reproduces the old
@@ -22676,24 +22616,6 @@ async function boot() {
   } finally {
     clearInterval(stall);
   }
-  // Viewing or continuing a draft: its content and layout come from the draft
-  // branch, not the deployed copies (which are main's). The engine code itself
-  // stays same-origin — only the two authored files differ per draft.
-  if (draftBranch) {
-    try {
-      const [c, l] = await Promise.all([
-        fromBranch(M.content),
-        M.layout ? fromBranch(M.layout) : Promise.resolve('{}'),
-      ]);
-      files[urls.indexOf('engine/' + M.content)] = c;
-      if (M.layout) files[urls.indexOf('engine/' + M.layout)] = l;
-    } catch (e) {
-      draftBranch = null;
-      history.replaceState(null, '', pageUrl());
-      $('title').textContent = M.id;
-      $('stat').textContent = "that draft isn't on GitHub any more (probably published) — showing the live report";
-    }
-  }
   await docStoreLoad(urls, files);
   py = pyodide;
   // The renderer is written for a repo checkout, so rebuild one in Pyodide's FS
@@ -22706,6 +22628,7 @@ async function boot() {
     py.FS.writeFile(path, files[i]);
   });
   py.FS.mkdirTree('/repo/' + M.out.slice(0, M.out.lastIndexOf('/')));
+  await pycRestore();           // compiled engine from the last open, before the first import
   source = original = files[urls.indexOf('engine/' + M.content)];
   if (M.layout) {
     layoutOrig = files[urls.indexOf('engine/' + M.layout)];
@@ -22758,6 +22681,7 @@ async function boot() {
   $('guides').classList.toggle('on', guidesOn);
   await restoreCachedDraft();   // adopt this browser's unsaved edits before the first paint
   await render();
+  pycKeepSoon();                // what Python just compiled, for the next open
   // Only now, with the files settled and painted: if this project has a
   // collaboration relay, join its room (seeding it from what is on screen if
   // nobody has yet). Not awaited — the editor is usable while it connects.
@@ -22824,13 +22748,13 @@ for (const ev of ['pointerdown', 'keydown', 'wheel']) {
 
 /** How this project reaches its room, or null when it is not shared. Two
  *  doors onto the same room (collab/README.md, "two front doors"):
- *    {url}        the relay Worker — a ticket minted from the GitHub token
+ *    {url}        the relay Worker — a ticket minted from a dev token (local only)
  *    {path, me}   a door on THIS origin (the staff hub's /api/collab) that
  *                 authenticates the request itself from the session the page
  *                 already carries; `me` is where it says who that is
  *  `?collab=<url>` overrides it — LOCAL mode only, and only to a loopback
- *  relay (wrangler dev): the page POSTs the GitHub token to whatever this
- *  names, so a hosted editor must never take it from a link. `?collab=0`
+ *  relay (wrangler dev): the page POSTs its dev token to whatever this
+ *  names, so a link must never be able to point it elsewhere. `?collab=0`
  *  opens the project alone. A path is never taken from a link at all: it is
  *  same-origin by construction, so there is nothing for a link to point at. */
 function collabDoor() {
@@ -22867,18 +22791,16 @@ function collabRoom() {
   return `${owner}~${repo}~${project}`;
 }
 
-/** What to show the relay's /auth. The same token Save uses; a local editor
- *  talking to a loopback relay has none and needs none — the Worker accepts
- *  `dev:<login>` only under its development secret. */
+/** What to show a loopback relay's /auth: a local editor talking to one needs
+ *  no credential — the Worker accepts `dev:<login>` only under its development
+ *  secret. Anywhere else there is no token to offer. */
 function collabToken() {
-  const tok = localStorage.getItem('docsync-pat');
-  if (tok) return tok;
   if (local && /^https?:\/\/(localhost|127\.0\.0\.1)/.test(collabRelay() || '')) {
     // ?collabas=<name> names this editor in a dev room (two local tabs would
     // otherwise both be "local"). Local only, like the rest of the dev path.
     const as = new URLSearchParams(location.search).get('collabas');
     return 'dev:' + ((as && /^[A-Za-z0-9-]{1,39}$/.test(as) ? as : null)
-                     || (serverOauth && serverOauth.login) || 'local');
+                     || 'local');
   }
   return null;
 }
@@ -22888,7 +22810,7 @@ async function collabTicket(relay, room) {
   const now = Math.floor(Date.now() / 1000);
   if (collabTicketCache && collabTicketCache.exp - now > 30) return collabTicketCache.ticket;
   const token = collabToken();
-  if (!token) throw new Error('sign in to collaborate');
+  if (!token) throw new Error('collaboration needs the staff hub');
   const r = await fetch(relay + '/auth', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ room, token }),
@@ -23745,10 +23667,6 @@ function collabChip() {
       text = '⚠ not shared';
       title = 'Collaboration unavailable: ' + (s.error || 'unknown error');
       break;
-    case 'signin':
-      text = 'Sign in to collaborate';
-      title = 'This project is shared. Sign in with GitHub to join the live session.';
-      break;
     default:
       text = '… joining';
       title = 'Connecting to the collaboration relay.';
@@ -23788,7 +23706,6 @@ function collabChip() {
   }
   c.title = title;
   c.classList.toggle('live', s.status === 'live');
-  c.classList.toggle('can-click', s.status === 'signin');
   // The offline band above the page comes and goes with the status.
   if (s.status !== collabChipWas) {
     collabChipWas = s.status;
@@ -23814,10 +23731,6 @@ function collabSayBackSoon() {
     if (collabInfo.status === 'live') $('stat').textContent = COLLAB_BACK_MSG;
   }, 900);
 }
-$('collab').onclick = async () => {
-  if (collabInfo.status !== 'signin') return;
-  if (await ensureAuth()) startCollab();
-};
 
 // --- where a collaborator is, and going there --------------------------------
 // Docs' two gestures on an avatar: a click jumps to where that person is
@@ -23969,9 +23882,14 @@ async function startCollab() {
   const fail = (error) => { collabInfo = { ...collabInfo, status: 'error', error }; collabChip(); };
   collabInfo = { ...collabInfo, on: true, status: 'connecting' };
   collabChip();
-  // The relay's door wants the GitHub token. The hub's wants nothing: the
-  // session the page already carries IS the credential, checked at the door.
-  if (door.url && !collabToken()) { collabInfo = { ...collabInfo, status: 'signin' }; collabChip(); return; }
+  // A relay door wants a token only a local dev editor can mint. The hub's
+  // wants nothing: the session the page already carries IS the credential,
+  // checked at the door. A static page has no way into a relay room.
+  if (door.url && !collabToken()) {
+    collabInfo = { ...collabInfo, status: 'error', error: 'collaboration needs the staff hub' };
+    collabChip();
+    return;
+  }
   try {
     // Beside this page, wherever it was staged; location.href rather than a
     // bare relative specifier so a switched project's <base> can't move it.
@@ -24062,47 +23980,22 @@ async function startCollab() {
   window.addEventListener('pagehide', () => { if (collab) collab.close(); });
 }
 
-// --- the branch underneath (Phase 4) -----------------------------------------
-// The room records the commit its document was built from — `meta.baseSha`,
-// set by whoever seeded it and by every Save since — and in a shared project
-// everyone saves to the one shared draft branch. Save compares the branch
-// tip with that commit: if they differ, something landed OUTSIDE the session
-// (a push from a laptop, a docsync tool, an editor that was not in the room),
-// and a plain fast-forward would silently replace it with what the room
-// holds. Nothing is merged: the two are whole files, and the room's copy is
-// what everyone has been looking at — so it is said, and the person chooses.
+// --- the version underneath ---------------------------------------------------
+// The room records the version its document was built from — `meta.baseSha`,
+// set by whoever seeded it and by every Save since. A hub Save carries it as
+// `base`, and the store refuses (409) when something landed OUTSIDE the
+// session; the person chooses.
 
-/** The commit the files on screen came from — the room's baseSha when this
- *  editor seeds it. Only a shared, hosted editor with a token can ask; anyone
- *  else seeds null, and Save then skips the check. */
+/** The version the files on screen came from — the store's, on the hub. Only
+ *  a hub editor has one; anyone else seeds null, and Save then skips the check. */
 async function collabLoadedSha() {
   if (docStore()) return docVersion;
-  if (!collabShared() || !localStorage.getItem('docsync-pat')) return null;
-  try { return (await gh(`git/ref/heads/${draftBranch || BRANCH}`)).object.sha || null; }
-  catch (e) { return null; }
+  return null;
 }
 
-/** @returns {boolean} go ahead and save */
-async function collabBranchStillOurs() {
-  if (!collab || !collabShared()) return true;
-  const base = collab.baseSha();
-  if (!base) return true;
-  let tip;
-  try { tip = (await gh(`git/ref/heads/${draftBranch}`)).object.sha; } catch (e) { return true; }
-  if (tip === base) return true;
-  const ok = await dsConfirm(
-    'The shared draft changed outside this session.\n\n'
-    + `The branch is at ${tip.slice(0, 7)}; this session was built from ${base.slice(0, 7)}. `
-    + 'Saving replaces that change with what everyone here sees.\n\n'
-    + `To keep it instead, cancel and look at github.com/${REPO}/commits/${draftBranch} first.`,
-    { okLabel: 'Save over it', danger: true });
-  if (!ok) $('stat').textContent = 'not saved — the shared draft changed outside this session';
-  return ok;
-}
-
-/** A collaborator saved: their commit holds this document (to within a
+/** A collaborator saved: their version holds this document (to within a
  *  keystroke), so from here "unsaved changes" means changed since THEIR
- *  save — and the room's draft branch exists now, whoever created it. */
+ *  save. */
 async function collabSaved(sha, info) {
   if (!collab || !sha) return;
   const f = collab.files();
@@ -24126,11 +24019,6 @@ async function collabSaved(sha, info) {
     } catch (e) { /* the room's copy stands as the baseline */ }
   }
   if (docStore()) { docVersion = sha; hubMarkSeen(sha); }
-  if (collabShared() && !draftBranch && !docStore()) {
-    draftBranch = sharedDraftBranch();
-    history.replaceState(null, '', draftUrl());
-    showDraftBadge();
-  }
   clearDraftCache();
   markDirty();
   if (restored) {
@@ -24328,35 +24216,25 @@ async function detectLocal() {
   sayHello();                   // there is a server to tell, now that we know
   // Local mode is the dev loop: files on disk are the truth, and a Save
   // commits them here — Push is the separate, explicit trip to GitHub.
-  // Draft branches and PRs belong to the hosted editor, so those verbs hide.
+  // Share and Publish belong to the hub, so those verbs hide.
   $('share').hidden = $('publish').hidden = true;
   $('push').hidden = false;
-  // Only the local server can open another app window; a hosted editor has
+  // Only the local server can open another app window; elsewhere there are
   // ordinary browser tabs for that.
   $('file-newwin').hidden = false;
   // Creating a report is also the server's job (/__scaffold), so the
   // "+ New report…" row in Open exists in local mode only.
   $('open-new').hidden = false;
   // And there is only something to quit when there is a server. The header
-  // goes with it, or a hosted editor shows a section with nothing in it.
+  // goes with it, or the menu shows a section with nothing in it.
   $('file-quit').hidden = $('file-quit-h').hidden = false;
-  // Same for signing THIS COMPUTER in: the server holds the credential and
-  // does the pushing, so the row only means something when there is one.
-  $('file-ghconn').hidden = $('file-gh-h').hidden = false;
   // Reading a Google Doc is the server's job — docs.google.com serves no CORS
-  // headers, so a hosted editor could not fetch one however it was linked.
+  // headers, so a page without the server could not fetch one however it was linked.
   $('file-doc').hidden = false;
-  fetch('/__oauth/status').then(r => r.json()).then(j => {
-    if (j && j.ok) {
-      serverOauth = j;
-      if (j.connected) rowLabel('file-ghconn', 'GitHub: ' + j.login);
-    }
-  }).catch(() => {});
   $('save').textContent = 'Save';
   // The pill said "<project> · live" next to a picker already naming the
   // project, on a bar whose whole state is "live" — pure repetition. It stays
-  // in the DOM (resolveDraft writes the draft branch into it, which IS worth
-  // saying) and comes back the moment it has that to say.
+  // in the DOM and comes back the moment it has something to say.
   $('title').textContent = M.id + ' · live';
   $('title').hidden = true;
   sayIdle();
@@ -24396,7 +24274,7 @@ async function detectLocal() {
 // server-side TTL (re-hello every 30 min) is for.
 const WINDOW_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 // Only to a server that exists: detectLocal says the first hello once the
-// ping has answered (a hosted editor used to POST it into a 404 — twice, on
+// ping has answered (a page without the server used to POST it into a 404 — twice, on
 // the hub, through the Access edge — before the ping had even been sent).
 const sayHello = () => {
   if (!local) return;
@@ -24750,6 +24628,100 @@ window.__fileSig = fileSig;   // test hook, like window.__liveIsLeader
 // Seeded at boot from the very bytes the FS was built from, so the FIRST bump
 // already has a true baseline to compare against.
 const engineSig = new Map();
+
+// --- the compiled-engine cache ---------------------------------------------
+// Pyodide compiles every .py it imports, from source, on every open: layout.py
+// alone is about 300 ms in the browser (measured 2026-10-30; a phone is
+// slower), against 1.4 ms to load the same module from bytecode. Python's
+// filesystem here is memory, so nothing it writes survives a reload. The first
+// open therefore keeps what Python compiled in Cache Storage, and later opens
+// put it back before the first import.
+//
+// What is kept is a HASH-BASED pyc, the checked kind: on load Python hashes
+// the source and compares, so a stale or tampered entry is refused and
+// recompiled rather than trusted. The cache can only make a boot faster, never
+// wrong. A pyc from another Python build is refused by its magic number the
+// same way. Keys carry the Python version and the file's own fingerprint.
+const PYC_CACHE = 'ds-pyc-v1';
+let pycMissed = [];                       // [{src, pyc, key}] compiled this boot, not yet kept
+window.__dsPyc = { restored: 0, missed: 0, kept: 0 };
+
+/** The engine's .py files as written into the filesystem, with where Python
+ *  looks for each one's bytecode. */
+function pycTargets() {
+  const srcs = [...engineSig.keys()].filter(p => p.endsWith('.py'));
+  if (!srcs.length) return [];
+  const pycs = JSON.parse(py.runPython(
+    'import importlib.util, json\n'
+    + 'json.dumps([importlib.util.cache_from_source(p) for p in json.loads('
+    + JSON.stringify(JSON.stringify(srcs)) + ')])'));
+  const ver = py.runPython('import sys\nsys.version.split()[0]');
+  return srcs.map((src, i) => ({ src, pyc: pycs[i], key: `/__pyc/${ver}${src}/${engineSig.get(src)}` }));
+}
+
+/** Put kept bytecode back, before anything is imported. A miss is remembered
+ *  so the compile this boot is about to do can be kept once the page is up. */
+async function pycRestore() {
+  let cache;
+  try { cache = await caches.open(PYC_CACHE); } catch (e) { return; }   // file: URL, storage denied
+  let targets;
+  try { targets = pycTargets(); } catch (e) { swallowed('compiled-engine cache: targets', e); return; }
+  const hits = await Promise.all(targets.map(t => cache.match(t.key).catch(() => null)));
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    if (!hits[i]) { pycMissed.push(t); continue; }
+    try {
+      const bytes = new Uint8Array(await hits[i].arrayBuffer());
+      py.FS.mkdirTree(t.pyc.slice(0, t.pyc.lastIndexOf('/')));
+      py.FS.writeFile(t.pyc, bytes);
+      window.__dsPyc.restored++;
+    } catch (e) { swallowed('compiled-engine cache: restore', e); pycMissed.push(t); }
+  }
+  window.__dsPyc.missed = pycMissed.length;
+}
+
+/** Keep what this boot compiled. Python has usually written a timestamp pyc
+ *  for each module it imported: re-head it as hash-based (no second compile).
+ *  A module it never imported is compiled here, once. */
+async function pycKeepNow() {
+  const todo = pycMissed; pycMissed = [];
+  if (!todo.length) return 0;
+  let cache;
+  try { cache = await caches.open(PYC_CACHE); } catch (e) { return 0; }
+  py.runPython(
+    'import importlib.util, os, py_compile, json\n'
+    + 'for src, pyc in json.loads(' + JSON.stringify(JSON.stringify(todo.map(t => [t.src, t.pyc]))) + '):\n'
+    + '    done = False\n'
+    + '    if os.path.exists(pyc):\n'
+    + '        data = open(pyc, "rb").read()\n'
+    + '        if data[:4] == importlib.util.MAGIC_NUMBER and not int.from_bytes(data[4:8], "little") & 1:\n'
+    + '            h = importlib.util.source_hash(open(src, "rb").read())\n'
+    + '            open(pyc, "wb").write(data[:4] + (3).to_bytes(4, "little") + h + data[16:])\n'
+    + '            done = True\n'
+    + '        elif data[:4] == importlib.util.MAGIC_NUMBER:\n'
+    + '            done = True\n'
+    + '    if not done:\n'
+    + '        py_compile.compile(src, cfile=pyc, doraise=True,\n'
+    + '                           invalidation_mode=py_compile.PycInvalidationMode.CHECKED_HASH)\n');
+  let n = 0;
+  for (const t of todo) {
+    try {
+      await cache.put(t.key, new Response(py.FS.readFile(t.pyc), { headers: { 'Content-Type': 'application/octet-stream' } }));
+      n++;
+    } catch (e) { swallowed('compiled-engine cache: keep', e); }
+  }
+  window.__dsPyc.kept += n;
+  return n;
+}
+window.__dsPycKeepNow = pycKeepNow;       // test hook
+/** After the first paint, when the thread is idle. A browser without
+ *  requestIdleCallback gets a few seconds' grace instead. */
+function pycKeepSoon() {
+  if (!pycMissed.length) return;
+  const go = () => pycKeepNow().catch(e => swallowed('compiled-engine cache', e));
+  if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 10000 });
+  else setTimeout(go, 4000);
+}
 // True whenever engine .py files were rewritten in Pyodide's FS since the
 // last successful render: the next render purges sys.modules so the new code
 // is what imports. Starts true so the very first render never trusts a cache.
@@ -25254,9 +25226,6 @@ const previewKey = () => '/__preview/' + (PROJECT || 'default');
 
 let previewT = null;
 function schedulePreviewStore(html) {
-  // A draft's render must not become another session's preview: the draft is
-  // someone's fork, and the preview slot is what the LIVE report looks like.
-  if (draftBranch) return;
   // Debounced well past the render cadence: a drag commits a render per drop,
   // and writing ~100KB-1MB into CacheStorage on each would be pure waste.
   clearTimeout(previewT);
@@ -27538,7 +27507,8 @@ function edit(d, key, clicked, at) {
         pushHistory();
         writeSlot(key, newVal);
         dirty = source !== original || JSON.stringify(layout) !== JSON.stringify(JSON.parse(layoutOrig || '{}'));
-        $('save').disabled = $('revert').disabled = !dirty;
+        if (local || docStore()) $('save').disabled = !dirty;
+        $('revert').disabled = !dirty;
         $('save').classList.toggle('dirty', dirty);
       }
       settleEndnotesSection();
@@ -27752,288 +27722,6 @@ document.addEventListener('keydown', e => {
   if (fwd || back) { e.preventDefault(); e.stopPropagation(); presentGo(fwd ? 1 : -1); }
 }, true);
 
-// --- persistence -----------------------------------------------------------
-// The one credential: a fine-grained token, this repo only, Contents r/w (and
-// Pull requests r/w, for Publish). It lives in this browser and never leaves
-// it except to call GitHub. Saves go to a draft branch; only Publish — a
-// merged pull request — touches main, rebuilds the site and updates the doc.
-async function gh(path, opts = {}) {
-  for (let pass = 0; ; pass++) {
-    const tok = localStorage.getItem('docsync-pat');
-    const r = await fetch(`https://api.github.com/repos/${REPO}/${path}`, {
-      ...opts,
-      headers: { Authorization: `Bearer ${tok}`, Accept: 'application/vnd.github+json',
-                 ...(opts.headers || {}) },
-    });
-    // A signed-in token expires after ~8h. One quiet refresh, then the retry;
-    // only if that fails does the failure reach the person.
-    if (r.status === 401 && pass === 0 && await refreshAuth(true)) continue;
-    if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 160)}`);
-    return r.json();
-  }
-}
-
-/**
- * Check a token before trusting it.
- *
- * The repo endpoint reports what THIS token may do, so "valid but read-only"
- * is caught at the moment it is pasted rather than after an edit is composed.
- */
-async function verifyToken(tok) {
-  let r;
-  try {
-    r = await fetch(`https://api.github.com/repos/${REPO}`, {
-      headers: { Authorization: `Bearer ${tok}`, Accept: 'application/vnd.github+json' },
-    });
-  } catch (e) {
-    return 'could not reach GitHub: ' + e.message;
-  }
-  if (r.status === 401) return 'GitHub rejected that token (expired, or mistyped).';
-  if (r.status === 404)
-    return `that token cannot see ${REPO}. In the token's "Repository access", `
-         + 'select this repository.';
-  if (!r.ok) return `GitHub said ${r.status}.`;
-  const j = await r.json();
-  if (!j.permissions || !j.permissions.push)
-    return 'that token can read but not write. Open it at '
-         + 'github.com/settings/personal-access-tokens and set '
-         + 'Permissions -> Repository permissions -> Contents -> Read and write '
-         + '(Read-only is the default, and is what this looks like).';
-  return '';
-}
-
-// --- sign in with GitHub ---------------------------------------------------
-// The OAuth device flow needs no secret anywhere — only the App's public
-// client id. GitHub's login endpoints refuse cross-origin calls, so a tiny
-// relay (docs/primer/oauth-relay.js, ~40 lines, holds nothing) forwards the
-// two of them with CORS added. Configured per project in the manifest:
-//   "oauth": { "client_id": "Iv23…", "relay": "https://…workers.dev" }
-// Absent that config, the paste-a-token prompt below still does the job.
-// The local server proxies GitHub's login endpoints itself (/__oauth/…), so
-// in local mode NO deployed relay is needed — only the one GitHub App client
-// id, which can come from the manifest OR the server's own PRIMER_GH_CLIENT
-// (learned at boot via /__oauth/status into serverOauth).
-let serverOauth = { connected: false, login: '', client_id: '' };
-const oauthClientId = () =>
-  (M && M.oauth && M.oauth.client_id) || (local && serverOauth.client_id) || '';
-const oauthOn = () => !!(oauthClientId() && ((M && M.oauth && M.oauth.relay) || local));
-
-async function relay(path, body) {
-  const base = (M && M.oauth && M.oauth.relay) || (local ? '/__oauth' : null);
-  if (!base) throw new Error('no sign-in route');
-  const r = await fetch(base + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ client_id: oauthClientId(), ...body }),
-  });
-  if (!r.ok) throw new Error(`sign-in relay ${r.status}`);
-  return r.json();
-}
-
-/** Local mode: the SERVER pushes, so the server needs the credential too.
- *  Verified and stored there (never in a file the repo could commit); the
- *  browser keeps its own copy for the API calls it makes itself. */
-async function sendTokenToServer(tok) {
-  if (!local || !tok) return null;
-  try {
-    const r = await fetch('/__oauth/save', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: tok }),
-    });
-    const j = await r.json();
-    if (j.ok) {
-      serverOauth.connected = true;
-      serverOauth.login = j.login;
-      return j.login;
-    }
-    $('stat').textContent = 'GitHub did not accept the token: ' + (j.error || '');
-  } catch (e) { /* the server may be gone; the browser copy still works */ }
-  return null;
-}
-
-function storeAuth(j) {
-  sendTokenToServer(j.access_token);          // fire-and-forget; local only
-  localStorage.setItem('docsync-pat', j.access_token);
-  if (j.expires_in) localStorage.setItem('docsync-exp', String(Date.now() + j.expires_in * 1000));
-  else localStorage.removeItem('docsync-exp');
-  if (j.refresh_token) localStorage.setItem('docsync-refresh', j.refresh_token);
-  localStorage.removeItem('docsync-user');   // may be a different person now
-}
-
-function clearAuth() {
-  ['docsync-pat', 'docsync-exp', 'docsync-refresh', 'docsync-user']
-    .forEach(k => localStorage.removeItem(k));
-}
-
-/** Trade the refresh token for a fresh pair. force skips the expiry check —
- *  that is gh()'s 401 path, where the token has proven stale regardless. */
-async function refreshAuth(force) {
-  const rt = localStorage.getItem('docsync-refresh');
-  if (!rt || !oauthOn()) return false;
-  const exp = +localStorage.getItem('docsync-exp') || 0;
-  if (!force && exp && Date.now() < exp - 120000) return false;
-  try {
-    const j = await relay('/device/token', { grant_type: 'refresh_token', refresh_token: rt });
-    if (!j.access_token) throw new Error(j.error || 'no token');
-    storeAuth(j);
-    return true;
-  } catch (e) {
-    clearAuth();               // a dead pair only blocks the next sign-in
-    return false;
-  }
-}
-
-/** The sign-in panel: a code to type at github.com, and a page that finishes
- *  by itself. Resolves with the token, or null if the person backs out. */
-function signIn() {
-  return new Promise(resolve => {
-    const old = $('authpanel'); if (old) old.remove();
-    const p = document.createElement('div');
-    p.id = 'authpanel';
-    p.innerHTML =
-      '<header><b>SIGN IN WITH GITHUB</b><button type="button" class="x">Cancel</button></header>'
-      + '<div class="au-body"><p class="au-msg">getting your code…</p>'
-      + '<div class="au-code" hidden></div>'
-      + '<button type="button" class="au-open" hidden>Open GitHub</button>'
-      + '<p class="au-hint" hidden>Enter the code there and approve. '
-      + 'This page finishes on its own.</p>'
-      + '<p class="au-alt"><a href="#">use a paste-in token instead</a></p></div>';
-    document.body.appendChild(p);
-    p.style.top = ($('bar').getBoundingClientRect().bottom + 6) + 'px';
-    let stopped = false;
-    const done = v => { if (!stopped) { stopped = true; p.remove(); resolve(v); } };
-    p.querySelector('.x').onclick = () => done(null);
-    p.querySelector('.au-alt a').onclick = async e => {
-      e.preventDefault(); done(await askToken());
-    };
-    (async () => {
-      let d;
-      try { d = await relay('/device/code', {}); }
-      catch (e) {
-        p.querySelector('.au-msg').textContent =
-          'could not reach the sign-in relay — falling back to a paste-in token';
-        return setTimeout(async () => done(await askToken()), 1400);
-      }
-      // GitHub answers 200 with an ERROR BODY for a request it understood but
-      // refused — most often device_flow_disabled, the one checkbox the App
-      // manifest cannot tick. Without this the panel showed an empty code and
-      // polled for fifteen minutes: a dead end that looks like a hang.
-      if (!d || !d.user_code) {
-        const why = (d && d.error) === 'device_flow_disabled'
-          ? 'this GitHub App does not have Device Flow switched on yet'
-          : ((d && (d.error_description || d.error)) || 'no code came back');
-        p.querySelector('.au-msg').textContent = why + ' — use a token instead';
-        return setTimeout(async () => done(await askToken()), 2200);
-      }
-      const code = p.querySelector('.au-code');
-      code.textContent = d.user_code; code.hidden = false;
-      try { await navigator.clipboard.writeText(d.user_code);
-            p.querySelector('.au-msg').textContent = 'your code (already copied):'; }
-      catch (e) { p.querySelector('.au-msg').textContent = 'your code:'; }
-      const open = p.querySelector('.au-open');
-      open.hidden = p.querySelector('.au-hint').hidden = false;
-      open.onclick = () => window.open(d.verification_uri, '_blank');
-      let wait = (d.interval || 5) * 1000;
-      const until = Date.now() + (d.expires_in || 900) * 1000;
-      while (!stopped && Date.now() < until) {
-        await new Promise(r => setTimeout(r, wait));
-        if (stopped) return;
-        let j;
-        try {
-          j = await relay('/device/token',
-            { device_code: d.device_code,
-              grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
-        } catch (e) { continue; }               // a network blip is not a verdict
-        if (j.access_token) { storeAuth(j); return done(j.access_token); }
-        if (j.error === 'slow_down') wait += 5000;
-        else if (j.error === 'access_denied') {
-          p.querySelector('.au-msg').textContent = 'sign-in was declined on GitHub';
-          return setTimeout(() => done(null), 1600);
-        } else if (j.error && j.error !== 'authorization_pending') break;
-      }
-      if (!stopped) {
-        p.querySelector('.au-msg').textContent = 'the code expired — close this and try again';
-      }
-    })();
-  });
-}
-
-/** The one front door for credentials: a live token, refreshed if stale,
- *  else GitHub sign-in, else the paste-a-token prompt. */
-/** Is this project pointed at a GitHub repo at all?
- *
- *  REPO comes from the manifest, which stage.py fills from the checkout's own
- *  `git remote get-url origin`. A project with no origin — anything started
- *  fresh rather than cloned — leaves it EMPTY, and every GitHub call then
- *  builds https://api.github.com/repos// and 404s. tokenWhy() reads that 404
- *  as a permissions problem, so the person is sent to regenerate a token that
- *  was never the issue, and regenerating it changes nothing. Say the real
- *  thing instead, and name the button that fixes it. */
-function requireRepo() {
-  if (REPO) return true;
-  $('stat').textContent =
-    'this report is not connected to a GitHub repo yet — File \u25b8 Connect GitHub';
-  return false;
-}
-
-async function ensureAuth() {
-  if (!requireRepo()) return null;
-  await refreshAuth(false);
-  const tok = localStorage.getItem('docsync-pat');
-  if (tok) return tok;
-  if (oauthOn()) return signIn();
-  return askToken();
-}
-
-async function askToken() {
-  const tok = localStorage.getItem('docsync-pat');
-  if (tok) return tok;
-  const entered = await dsPrompt(
-    'github.com → Settings → Developer settings → Fine-grained tokens.\n' +
-    `Repository access: only ${REPO}.\n` +
-    'Permissions → Repository permissions:\n' +
-    '    Contents: Read and WRITE        (saving drafts)\n' +
-    '    Pull requests: Read and WRITE   (publishing)\n' +
-    '(Both default to no access; Read-only is not enough.)\n' +
-    'Stored in this browser only.',
-    '', { title: 'Paste a GitHub fine-grained token', placeholder: 'github_pat_…' });
-  if (!entered) return null;
-  $('stat').textContent = 'checking the token…';
-  const bad = await verifyToken(entered.trim());
-  if (bad) {
-    $('stat').textContent = 'token not usable: ' + bad;
-    return null;                       // not stored — a bad token helps nobody
-  }
-  localStorage.setItem('docsync-pat', entered.trim());
-  localStorage.removeItem('docsync-user');   // a new token may be a new person
-  $('stat').textContent = 'token accepted';
-  return entered.trim();
-}
-
-// The Token… button: swap credentials (a new collaborator on a shared machine,
-// or an expired token). It had no handler at all before this.
-$('tok').onclick = async () => {
-  clearAuth();
-  await ensureAuth();
-};
-
-/** Explain a GitHub failure in terms of the fix, not the status code. */
-function tokenWhy(e) {
-  const m = String(e.message);
-  if (m.includes('not accessible'))
-    return 'the token has no write access. github.com/settings/personal-access-tokens '
-      + `-> your token -> Repository access: ${REPO} -> Permissions -> Contents: `
-      + 'Read and write. Then try again.';
-  // Only discard on 401 (the token itself is bad). A 403 means the token is
-  // fine but under-permissioned — discarding it just makes you paste the
-  // same token again and get the same 403, forever.
-  if (m.match(/401/)) {
-    localStorage.removeItem('docsync-pat');
-    return 'the token was rejected — it may be expired or mistyped.';
-  }
-  return m;
-}
-
 // --- the document store (the hub, step 04) ---------------------------------
 // A hub-served editor does not keep its document in git. The door that
 // joins its room (collabDoor) also names a store on the same origin — the
@@ -28042,15 +27730,14 @@ function tokenWhy(e) {
 // token anywhere: Access authenticates the person, the share list says what
 // they may do, the store keeps every Save as a version. Decided ONCE, here,
 // right after local mode is known; every verb that reads or writes asks
-// docStore() rather than re-deriving it. The git verbs — draft branches,
-// Share, Publish, Push — do not exist on this path, so they hide.
+// docStore() rather than re-deriving it. Push does not exist on this path,
+// so it hides.
 //
 // The version the files on screen came from plays the part a commit sha
 // played on the git path: it seeds the room's meta.baseSha, so everyone in
 // the session shares one, and a Save carries it as `base` — a store that has
 // moved past it (a Save from a session this browser was not in, a rollback,
-// a script) refuses with 409 and the person chooses, exactly the rule
-// collabBranchStillOurs applies to a branch.
+// a script) refuses with 409 and the person chooses.
 let docStoreBase = null;    // '/api/docs/<room>' when the document lives on the hub
 let docVersion = null;      // the store's version the files on screen came from
 const docStore = () => docStoreBase;
@@ -30807,166 +30494,8 @@ $('file-autosave').onclick = () => {
   togglePop($('filepop'), $('file'));
 };
 
-// --- drafts: Save draft / Share / Publish ----------------------------------
-// Nothing here writes to main. Save commits your work — prose and layout in
-// ONE commit — to draft/<project>/<user>, a branch of your own. Share hands
-// out a link that renders that branch. Publish opens and merges a pull
-// request into main, the only step that changes the live report. Three verbs;
-// the git underneath stays out of sight.
-let draftBranch = new URLSearchParams(location.search).get('draft') || null;
-
-/** In a shared project — one with a collaboration relay (collab/README.md,
- *  Phase 4) — the draft is ONE branch for the whole room: everyone in the
- *  session edits one document, so they save it to one place, and a Save by
- *  anyone is a Save for everyone. Otherwise a draft is yours alone. */
-const collabShared = () => !local && !!collabDoor();
-const sharedDraftBranch = () => `draft/${M.id}`;
-const draftBranchFor = user => collabShared() ? sharedDraftBranch() : `draft/${M.id}/${user}`;
-
-// The one thing the pill is still for: you are editing a DRAFT, not the live
-// report. Un-hides it — detectLocal() hides it for the plain local case.
-const showDraftBadge = () => {
-  $('title').textContent = M.id + (draftBranch === sharedDraftBranch()
-    ? ' · shared draft' : ' · draft: ' + draftBranch.split('/').pop());
-  $('title').hidden = false;
-};
-const draftUrl = () => location.origin + pageUrl({ draft: draftBranch });
-
-async function resolveDraft() {
-  if (local || docStore()) { draftBranch = null; return; }
-  if (!draftBranch && collabShared() && localStorage.getItem('docsync-pat')) {
-    // A shared project's one draft, if anyone in the room has saved yet.
-    try { await gh(`git/ref/heads/${sharedDraftBranch()}`); draftBranch = sharedDraftBranch(); }
-    catch (e) { /* none yet — the first Save creates it */ }
-  }
-  if (!draftBranch && !collabShared()) {
-    // No link in the URL, but this browser saved a draft before? Pick it up
-    // rather than silently showing main — "my edits vanished" is the scariest
-    // bug an editor can have.
-    const u = localStorage.getItem('docsync-user');
-    if (localStorage.getItem('docsync-pat') && u) {
-      const b = `draft/${M.id}/${u}`;
-      try { await gh(`git/ref/heads/${b}`); draftBranch = b; } catch (e) { /* none */ }
-    }
-  }
-  if (draftBranch) {
-    history.replaceState(null, '', draftUrl());
-    showDraftBadge();
-  }
-}
-
-/** A draft file, fresh. The API sees a commit instantly; raw.githubusercontent
- *  can lag minutes behind a push, so it is only the tokenless fallback. */
-async function fromBranch(path) {
-  if (localStorage.getItem('docsync-pat')) {
-    const j = await gh(`contents/${path}?ref=${encodeURIComponent(draftBranch)}`);
-    return new TextDecoder().decode(
-      Uint8Array.from(atob(j.content.replace(/\n/g, '')), c => c.charCodeAt(0)));
-  }
-  const r = await fetch(bust(`https://raw.githubusercontent.com/${REPO}/${draftBranch}/${path}`),
-                        { cache: 'no-store' });
-  if (!r.ok) throw new Error(`HTTP ${r.status} — ${path}@${draftBranch}`);
-  return r.text();
-}
-
-/** Who the token belongs to — names the draft branch and the commits. */
-async function ghUser() {
-  let u = localStorage.getItem('docsync-user');
-  if (u) return u;
-  const r = await fetch('https://api.github.com/user', {
-    headers: { Authorization: `Bearer ${localStorage.getItem('docsync-pat')}`,
-               Accept: 'application/vnd.github+json' },
-  });
-  if (!r.ok) throw new Error(`GitHub ${r.status} asking who this token belongs to`);
-  u = (await r.json()).login.toLowerCase();
-  localStorage.setItem('docsync-user', u);
-  return u;
-}
-
-/** @returns {boolean} whether the branch had to be created */
-async function ensureBranch(branch) {
-  try { await gh(`git/ref/heads/${branch}`); return false; }
-  catch (e) { if (!String(e.message).match(/404/)) throw e; }
-  // Fork from the project's own deploy branch, not a hardcoded main — a repo
-  // this project lives in may deploy from gh-pages, production, or any name.
-  const src = await gh(`git/ref/heads/${BRANCH}`);
-  await gh('git/refs', { method: 'POST',
-    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: src.object.sha }) });
-  return true;
-}
-
-/** One commit for everything that changed — prose and layout land together or
- *  not at all, unlike the old per-file PUTs that could interleave or half-land.
- *  If someone else saved this draft between our read and our write, retry once
- *  on their tip: the tree only names the files WE changed, so their work on
- *  the other file rides along untouched. */
-async function commitToBranch(branch, files, message) {
-  for (let attempt = 0; ; attempt++) {
-    const base = (await gh(`git/ref/heads/${branch}`)).object.sha;
-    const tree = await gh('git/trees', { method: 'POST', body: JSON.stringify({
-      base_tree: (await gh(`git/commits/${base}`)).tree.sha,
-      tree: files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })),
-    }) });
-    const commit = await gh('git/commits', { method: 'POST', body: JSON.stringify({
-      message, tree: tree.sha, parents: [base] }) });
-    try {
-      await gh(`git/refs/heads/${branch}`, { method: 'PATCH',
-        body: JSON.stringify({ sha: commit.sha }) });
-      return commit.sha;
-    } catch (e) {
-      // Not a fast-forward: the branch moved under us. Once, quietly, retry.
-      if (attempt === 0 && String(e.message).match(/422|fast[- ]forward/i)) continue;
-      throw e;
-    }
-  }
-}
-
-/** Uploads (images) need a branch to land on before the editor's next Save;
- *  make sure the draft exists and the URL points at it. */
-async function draftForUpload() {
-  const user = await ghUser();
-  if (!draftBranch) draftBranch = draftBranchFor(user);
-  await ensureBranch(draftBranch);
-  history.replaceState(null, '', draftUrl());
-  showDraftBadge();
-  return draftBranch;
-}
-
-async function saveDraft() {
-  if (!await ensureAuth()) return false;
-  $('save').disabled = true;
-  $('stat').textContent = 'saving your draft…';
-  try {
-    const user = await ghUser();
-    if (!draftBranch) draftBranch = draftBranchFor(user);
-    const created = await ensureBranch(draftBranch);
-    // A branch that already existed may have moved since this session was
-    // built from it — see collabBranchStillOurs. One just created from the
-    // deploy branch cannot have.
-    if (!created && !await collabBranchStillOurs()) { markDirty(); return false; }
-    const layoutText = JSON.stringify(layout, null, 2) + '\n';
-    const files = [];
-    if (source !== original) files.push({ path: M.content, content: source });
-    if (M.layout && layoutText !== layoutOrig) files.push({ path: M.layout, content: layoutText });
-    let sha = null;
-    if (files.length) sha = await commitToBranch(draftBranch, files, `${M.id}: draft by ${user}`);
-    // The live document now knows which commit it matches; Phase 4 of
-    // collab/README.md reads this to notice the branch moving underneath.
-    if (sha && collab) collab.setBaseSha(sha);
-    original = source; layoutOrig = layoutText;
-    clearDraftCache();        // it's on the branch now — the local cache is stale
-    markDirty();
-    history.replaceState(null, '', draftUrl());   // a reload finds this draft
-    showDraftBadge();
-    $('stat').textContent = 'draft saved — yours only, not live. Share it for feedback, or Publish';
-    return true;
-  } catch (e) {
-    $('stat').textContent = 'save failed: ' + tokenWhy(e);
-    markDirty();
-    return false;
-  }
-}
-
+// --- Share / Publish (the hub only) ------------------------------------------
+// Outside the hub both buttons are hidden; the handlers below do nothing there.
 $('history').onclick = () => hubHistoryDialog();
 $('cpanel-close').onclick = () => hubCommentsToggle(false);
 $('cpanel-view').onclick = () => {
@@ -31037,60 +30566,10 @@ $('comments').onclick = () => { if ($('cpanel').hidden && hubCommentsTab === 're
 $('share').onclick = async () => {
   $('filepop').hidden = true;
   if (docStore()) return hubShareDialog();
-  if (dirty || !draftBranch) { if (!await saveDraft()) return; }
-  const url = draftUrl();
-  try {
-    await navigator.clipboard.writeText(url);
-    $('stat').textContent = 'link copied — it shows this draft, not the live report';
-  } catch (e) {
-    // clipboard blocked: show it in a read-only field to copy by hand
-    await dsPrompt('Copy this draft link:', url, { title: 'Share draft', readOnly: true, cancelLabel: 'Close' });
-  }
 };
 
 $('publish').onclick = async () => {
   if (docStore()) return docStorePublish();
-  if (dirty) { if (!await saveDraft()) return; }
-  if (!draftBranch) {
-    $('stat').textContent = 'nothing to publish yet — make an edit and Save draft first';
-    return;
-  }
-  if (!await dsConfirm('Make this draft the live report?\n\nEveryone will see it. '
-             + 'The live site (and the Google Doc) update in about two minutes.',
-             { okLabel: 'Publish' })) return;
-  if (!await ensureAuth()) return;
-  $('publish').disabled = true;
-  $('stat').textContent = 'publishing…';
-  try {
-    const user = await ghUser();
-    const owner = REPO.split('/')[0];
-    let pr = (await gh(`pulls?head=${owner}:${encodeURIComponent(draftBranch)}&state=open`))[0];
-    if (!pr) pr = await gh('pulls', { method: 'POST', body: JSON.stringify({
-      title: `${M.id}: publish draft by ${user}`, head: draftBranch, base: BRANCH,
-      body: 'Published from the draft editor.' }) });
-    await gh(`pulls/${pr.number}/merge`, { method: 'PUT',
-      body: JSON.stringify({ merge_method: 'squash' }) });
-    try { await gh(`git/refs/heads/${draftBranch}`, { method: 'DELETE' }); } catch (e) {}
-    clearDraftCache();        // it's live now — the local cache is stale
-    draftBranch = null;
-    history.replaceState(null, '', pageUrl());
-    $('title').textContent = M.id;
-    markDirty();
-    $('stat').textContent = 'published ✓ — the live report updates in about two minutes';
-  } catch (e) {
-    const m = String(e.message);
-    $('stat').textContent =
-      m.match(/No commits between/i)
-        ? 'this draft already matches the live report — nothing to publish'
-      : m.match(/405|not mergeable|merge conflict/i)
-        ? 'the live report changed while you worked, and the two now overlap. '
-          + `Open github.com/${REPO}/pulls to look at the difference, or ask for help.`
-      : m.includes('not accessible')
-        ? 'the token cannot open pull requests. github.com/settings/personal-access-tokens '
-          + '-> your token -> Permissions -> Pull requests: Read and write. Then Publish again.'
-      : 'publish failed: ' + tokenWhy(e);
-  }
-  $('publish').disabled = false;
 };
 
 /** POST to a local endpoint with a hard ceiling, so the UI can NEVER hang
@@ -31195,7 +30674,7 @@ $('save').onclick = async () => {
   }
 
   if (docStore()) { await docStoreSave(layoutText); return; }
-  await saveDraft();   // to draft/<project>/<user> — never straight to main
+  $('stat').textContent = 'nothing to save to — open this report from the local server or the staff hub';
 };
 
 // Push: send whatever is committed locally (one Save, or several since the
@@ -31230,32 +30709,13 @@ $('push').onclick = async () => {
     pushHealth = {};          // a successful push retires any stale warning
     setPushState(j.ahead);
   } catch (e) {
-    // The commonest first-machine failure is simply "this computer has no
-    // GitHub credential" — name the way out rather than only the wreck.
-    const authish = /credential|authenticat|permission|403|denied|terminal to answer/i
-      .test(e.message) && !serverOauth.connected;
-    $('stat').textContent = 'push failed: ' + e.message
-      + (authish ? ' — File \u25b8 Connect GitHub sets this computer up' : '');
+    // The server pushes with this machine's own git credentials.
+    $('stat').textContent = 'push failed: ' + e.message;
     setPushState(1);          // still ahead — the try again path stays lit
   }
 };
 
 $('revert').onclick = async () => {
-  // With nothing unsaved, Discard means the DRAFT itself: delete its branch
-  // and go back to the live report. (With unsaved edits it stays what it
-  // always was — throw away what you typed since the last save.)
-  if (!dirty && draftBranch && !local) {
-    const shared = draftBranch === sharedDraftBranch() && collab;
-    if (!await dsConfirm((shared
-               ? 'Throw away the shared draft?\n\nEveryone in this session loses it. The live report is untouched. '
-               : 'Throw away this saved draft?\n\nThe live report is untouched. ')
-               + 'This cannot be undone.', { okLabel: 'Throw away', danger: true })) return;
-    if (!await ensureAuth()) return;
-    try { await gh(`git/refs/heads/${draftBranch}`, { method: 'DELETE' }); } catch (e) {}
-    await clearDraftCache();             // dropping the draft drops its cached edits too
-    location.href = pageUrl();           // reload clean, on the live content
-    return;
-  }
   if (!await dsConfirm('Discard your unsaved edits?', { okLabel: 'Discard', danger: true })) return;
   source = original;
   layout = JSON.parse(layoutOrig || '{}');
@@ -31426,8 +30886,8 @@ $('file').onclick = () => {
     // and writing textContent would take the icon with it.
     rowLabel('file-repo', REPO ? 'Repo: ' + REPO : 'Repo: not connected');
     $('file-repo').title = REPO
-      ? 'Saves and Pushes go to github.com/' + REPO + ' — click to change'
-      : 'This report has no GitHub repo yet — click to connect or create one';
+      ? 'Pushes go to github.com/' + REPO
+      : 'This report has no GitHub repo';
   }
   if (local) {
     // Named, not just "linked": which doc is exactly the thing worth checking
@@ -31778,113 +31238,6 @@ $('file-quit').onclick = async () => {
     $('stat').textContent = 'editor stopped — close this window';
   }, 1500);
 };
-
-// Connect GitHub: the sign-in panel if the device flow is configured, the
-// paste-a-token prompt otherwise — either way the credential ends up ON THE
-// SERVER (sendTokenToServer via storeAuth/askToken), which is the party that
-// actually pushes in local mode.
-$('file-ghconn').onclick = async () => {
-  $('filepop').hidden = true;
-  const tok = oauthOn() ? await signIn() : await askToken();
-  if (!tok) return;
-  const login = await sendTokenToServer(tok);
-  rowLabel('file-ghconn', login ? 'GitHub: ' + login : 'Connect GitHub…');
-  $('stat').textContent = login
-    ? `connected as ${login} — Push can now reach GitHub from this computer`
-    : 'signed in — but the local server could not keep the credential';
-};
-
-/** Point this report at a GitHub repo — an existing one, or a new one made
- *  on the spot.
- *
- *  Creating goes through the browser, not the server: the token is already
- *  here, GitHub's create endpoint is a plain POST, and doing it here means the
- *  server never needs a credential it does not already hold. Once the repo
- *  exists, /__connect does the wiring the browser cannot — manifest.json,
- *  projects.json and the checkout's git remote, which all have to agree. */
-$('file-repo').onclick = async () => {
-  $('filepop').hidden = true;
-  const r = await dsForm('GitHub repository', [
-    { name: 'slug', label: 'Repository (owner/name)', type: 'text',
-      value: REPO, placeholder: 'your-org/your-report', required: true },
-    { name: 'mode', label: 'It…', type: 'select', value: 'existing',
-      options: [{ value: 'existing', label: 'already exists on GitHub' },
-                { value: 'create', label: 'does not exist — create it (private)' }] },
-  ], { okLabel: 'Connect',
-       validate: (v) => /^[\w.-]+\/[\w.-]+$/.test((v.slug || '').trim())
-         ? null : 'Use the owner/name form, e.g. your-org/your-report' });
-  if (!r) return;
-  const slug = r.slug.trim().replace(/\.git$/, '');
-
-  if (r.mode === 'create') {
-    const tok = await ensureAuthForRepo(slug);
-    if (!tok) return;
-    $('stat').textContent = 'creating ' + slug + ' on GitHub…';
-    const [owner, name] = slug.split('/');
-    let login = '';
-    try {
-      login = (await (await fetch('https://api.github.com/user', {
-        headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json' },
-      })).json()).login || '';
-    } catch (e) { swallowed('GitHub login lookup', e); }
-    // A repo under YOUR account and one under an org are different endpoints;
-    // pick by comparing the owner to who the token belongs to.
-    const url = (login && owner.toLowerCase() === login.toLowerCase())
-      ? 'https://api.github.com/user/repos'
-      : `https://api.github.com/orgs/${owner}/repos`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json',
-                 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, private: true,
-                             description: 'Report edited with the docsync draft editor' }),
-    });
-    if (!res.ok) {
-      const t = await res.text();
-      $('stat').textContent = res.status === 422 && t.includes('already exists')
-        ? `${slug} already exists — choose "already exists on GitHub" instead`
-        : `could not create ${slug}: ${res.status} ${t.slice(0, 140)}`;
-      return;
-    }
-    $('stat').textContent = 'created ' + slug + ' — wiring it up…';
-  }
-
-  await wireRepo(slug, false);
-};
-
-/** Tell the server which repo this project uses. Retries once with retarget
- *  when the checkout already points somewhere else and the person confirms —
- *  silently redirecting a checkout that already pushes is how work goes to the
- *  wrong place. */
-async function wireRepo(slug, retarget) {
-  let j;
-  try {
-    j = await postLocal('/__connect', { project: M.id, repo: slug, retarget });
-  } catch (e) {
-    $('stat').textContent = 'could not connect: ' + e.message;
-    return;
-  }
-  if (!j.ok && j.needs_retarget) {
-    if (await dsConfirm(`This folder currently pushes to ${j.current}.\n\n`
-        + `Point it at ${slug} instead?`, { okLabel: 'Repoint', danger: true })) {
-      return wireRepo(slug, true);
-    }
-    $('stat').textContent = 'left pointing at ' + j.current;
-    return;
-  }
-  if (!j.ok) { $('stat').textContent = j.error || 'could not connect'; return; }
-  REPO = slug;
-  if (REGISTRY && REGISTRY[M.id]) REGISTRY[M.id].repo = slug;
-  $('stat').textContent = `connected to ${slug} — ${j.remote}. Push sends there.`;
-}
-
-/** ensureAuth, but for a repo we are about to CREATE — the normal guard would
- *  refuse because REPO is still empty, which is the whole reason we are here. */
-async function ensureAuthForRepo(slug) {
-  const was = REPO;
-  REPO = slug;                     // so the token prompt names the right repo
-  try { return await ensureAuth(); } finally { REPO = was; }
-}
 
 /** Record WHICH Google Doc this report is drafted in.
  *
@@ -34256,7 +33609,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // Live collaboration, when this project has a relay: status is one of
       // off / connecting / signin / error / live / offline; `peers` counts
       // every editor in the room including this one.
-      collab: { ...collabInfo, peerList: collabPeerListNow(), baseSha: collab ? collab.baseSha() : null, branch: draftBranch },
+      collab: { ...collabInfo, peerList: collabPeerListNow(), baseSha: collab ? collab.baseSha() : null, branch: null },
       // An automated editor at work right now — through this tab, or a
       // collaborator's (`via`). Null when none.
       agent: agentsAtWork()[0] || null,

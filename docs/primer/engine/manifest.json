@@ -4,7 +4,6 @@
   "branch": "main",
   "files": {
     "engine/docsync/content.py": "docsync/content.py",
-    "engine/docsync/normalise.py": "docsync/normalise.py",
     "engine/docsync/layout.py": "docsync/layout.py",
     "engine/docsync/blocks.py": "docsync/blocks.py",
     "engine/docsync/okina.py": "docsync/okina.py",

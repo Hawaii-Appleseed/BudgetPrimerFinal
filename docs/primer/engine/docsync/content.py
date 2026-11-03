@@ -1,7 +1,7 @@
 """Prose layer for the Budget Primer.
 
 The primer's authored text lives in content.md ([[key]] slots), which is kept
-in sync with the Google Doc via `make pull-doc`. This module parses that file,
+drafted in a Google Doc (File > Import text from the Doc). This module parses that file,
 converts inline Markdown to the exact HTML the report expects, and resolves
 footnote refs.
 

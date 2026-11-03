@@ -53,7 +53,6 @@ const SHELL_FILES = [
   './start.html',
   './edit.html',
   './collab-client.js',
-  './htmlimport.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
