@@ -6886,3 +6886,10 @@ mark.search-highlight {
     .county-overview { grid-template-columns: 1fr; }
     .cdonut-chart { margin: 0 auto; }
 }
+
+/* Embedded on another site (the parent resizes the iframe to fit this page,
+   see the setHeight script in index.html). Viewport-relative heights would
+   chase the iframe height upward forever, so drop them when embedded. */
+html.embed-auto .app-container,
+html.embed-auto .compare-page { min-height: 0; }
+html.embed-auto .compare-page .table-scroll.is-wide { max-height: none; }

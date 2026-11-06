@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;1,6..72,500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css?v=210">
+    <link rel="stylesheet" href="css/styles.css?v=20261105164246">
     <!-- Chart.js for visualizations — self-hosted so the app never depends on a
          third-party CDN being reachable. A blocked or slow cdn.jsdelivr.net was
          a render-blocking single point of failure that could hang the page on
@@ -131,6 +131,33 @@
             } catch (e) { /* cross-origin access error → treat as embedded */
                 var btn = document.getElementById('open-fullpage-btn');
                 if (btn) { btn.href = window.location.href; btn.hidden = false; }
+            }
+        })();
+
+        // When embedded, keep the parent iframe exactly as tall as this page so
+        // the tracker never scrolls inside its own box. Pairs with the listener
+        // in the Squarespace code block (message type 'setHeight').
+        (function() {
+            if (window.self === window.top) return;
+            document.documentElement.classList.add('embed-auto');
+            var last = 0;
+            function report() {
+                var h = Math.ceil(document.body.getBoundingClientRect().height);
+                if (!h || Math.abs(h - last) < 3) return;
+                last = h;
+                window.parent.postMessage({ type: 'setHeight', height: h }, '*');
+            }
+            window.addEventListener('load', function() {
+                report();
+                // late-rendering tables/fonts: re-check a couple of times
+                setTimeout(report, 800); setTimeout(report, 2500);
+            });
+            window.addEventListener('hashchange', function() { setTimeout(report, 50); });
+            window.addEventListener('resize', report);
+            if (typeof ResizeObserver !== 'undefined') {
+                new ResizeObserver(report).observe(document.body);
+            } else {
+                setInterval(report, 500);
             }
         })();
 
