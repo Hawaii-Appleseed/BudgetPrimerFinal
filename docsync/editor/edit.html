@@ -15945,6 +15945,51 @@ function railInsert(at) {
   return b;
 }
 
+/** Delete a blank page and everything placed on it: one undo step, one render.
+ *  The strip's × asks first; the pilot's removePage says what went in its
+ *  answer. Returns the ids that went with the page. */
+async function deleteBlankPage(pid) {
+  pushHistory();
+  const blanks = pageBlanks().filter(b => b.id !== pid);
+  writeOrder(pageOrder().filter(p => p !== pid), blanks);
+  if (layout.pageMasters) {
+    delete layout.pageMasters[String(pid)];
+    if (!Object.keys(layout.pageMasters).length) delete layout.pageMasters;
+  }
+  // Nothing can render on a page that no longer exists — orphaned shapes/
+  // boxes/tables would otherwise sit invisible in layout.json and silently
+  // reappear if a future blank page reused this same id.
+  const gone = [];
+  layout.shapes = layout.shapes.filter(s => {
+    if (s.page !== pid) return true; gone.push(s.id); return false;
+  });
+  boxes().filter(b => b.page === pid).forEach(b => unlinkFrame(b.id));
+  layout.boxes = boxes().filter(b => {
+    if (b.page !== pid) return true; gone.push('text.' + b.id); return false;
+  });
+  layout.tables = tables().filter(t => {
+    if (t.page !== pid) return true; gone.push('table.' + t.id); return false;
+  });
+  forgetInGroups(gone);
+  gone.forEach(id => selIds.delete(id));
+  if (layout.locked) layout.locked = layout.locked.filter(id => !gone.includes(id));
+  await render();
+  $('stat').textContent = `page deleted`;
+  return gone;
+}
+
+/** Take a DESIGNED page out of the report: left out of pages.order, which is
+ *  all "hidden" ever meant. Its words stay in the document and the strip's
+ *  Hidden group shows it again, so this is undone two ways. The editor's own
+ *  chrome no longer offers it (see chip()); the pilot does, for the connector,
+ *  which otherwise had to reach into the page with a script to drop a page. */
+async function hideDesignedPage(pid) {
+  pushHistory();
+  writeOrder(pageOrder().filter(p => p !== pid), pageBlanks());
+  await render();
+  $('stat').textContent = `page ${pid} taken out of the report — the page strip's Hidden group shows it again`;
+}
+
 function chip(pid, pos, label, isHidden) {
   const isBlank = typeof pid === 'string';
   const c = document.createElement('div');
@@ -15987,32 +16032,7 @@ function chip(pid, pos, label, isHidden) {
             + `they go with it and cannot be recovered from here.`,
             { okLabel: 'Delete page', danger: true })) return;
       }
-      pushHistory();
-      const blanks = pageBlanks().filter(b => b.id !== pid);
-      writeOrder(pageOrder().filter(p => p !== pid), blanks);
-      if (layout.pageMasters) {
-        delete layout.pageMasters[String(pid)];
-        if (!Object.keys(layout.pageMasters).length) delete layout.pageMasters;
-      }
-      // Nothing can render on a page that no longer exists — orphaned shapes/
-      // boxes/tables would otherwise sit invisible in layout.json and silently
-      // reappear if a future blank page reused this same id.
-      const gone = [];
-      layout.shapes = layout.shapes.filter(s => {
-        if (s.page !== pid) return true; gone.push(s.id); return false;
-      });
-      boxes().filter(b => b.page === pid).forEach(b => unlinkFrame(b.id));
-      layout.boxes = boxes().filter(b => {
-        if (b.page !== pid) return true; gone.push('text.' + b.id); return false;
-      });
-      layout.tables = tables().filter(t => {
-        if (t.page !== pid) return true; gone.push('table.' + t.id); return false;
-      });
-      forgetInGroups(gone);
-      gone.forEach(id => selIds.delete(id));
-      if (layout.locked) layout.locked = layout.locked.filter(id => !gone.includes(id));
-      await render();
-      $('stat').textContent = `page deleted`;
+      await deleteBlankPage(pid);
     });
     c.appendChild(x);
   } else if (isHidden) {
@@ -33676,7 +33696,7 @@ const PILOT_BATCH_VERBS = {
 // and renders nothing — it is here because this set is also the allowlist of
 // what a room message may reach, and asking what styles exist has to be
 // possible before dressing anything in one.
-const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute']);
+const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'removePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute']);
 
 /** A pilot op relayed by the hub's room — the connector's arrange_report —
  *  applied here as docsync.api.batch(), one undo step, the same validation
@@ -34075,6 +34095,23 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       return { ok: false, error: `no page '${page}' — check inventory().pages` };
     const r = await duplicatePage(/^\d+$/.test(String(page)) ? +page : page);
     return { ...docsync.api.status(), ...r, pageOrder: pageOrder() };
+  },
+
+  /** Take a page out of the report. A blank page is deleted with whatever is
+   *  placed on it (`removed` lists the ids); a designed page is left out of
+   *  the page order and stays in the strip's Hidden group (`hidden: true`).
+   *  Either way one undo step. The last page in the order is refused. */
+  async removePage(page) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const pid = pageOrder().find(p => String(p) === String(page));
+    if (pid == null) return { ok: false, error: `no page '${page}' — check inventory().pages` };
+    if (pageOrder().length < 2) return { ok: false, error: 'a report keeps at least one page' };
+    if (typeof pid === 'string') {
+      const removed = await deleteBlankPage(pid);
+      return { ...docsync.api.status(), page: pid, removed, pageOrder: pageOrder() };
+    }
+    await hideDesignedPage(pid);
+    return { ...docsync.api.status(), page: pid, hidden: true, pageOrder: pageOrder() };
   },
 
   /** Declare a source; cite it by putting its [^id] token into slot text. */
