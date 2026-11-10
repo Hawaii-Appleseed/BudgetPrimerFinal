@@ -268,6 +268,13 @@ class ProjectState:
         self.pilot_pending: list[dict] = []   # queued, not yet handed to a tab
         self.pilot_results: dict[str, dict] = {}   # op id -> what the tab returned
         self.pilot_n = 0                      # op-id counter
+        # When an editor of this project last showed it was alive (its live
+        # stream, its poll, a claim), and how many streams it holds now. Only
+        # ever read to WORD an unclaimed op's answer: "no editor is listening"
+        # said the same thing whether the project had no editor, the op named
+        # no project and fell to the default, or the editor was right there.
+        self.seen_at = 0.0
+        self.streams = 0
 
 
 STATE = {pid: ProjectState() for pid in PROJECTS}
@@ -1004,6 +1011,20 @@ def _page_alone(html: str, n: int) -> str:
     return out[:k] + ISOLATE_CSS + out[k:] if k >= 0 else ISOLATE_CSS + out
 
 
+# How long a project's editor counts as open after it last showed it was alive:
+# a tab in front polls every 2s, a hidden one is throttled to once a minute.
+EDITOR_SEEN_S = 90
+
+
+def _relay_wait(req: dict, default: float = 30.0) -> float:
+    """A relayed op's `timeout` in seconds, clamped to 1..120."""
+    try:
+        wait = float(req.get("timeout", default))
+    except (TypeError, ValueError):
+        wait = default
+    return max(1.0, min(120.0, wait))
+
+
 def _export_bad_args(req: dict) -> str | None:
     """The message for the first malformed /__export argument, or None if the
     request is worth building. Pure and side-effect free so both the real
@@ -1634,11 +1655,13 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _bytes(self, code, ctype, data, filename):
+    def _bytes(self, code, ctype, data, filename, headers=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(data)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
 
@@ -1741,6 +1764,7 @@ class Handler(SimpleHTTPRequestHandler):
             return {"ok": True, "v": 0, "ahead": 0, "project": pid,
                     "serverStale": stale}
         st = STATE[pid]
+        st.seen_at = time.time()
         # Stamp WHOSE numbers these are. Tabs relay live events to each other
         # through localStorage, and the key alone used to be the only thing
         # keeping two projects apart — a tab with no project id fell into a
@@ -2015,12 +2039,15 @@ class Handler(SimpleHTTPRequestHandler):
             if st is None:
                 time.sleep(min(45, deadline - time.time()))
                 return
+            with st.cond:
+                st.streams += 1
             while time.time() < deadline:
                 with st.cond:
                     st.cond.wait_for(lambda: st.version != seen or st.error is not None
                                       or bool(st.pilot_pending),
                                       timeout=min(20, max(0.1, deadline - time.time())))
                     v, err = st.version, st.error
+                    st.seen_at = time.time()
                 # A heartbeat keeps proxies from closing an idle stream. ahead
                 # rides along so a Save elsewhere (another tab, another Claude
                 # session) updates every open editor's Push button too.
@@ -2056,6 +2083,10 @@ class Handler(SimpleHTTPRequestHandler):
                 seen = v
         except (BrokenPipeError, ConnectionResetError):
             pass
+        finally:
+            if st is not None:
+                with st.cond:
+                    st.streams = max(0, st.streams - 1)
 
     # The server binds to loopback, so only this Mac can reach it — but every
     # web page open in the browser is on this Mac too. A page anywhere could
@@ -2187,6 +2218,18 @@ class Handler(SimpleHTTPRequestHandler):
                 bad = _export_bad_args(req)
                 if bad:
                     return self._json(400, {"ok": False, "error": bad})
+                # WHICH draft is real even here: with no content and layout
+                # the open editor is asked for its own (_export_draft), and the
+                # answer names where the draft came from and its digest, so a
+                # spec can prove it was the editor's unsaved words.
+                said = {}
+                xpid = req.get("project") or DEFAULT_PROJECT
+                if xpid in PROJECTS:
+                    c, _lay, where = self._export_draft(xpid, PROJECTS[xpid]["binding"], req)
+                    if c is None:
+                        return self._json(where[0], {"ok": False, "error": where[1]})
+                    said = {"X-Primer-Draft": where,
+                            "X-Primer-Draft-Sha": hashlib.sha256(c.encode()).hexdigest()[:16]}
                 # The kind asked for, in the kind's own type: the editor
                 # refuses a "file" whose type is not what it asked for (a
                 # crash page used to be saved as Report.pdf), so a PNG/JPEG
@@ -2207,6 +2250,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
+                for k, v in said.items():
+                    self.send_header(k, v)
                 self.end_headers()
                 self.wfile.write(body)
                 return
@@ -2387,6 +2432,13 @@ class Handler(SimpleHTTPRequestHandler):
         st = _content_status(root)
         CONTENT[str(root)] = st
         if not st["behind"]:
+            # Nothing behind AND a reason means the check itself failed — no
+            # fetch, no upstream — and that is not "up to date". It used to be
+            # answered as one: ok, "already up to date", over a repo nobody
+            # had been able to look at.
+            if st["why"]:
+                return self._json(200, {"ok": False, "error":
+                                        f"could not check for newer content — {st['why']}"})
             return self._json(200, {"ok": True, "message": "already up to date"})
         if not st["can"]:
             return self._json(200, {"ok": False, "error": st["why"] or "cannot fast-forward"})
@@ -2914,12 +2966,7 @@ class Handler(SimpleHTTPRequestHandler):
         args = req.get("args", [])
         if not isinstance(args, list):
             args = [args]
-        try:
-            wait = float(req.get("timeout", 30))
-        except (TypeError, ValueError):
-            wait = 30.0
-        wait = max(1.0, min(120.0, wait))
-        st = STATE[pid]
+        wait = _relay_wait(req)
         # `tab` aims the op at ONE editor (docsync.api.status().tab). Leader
         # election gives one claimant per browser profile, but two profiles —
         # or two automated browser contexts — with the same project open each
@@ -2927,29 +2974,52 @@ class Handler(SimpleHTTPRequestHandler):
         # first. Naming a tab removes that ambiguity; omitting it is right for
         # the ordinary one-browser case.
         tab = req.get("tab")
+        got, op_id, result = self._relay(pid, verb, args, wait, tab)
+        if got == "ok":
+            return self._json(200, {"ok": True, "id": op_id, "result": result})
+        return self._json(200, {"ok": False, "error":
+                                self._unrelayed(got, pid, bool(req.get("project")), tab, wait)})
+
+    def _relay(self, pid: str, verb: str, args: list, wait: float, tab=None):
+        """Hand one op to the open editor and wait for its answer: ("ok", id,
+        result), or ("unclaimed" | "unanswered", id, None). Undelivered and
+        delivered-but-unanswered are different problems, so they stay apart."""
+        st = STATE[pid]
         with st.cond:
             st.pilot_n += 1
             op_id = f"op{st.pilot_n}"
             st.pilot_pending.append({"id": op_id, "verb": verb, "args": args,
                                      "tab": tab})
             st.cond.notify_all()          # wake the SSE writer holding the stream
-            got = st.cond.wait_for(lambda: op_id in st.pilot_results, timeout=wait)
-            if got:
-                return self._json(200, {"ok": True, "id": op_id,
-                                        "result": st.pilot_results.pop(op_id)})
-            # Undelivered vs delivered-but-unanswered are different problems.
+            if st.cond.wait_for(lambda: op_id in st.pilot_results, timeout=wait):
+                return "ok", op_id, st.pilot_results.pop(op_id)
             still_queued = any(o["id"] == op_id for o in st.pilot_pending)
             st.pilot_pending = [o for o in st.pilot_pending if o["id"] != op_id]
-        if still_queued:
-            if tab:
-                return self._json(200, {"ok": False, "error":
-                    f"no editor tab '{tab}' claimed the op — that tab is closed "
-                    "or is not the one holding the live stream"})
-            return self._json(200, {"ok": False, "error":
-                "no editor is listening — open the report's edit.html "
-                "(a tab must hold the live stream for a pilot op to run)"})
-        return self._json(200, {"ok": False, "error":
-            f"the editor took the op but did not answer within {wait:g}s"})
+        return ("unclaimed" if still_queued else "unanswered"), op_id, None
+
+    def _unrelayed(self, got: str, pid: str, named: bool, tab, wait: float) -> str:
+        """Why a relayed op came back with no answer, worded at the fix. One
+        sentence used to cover every case, and on 2026-11-09 it was read as
+        "the editor is broken" twice with the tab open (FINDINGS R9)."""
+        if got == "unanswered":
+            return f"the editor took the op but did not answer within {wait:g}s"
+        now = time.time()
+        alive = lambda s: s.streams > 0 or now - s.seen_at < EDITOR_SEEN_S  # noqa: E731
+        if tab:
+            msg = (f"no editor tab '{tab}' claimed the op — that tab is closed, "
+                   f"or is open on another report")
+        elif alive(STATE[pid]):
+            msg = (f"an editor of '{pid}' is open but did not take the op within "
+                   f"{wait:g}s — it may still be loading, or the browser has "
+                   f"suspended its tab")
+        else:
+            msg = f"no editor of '{pid}' is listening — open its edit.html"
+        if not named:
+            msg += f" (no project was named, so the op went to the default, '{pid}')"
+        others = sorted(p for p, s in STATE.items() if p != pid and alive(s))
+        if others and not (tab and named):
+            msg += "; an editor is open on " + ", ".join(f"'{p}'" for p in others)
+        return msg
 
     # The claim: an atomic pop, so however many tabs (or zombie streams) heard
     # the advertisement, exactly one caller carries the ops away. Only the
@@ -2963,6 +3033,7 @@ class Handler(SimpleHTTPRequestHandler):
         tab = req.get("tab")
         st = STATE[pid]
         with st.cond:
+            st.seen_at = time.time()
             # An op naming a tab is only ever handed to that tab; an untargeted
             # one goes to whoever claims first. Both are an atomic pop, so no
             # op is handed out twice however many tabs are asking.
@@ -2986,6 +3057,47 @@ class Handler(SimpleHTTPRequestHandler):
             st.cond.notify_all()
         return self._json(200, {"ok": True})
 
+    def _export_draft(self, pid: str, b, req: dict):
+        """What an export builds: (content, layout, where it came from), or
+        (None, None, (status, message)).
+
+        The request's own pair first — the editor's Download sends it. With
+        neither, the OPEN editor's draft, unsaved edits and all, asked for
+        through the pilot relay (docsync.api.draft()), or with `saved: true`
+        the files on disk. Before this, exporting a draft from outside meant
+        getting the page to post its source and layout somewhere first: the
+        2026-11-09 session stood up a one-shot localhost receiver and had the
+        page fetch() into it (FINDINGS R9)."""
+        content, layout = req.get("content"), req.get("layout")
+        if content is not None and layout is not None:
+            return content, layout, "request"
+        if content is not None or layout is not None:
+            return None, None, (400, "give content and layout together, or "
+                                     "neither (the open editor's draft is used)")
+        if req.get("saved"):
+            try:
+                content = b.content.read_text()
+                lay = b.editor.layout if b.editor else None
+                layout = lay.read_text() if lay and lay.exists() else "{}\n"
+            except OSError as e:
+                return None, None, (500, f"cannot read the saved files: {e}")
+            return content, layout, "saved"
+        wait = _relay_wait(req, 20.0)
+        got, _, result = self._relay(pid, "draft", [], wait, req.get("tab"))
+        if got != "ok":
+            return None, None, (503, self._unrelayed(got, pid, bool(req.get("project")),
+                                                     req.get("tab"), wait)
+                                + " — or send content and layout, or saved: true "
+                                  "for the files on disk")
+        if not (isinstance(result, dict) and result.get("ok")
+                and isinstance(result.get("content"), str)
+                and isinstance(result.get("layout"), str)):
+            err = str(result.get("error") if isinstance(result, dict) else result)
+            if "unknown verb" in err:
+                err += " (that editor predates draft(): reload its tab)"
+            return None, None, (502, f"the editor did not hand over its draft: {err}")
+        return result["content"], result["layout"], "editor"
+
     def _export(self, req):
         pid = req.get("project") or DEFAULT_PROJECT
         p = PROJECTS.get(pid)
@@ -3007,9 +3119,10 @@ class Handler(SimpleHTTPRequestHandler):
         want_page = req.get("page")
         if want_page is not None:
             want_page = int(want_page)
-        content, layout = req.get("content"), req.get("layout")
-        if content is None or layout is None:
-            return self._json(400, {"ok": False, "error": "content and layout required"})
+        content, layout, where = self._export_draft(pid, b, req)
+        if content is None:
+            return self._json(where[0], {"ok": False, "error": where[1]})
+        said = {"X-Primer-Draft": where}
         marks = bool(req.get("marks"))
         work = Path(tempfile.mkdtemp(prefix="primer-exp-"))
         token = work.name.rsplit("-", 1)[-1]
@@ -3040,7 +3153,7 @@ class Handler(SimpleHTTPRequestHandler):
                     out_html.write_text(_only_pages(html, keep))
                 out_html.write_text(_size_pageless(out_html.read_text()))
                 data = self._chrome_pdf(out_html)
-                return self._bytes(200, "application/pdf", data, f"{pid}.pdf")
+                return self._bytes(200, "application/pdf", data, f"{pid}.pdf", said)
             html = out_html.read_text()
             npages = html.count('<section class="page')
 
@@ -3062,9 +3175,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if one is None:
                     return self._json(200, {"ok": False,
                         "error": "Chrome produced no PNG within the time limit."})
-                return self._bytes(200, "image/png", one, f"{pid}-page-{n:02d}.png")
+                return self._bytes(200, "image/png", one, f"{pid}-page-{n:02d}.png", said)
             data = self._chrome_png_zip(page_uri, npages, pid, scale)
-            return self._bytes(200, "application/zip", data, f"{pid}-pages.zip")
+            return self._bytes(200, "application/zip", data, f"{pid}-pages.zip", said)
         except Exception as e:                        # noqa: BLE001 — report it
             return self._json(200, {"ok": False, "error": str(e)})
         finally:
