@@ -24463,12 +24463,16 @@ function startLive(onEvent) {
   const relay = d => {
     try { localStorage.setItem(EV, JSON.stringify({ ...d, _n: ++evN + '.' + Date.now() })); } catch (e) {}
   };
+  // Whether the holder is IN VIEW rides the lock (`vis`): see elect().
   const setLock = () => {
-    try { localStorage.setItem(LK, JSON.stringify({ id: meId, t: Date.now() })); } catch (e) {}
+    try { localStorage.setItem(LK, JSON.stringify({ id: meId, t: Date.now(), vis: !document.hidden })); } catch (e) {}
   };
   const readLock = () => {
     try { return JSON.parse(localStorage.getItem(LK) || 'null'); } catch (e) { return null; }
   };
+  // A hidden holder's lock is given longer to go stale (see elect()).
+  const HIDDEN_STALE_MS = 90000;
+  const lockLive = lk => !!lk && Date.now() - lk.t < (lk.vis === false ? HIDDEN_STALE_MS : STALE_MS);
   const openStream = () => {
     if (es) return;
     try {
@@ -24495,6 +24499,12 @@ function startLive(onEvent) {
     leading = true;
     openStream();
     hb = setInterval(() => {
+      // Refresh the lock only while it is still this tab's. A tab in view
+      // takes it from a hidden one (elect), and writing it back here handed
+      // it straight back: two tabs trading the lock every beat, both holding
+      // a stream, which is the pile-up this election exists to prevent.
+      const held = readLock();
+      if (lockLive(held) && held.id !== meId) { stopLeading(); return; }
       setLock();
       // The leader's poll: the fallback if the SSE drops, and how a Save/Push in
       // ANY tab reaches every tab's button. Followers never poll.
@@ -24515,11 +24525,22 @@ function startLive(onEvent) {
         });
     }, HB_MS);
   };
+  // A tab in view is preferred, but a HIDDEN tab leads while no tab in view
+  // does. "Hidden" is the browser's word, and it says it of more than a
+  // background tab: a Chrome window another window covers (macOS), the
+  // desktop app's browser pane while it is folded away. A hidden tab used to
+  // never lead, so an editor in any of those held no stream, claimed no pilot
+  // op, and POST /__pilot answered "no editor is listening" with the editor
+  // right there (2026-11-09, twice; a direct eval in the same tab worked). A
+  // tab in view takes over from a hidden holder at its next beat, and a
+  // hidden holder's lock is given longer to go stale, since a hidden tab's
+  // timers — this heartbeat among them — are throttled, to once a minute
+  // after five minutes. An older tab's lock has no `vis`: it is a tab in view.
   const elect = () => {
-    if (document.hidden) { stopLeading(); return; }    // a hidden tab never leads
     const lk = readLock();
-    if (!lk || Date.now() - lk.t >= STALE_MS || lk.id === meId) startLeading();  // vacant / stale / already mine
-    else stopLeading();                                                          // someone else holds it → follow
+    if (!lockLive(lk) || lk.id === meId) startLeading();             // vacant / stale / already mine
+    else if (!document.hidden && lk.vis === false) startLeading();   // in view beats hidden
+    else stopLeading();                                              // someone else holds it → follow
   };
   const catchUpOnce = () =>
     fetch(withProject('/__ping'), { cache: 'no-store' }).then(r => r.json()).then(apply).catch(() => {});
@@ -33646,6 +33667,16 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       // collaborator's (`via`). Null when none.
       agent: agentsAtWork()[0] || null,
     };
+  },
+
+  /** The document as it stands in THIS editor, unsaved edits and all: the
+   *  pair File ▸ Download sends to /__export. POST /__export with neither
+   *  content nor layout asks the open editor for exactly this, so exporting
+   *  the draft from outside is one call (it used to take a receiver the page
+   *  had to post its own source and layout to). */
+  draft() {
+    return { ok: true, project: M.id, dirty, content: source,
+             layout: JSON.stringify(layout, null, 2) + '\n' };
   },
 
   /** The whole document as data: pages in order, every element with its id,
