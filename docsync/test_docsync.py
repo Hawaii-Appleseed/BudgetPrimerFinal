@@ -5650,6 +5650,118 @@ _cp.lay_out(_plain, section_pattern("appleseed-report"),
 check_eq("endnotes: a text that cites nothing gets no endnotes page",
          [b for b in _plain["boxes"] if b.get("act") == "endnotes"], [])
 
+# --- the endnotes section: no heading, its own spacing, a second page (R5) -----
+# FINDINGS R5, the Wealth Tax run of 2026-11-09: (c) the section's box could
+# not do without words of its own — they are only its heading, and a heading
+# set beside it as its own box left none, which refused the draft; (d) the
+# box's paragraph spacing landed on every note, so a 0.77in space meant for
+# under the heading made the list twenty inches tall; (e) one box could not
+# continue onto a second page.
+_EN_ST = {"font": "Source Sans 3", "size": 10.5, "leading": 1.22, "spaceAfter": 0.77}
+
+
+def _en_layout(boxes):
+    _L5 = _layout({"boxes": boxes})
+    _f5 = Footnotes({"a": ("A source", "https://example.org/a"), "b": ("A book", "")})
+    _L5.bind_footnotes(_f5)
+    _f5.order, _f5.settled = ["a", "b"], True
+    return _L5
+
+
+check_eq("endnotes (c): the section's box loads with no words of its own",
+         _layout_error({"boxes": [{"id": "e", "page": 1, "x": 1, "y": 1, "w": 5,
+                                   "md": "", "act": "endnotes"}]}), "no error raised")
+check("endnotes (c): any other box with no words is still refused",
+      _layout_error({"boxes": [{"id": "e", "page": 1, "x": 1, "y": 1, "w": 5, "md": ""}]}),
+      "has no text")
+os.environ["DOCSYNC_EDIT"] = "1"
+try:
+    _solo = _en_layout([{"id": "e", "page": 1, "x": 1, "y": 1, "w": 5, "md": "",
+                         "act": "endnotes"}]).text_boxes(1)
+    _thr = _en_layout([
+        {"id": "e", "page": 1, "x": 1, "y": 1, "w": 5, "h": 9, "md": "## Endnotes",
+         "act": "endnotes", "style": _EN_ST, "next": "e2"},
+        {"id": "e2", "page": 2, "x": 1, "y": 0.75, "w": 5, "h": 9, "md": "", "style": _EN_ST}])
+    _t1, _t2 = _thr.text_boxes(1), _thr.text_boxes(2)
+    _plain_en = _en_layout([{"id": "e", "page": 1, "x": 1, "y": 1, "w": 5,
+                             "md": "## Endnotes", "act": "endnotes"}]).text_boxes(1)
+finally:
+    del os.environ["DOCSYNC_EDIT"]
+check_eq("endnotes (c): no words, no heading — the list stands alone",
+         ("<h2" in _solo, '<ol class="ds-endnotes"' in _solo), (False, True))
+check("endnotes (d): the box's spacing goes on a wrapper round its heading",
+      _t1, '<div class="ds-en-head" style="--ds-sa:0.77in"><h2 class="sub">Endnotes</h2></div>')
+check_eq("endnotes (d): …and not on the box, where it reached every note",
+         bool(re.search(r'ds-endnotes-sec[^>]*--ds-sa', _t1)), False)
+check("endnotes (d): each note keeps its own space under it", _t1, 'style="margin-bottom:.6em"')
+check("endnotes (e): the section starts a thread its list runs on through", _t1,
+      'class="ds-textbox ds-endnotes-sec ds-thread" data-thread="e" data-thread-i="0"')
+check("endnotes (e): a frame it runs on into is part of the section", _t2,
+      'class="ds-textbox ds-thread ds-endnotes-sec ds-endnotes-cont" data-thread="e" data-thread-i="1"')
+check_eq("endnotes (e): …and is set in the list's type without the heading's spacing",
+         ("font-size:10.5px" in _t2, "--ds-sa" in _t2), (True, False))
+check_eq("endnotes: a section with no spacing and no thread draws as it always did",
+         ("ds-en-head" in _plain_en, "data-thread" in _plain_en,
+          bool(re.search(r'<div class="ds-textbox ds-endnotes-sec" data-el="text\.e"', _plain_en))),
+         (False, False, True))
+check("endnotes (e): only the FIRST frame of a thread may be the section",
+      _layout_error({"boxes": [
+          {"id": "a", "page": 1, "x": 1, "y": 1, "w": 5, "h": 2, "md": "Words", "next": "e"},
+          {"id": "e", "page": 2, "x": 1, "y": 1, "w": 5, "h": 2, "md": "", "act": "endnotes"}]}),
+      "cannot carry 'act'")
+check("endnotes (e): nothing else that acts may be in a thread",
+      _layout_error({"boxes": [
+          {"id": "a", "page": 1, "x": 1, "y": 1, "w": 5, "h": 2, "md": "Print", "act": "pdf",
+           "next": "b"},
+          {"id": "b", "page": 2, "x": 1, "y": 1, "w": 5, "h": 2, "md": ""}]}),
+      "cannot carry 'act'")
+
+# The composer: a list longer than its page is laid out across pages.
+_LONG = lambda n: ("# T\nDate: November 2026\n\n## Introduction\n\nOpening."   # noqa: E731
+                   + "".join(f"[^n{i}]" for i in range(n)) + "\n\n## Next\n\nMore.\n\n"
+                   + "\n".join(f"[^n{i}]: A long source title, number {i}, with its authors, "
+                               f"its date and its publisher written out in full as reports "
+                               f"cite them — https://example.org/a/long/path/to/the/document/"
+                               f"number/{i}/report-in-full.pdf" for i in range(n)))
+for _n, _want in ((16, 1), (34, 2), (60, 3)):
+    _ll = TEMPLATES["appleseed-report"]["layout"]()
+    _lp = section_pattern("appleseed-report")
+    _lr = _cp.lay_out(_ll, _lp, _cp.parse(_LONG(_n)), "T")
+    _lids = {b["id"]: b for b in _ll["boxes"]}
+    _chain, _cur = [], next(b for b in _ll["boxes"] if b.get("act") == "endnotes")
+    while _cur is not None:
+        _chain.append(_cur)
+        _cur = _lids.get(_cur.get("next"))
+    check_eq(f"endnotes (e): {_n} long notes take {_want} page(s), a frame on each",
+             ([b["page"] for b in _chain], [bool(b["md"]) for b in _chain]),
+             (list(range(_chain[0]["page"], _chain[0]["page"] + _want)), [True] + [False] * (_want - 1)))
+    if _want > 1:
+        check_eq(f"endnotes (e): {_n} notes — every frame is sized to its page, the report ends with it",
+                 ([b.get("h") is not None for b in _chain], _lr["pages"]),
+                 ([True] * _want, _chain[-1]["page"]))
+        check_eq(f"endnotes (e): {_n} notes — the contents names the FIRST endnotes page",
+                 [t[1] for t in _lr["toc"] if t[0] == "Endnotes"], [_chain[0]["page"]])
+        _tpn = Path(tempfile.mktemp(suffix=".json"))
+        _tpn.write_text(json.dumps(_ll))
+        try:
+            Layout(_tpn)
+        except LayoutError as _e:
+            FAILS.append(f"endnotes (e): {_n} notes — the laid-out thread does not load: {_e}")
+        finally:
+            _tpn.unlink()
+    else:
+        check_eq(f"endnotes (e): {_n} notes fit one page — a box that grows, no thread",
+                 (_chain[0].get("h"), _chain[0].get("next")), (None, None))
+# An address breaks anywhere (word-break:break-all): one that does not fit
+# the rest of a line is split there, not carried whole onto the next.
+_URL = "https://example.org/" + "a" * 40
+_WORDS = " ".join(["word"] * 9)
+check_eq("endnotes: an address breaks anywhere, as the list draws it (3 lines, not 4)",
+         (_cp.lines_for(_WORDS + " " + "​".join(_URL), 2.0, 10.5,
+                        style={"font": "Source Sans 3", "size": 10.5}),
+          _cp.lines_for(_WORDS + " " + _URL, 2.0, 10.5,
+                        style={"font": "Source Sans 3", "size": 10.5})), (3, 4))
+
 # --- a Google Doc as the composer's text (docsync.gdoc, C) ---------------------
 from docsync import gdoc as _gd                                  # noqa: E402
 
