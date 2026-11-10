@@ -6345,7 +6345,12 @@ class Layout:
             _anim_check(b["anim"], where)
         if b.get("h") is not None:      # optional min-height (never clips)
             _num(b["h"], f"{where}.h")
-        if not str(b.get("md", "")).strip() and not self.in_thread(bid):
+        # The endnotes section is the exception: its markdown is only its
+        # heading, and the list is its words. A heading set as a box of its
+        # own beside it (as every section page sets one) leaves this box's
+        # empty, and that used to refuse the whole draft (FINDINGS R5c).
+        if (not str(b.get("md", "")).strip() and not self.in_thread(bid)
+                and b.get("act") != "endnotes"):
             raise LayoutError(f"{where}: has no text — 'md' is empty")
         # A box may ACT: 'pdf' (a Download-PDF button) or 'toggle' (an
         # expandable section — the button shows/hides another box). An
@@ -6464,6 +6469,12 @@ class Layout:
                     raise LayoutError(f"{where}: a threaded frame needs a height "
                                       f"'h' — a frame that grows never runs out of room")
                 for k in ("anchor", "wrap", "act"):
+                    # The endnotes section may START a thread: its list runs
+                    # on into the frames after it, which is how a list longer
+                    # than one page gets a second (FINDINGS R5e). Nothing else
+                    # that acts may be in one.
+                    if k == "act" and i == 0 and b.get(k) == "endnotes":
+                        continue
                     if b.get(k) is not None:
                         raise LayoutError(f"{where}: a threaded frame cannot carry '{k}'")
                 if b.get("cols") and int(b["cols"]) > 1:
@@ -6472,7 +6483,8 @@ class Layout:
                 if i and str(b.get("md", "")).strip():
                     raise LayoutError(f"{where}: only the first frame holds the "
                                       f"words — this one's would be lost")
-            if not str(chain[0].get("md", "")).strip():
+            if (not str(chain[0].get("md", "")).strip()
+                    and chain[0].get("act") != "endnotes"):    # its list is its words
                 raise LayoutError(f"box '{chain[0].get('id')}': the first frame of a "
                                   f"thread has no text")
 
@@ -7005,7 +7017,10 @@ class Layout:
                     "btn.setAttribute('aria-expanded',String(open))}"
                     '</script>')
         thread_of = {}
+        en_heads = set()               # endnotes sections whose list runs on
         for chain in self.threads():
+            if chain[0].get("act") == "endnotes":
+                en_heads.add(chain[0].get("id"))
             for i, fb in enumerate(chain):
                 thread_of[fb.get("id")] = (chain[0].get("id"), i)
         if any(b.get("id") in thread_of for b in mine):
@@ -7089,7 +7104,20 @@ class Layout:
                 css += f';mix-blend-mode:{b["blend"]}'
             if b.get("vAlign") or b.get("firstBaseline"):
                 css += ";" + box_frame_css(b)
-            style = text_css(self.styled_as(b.get("style")))
+            st_res = self.styled_as(b.get("style"))
+            # Every frame of the endnotes section — its box, and each frame its
+            # list runs on into. Their style's paragraph spacing belongs to the
+            # section's heading, never to each note: a 0.77in space after,
+            # meant for under the heading, landed under all sixteen notes and
+            # made the list twenty inches tall (FINDINGS R5d). The type itself
+            # (font, size, leading) stays on the box, which is the list's.
+            en_frame = act == "endnotes" or (thr is not None and thr[0] in en_heads)
+            head_sp = ""
+            if en_frame and st_res and any(st_res.get(k) is not None for k in SPACE_KEYS):
+                head_sp = text_css({k: st_res[k] for k in SPACE_KEYS
+                                    if st_res.get(k) is not None})
+                st_res = {k: v for k, v in st_res.items() if k not in SPACE_KEYS}
+            style = text_css(st_res)
             # Style FIRST, geometry second — the geometry must win their one
             # collision: align's inline-slot compensation appends width:100%
             # (right for a span with no box of its own), and written after the
@@ -7117,9 +7145,23 @@ class Layout:
                 body = (self._fn.endnotes_html(self)
                         if self._fn is not None and self._fn.settled
                         else Footnotes.MOUNT if self._fn is not None else "")
-                out.append(f'<div class="ds-textbox ds-endnotes-sec"{tag}{an}{PLACED} '
+                # No words is no heading (one set as a box beside it); the
+                # list stands alone. A heading with spacing of its own wears
+                # it on a wrapper, where it reaches the heading and no note.
+                md = str(b.get("md") or "")
+                head = block_html(md) if md.strip() else ""
+                if head and head_sp:
+                    head = f'<div class="ds-en-head" style="{head_sp}">{head}</div>'
+                klass, extra = "ds-textbox ds-endnotes-sec", ""
+                if thr is not None:
+                    # The first frame of a thread: THREAD_JS pours the notes
+                    # that do not fit on into the frames after it, the <ol>
+                    # split by whole items and numbered on with `start`.
+                    klass += " ds-thread"
+                    extra = f' data-thread="{thr[0]}" data-thread-i="{thr[1]}"'
+                out.append(f'<div class="{klass}"{extra}{tag}{an}{PLACED} '
                            f'style="{full}">'
-                           f'{block_html(b["md"])}{body}</div>')
+                           f'{head}{body}</div>')
                 continue
             if act == "toggle" and not edit:
                 # Published: a real button whose click flips the target's
@@ -7186,6 +7228,11 @@ class Layout:
             thr = thread_of.get(b.get("id"))
             if thr is not None:
                 klass += " ds-thread"
+                if en_frame:
+                    # A frame the endnotes run on into is part of the section:
+                    # the class is what tells the editor this list is the
+                    # engine's, not one a renderer drew (rendererHasEndnotes).
+                    klass += " ds-endnotes-sec ds-endnotes-cont"
                 extra += f' data-thread="{thr[0]}" data-thread-i="{thr[1]}"'
             sts = None if edit else split_states(b["md"])
             words = (states_html(b["id"], b.get("states") or "tabs", sts[0], sts[1])

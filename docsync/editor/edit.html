@@ -7103,6 +7103,9 @@ function layerMenu(d, el, e) {
           : 'thread broken';
       });
     }
+    // The endnotes section, or any frame its list runs on into.
+    if (isEndnotesBox(threadHead(tb)) && !isPageless())
+      item('Continue the endnotes on a new page', async () => { closeMenu(d); await continueEndnotes(); });
   }
   if (boxOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
@@ -8099,7 +8102,10 @@ function reportFit(d) {
   $('fit').hidden = false;
   $('fit').textContent = `⚠ ${pages.length} page${pages.length > 1 ? 's' : ''} cut in print: `
                        + pages.join(', ');
-  $('fit').title = bad.map(b => `page ${b.page}: ${b.who} is ${b.over}in past the ${b.side === 'right' ? 'right edge' : 'cut'}`).join('\n');
+  const en = endnotesBox();
+  const enFrames = en ? new Set(threadChain(en).map(x => 'text.' + x.id)) : new Set();
+  $('fit').title = bad.map(b => `page ${b.page}: ${b.who} is ${b.over}in past the ${b.side === 'right' ? 'right edge' : 'cut'}`
+    + (enFrames.has(b.who) && b.side !== 'right' ? ' (the endnotes: right-click them → Continue the endnotes on a new page)' : '')).join('\n');
   markCutChips(pages);
   syncCheckBadge();
 }
@@ -11184,7 +11190,9 @@ function editBox(d, el, at) {
     host.classList.remove('ds-edit');
     if (keep) {
       const want = newVal.trim();
-      const typed = newVal !== opened && want && want !== b.md;
+      // Emptied is a word change like any other for the endnotes section: its
+      // words are its heading, and the list stays (see isEndnotesBox).
+      const typed = newVal !== opened && (want || isEndnotesBox(b)) && want !== b.md;
       // Whose words, when two people wrote in this box at once.
       const settled = typed ? await collabFieldSettle(want, 'text box') : 'mine';
       if (settled === 'mine' && typed) {
@@ -12567,9 +12575,18 @@ function _threadValidate(fromId, toId) {
   if (threadPrev()[b.id]) return { ok: false, error: `'${b.id}' already continues another frame` };
   if (threadChain(b).some(x => x.id === threadHead(a).id))
     return { ok: false, error: 'that would make the thread loop back on itself' };
+  // The endnotes section may START a thread — its list then runs on into the
+  // frames after it, which is how a long list gets a second page (FINDINGS
+  // R5e) — but nothing else that acts may be in one, and the frames it runs
+  // into hold no words of their own: they would land between its heading
+  // and its list.
+  const enHead = isEndnotesBox(threadHead(a));
+  if (enHead && (b.md || '').trim())
+    return { ok: false, error: `'${b.id}' has words of its own — the endnotes run on only into an empty frame; continueEndnotes() adds one on a new page` };
   for (const x of [a, b]) {
     for (const k of ['anchor', 'wrap', 'act'])
-      if (x[k] != null) return { ok: false, error: `'${x.id}' carries '${k}', which a threaded frame cannot` };
+      if (x[k] != null && !(k === 'act' && x === threadHead(a) && isEndnotesBox(x)))
+        return { ok: false, error: `'${x.id}' carries '${k}', which a threaded frame cannot` };
     if ((x.cols | 0) > 1) return { ok: false, error: `'${x.id}' sets columns — a threaded frame cannot` };
   }
   return { ok: true };
@@ -12584,8 +12601,82 @@ function _threadApply(fromId, toId) {
   if (tail) head.md = `${(head.md || '').trim()}\n\n${tail}`;
   b.md = '';
   a.next = b.id;
-  threadChain(head).forEach(x => { if (x.h == null) x.h = boxHeightIn(x.id); });
+  // The list's type is the section box's style, and a frame draws in its own:
+  // a frame the notes run into without it set them in the page's default.
+  if (isEndnotesBox(head) && head.style && !b.style) b.style = clone(head.style);
+  // A frame is given its drawn height — except a frame the notes overflow,
+  // which is drawn past its page: it is given the page it stands on.
+  threadChain(head).forEach(x => {
+    if (x.h != null) return;
+    const drawn = boxHeightIn(x.id);
+    x.h = isEndnotesBox(head) ? Math.min(drawn, roomBelow(x)) : drawn;
+  });
   return { from: a.id, to: b.id, head: head.id, frames: threadChain(head).map(x => 'text.' + x.id) };
+}
+
+/** How far a box may run down its page before it reaches the page's foot:
+ *  above any box there that numbers its page (a footer, whatever it says),
+ *  else the page's margin, else three quarters of an inch from the edge. */
+function folioBoxesOn(pid) {
+  return boxes().filter(x => String(x.page) === String(pid) && /\{page\}/.test(x.md || ''));
+}
+function footOf(pid) {
+  const folios = folioBoxesOn(pid).map(x => +x.y || 0).filter(y => y > PAGE_H_IN / 2);
+  // The house gap above a footer, as the composer leaves it (compose.py's
+  // pattern "bottom": the footer's top less .35in).
+  if (folios.length) return Math.min(...folios) - 0.35;
+  const mg = marginsFor(pid);
+  return PAGE_H_IN - ((mg && mg.bottom != null) ? +mg.bottom : 0.75);
+}
+function roomBelow(b) {
+  return Math.max(1, +(footOf(b.page) - (+b.y || 0)).toFixed(2));
+}
+
+/** The endnotes run on onto a NEW page after the last one they reach: a
+ *  frame at the same width there, threaded after the section's last frame,
+ *  and every frame sized to its page (FINDINGS R5e: sixteen long notes only
+ *  just fitted one page, and a seventeenth had nowhere to go). The new page
+ *  takes the footer of the page it follows — the box that numbers it — so
+ *  it reads as the same section. Returns the new frame and page. */
+function _continueEndnotesApply() {
+  const head = endnotesBox();
+  const chain = threadChain(head);
+  const last = chain[chain.length - 1];
+  const order = pageOrder();
+  const blanks = pageBlanks();
+  let n = 1;
+  while (blanks.some(x => x.id === 'p' + n)) n++;
+  const pid = 'p' + n;
+  const at = order.findIndex(p => String(p) === String(last.page));
+  order.splice(at < 0 ? order.length : at + 1, 0, pid);
+  writeOrder(order, [...blanks, { id: pid }]);
+  folioBoxesOn(last.page).forEach(f => boxes().push({ ...clone(f), id: freeBoxId(), page: pid }));
+  const mg = marginsFor(pid);
+  const top = (mg && mg.top != null) ? +mg.top : 0.75;
+  const frame = { id: freeBoxId(), page: pid, x: last.x, y: top, w: last.w, z: last.z ?? 2, md: '' };
+  if (head.style) frame.style = clone(head.style);
+  frame.h = roomBelow(frame);
+  boxes().push(frame);
+  chain.forEach(x => { if (x.h == null) x.h = roomBelow(x); });
+  last.next = frame.id;
+  return { page: pid, frame: 'text.' + frame.id, frames: threadChain(head).map(x => 'text.' + x.id) };
+}
+function _continueEndnotesValidate() {
+  const head = endnotesBox();
+  if (!head) return { ok: false, error: 'this report has no endnotes section — addEndnotesSection() places one' };
+  if (isPageless()) return { ok: false, error: 'a pageless document has no next page — its endnotes simply run on down the sheet' };
+  if (masterItemOf('text.' + head.id)) return { ok: false, error: 'the endnotes box is a shared-layout item — detach it first' };
+  return { ok: true };
+}
+async function continueEndnotes() {
+  const v = _continueEndnotesValidate();
+  if (!v.ok) { $('stat').textContent = v.error; return v; }
+  pushHistory();
+  const r = _continueEndnotesApply();
+  markDirty();
+  await render();
+  $('stat').textContent = 'the endnotes now run on onto a new page after this one';
+  return { ok: true, ...r };
 }
 /** Break the thread after `id`. The story stays in the frames before the
  *  break (any that no longer fits is overset there, marked); the frames after
@@ -17465,7 +17556,7 @@ function storyWrite(key, md) {
   if (key.startsWith('text.')) {
     const b = boxOf(key);
     if (!b) return false;
-    if (!md.trim()) { $('stat').textContent = 'a text box needs words — delete it on the page instead'; return false; }
+    if (!md.trim() && !isEndnotesBox(b)) { $('stat').textContent = 'a text box needs words — delete it on the page instead'; return false; }
     b.md = fixOkina(md); return true;
   }
   return writeSlot(key, md) !== false;
@@ -26117,7 +26208,12 @@ function wire(roots) {
        report's own superscript rule supplies both — including the line-height:0
        that keeps a cited line the same height being edited as it is rendered.
        Setting either here would put the reflow straight back. */
-    .ds-chip.ds-fnchip { color:#2F3E46; }
+    /* The chip must take exactly the width of the marker it stands in for, or a
+       line that ends near the edge rewraps the moment you click in. The generic
+       chip's 3px padding and 1px outline made a footnote chip 11.6px wide
+       against the rendered marker's 5.6px (Wealth Tax Report, 2026-11-10), so
+       the ring is drawn with box-shadow (takes no space) and padding is 0. */
+    .ds-chip.ds-fnchip { color:#2F3E46; padding:0; outline:0; box-shadow:0 0 0 1px #B9C9BE; }
     .ds-thread-arm [data-el^="text."] { cursor:copy !important; }
     .ds-pen-arm section.page, .ds-pen-arm section.page * { cursor:crosshair !important; }
     .ds-fitgrid { display:grid; grid-template-columns:repeat(3,18px); gap:3px; padding:4px 10px 8px; }
@@ -26713,6 +26809,8 @@ function updateSource(id, text, url) {
  *  document, and a second one would be a duplicate that renumbers alongside
  *  the first. */
 const endnotesBox = () => boxes().find(b => b.act === 'endnotes');
+/** The endnotes section's box: its words are its heading and may be none. */
+const isEndnotesBox = b => !!b && b.act === 'endnotes';
 
 /** True when the RENDERER already draws an endnotes list of its own, so the
  *  editor must not offer to add a second. The rendered page is the only
@@ -33010,7 +33108,10 @@ function _pilotApplyDropStyle(scope, name) {
 function _pilotValidateSetBoxText(id, md) {
   if (!boxOf(id)) return { ok: false, error: `no text box '${id}' — check inventory()` };
   if (typeof md !== 'string') return { ok: false, error: 'setBoxText(id, markdown) — the words are one string' };
-  if (!(md || '').trim())
+  // The endnotes section's words are only its heading — the list is generated
+  // under them — so '' is a section with no heading of its own (one set as a
+  // box beside it, the way every section page sets one), not an empty box.
+  if (!(md || '').trim() && !isEndnotesBox(boxOf(id)))
     return { ok: false, error: 'md must be non-empty — remove(id) is how a box goes away' };
   return { ok: true };
 }
@@ -34255,6 +34356,16 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     return { ...docsync.api.status(), ...r };
   },
 
+  /** The endnotes run on onto a NEW page after the last page they reach: a
+   *  frame there at the same width, threaded after the section's last frame,
+   *  the page footer copied, every frame sized to its page. Call it again for
+   *  a third page. audit() says when it is needed ('endnotes-overflow'). */
+  async continueEndnotes() {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const r = await continueEndnotes();
+    return r.ok === false ? r : { ...docsync.api.status(), ...r };
+  },
+
   /** Break the thread after this frame. The frames after it are empty, so
    *  they are removed; what no longer fits is overset (audit() says so). */
   async unthread(id) {
@@ -34628,8 +34739,14 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   audit() {
     const d = $('out').contentDocument;
     const issues = [];
+    // The endnotes section is one box that grows with its list, so a list
+    // longer than its page runs off the bottom, where print cuts it: the cut
+    // says what to do about that one.
+    const enHead = endnotesBox();
+    const enFrames = enHead ? new Set(threadChain(enHead).map(x => 'text.' + x.id)) : new Set();
     lastFit.forEach(f => issues.push({ kind: 'print-overflow', page: f.page,
-      ids: [f.who].filter(Boolean), note: `${f.over}in past the print cut — save() refuses` }));
+      ids: [f.who].filter(Boolean), note: `${f.over}in past the print cut — save() refuses`
+        + (enFrames.has(f.who) && f.side !== 'right' ? '; continueEndnotes() runs the rest of the endnotes onto a new page' : '') }));
     // Placed movables only: shapes, boxes, tables, pinned designed elements.
     // Designed FLOW elements overlap constantly and correctly (backgrounds,
     // cards, columns) — auditing those would be all noise. Geometry comes
@@ -34832,9 +34949,11 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     // design put them. Fix by enlarging a frame or threading another.
     d.querySelectorAll('[data-thread][data-overset]').forEach(f => {
       const pg = f.closest('section[data-page]');
+      const notes = isEndnotesBox(boxOf(f.dataset.thread));
       issues.push({ kind: 'overset', page: pg ? pg.dataset.page : undefined,
         ids: [f.dataset.el || ('text.' + f.dataset.thread)],
-        note: 'the thread runs out of frames — enlarge one, or thread(this, another box)' });
+        note: notes ? 'the endnotes run out of frames — continueEndnotes() adds a page for the rest'
+                    : 'the thread runs out of frames — enlarge one, or thread(this, another box)' });
     });
     // ---- words squeezed into a box too narrow for them -----------------
     // A width typed in inches rather than dragged by eye: a word wider than

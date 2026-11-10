@@ -369,6 +369,11 @@ def _measured_lines(text: str, avail_px: float, size_px: float, style: dict,
             i += 1
             if ch in "*_`":
                 continue
+            if ch == "​":                    # a break with no space (break-all)
+                if word:
+                    words.append((word, gap))
+                    word, gap = 0.0, 0.0
+                continue
             face = _face(style, bold)
             ch = ch.upper() if caps else ch
             px = face.get(ch, face.get("n", 0.5)) * size_px
@@ -416,11 +421,29 @@ def lines_for(md: str, w_in: float, size_px: float, indent_chars: int = 0,
         return measured
     adv = _EM_ADVANCE_CAPS if caps else _EM_ADVANCE
     cpl = max(10, int(w_in * PX_PER_IN / (size_px * adv)) - indent_chars)
-    plain = re.sub(r"[*_`]+", "", plain)
+    plain = re.sub("[*_`​]+", "", plain)          # marks and break marks are not glyphs
     n = 0
     for ln in plain.split("\n"):
         n += max(1, math.ceil(len(ln.strip()) / cpl))
     return n
+
+
+def notes_height(notes, w_in: float, style: dict) -> float:
+    """How tall the engine's endnotes list draws at this width, in inches
+    (Footnotes.endnotes_html: an <ol> set in 1.4em, .6em under each note, and
+    each note its words and then its address, which breaks anywhere —
+    word-break:break-all, modelled as a break after every character).
+    `notes` are source lines' rests: "words — address", or words alone."""
+    size = float(style.get("size", 10.5))
+    lead = float(style.get("leading", 1.22))
+    w = w_in - 1.4 * size / PX_PER_IN
+    total = 0.0
+    for rest in notes:
+        m = re.match(r"^(.*?)\s*—\s*(\S+://\S+)$", str(rest).strip())
+        words, url = (m.group(1), m.group(2)) if m else (str(rest).strip(), "")
+        n = lines_for(f"{words} {chr(0x200b).join(url)}".strip(), w, size, style=style)
+        total += (n * lead + 0.6) * size / PX_PER_IN
+    return total
 
 
 def height_in(md: str, w_in: float, style: dict, kind: str = "para") -> float:
@@ -726,10 +749,15 @@ class Composer:
         self.used.add("callout")
         self.y = y + h + AROUND
 
-    def endnotes(self) -> str:
+    def endnotes(self, notes=()) -> str:
         """A last page: the engine's endnotes section, headed like a section
         (its own words are the heading), with the house hairline under the
-        heading grouped to it. Returns the section's box id."""
+        heading grouped to it. Returns the section's box id.
+
+        A list longer than its page runs on onto the pages after it: the box
+        is given the page's height, and frames threaded after it on new pages
+        take the rest (an endnotes section may start a thread). `notes` are
+        the cited sources' lines, which is what decides it."""
         self._new_page(None)
         h, en = self.p["heading"], self.p["endnotes"]
         box = self._box("notes", h["y"], "## [Endnotes]{.Section head}", en["style"],
@@ -740,6 +768,26 @@ class Composer:
         self.shapes.append({"id": rid, "page": self.page, **r})
         self._group([rid, "text." + box["id"]])
         self.used.add("endnotes")
+        hs = en.get("head") or h["style"]
+        # The heading is an <h2> holding a span in the headline's style: the
+        # span's line, and the h2's own margins (.83em of 1.5 times the list's
+        # size, the browser's).
+        size = float(en["style"].get("size", 10.5))
+        head = (float(hs.get("size", 44)) * float(hs.get("leading", 1.1))
+                + 2 * 0.83 * 1.5 * size) / PX_PER_IN
+        left = head + notes_height(notes, self.p["w"], en["style"])
+        room = self.p["bottom"] - h["y"]
+        if left <= room:
+            return box["id"]
+        box["h"] = round(room, 3)
+        prev, left = box, left - room
+        while left > 1e-6:
+            self._new_page(None)
+            top = self.p["cont_top"]
+            cap = self.p["bottom"] - top
+            nxt = self._box("notes", top, "", en["style"], self.p["w"], h=round(cap, 3))
+            prev["next"] = nxt["id"]
+            prev, left = nxt, left - cap
         return box["id"]
 
     def finish(self) -> int:
@@ -840,8 +888,9 @@ def lay_out(layout: dict, pattern: dict, doc: Doc, title: str,
     # section, so the list is placed and listed in the contents, never the
     # renderer's stand-in after the last sheet.
     if doc.citations() and pattern.get("endnotes"):
-        nid = c.endnotes()
-        c.toc.append(("Endnotes", c.page, nid, True))
+        first = c.page + 1                     # a long list runs on past it
+        nid = c.endnotes([doc.sources[s] for s in doc.citations() if s in doc.sources])
+        c.toc.append(("Endnotes", first, nid, True))
     pages = max(c.finish(), pattern["first_page"] - 1)
     styles = layout.setdefault("textStyles", {}) if c.used else {}
     if "callout" in c.used:
