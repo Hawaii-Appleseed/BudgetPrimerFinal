@@ -594,10 +594,19 @@ _SECTION = {
         "quote": "tpl-pull3",
         "drop": ["tpl-h4", "tpl-rule4", "tpl-body4a", "tpl-sub4", "tpl-body4b",
                  "tpl-foot4"],
-        "intro": {"id": "tpl-body3", "max_h": 3.45, "title": "Executive summary"},
+        "intro": {"id": "tpl-body3", "max_h": 3.45, "title": "Executive summary",
+                  "heading": "tpl-h3"},
         "intro_title": "Executive summary",
         "toc": "tpl-toc2",
         "meta": {"subtitle": "tpl-sub", "date": "tpl-date", "author": "tpl-author2"},
+        # Template words a report laid out from text must not keep: the
+        # cover's how-to note, and the copyright's "20XX".
+        "cover_note": "tpl-covernote", "copyright": "tpl-copy2",
+        # The summary page's demo devices: filled from the text's opening
+        # section (a > quote, a > [!NOTE] callout) or dropped, never left
+        # saying "THE HEADLINE FINDING GOES HERE".
+        "devices": {"quote": "tpl-pull3", "callout": "tpl-callout3",
+                    "chart": ["tpl-chart3", "tpl-fig3"]},
     },
     "appleseed-brief": {
         "first_page": 2, "heading": "tpl-h2", "rule": "tpl-rule2",
@@ -605,8 +614,30 @@ _SECTION = {
         "drop": ["tpl-h2", "tpl-rule2", "tpl-body2", "tpl-rec2", "tpl-foot"],
         "intro": None, "intro_title": "Summary", "toc": None,
         "meta": {"date": "tpl-date"},
+        "cover_note": "tpl-covernote", "copyright": None,
     },
 }
+
+
+def _tint(hex_color: str, amount: float = 0.08) -> str:
+    """The topic colour at `amount` over white: a panel's or a table band's
+    fill that belongs to the scheme (slate's is #EFF1F1)."""
+    h = hex_color.lstrip("#")
+    rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(f"{round(255 - (255 - c) * amount):02X}" for c in rgb)
+
+
+# The house devices a written document's figures, tables, callouts and
+# endnotes become (docsync.compose), as the Wealth Tax report set them by hand
+# on 2026-11-09 and the published reports show them: a caption in Barlow above
+# the picture, the source in small italic below; a callout as one panel box;
+# the endnotes page headed like a section.
+_SOURCE_STYLE = {"font": "Source Sans 3", "size": 11, "weight": 400,
+                 "italic": True, "color": _HOUSE["body"], "leading": 1.4}
+_CALLOUT_STYLE = {"font": "Source Sans 3", "size": 13.5, "color": "#1F1F1F",
+                  "leading": 1.45}
+_NOTES_STYLE = {"font": "Source Sans 3", "size": 10.5, "color": "#1F1F1F",
+                "leading": 1.22}
 
 
 def section_pattern(template: str, color: str | None = None) -> dict | None:
@@ -631,6 +662,13 @@ def section_pattern(template: str, color: str | None = None) -> dict | None:
                                                "size": 22, "color": topic}
     quote_style = dict(quote["style"]) if quote else {
         "font": "Source Sans 3", "size": 21, "color": topic, "leading": 1.35}
+    # A figure's caption wears the template's own figure caption (page 3's).
+    cap = next((b["style"] for b in lay["boxes"]
+                if str(b.get("md", "")).startswith("**Figure 1.**")), None)
+    cap_style = {"font": "Barlow", "size": 15, "color": _HOUSE["body"], **(cap or {})}
+    cap_style.setdefault("weight", 400)
+    cap_style.setdefault("leading", 1.25)
+    tint = _tint(topic)
     return {
         "first_page": spec["first_page"],
         "drop": spec["drop"],
@@ -649,6 +687,19 @@ def section_pattern(template: str, color: str | None = None) -> dict | None:
         "intro_title": spec["intro_title"],
         "toc": spec["toc"],
         "meta": spec["meta"],
+        "cover_note": spec.get("cover_note"),
+        "copyright": spec.get("copyright"),
+        "devices": dict(spec.get("devices") or {}),
+        "caption": cap_style,
+        "source": dict(_SOURCE_STYLE),
+        "table": {"headerFill": topic, "headerColor": "#FFFFFF", "band": tint},
+        "callout": {"panel": {"kind": "box", "fill": tint, "pad": 0.3,
+                              "border": {"sides": "left", "w": 5, "color": topic,
+                                         "style": "solid"},
+                              "style": dict(_CALLOUT_STYLE)},
+                    "head": {"font": "Barlow", "weight": 700, "size": 22,
+                             "color": topic, "leading": 1.1}},
+        "endnotes": {"style": dict(_NOTES_STYLE), "head": dict(h["style"])},
     }
 
 

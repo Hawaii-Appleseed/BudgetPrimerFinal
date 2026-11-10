@@ -26657,8 +26657,27 @@ const parseSources = () => readSlot('sources').split('\n').map(l => l.trim())
     const u = m[2].match(SOURCE_URL_RE);
     return { id: m[1], text: (u ? u[1] : m[2]).trim(), url: u ? u[2] : '' };
   }).filter(Boolean);
-const citeCount = id =>
-  (source.match(new RegExp(`\\[\\^${rxEsc(id)}\\]`, 'g')) || []).length;
+/** Every authored text a [^id] citation can sit in, as the engine numbers
+ *  them: content.md (the slots), a text box's own md and a table's cells, on
+ *  the pages and in a shared layout alike. A report the composer lays out
+ *  keeps all its words in text boxes, so counting content.md alone called
+ *  every citation it has "never cited" (16 false findings on one report,
+ *  2026-11-09), offered Delete on sources still cited, and a rename left each
+ *  [^id] in a box pointing at nothing. One { read, write } per text. */
+function citeSites() {
+  const out = [{ read: () => source, write: v => { source = v; } }];
+  [layout, ...Object.values(layout.masters || {})].forEach(h => {
+    (h.boxes || []).forEach(b => out.push({
+      read: () => String(b.md ?? ''), write: v => { b.md = v; } }));
+    (h.tables || []).forEach(t => (t.rows || []).forEach(row => row.forEach((_c, j) => out.push({
+      read: () => String(row[j] ?? ''), write: v => { row[j] = v; } }))));
+  });
+  return out;
+}
+const citeCount = id => {
+  const re = new RegExp(`\\[\\^${rxEsc(id)}\\]`, 'g');
+  return citeSites().reduce((n, s) => n + (s.read().match(re) || []).length, 0);
+};
 
 function updateSource(id, text, url) {
   // Replacer FUNCTION, not string: citation text is user-typed, and in a
@@ -26678,13 +26697,22 @@ const endnotesBox = () => boxes().find(b => b.act === 'endnotes');
  *  editor must not offer to add a second. The rendered page is the only
  *  honest source for this: the engine stamps ds-endnotes-sec on the box it
  *  draws, and everything else carrying endnote hooks (report2027's page 12,
- *  rxkids' sources section) is the renderer's own. */
+ *  rxkids' sources section) is the renderer's own — except the stand-in
+ *  below. */
 function rendererHasEndnotes() {
   const d = $('out').contentDocument;
   if (!d) return false;
   return [...d.querySelectorAll('[data-el^="endnote."]')]
-    .some(el => !el.closest('.ds-endnotes-sec'));
+    .some(el => !el.closest('.ds-endnotes-sec') && !isStandInEndnote(el));
 }
+/** The list a docsync.new report prints while it has no endnotes section:
+ *  its renderer puts the engine's own list (ol.ds-endnotes) after the last
+ *  page, outside every sheet, so that no citation dangles. That is a list
+ *  waiting for a section, not one the renderer designed, and placing the
+ *  section is what retires it. Counting it as the renderer's own refused
+ *  addEndnotesSection on every report the composer made (2026-11-09). */
+const isStandInEndnote = el =>
+  !el.closest('section.page') && !!el.closest('ol.ds-endnotes');
 
 /** Add the endnotes section at the END of the document, and return its box.
  *
@@ -26788,14 +26816,18 @@ function deleteSource(id) {
     .replace(new RegExp(`^\\[${rxEsc(id)}\\]:.*(?:\\n|$)`, 'm'), '')
     .replace(/\n{2,}/g, '\n').trim());
 }
-// Rename a source id across the whole document: every [^old] ref in the prose
-// and the [old]: line. Numbering is by first appearance, so only the stable id
-// changes — the footnote numbers do not.
+// Rename a source id across the whole document: every [^old] ref wherever
+// words live (citeSites: the slots, text boxes, table cells) and the [old]:
+// line. Numbering is by first appearance, so only the stable id changes — the
+// footnote numbers do not.
 function renameSource(oldId, neu) {
   // Replacer functions — a user-typed id is not a place for $-patterns.
-  source = source
-    .replace(new RegExp(`\\[\\^${rxEsc(oldId)}\\]`, 'g'), () => `[^${neu}]`)
-    .replace(new RegExp(`^\\[${rxEsc(oldId)}\\]:`, 'm'), () => `[${neu}]:`);
+  const ref = new RegExp(`\\[\\^${rxEsc(oldId)}\\]`, 'g');
+  citeSites().forEach(s => {
+    const v = s.read(), w = v.replace(ref, () => `[^${neu}]`);
+    if (w !== v) s.write(w);
+  });
+  source = source.replace(new RegExp(`^\\[${rxEsc(oldId)}\\]:`, 'm'), () => `[${neu}]:`);
 }
 // Reorder the declaration list. Endnote NUMBERS follow first appearance in the
 // prose, so this reorders the [[sources]] list and the Cite dropdown while the
@@ -34736,7 +34768,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           note: 'named in a group but no longer in the document' });
     }));
     parseSources().forEach(s => {
-      if (!new RegExp(`\\[\\^${rxEsc(s.id)}\\]`).test(source))
+      if (!citeCount(s.id))
         issues.push({ kind: 'uncited-source', ids: [s.id],
           note: 'declared in sources but never cited — publish refuses this' });
     });

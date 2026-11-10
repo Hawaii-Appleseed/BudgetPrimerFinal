@@ -34,7 +34,8 @@ from pathlib import Path
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
 from .content import (CAPTION_RE, COND_RE, Footnotes, block_html, char_styles_used,
-                      link_refs, md_inline, paragraph, split_states, uses_breaks, uses_vars)
+                      link_refs, md_inline, page_refs, paragraph, split_states,
+                      uses_breaks, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
 # different page passes its own size in — this is a default, not a law. It is
@@ -5840,6 +5841,23 @@ class Layout:
         return list(self.boxes) + [b for m in self.masters.values()
                                    for b in (m.get("boxes") or [])]
 
+    def box_ref_hosts(self) -> set:
+        """Every `text.<id>` some {pageof:…} or internal link [words](#…)
+        names, in a box's words or a slot's. Those boxes are hooked with
+        data-anc-host in both modes (text_boxes), as content.py hooks a slot
+        a token names: data-el is edit-only, so on the published page the
+        variables runtime found no box and printed "?", and a link to a box
+        went nowhere. Only the boxes named, so every other report emits
+        exactly what it did. Worked out once."""
+        if getattr(self, "_box_refs", None) is None:
+            words = [str(b.get("md", "")) for b in self.all_boxes()]
+            c = getattr(self, "_content", None)
+            words += [v for v in (getattr(c, "_raw", None) or {}).values()
+                      if isinstance(v, str)]
+            self._box_refs = {r for w in words for r in page_refs(w) | link_refs(w)
+                              if r.startswith("text.")}
+        return self._box_refs
+
     def char_styles_used(self) -> set:
         """Every style name a `[words]{.Name}` in the document wears — in a
         slot's words or a text box's."""
@@ -7001,6 +7019,8 @@ class Layout:
                 b = dict(b, md=self.resolve_text(str(b["md"])))
             act = b.get("act")
             an = anim_attrs(b.get("anim")) + anchor_attrs(b)
+            if f'text.{b["id"]}' in self.box_ref_hosts():
+                an += f' data-anc-host="text.{b["id"]}"'
             # border-box, always: w and h are what the editor MEASURED — the
             # outer rect its handles were drawn around. Read as content width
             # instead, a filled box rendered its padding wider than the number

@@ -5434,8 +5434,10 @@ for _tn, _first in (("appleseed-report", 4), ("appleseed-brief", 2)):
              [(s["page"], s["fill"]) for s in _rules],
              [(p, _pat["rule"]["fill"]) for p, _ in _heads])
     _foot = sorted((b["page"], b["md"]) for b in _lay["boxes"] if b["id"].startswith("txt-foot-"))
+    # {page}, not a typed number: a footer that follows its page when pages
+    # are added or reordered (B3, 2026-11-09).
     check_eq(f"{_tn}: every new page has a footer the title step rewrites",
-             [m for _, m in _foot], [f"{p} · YOUR REPORT" for p, _ in _foot])
+             [m for _, m in _foot], ["{page} · YOUR REPORT" for _ in _foot])
     check_eq(f"{_tn}: pages == the last page used", _res["pages"], max(p for p, _ in _foot))
     for b in _lay["boxes"]:
         if b["id"].startswith("txt-") and not b["id"].startswith("txt-foot-") \
@@ -5460,8 +5462,361 @@ _cp.lay_out(_lay, _pat, _cp.parse(_TXT), "T")
 _bx = {b["id"]: b for b in _lay["boxes"]}
 check("report: a short summary lands in the template's own summary box",
       _bx["tpl-body3"]["md"], "**HAWAIʻI HAS THE LONGEST LIFE EXPECTANCY** of any state")
-check_eq("report: the contents page lists the sections with their pages",
-         _bx["tpl-toc2"]["md"], "Executive summary — 3\n\nWho is caring — 4\n\nRecommendations — 5")
+_hd = [b["id"] for b in _lay["boxes"] if b["id"].startswith("txt-h-")]
+_nd = [b["id"] for b in _lay["boxes"] if b.get("act") == "endnotes"]
+check_eq("report: the contents page names each heading, kept current by tokens",
+         _bx["tpl-toc2"]["md"].split("\n\n"),
+         [f"{{titleof:text.{h}}} — {{pageof:text.{h}}}" for h in ["tpl-h3"] + _hd]
+         + [f"Endnotes — {{pageof:text.{n}}}" for n in _nd])
+
+# --- what a report laid out from text keeps of the template (B3) --------------
+# The Wealth Tax report (2026-11-09) came out of the composer with the cover's
+# instruction note, "Copyright © 20XX", "Executive summary" over an
+# introduction, and footers and a contents page of typed numbers that went
+# stale the moment a page moved.
+check_eq("report from text: the cover's instruction note is gone",
+         "tpl-covernote" in _bx, False)
+check("report from text: the copyright takes the text's year",
+      _bx["tpl-copy2"]["md"], "Copyright © 2027 Hawaiʻi Appleseed")
+check_eq("report from text: every footer numbers itself, the template's own too",
+         sorted({b["md"] for b in _lay["boxes"] if b["md"].endswith(" · YOUR REPORT")}),
+         ["{page} · YOUR REPORT"])
+check_eq("report from text: with no heading of its own, the summary keeps the template's",
+         _bx["tpl-h3"]["md"], "Executive summary")
+_d2 = _cp.parse("# T\n\n## Introduction\n\nThe opening words of it all.[^a]\n\n"
+                "## Next\n\nMore words.\n\n[^a]: A source — https://example.org/a")
+_lay2 = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_lay2, _pat, _d2, "T")
+_b2 = {b["id"]: b for b in _lay2["boxes"]}
+check_eq("report from text: an opening ## Introduction is the summary page's heading",
+         _b2["tpl-h3"]["md"], "Introduction")
+check("report from text: and its words are the summary",
+      _b2["tpl-body3"]["md"], "**THE OPENING WORDS OF IT")
+check_eq("report from text: and it is not laid out again as a section",
+         [b["md"] for b in _lay2["boxes"] if b["id"].startswith("txt-h-")], ["Next"])
+import datetime as _dt                                       # noqa: E402
+check("report from text: with no date given, the copyright is this year's",
+      _b2["tpl-copy2"]["md"], f"Copyright © {_dt.date.today().year} ")
+
+# The contents' tokens resolve: {titleof:} to the heading's words at render,
+# {pageof:} in the page runtime, which needs the box hooked on the published
+# page as well as in the editor. Only the boxes some token or link names.
+_saved_edit = os.environ.pop("DOCSYNC_EDIT", None)
+try:
+    _toc = _layout({"positions": {}, "boxes": [
+        {"id": "h", "page": 1, "x": 1, "y": 1, "w": 3, "md": "The heading"},
+        {"id": "toc", "page": 1, "x": 1, "y": 3, "w": 3,
+         "md": "{titleof:text.h} — {pageof:text.h}"},
+        {"id": "other", "page": 1, "x": 1, "y": 5, "w": 3, "md": "Words"}]})
+    _th = _toc.text_boxes(1)
+    check("a box a {pageof:} names is hooked for the page runtime",
+          _th, 'data-anc-host="text.h"')
+    check_eq("and no other box is", _th.count("data-anc-host="), 1)
+    check("{titleof:text.N} is the heading's words", _th, "The heading — ")
+finally:
+    if _saved_edit is not None:
+        os.environ["DOCSYNC_EDIT"] = _saved_edit
+
+# --- figures, tables, callouts and the endnotes page from text (B1) ------------
+# The Wealth Tax report's four figures, its table, its callout and its
+# endnotes page were placed by hand after the composer (placeholder quotes
+# reserved the space, then ~25 pilot steps). They are grammar now.
+_FIG_TXT = """# T
+
+## Who pays
+
+The words before it.[^a]
+
+Figure 1. Wealth held, against the budget (2024)
+
+![Blocks of the budget](figure-1.png)
+
+Source: Altrata market-sizing data.[^b]
+
+Table 1. Wealth by tier (2024)
+
+| Tier | People | Wealth |
+|---|---|---|
+| $20 million or more | 1,245 | $95.6 billion |
+| $50 million or more | 365 | $69.3 billion |
+
+> [!NOTE] The estate tax
+> It is assessed once.
+>
+> And it is easy to avoid.[^c]
+
+| No | Header |
+| rows | here |
+
+![](assets/no-size.png)
+
+[^a]: A — https://example.org/a
+[^b]: B — https://example.org/b
+[^c]: C, a book
+"""
+_fd = _cp.parse(_FIG_TXT)
+_fb = _fd.sections[0].blocks
+check_eq("compose: a picture with its caption and source is one figure block",
+         [b.kind for b in _fb], ["para", "figure", "table", "callout", "table", "figure"])
+check_eq("compose: the figure keeps its caption, source, alt and file",
+         {k: _fb[1].data[k] for k in ("caption", "source", "alt", "src")},
+         {"caption": "Figure 1. Wealth held, against the budget (2024)",
+          "source": "Source: Altrata market-sizing data.[^b]",
+          "alt": "Blocks of the budget", "src": "figure-1.png"})
+check_eq("compose: a pipe table's rows, its header and its caption",
+         (_fb[2].data["rows"][0], _fb[2].data["header"], _fb[2].data["caption"]),
+         (["Tier", "People", "Wealth"], True, "Table 1. Wealth by tier (2024)"))
+check_eq("compose: a table with no separator row has no header", _fb[4].data["header"], False)
+check_eq("compose: a callout keeps its title and its paragraphs",
+         (_fb[3].data["title"], _fb[3].md), ("The estate tax",
+                                             "It is assessed once.\n\nAnd it is easy to avoid.[^c]"))
+check_eq("compose: citations in captions, sources and callouts are found",
+         sorted(_fd.citations()), ["a", "b", "c"])
+
+import struct as _struct                                     # noqa: E402
+_png = b"\x89PNG\r\n\x1a\n" + _struct.pack(">I", 13) + b"IHDR" + _struct.pack(">II", 1600, 900)
+check_eq("compose: a PNG's size from its header", _cp.image_size(_png), (1600, 900))
+check_eq("compose: a GIF's size", _cp.image_size(b"GIF89a" + _struct.pack("<HH", 40, 30)), (40, 30))
+_jpg = (b"\xff\xd8\xff\xe0" + _struct.pack(">H", 4) + b"JF"
+        + b"\xff\xc0" + _struct.pack(">HBHH", 11, 8, 480, 640) + b"\x00" * 6)
+check_eq("compose: a JPEG's size, read past its other segments", _cp.image_size(_jpg), (640, 480))
+check_eq("compose: an SVG's size from its viewBox",
+         _cp.image_size(b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150">'),
+         (300.0, 150.0))
+check_eq("compose: anything else has no size", _cp.image_size(b"not a picture"), None)
+
+_fpat = section_pattern("appleseed-report", SCHEMES["slate"]["color"])
+_flay = TEMPLATES["appleseed-report"]["layout"](SCHEMES["slate"]["color"])
+_fres = _cp.lay_out(_flay, _fpat, _fd, "T", {"assets/figure-1.png": (1600, 900)})
+_fbx = {b["id"]: b for b in _flay["boxes"]}
+_grp = _flay.get("groups", [])
+_fig = next(g for g in _grp if any(_fbx.get(i[5:], {}).get("md", "").startswith("![Blocks") for i in g))
+_cap, _pic, _src = (_fbx[i[5:]] for i in _fig)
+check_eq("figure: caption, picture and source, grouped in that order",
+         [_cap["md"], _pic["md"], _src["md"]],
+         ["**Figure 1.** Wealth held, against the budget (2024)",
+          "![Blocks of the budget](assets/figure-1.png)",
+          "Source: Altrata market-sizing data.[^b]"])
+check_eq("figure: stacked top to bottom on one page",
+         (_cap["page"] == _pic["page"] == _src["page"], _cap["y"] < _pic["y"] < _src["y"]),
+         (True, True))
+check_eq("figure: the picture spans the column, as tall as its file draws",
+         (_pic["w"], _pic["h"]), (_fpat["w"], round(_fpat["w"] * 900 / 1600, 2)))
+check_eq("figure: the caption wears the template's figure caption",
+         (_cap["style"]["font"], _cap["style"]["size"]), ("Barlow", 15))
+check_eq("figure: the source is small italic", (_src["style"]["size"], _src["style"]["italic"]),
+         (11, True))
+_nos = next(b for b in _flay["boxes"] if "no-size.png" in b.get("md", ""))
+check_eq("figure: a picture with no file is placed at a stand-in shape",
+         _nos["h"], round(_fpat["w"] * _cp.DEFAULT_RATIO, 2))
+check_eq("figure: every picture placed is reported",
+         _fres["pictures"], ["assets/figure-1.png", "assets/no-size.png"])
+_tb = [t for t in _flay.get("tables", []) if t["id"].startswith("txt-tbl-")]
+check_eq("table: a real table, its rows as written", _tb[0]["rows"][1],
+         ["$20 million or more", "1,245", "$95.6 billion"])
+check_eq("table: numbers right-aligned, words left",
+         _tb[0]["colAlign"], ["left", "right", "right"])
+check_eq("table: the header in the topic colour, banded in its tint",
+         (_tb[0]["headerRows"], _tb[0]["headerFill"], _tb[0]["band"]),
+         (1, SCHEMES["slate"]["color"], "#EFF1F1"))
+check("table: grouped with its caption", repr(_grp), f"'table.{_tb[0]['id']}'")
+check_eq("table: column widths fill the column", round(sum(_tb[0]["colw"]), 2), _fpat["w"])
+check_eq("table: one with no header row has none", _tb[1]["headerRows"], 0)
+_co = next(b for b in _flay["boxes"] if b.get("use") == "Callout panel")
+check_eq("callout: ONE box, its title a run in the callout head style",
+         _co["md"], "[The estate tax]{.Callout head}\n\nIt is assessed once.\n\nAnd it is easy to avoid.[^c]")
+check_eq("callout: the panel and head styles are defined once",
+         (_flay["objectStyles"]["Callout panel"]["border"]["sides"],
+          _flay["textStyles"]["Callout head"]["font"]), ("left", "Barlow"))
+_en = [b for b in _flay["boxes"] if b.get("act") == "endnotes"]
+check_eq("endnotes: one section, on its own last page, headed like a section",
+         [(b["page"], b["md"]) for b in _en], [(_fres["pages"], "## [Endnotes]{.Section head}")])
+check_eq("endnotes: its heading style is the section headline's",
+         _flay["textStyles"]["Section head"], _fpat["heading"]["style"])
+check("endnotes: its hairline is grouped with it", repr(_grp), f"'text.{_en[0]['id']}']")
+check("endnotes: listed in the contents with its page",
+      _fbx["tpl-toc2"]["md"], f"Endnotes — {{pageof:text.{_en[0]['id']}}}")
+_tp = Path(tempfile.mktemp(suffix=".json"))
+_tp.write_text(json.dumps(_flay))
+try:
+    _FL = Layout(_tp, page=(8.5, 11))
+    check_eq("figures, tables and callouts from text: the engine takes the draft",
+             _FL.check_bounds(), [])
+finally:
+    _tp.unlink()
+_plain = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_plain, section_pattern("appleseed-report"),
+            _cp.parse("# T\n\n## A\n\nNo citations here.\n"), "T")
+check_eq("endnotes: a text that cites nothing gets no endnotes page",
+         [b for b in _plain["boxes"] if b.get("act") == "endnotes"], [])
+
+# --- a Google Doc as the composer's text (docsync.gdoc, C) ---------------------
+from docsync import gdoc as _gd                                  # noqa: E402
+
+
+def _gpara(*runs, style="NORMAL_TEXT", bullet=None):
+    p = {"paragraphStyle": {"namedStyleType": style}, "elements": list(runs)}
+    if bullet:
+        p["bullet"] = {"listId": bullet}
+    return {"paragraph": p}
+
+
+def _grun(text, **ts):
+    return {"textRun": {"content": text, "textStyle": ts}}
+
+
+def _gcell(*paras):
+    return {"content": list(paras)}
+
+
+_GDOC = {
+    "title": "Spec Doc",
+    "body": {"content": [
+        {"sectionBreak": {}},
+        _gpara(_grun("Introduction\n"), style="HEADING_1"),
+        _gpara(_grun("The state "), _grun("works", bold=True), _grun(" well."),
+               {"footnoteReference": {"footnoteId": "kix.f1", "footnoteNumber": "1"}},
+               _grun("\n")),
+        _gpara(_grun("Who pays\n"), style="HEADING_1"),
+        _gpara(_grun("Figure 1. A chart (2024)\n")),
+        _gpara({"inlineObjectElement": {"inlineObjectId": "kix.img1"}}, _grun("\n")),
+        _gpara(_grun("Source: Somewhere.\n", italic=True)),
+        _gpara(_grun("First item\n"), bullet="l1"),
+        _gpara(_grun("Second item\n"), bullet="l1"),
+        {"table": {"rows": 2, "columns": 2, "tableRows": [
+            {"tableCells": [_gcell(_gpara(_grun("Tier\n", bold=True))),
+                            _gcell(_gpara(_grun("People\n", bold=True)))]},
+            {"tableCells": [_gcell(_gpara(_grun("Top\n"))), _gcell(_gpara(_grun("1,245\n")))]}]}},
+        {"table": {"rows": 1, "columns": 1, "tableRows": [{"tableCells": [_gcell(
+            _gpara(_grun("Estate tax\n", bold=True)),
+            _gpara(_grun("It is assessed once.\n")),
+            _gpara(_grun("And it is easy to avoid.\n")))]}]}},
+        _gpara(_grun("2", baselineOffset="SUPERSCRIPT"), _grun("\n")),
+    ]},
+    "footnotes": {"kix.f1": {"content": [_gpara(
+        _grun(" A source, "), _grun("https://example.org/a", link={"url": "https://example.org/a"}),
+        _grun(".\n"))]}},
+    "inlineObjects": {"kix.img1": {"inlineObjectProperties": {"embeddedObject": {
+        "description": "A bar chart", "imageProperties": {"contentUri": "https://lh.example/img1"}}}}},
+    "lists": {"l1": {"listProperties": {"nestingLevels": [{"glyphSymbol": "●"}]}}},
+}
+_gtext, _gpics = _gd.to_text(_GDOC)
+check_eq("gdoc: the Doc is the composer's markdown", _gtext,
+         "# Spec Doc\n\n## Introduction\n\nThe state **works** well.[^n1]\n\n"
+         "## Who pays\n\nFigure 1. A chart (2024)\n\n![A bar chart](gdoc:kix.img1)\n\n"
+         "*Source: Somewhere.*\n\n- First item\n- Second item\n\n"
+         "| Tier | People |\n|---|---|\n| Top | 1,245 |\n\n"
+         "> [!NOTE] Estate tax\n> It is assessed once.\n>\n> And it is easy to avoid.\n\n"
+         "[^n1]: A source — https://example.org/a\n")
+check_eq("gdoc: its pictures, with their description", _gpics,
+         {"kix.img1": {"uri": "https://lh.example/img1", "alt": "A bar chart"}})
+
+
+class _FakeResponse:
+    headers = {"Content-Type": "image/jpeg"}
+
+    def __init__(self, data):
+        self.data = data
+
+    def read(self):
+        return self.data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+_gfiles = _gd.fetch_pictures(_gpics, opener=lambda req, timeout: _FakeResponse(b"\xff\xd8jpg"))
+check_eq("gdoc: a fetched picture is named for its place and its type",
+         _gfiles, {"kix.img1": ("figure-1.jpg", b"\xff\xd8jpg")})
+check("gdoc: and the text names that file", _gd.with_files(_gtext, _gpics, _gfiles),
+      "![A bar chart](figure-1.jpg)")
+_gdoc_parsed = _cp.parse(_gd.with_files(_gtext, _gpics, {}))
+check_eq("gdoc: the composer reads it as figure, list, table and callout",
+         [b.kind for b in _gdoc_parsed.sections[1].blocks], ["figure", "list", "table", "callout"])
+check_eq("gdoc: the figure has the Doc's caption and source",
+         (_gdoc_parsed.sections[1].blocks[0].data["caption"],
+          _gdoc_parsed.sections[1].blocks[0].data["source"]),
+         ("Figure 1. A chart (2024)", "*Source: Somewhere.*"))
+_gl = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_gl, section_pattern("appleseed-report"), _gdoc_parsed, "Spec Doc")
+_new._apply_title(_gl, "Spec Doc")                 # as create() does next
+_gb = {b["id"]: b for b in _gl["boxes"]}
+check_eq("a text that names no date: the cover says this month, not MONTH 20XX",
+         _gb["tpl-date"]["md"], _dt.date.today().strftime("%B %Y").upper())
+check_eq("a text that names no subtitle or author: the template's stand-ins go",
+         ("tpl-sub" in _gb, "tpl-author2" in _gb), (False, False))
+check_eq("no template stand-in words survive anywhere",
+         [b["id"] for b in _gl["boxes"] if re.search(
+             r"20XX|Your Name|YOUR FIRST WORDS|HEADLINE FINDING|title here|spaced capitals",
+             b.get("md", ""))], [])
+check_eq("gdoc: an address is read for its id",
+         _gd.doc_id("https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit"),
+         "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789")
+
+# --- pagination measured against the fonts (B2) --------------------------------
+# The composer guessed 0.54em a glyph (0.64 in capitals): "WHO IS REALLY
+# STRUGGLING?" counted two lines, so its hairline and body sat half an inch low,
+# and body text ran a line long in five. These are the Wealth Tax report's own
+# lines as Chrome sets them (7.1in column, Source Sans 3 15px, Barlow 800 44px
+# capitals), from docsync/metrics.py's measured advances.
+_mp = section_pattern("appleseed-report")
+_mh, _mb = _mp["heading"]["style"], _mp["body"]
+for _t, _want in (("Who is really struggling?", 1), ("History of wealth taxes", 1),
+                  ("Solution: A tax on the wealthiest millionaires", 2)):
+    check_eq(f"measured: the headline {_t!r} takes {_want} line(s)",
+             _cp.lines_for(_t, 7.1, 44, caps=True, style=_mh), _want)
+for _t, _want in (
+        (_cp._lead_in("Much has been said about Hawaiʻi’s high cost of living, and it is true "
+         "that many low- and middle-income residents can no longer afford to live here. "
+         "About 44 percent of Hawaiʻi households live below the ALICE Threshold, which means "
+         "they cannot consistently cover their basic living expenses. Many are working "
+         "households—our family, friends, and neighbors.[^united-for-alice]"), 4),
+        ("A wealth tax works differently from an income tax. Income is the money a person "
+         "takes in over the course of a year, such as wages, interest, dividends, and the "
+         "profits from selling an asset. Wealth, or net worth, is the total value of "
+         "everything a person owns—homes and land, stocks and bonds, ownership stakes in "
+         "businesses—minus what they owe. Hawaiʻi taxes income and purchases, and the "
+         "counties tax real property, but no level of government in Hawaiʻi taxes a "
+         "person’s total net worth. In effect, a large stock portfolio or a stake in a "
+         "private company can grow in value for decades without ever being taxed, as long "
+         "as the owner does not sell it.", 6)):
+    check_eq(f"measured: a paragraph sets in {_want} lines, as Chrome sets it",
+             _cp.lines_for(_t, 7.1, 15, style=_mb), _want)
+check_eq("measured: a font the table does not know keeps the old estimate",
+         _cp.lines_for("x " * 200, 7.1, 15, style={"font": "Comic Neue", "size": 15}),
+         _cp.lines_for("x " * 200, 7.1, 15))
+_ml = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_ml, _mp, _cp.parse("# T\n\nA summary.\n\n## Who is really struggling?\n\nBody."), "T")
+check_eq("measured: a one-line headline keeps the template's hairline",
+         [s["y"] for s in _ml["shapes"] if s["id"].startswith("txt-rule-")], [_mp["rule"]["y"]])
+
+# The summary page's demo devices hold the text's own words or go.
+_s0 = {b["id"]: b for b in _flay["boxes"]}
+check_eq("summary page: a text with no summary lays its first section out there",
+         ([i for i in ("tpl-h3", "tpl-body3", "tpl-pull3", "tpl-callout3", "tpl-chart3")
+           if i in _s0], min(b["page"] for b in _flay["boxes"] if b["id"].startswith("txt-h-"))),
+         ([], 3))
+_s2 = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_s2, _fpat, _cp.parse("# T\n\nA short summary.\n\n## Next\n\nMore."), "T")
+_s2 = {b["id"]: b for b in _s2["boxes"]}
+check_eq("summary page: with no quote, callout or chart of the text's own, the devices go",
+         [i for i in ("tpl-pull3", "tpl-callout3", "tpl-chart3", "tpl-fig3") if i in _s2], [])
+check_eq("summary page: and the summary takes the column's width", _s2["tpl-body3"]["w"], _fpat["w"])
+_s1 = TEMPLATES["appleseed-report"]["layout"]()
+_cp.lay_out(_s1, _fpat, _cp.parse(
+    "# T\n\n## Introduction\n\nThe opening words.\n\n> A 2 percent tax would raise $1 billion a year.\n\n"
+    "> [!NOTE] Two words\n> **Wealth** is what you own.\n\n## Next\n\nMore."), "T")
+_s1 = {b["id"]: b for b in _s1["boxes"]}
+check_eq("summary page: the text's pull quote and callout fill the devices",
+         (_s1["tpl-pull3"]["md"], _s1["tpl-callout3"]["md"]),
+         ("A 2 percent tax would raise $1 billion a year.",
+          "**Two words**\n\n**Wealth** is what you own."))
+check_eq("summary page: beside a callout the summary keeps its narrow column",
+         _s1["tpl-body3"]["w"] < _fpat["w"], True)
+check_eq("summary page: the chart placeholder still goes", "tpl-chart3" in _s1, False)
 check_eq("report: the cover takes the text's subtitle and date",
          (_bx["tpl-sub"]["md"], _bx["tpl-date"]["md"]),
          ("What older adults pay for care", "MARCH 2027"))
@@ -5475,12 +5830,17 @@ check_eq("report: a wrapped headline pushes the hairline down", _rule["y"] > _pa
 check_eq("...and the body with it", _body["y"] > _pat["body_top"], True)
 # A long summary does not squeeze into the narrow summary column: it gets a page.
 _lay = TEMPLATES["appleseed-report"]["layout"]()
-_long = "# T\n\n" + ("A sentence of ordinary length that says something. " * 60) + "\n\n## S\n\nBody."
+_long = "# T\n\n" + ("A sentence of ordinary length that says something. " * 90) + "\n\n## S\n\nBody."
 _cp.lay_out(_lay, _pat, _cp.parse(_long), "T")
 _bx = {b["id"]: b for b in _lay["boxes"]}
 check("report: a long summary becomes a section page of its own",
       [b["md"] for b in _lay["boxes"] if b["id"].startswith("txt-h-")][0], "Executive summary")
-check_eq("...and the template's summary box keeps its words", "YOUR FIRST WORDS" in _bx["tpl-body3"]["md"], True)
+# ...laid out on the summary page itself: its template words were all demo
+# ("YOUR FIRST WORDS…", the headline finding, a chart placeholder), and a
+# report made from text used to keep that page beside its own (B1).
+check_eq("...on the summary page itself, whose demo words go",
+         ([b["page"] for b in _lay["boxes"] if b["id"].startswith("txt-h-")][0],
+          "tpl-body3" in _bx, "tpl-pull3" in _bx), (3, False, False))
 # Text that outruns a page continues on the next, under no headline.
 _lay = TEMPLATES["appleseed-brief"]["layout"]()
 _cp.lay_out(_lay, section_pattern("appleseed-brief"),

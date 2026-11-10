@@ -34,6 +34,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
+# The pictures --assets / create(assets=) take (docsync.stage's IMAGE_EXTS).
+_IMAGE_EXTS = (".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp")
 
 # Mirrors start.html's placedTemplate — the renderer an empty canvas needs.
 # One page to begin with; everything on it comes from layout.json, which is
@@ -346,7 +348,8 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
            root: Path = ROOT, pages: int = 1, notices=None,
            layout: dict | None = None, template: str = "",
            scheme: str = "", data: Path | str | None = None,
-           text: str = "", meta: dict | None = None) -> Path:
+           text: str = "", meta: dict | None = None,
+           assets: dict | None = None) -> Path:
     """Write the project and register it in docsync.yml. Returns its dir.
 
     `text` is a written document (markdown: `# title`, `## sections`,
@@ -355,7 +358,9 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     the editor opens on a report and not on a pattern page. It needs a
     template with a repeating page (report or brief). `meta` overrides the
     text's own `Subtitle:` / `Date:` / `Author:` lines; a missing `name`
-    is the text's `# title`.
+    is the text's `# title`. `assets` ({file name: bytes}) are the pictures
+    the text's `![…](…)` lines name: written into the project's assets, and
+    each figure placed at the height its file draws.
 
     Refuses rather than overwrites: an existing binding or directory means
     the slug is taken, and "create" must never be a way to lose work.
@@ -378,6 +383,14 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
     palette = _DEFAULT_PALETTE
     tpl_assets: list = []
     doc = None
+    notices = list(notices or [])
+    assets = dict(assets or {})
+    for n, blob in assets.items():
+        if not re.match(r"^[A-Za-z0-9._-]+$", n) or not n.lower().endswith(_IMAGE_EXTS):
+            raise NewProjectError(f"asset {n!r}: a picture's file name (letters, "
+                                  "digits, . _ -) ending .png, .jpg, .gif, .svg or .webp")
+        if not blob or len(blob) > 20 * 1024 * 1024:
+            raise NewProjectError(f"asset {n!r} is empty or over 20MB")
     if text and text.strip():
         if not template:
             raise NewProjectError(
@@ -455,8 +468,19 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
                 raise NewProjectError(
                     f'the "{t["name"]}" template has no page to repeat — '
                     "lay text out on appleseed-report or appleseed-brief")
-            laid = _lay_out(layout, pattern, doc, name.strip())
+            from .compose import image_size as _size
+            sizes = {f"assets/{n}": s for n, s in
+                     ((n, _size(b)) for n, b in assets.items()) if s}
+            laid = _lay_out(layout, pattern, doc, name.strip(), sizes)
             pages = max(pages, laid["pages"])
+            have = set(assets) | set(t["assets"])
+            missing = [p for p in laid["pictures"]
+                       if p.startswith("assets/") and p[len("assets/"):] not in have]
+            if missing:
+                notices.append(
+                    "Pictures the text names but did not come with it: "
+                    + ", ".join(missing) + ". Each frame holds its place; drop the "
+                    "picture in under that name (Insert ▸ Image), then Fit Frame.")
         _apply_title(layout, name.strip())
         palette = t["palette"]
         if color:
@@ -540,6 +564,12 @@ def create(slug: str, name: str, w: float = 8.5, h: float = 11.0,
         adir.mkdir(parents=True, exist_ok=True)
         for src, a in tpl_assets:
             shutil.copy2(src, adir / a)
+    # The text's own pictures, beside the template's.
+    if assets:
+        adir = proj / "web" / "assets"
+        adir.mkdir(parents=True, exist_ok=True)
+        for n, blob in assets.items():
+            (adir / n).write_bytes(blob)
     # Append the binding. docsync.yml is a hand-edited file, so this stays an
     # append of well-formed text at the end — never a parse-and-rewrite that
     # would strip its comments.
@@ -560,8 +590,22 @@ def main(argv=None) -> int:
                     help="a markdown document (- for stdin) laid out on the "
                          "template's pages: paragraphs before the first ## are "
                          "the summary, each ## is a section page, ### a "
-                         "subheading, > a pull quote, [^id] a citation with its "
-                         "[^id]: source line anywhere. Needs --template.")
+                         "subheading, > a pull quote, > [!NOTE] Title a callout, "
+                         "![alt](file) a figure (a 'Figure N.' line before it "
+                         "and 'Source:' after are its caption and source), a "
+                         "pipe table a table, [^id] a citation with its [^id]: "
+                         "source line anywhere. Needs --template.")
+    ap.add_argument("--assets", default=None, metavar="DIR",
+                    help="a folder of the pictures the text's ![…](…) lines "
+                         "name: copied into the project, each figure placed at "
+                         "the height its file draws")
+    ap.add_argument("--from-gdoc", default=None, metavar="DOC",
+                    help="a Google Doc (its address or id, or the Docs API's "
+                         "saved JSON) laid out like --text: its headings, "
+                         "footnotes, pictures, tables and callouts come with it "
+                         "(docsync/gdoc.py says what each becomes). Needs "
+                         "--template; by address it needs GOOGLE_OAUTH_TOKEN or "
+                         "DOCSYNC_GOOGLE_SA.")
     ap.add_argument("--subtitle", default="", help="cover subtitle (with --text)")
     ap.add_argument("--date", default="", help='cover date, e.g. "March 2027"')
     ap.add_argument("--author", default="", help="inside-cover author line")
@@ -589,11 +633,39 @@ def main(argv=None) -> int:
         except OSError as e:
             print(f"  new: cannot read --text: {e}", file=sys.stderr)
             return 1
+    assets = None
+    if a.assets:
+        d = Path(a.assets).expanduser()
+        if not d.is_dir():
+            print(f"  new: --assets {d} is not a folder", file=sys.stderr)
+            return 1
+        assets = {p.name: p.read_bytes() for p in sorted(d.iterdir())
+                  if p.is_file() and p.suffix.lower() in _IMAGE_EXTS}
+    if a.from_gdoc:
+        if text:
+            print("  new: pass --text or --from-gdoc, not both", file=sys.stderr)
+            return 1
+        from .gdoc import GdocError, fetch_pictures, load, to_text, with_files
+        try:
+            gd = load(a.from_gdoc)
+        except GdocError as e:
+            print(f"  new: {e}", file=sys.stderr)
+            return 1
+        text, pics = to_text(gd)
+        got = fetch_pictures(pics)
+        text = with_files(text, pics, got)
+        # --assets may hold what could not be fetched (figure-K.png).
+        assets = {**{n: b for n, b in got.values()}, **(assets or {})}
+        if len(got) < len(pics):
+            print(f"  {len(pics) - len(got)} of the Doc's {len(pics)} pictures could not "
+                  "be fetched (a saved Doc's picture links last about 30 minutes): "
+                  "their frames are placed; drop each in, or rerun with --assets "
+                  "<a folder of figure-K.png>")
     try:
         proj = create(a.slug, a.name, a.w, a.h, template=a.template,
                       scheme=a.scheme, data=a.data, text=text,
                       meta={"subtitle": a.subtitle, "date": a.date,
-                            "author": a.author})
+                            "author": a.author}, assets=assets)
     except NewProjectError as e:
         print(f"  new: {e}", file=sys.stderr)
         return 1
