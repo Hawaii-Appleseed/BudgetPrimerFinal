@@ -6037,6 +6037,17 @@ function nextZ(floor = 1, page = null) {
   const zs = pg ? layerItems(d, pg).map(o => o.z) : [];
   return Math.max(floor, ...zs) + 1;
 }
+/** One below the bottom of a page's stack and behind the page's own content
+ *  (z <= 0 paints under it): what Send to back hands a piece, for an object
+ *  that is made behind in one step (addTextBox / addImage `behind: true`). */
+function lowestZ(page = null) {
+  const d = $('out') && $('out').contentDocument;
+  const pg = !d ? null
+    : page == null ? pageEl(d)
+    : d.querySelector(`section[data-page="${CSS.escape(String(page))}"]`);
+  const zs = pg ? layerItems(d, pg).map(o => o.z) : [];
+  return Math.min(0, ...zs) - 1;
+}
 function closeMenu(d) {
   d.querySelectorAll('.ds-menu').forEach(m => m.remove());
   menuUp(false);
@@ -18018,6 +18029,18 @@ async function layerStep(d, dir, extreme, els = null) {
   els = (els || selEls(d)).filter(el => !isLocked(idOf(el)));
   if (!els.length) return;
   pushHistory();
+  layerApply(d, dir, extreme, els);
+  markDirty();
+  await render();
+  if (!$('layerspop').hidden) layersRender();
+  $('stat').textContent = extreme
+    ? (dir > 0 ? 'brought to front' : 'sent to back')
+    : (dir > 0 ? 'brought forward' : 'sent backward');
+}
+/** The stacking change itself, with no history, no render and no status: the
+ *  menu's layerStep and the pilot's sendToBack / bringToFront / sendBackward /
+ *  bringForward all call it, so the connector's result is the menu's. */
+function layerApply(d, dir, extreme, els) {
   const byPage = new Map();
   els.forEach(el => {
     const pg = el.closest('section.page') || d.querySelector('section.page');
@@ -18055,12 +18078,6 @@ async function layerStep(d, dir, extreme, els = null) {
     seq.slice(0, di).forEach((id, i, a) => setZ(id, a.length - i));
     seq.slice(di + 1).forEach((id, i) => setZ(id, -(i + 1)));
   }
-  markDirty();
-  await render();
-  if (!$('layerspop').hidden) layersRender();
-  $('stat').textContent = extreme
-    ? (dir > 0 ? 'brought to front' : 'sent to back')
-    : (dir > 0 ? 'brought forward' : 'sent backward');
 }
 
 $('layers').addEventListener('click', () => {
@@ -32679,12 +32696,12 @@ function _pilotApplySetChart(id, patch) {
   return { id: key };
 }
 
-function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', style, fill } = {}) {
+function _pilotApplyAddTextBox({ page, x, y, w = 3, h, md = 'Your text here', style, fill, z, behind } = {}) {
   md = fixOkina(md);
   const pid = page != null ? _pilotPageId(page) : visiblePageId();
   const id = freeBoxId();
   const box = { id, page: pid, x: x != null ? +x : placeX(w), y: y != null ? +y : 2,
-                w: +w, z: nextZ(1, pid), md };
+                w: +w, z: z != null ? +z : behind ? lowestZ(pid) : nextZ(1, pid), md };
   if (h != null) box.h = +h;      // same field place()'s h writes — one call, not two
   if (style && Object.keys(style).length) box.style = { ...style };
   if (fill) { box.fill = fill; boxReadable(box, fill); }
@@ -33185,6 +33202,25 @@ function _pilotApplyDescribeImage(host, words, src) {
   return { host, src: at.src, alt: writeMdAlt(at, words) };
 }
 
+function _pilotLayerIds(ids) { return (Array.isArray(ids) ? ids : [ids]).filter(x => x != null); }
+function _pilotValidateLayer(ids) {
+  const list = _pilotLayerIds(ids);
+  if (!list.length || list.some(i => typeof i !== 'string')) return { ok: false, error: 'sendToBack / bringToFront / sendBackward / bringForward take an id or a list of ids' };
+  const d = $('out').contentDocument;
+  for (const id of list) {
+    const v = _pilotValidateExists(id); if (!v.ok) return v;
+    if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+    if (!d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`))
+      return { ok: false, error: `'${id}' is not drawn yet — stacking is read off the page. Make it in an earlier call, or give addTextBox / addImage / addShape behind: true (or z)` };
+  }
+  return { ok: true };
+}
+function _pilotApplyLayer(ids, dir, extreme) {
+  const d = $('out').contentDocument;
+  const list = _pilotLayerIds(ids);
+  layerApply(d, dir, extreme, list.map(id => d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`)));
+  return { ids: list, z: Object.fromEntries(list.map(id => [id, zOf(id)])) };
+}
 function _pilotApplyRotate(id, deg) {
   const d = $('out').contentDocument;
   const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
@@ -33420,6 +33456,8 @@ const PILOT_BATCH_VERBS = {
   addTextBox: { validate: o => {
       if (o && typeof o.md === 'string' && !o.md.trim()) return { ok: false, error: 'a text box needs words — md is empty' };
       const n = _pilotNums(o, ['x', 'y', 'w', 'h'], 'addTextBox');
+      if (o && o.z != null && !(typeof o.z === 'number' && isFinite(o.z)))
+        return { ok: false, error: 'addTextBox: z is a number — higher is nearer the front, 0 or below is behind the page text; or behind: true' };
       return n.ok ? _pilotPageDraws(o && o.page, 'addTextBox') : n;
     },
     apply: o => _pilotApplyAddTextBox(o) },
@@ -33666,6 +33704,27 @@ const PILOT_BATCH_VERBS = {
   describeImage: { validate: (h, w, s) => _pilotValidateDescribeImage(h, w, s),
                    apply: (h, w, s) => _pilotApplyDescribeImage(h, w, s) },
   rotate: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplyRotate(id, deg) },
+  // Stacking order, the right-click menu's Arrange rows: layerStep's own core,
+  // so Send to back here is Send to back there (a piece in the flow enters at
+  // the content's level; a run moves as a block). Pieces must be drawn already:
+  // order is read off the page, so one made in this same call takes
+  // addTextBox's `behind: true` / `z` instead, or a call of its own.
+  sendToBack: { validate: ids => _pilotValidateLayer(ids), apply: ids => _pilotApplyLayer(ids, -1, true) },
+  bringToFront: { validate: ids => _pilotValidateLayer(ids), apply: ids => _pilotApplyLayer(ids, 1, true) },
+  sendBackward: { validate: ids => _pilotValidateLayer(ids), apply: ids => _pilotApplyLayer(ids, -1, false) },
+  bringForward: { validate: ids => _pilotValidateLayer(ids), apply: ids => _pilotApplyLayer(ids, 1, false) },
+  setLayer: { validate: (id, z) => {
+      const v = _pilotValidateExists(id); if (!v.ok) return v;
+      if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+      return (typeof z === 'number' && isFinite(z)) ? { ok: true }
+        : { ok: false, error: 'setLayer(id, z) — z a number: higher is nearer the front, 0 or below is behind the page text (sendToBack and friends are the menu\'s steps)' };
+    }, apply: (id, z) => {
+      const d = $('out').contentDocument;
+      const el = d.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
+      if (!_pilotStoreOf(id) && el) ensureStore(d, el);
+      setZ(id, z);
+      return { id, z };
+    } },
   setCondition: { validate: (n, on) => /^[A-Za-z0-9_-]{1,20}$/.test(n || '') ? { ok: true } : { ok: false, error: 'a condition name: letters, digits, - and _' },
                   apply: (n, on) => { layout.conditions = layout.conditions || {}; if (on === false) layout.conditions[n] = false; else delete layout.conditions[n];
                                       if (!Object.keys(layout.conditions).length) delete layout.conditions; return { condition: n, visible: on !== false }; } },
@@ -34516,6 +34575,13 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  a slot's notes. Never published. */
   notes() { return { ok: true, notes: notesList() }; },
   async setNotes(k, notes) { return _pilotOne('setNotes', [k, notes]); },
+  /** sendToBack(ids) / bringToFront(ids) / sendBackward(ids) / bringForward(ids) — the Arrange
+   *  menu's four rows, through the same layerApply; setLayer(id, z) sets the number. */
+  async sendToBack(ids) { return _pilotOne('sendToBack', [ids]); },
+  async bringToFront(ids) { return _pilotOne('bringToFront', [ids]); },
+  async sendBackward(ids) { return _pilotOne('sendBackward', [ids]); },
+  async bringForward(ids) { return _pilotOne('bringForward', [ids]); },
+  async setLayer(id, z) { return _pilotOne('setLayer', [id, z]); },
   /** flip(id, 'h' | 'v' | 'hv' | null) — on shapes, boxes, tables, placed pieces. */
   async flip(id, f) { return _pilotOne('flip', [id, f]); },
   /** setCell(id, row, col, md) — one table cell's words. */
