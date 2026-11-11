@@ -24062,6 +24062,8 @@ async function startCollab() {
     // docsync.api.batch(), one undo step, the same validation as typing, the
     // agent chip for the room — and answers with what happened.
     onPilot: hubPilot,
+    // Back after half an hour away with nothing of its own to send.
+    onStale: collabStale,
     // A question, not a change: the room relays it here because this editor
     // is the only thing in the system that has the page laid out in inches.
     // A view-only editor answers too — it renders the same page.
@@ -24943,6 +24945,23 @@ const STALE_MSG = 'the editor was updated on disk — click to reload';
 // sentence still being typed, and nothing forces it — a deploy is not a
 // reason to take someone's cursor.
 const STALE_MSG_HUB = 'a newer editor is out — click to reload when you reach a stopping point';
+/** This tab is back after a long time away (asleep in a background tab, or
+ *  the laptop closed) and has nothing of its own to send. Its copy of the
+ *  document is that old, and merging it is how a report went back to an
+ *  earlier layout on 2026-11-09. So it starts again from what the room and
+ *  the store hold now: a reload, which is the one path that is known to be a
+ *  fresh join. Not while there are words here that no Save holds, a field is
+ *  open, or a dialog is up: those merge, as they always did. */
+function collabStale(awayMs) {
+  if (dirty || editing || document.querySelector('dialog[open]')) return false;
+  const mins = Math.max(1, Math.round(awayMs / 60000));
+  $('stat').textContent = `this tab was away ${mins} minutes — opening the current version`;
+  Promise.resolve().then(() => clearDraftCache())
+    .catch(e => swallowed('collabStale: draft cache', e))
+    .finally(() => location.reload());
+  return true;
+}
+
 function offerEditorReload() {
   const s = $('stat');
   const msg = docStore() ? STALE_MSG_HUB : STALE_MSG;
