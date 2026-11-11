@@ -25541,6 +25541,11 @@ async function renderOnce() {
   if (!py) return;
   // Unconditional: this one ANNOUNCES the render, and claims the row for the
   // pair of writes that follow.
+  // A held message is for the render that follows it. If the row says something
+  // else by now ("saved — …" from a Save pressed right after a collaborator's
+  // restore), that was said later and on purpose: the held one is old news, and
+  // saying it after this render replaced the Save's confirmation.
+  if (sayAfterRender && ![sayAfterRender, statFromRender].includes($('stat').textContent)) sayAfterRender = '';
   $('stat').textContent = statFromRender = 'rendering…';
   // Every mutation in this file ends in a render, so this is the one place a
   // local edit becomes a document transaction the room can see. Idempotent:
