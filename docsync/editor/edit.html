@@ -30974,7 +30974,14 @@ $('revert').onclick = async () => {
 // and boots again if anything stayed behind. Local editor only.
 window.__dsTestReset = async () => {
   if (collab) return { ok: false, error: 'in a live session' };
+  if (presenting) exitPresent();
   document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  try { closeMenu($('out').contentDocument); } catch (e) { swallowed('test reset: menu', e); }
+  if (!$('side').hidden) closeSide();
+  // What the panels remember between uses, back to how a fresh editor has it.
+  selected = null; lastXform = null; layersPid = null; chartTab = 'data';
+  keyId = null; keyCandidate = null; chartPanelId = null; tablePanelId = null;
+  document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
   try { setSel($('out').contentDocument, []); } catch (e) { swallowed('test reset: selection', e); }
   source = original;
   layout = JSON.parse(layoutOrig || '{}');
@@ -30983,6 +30990,10 @@ window.__dsTestReset = async () => {
   layout.sections = layout.sections || {};
   syncPageSize();
   past.length = 0; future.length = 0; stepTimes.clear(); historySeq++;
+  // Back to the top of the report: render() keeps the scroll it finds.
+  try { const se = $('out').contentDocument.scrollingElement; se.scrollTop = 0; se.scrollLeft = 0; }
+  catch (e) { swallowed('test reset: scroll', e); }
+  scrollTopWas = 0;
   await clearDraftCache();
   markDirty();
   await render();
