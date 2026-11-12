@@ -24085,6 +24085,14 @@ async function startCollab() {
     // is the only thing in the system that has the page laid out in inches.
     // A view-only editor answers too — it renders the same page.
     onAsk: async msg => {
+      // The read-only checks — what Preflight and the panels show a person —
+      // answered by the same-named docsync.api read, so the hub's Claude
+      // sees exactly what this tab sees. Same list as the room's ASKS
+      // (collab/src/room.js); never a verb that changes anything.
+      if (ASK_READS.includes(msg.what)) {
+        const r = await docsync.api[msg.what]();
+        return { ok: !(r && r.ok === false), error: (r && r.error) || null, answer: r, fit: fitReport() };
+      }
       if (msg.what !== 'inventory') return { ok: false, error: `this editor does not answer '${msg.what}'` };
       const inv = docsync.api.inventory();
       // Elements as well as slots: every id a pilot verb takes, with its
@@ -33779,6 +33787,10 @@ const PILOT_BATCH_VERBS = {
 // and renders nothing — it is here because this set is also the allowlist of
 // what a room message may reach, and asking what styles exist has to be
 // possible before dressing anything in one.
+// The questions the room relays to this editor besides 'inventory' (onAsk):
+// each the docsync.api read of that name, none of them a change. Kept equal
+// to the room's ASKS (collab/src/room.js) and the hub's check_report list.
+const ASK_READS = ['preflight', 'audit', 'hyperlinks', 'colours', 'fontsInUse', 'links', 'styles', 'notes', 'overrides', 'stories'];
 const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'removePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute']);
 
 /** A pilot op relayed by the hub's room — the connector's arrange_report —
