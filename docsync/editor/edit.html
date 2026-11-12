@@ -26108,6 +26108,13 @@ function wire(roots) {
   applyWrapShape(d);           // then a contour wrap reshapes what they float
   if (syncReserves(d)) placeAnchors(d);   // a strut re-sized moves what hangs below it
   reportFit(d);                // so every measurement below sees them there
+  // A page measured before its web fonts arrive is measured in the fallback
+  // face, which can run longer: the cut-off warning stayed until the next
+  // render. Measure again once they are in, if this is still the page shown.
+  if (d.fonts && d.fonts.status !== 'loaded') {
+    d.fonts.ready.then(() => { if ($('out').contentDocument === d) reportFit(d); })
+      .catch(e => swallowed('fit after fonts', e));
+  }
   paintSel(d);                 // the selection is ids, so it survives a render
   presentRewire(d);            // and so does a running presentation
   renderNotices(d);
@@ -30994,6 +31001,7 @@ window.__dsTestReset = async () => {
   layout.sections = layout.sections || {};
   syncPageSize();
   past.length = 0; future.length = 0; stepTimes.clear(); historySeq++;
+  renderError = '';             // a draft refused earlier (the sweep makes some on purpose)
   // Back to the top of the report: render() keeps the scroll it finds.
   try { const se = $('out').contentDocument.scrollingElement; se.scrollTop = 0; se.scrollLeft = 0; }
   catch (e) { swallowed('test reset: scroll', e); }
