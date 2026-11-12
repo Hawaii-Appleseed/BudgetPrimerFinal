@@ -16001,6 +16001,19 @@ async function hideDesignedPage(pid) {
   $('stat').textContent = `page ${pid} taken out of the report — the page strip's Hidden group shows it again`;
 }
 
+/** Put a hidden DESIGNED page back, at its designed position among the
+ *  visible pages: the Hidden group's 👁, and the pilot's showPage. */
+async function showDesignedPage(pid) {
+  pushHistory();
+  const order = pageOrder().slice();
+  const before = designedPages.filter(p => p.id < pid).map(p => p.id);
+  let at = 0;
+  for (let k = 0; k < order.length; k++) if (before.includes(order[k])) at = k + 1;
+  order.splice(at, 0, pid);
+  writeOrder(order, pageBlanks());
+  await render();
+}
+
 function chip(pid, pos, label, isHidden) {
   const isBlank = typeof pid === 'string';
   const c = document.createElement('div');
@@ -16062,15 +16075,7 @@ function chip(pid, pos, label, isHidden) {
     show.setAttribute('aria-label', 'Show this page');
     show.addEventListener('click', async e => {
       e.stopPropagation();
-      pushHistory();
-      // Back at its designed position among the visible pages.
-      const order = pageOrder().slice();
-      const before = designedPages.filter(p => p.id < pid).map(p => p.id);
-      let at = 0;
-      for (let k = 0; k < order.length; k++) if (before.includes(order[k])) at = k + 1;
-      order.splice(at, 0, pid);
-      writeOrder(order, pageBlanks());
-      await render();
+      await showDesignedPage(pid);
     });
     c.appendChild(show);
   }
@@ -20530,6 +20535,9 @@ async function restore(json) {
   const st = JSON.parse(json);
   source = st.source;
   layout = st.layout;
+  // A step can carry a page size (setPageSize), and every clamp and guide
+  // measures against PAGE_W_IN/PAGE_H_IN — the shared session's adopt does this.
+  syncPageSize();
   markDirty();
   await render();
 }
@@ -30941,9 +30949,34 @@ $('revert').onclick = async () => {
   layout = JSON.parse(layoutOrig || '{}');
   layout.positions = layout.positions || {};
   layout.shapes = layout.shapes || [];
+  layout.sections = layout.sections || {};
   clearDraftCache();                     // the edits are gone — so is their cache
   markDirty();
   await render();
+};
+
+// Test hook: put the editor back as it opened, without a reload — Discard,
+// minus the confirm, plus the things a Discard leaves (the undo stack, the
+// selection, an open dialog). The suite's shared-editor fixture runs it between
+// tests that only drive docsync.api, so they share one boot instead of paying
+// ~5 s each for Pyodide; it then compares inventory() with the fresh boot's
+// and boots again if anything stayed behind. Local editor only.
+window.__dsTestReset = async () => {
+  if (collab) return { ok: false, error: 'in a live session' };
+  document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  try { setSel($('out').contentDocument, []); } catch (e) { swallowed('test reset: selection', e); }
+  source = original;
+  layout = JSON.parse(layoutOrig || '{}');
+  layout.positions = layout.positions || {};
+  layout.shapes = layout.shapes || [];
+  layout.sections = layout.sections || {};
+  syncPageSize();
+  past.length = 0; future.length = 0; stepTimes.clear(); historySeq++;
+  await clearDraftCache();
+  markDirty();
+  await render();
+  syncHistoryButtons();
+  return { ok: true };
 };
 
 // --- export -----------------------------------------------------------------
@@ -33791,7 +33824,8 @@ const PILOT_BATCH_VERBS = {
 // each the docsync.api read of that name, none of them a change. Kept equal
 // to the room's ASKS (collab/src/room.js) and the hub's check_report list.
 const ASK_READS = ['preflight', 'audit', 'hyperlinks', 'colours', 'fontsInUse', 'links', 'styles', 'notes', 'overrides', 'stories'];
-const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'removePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute']);
+const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'removePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute',
+  'movePage', 'showPage', 'setPageSize', 'continueEndnotes', 'saveToLibrary', 'placeFromLibrary', 'loadStyles', 'undo', 'redo']);
 
 /** A pilot op relayed by the hub's room — the connector's arrange_report —
  *  applied here as docsync.api.batch(), one undo step, the same validation
@@ -33813,7 +33847,10 @@ async function hubPilot(msg) {
   let r;
   const was = layoutIssues();
   const one = ops.length === 1 ? ops[0] : null;
-  if (one && !PILOT_BATCH_VERBS[one.verb] && PILOT_SINGLE_VERBS.has(one.verb)) {
+  if (one && (one.verb === 'undo' || one.verb === 'redo')) {
+    r = await pilotHistory(one.verb);
+    if (r.ok === false) return r;
+  } else if (one && !PILOT_BATCH_VERBS[one.verb] && PILOT_SINGLE_VERBS.has(one.verb)) {
     const args = Array.isArray(one.args) ? one.args : [one.args];
     r = await docsync.api[one.verb](...args);
     if (r && r.ok) r = { results: [{ verb: one.verb, ...r }] };
@@ -33827,8 +33864,42 @@ async function hubPilot(msg) {
   // without this learned of a collision only when a person saw it.
   if (!(r && r.ok !== false))
     return { ok: false, error: (r && r.error) || 'the editor refused the batch' };
+  if (!(one && (one.verb === 'undo' || one.verb === 'redo'))) pilotMarkStep();
   const lay = layoutDiff(was, layoutIssues());
   return { ok: true, results: r.results || null, fit: fitReport(), ...(lay ? { layout: lay } : {}) };
+}
+
+/** Undo and redo for the connector take back CLAUDE'S step, never the
+ *  person's. The tab's undo is the person's own (Y.UndoManager tracks this
+ *  tab's changes, Claude's relayed ones among them), so after each relayed
+ *  edit the step is closed off and remembered; a relayed undo runs only
+ *  while that step is still the last one here, and a redo only while what
+ *  it undid is still the next. Anything typed in between makes it refuse. */
+let pilotLastStep = null, pilotUndoneStep = null;
+const pilotTop = stack => (stack && stack.length ? stack[stack.length - 1] : null);
+function pilotMarkStep() {
+  if (!collab) return;
+  collab.mark();
+  pilotLastStep = pilotTop(collab.undoManager.undoStack);
+  pilotUndoneStep = null;
+}
+async function pilotHistory(verb) {
+  if (!collab) return { ok: false, error: 'undo and redo are relayed only to an editor in a shared session' };
+  const um = collab.undoManager;
+  if (verb === 'undo') {
+    if (!pilotLastStep || pilotTop(um.undoStack) !== pilotLastStep)
+      return { ok: false, error: 'the last step in the open editor is not your edit — someone has changed the report since, or this tab did not apply it. Nothing was undone; ask them to use Undo, or change it back with another edit' };
+    await undo();
+    pilotLastStep = null;
+    pilotUndoneStep = pilotTop(um.redoStack);
+  } else {
+    if (!pilotUndoneStep || pilotTop(um.redoStack) !== pilotUndoneStep)
+      return { ok: false, error: 'there is no undone edit of yours to redo here — something has changed since the undo. Nothing was redone' };
+    await redo();
+    pilotUndoneStep = null;
+    pilotLastStep = pilotTop(um.undoStack);
+  }
+  return { ok: true, results: [{ verb, ok: true }] };
 }
 
 /** What an edit did to the page's layout, for an agent that placed things
@@ -34207,6 +34278,66 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     }
     await hideDesignedPage(pid);
     return { ...docsync.api.status(), page: pid, hidden: true, pageOrder: pageOrder() };
+  },
+
+  /** movePage(page, toIndex) — the page strip's drag: the page goes to that
+   *  place in the order (0 = first). One undo step. Refused where the report
+   *  does not declare its pages, because there the order is its design's. */
+  async movePage(page, to) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    if (!pagesDeclared) return { ok: false, error: 'this report does not declare its pages, so their order is fixed by its design' };
+    const order = pageOrder();
+    const pid = order.find(p => String(p) === String(page));
+    if (pid == null) return { ok: false, error: `no page '${page}' — check inventory().pages` };
+    const n = Number(to);
+    if (!Number.isInteger(n) || n < 0 || n >= order.length)
+      return { ok: false, error: `movePage(page, toIndex): toIndex is a whole number from 0 to ${order.length - 1}` };
+    const next = order.filter(p => p !== pid);
+    next.splice(n, 0, pid);
+    if (next.every((v, i) => v === order[i])) return { ...docsync.api.status(), page: pid, unchanged: true, pageOrder: order };
+    pushHistory();
+    writeOrder(next, pageBlanks());
+    await render();
+    return { ...docsync.api.status(), page: pid, pageOrder: pageOrder() };
+  },
+
+  /** showPage(page) — a designed page removePage left out comes back, at its
+   *  designed place among the visible pages (the Hidden group's 👁). */
+  async showPage(page) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const order = pageOrder();
+    const hidden = designedPages.map(p => p.id).filter(id => !order.includes(id));
+    const pid = designedPages.map(p => p.id).find(id => String(id) === String(page));
+    if (pid == null || !hidden.includes(pid)) {
+      if (pid != null) return { ...docsync.api.status(), page: pid, unchanged: true, pageOrder: order };
+      return { ok: false, error: `no hidden page '${page}' — ${hidden.length ? 'hidden now: ' + hidden.join(', ') : 'no page is hidden'}` };
+    }
+    await showDesignedPage(pid);
+    return { ...docsync.api.status(), page: pid, pageOrder: pageOrder() };
+  },
+
+  /** setPageSize(size) — File ▸ Page size: one of the sizes by id or name
+   *  (letter, a4, a3, legal, digital = 16:9 slide, slide43, pageless), or
+   *  {w, h} in inches, h null for one continuous page. Everything placed
+   *  keeps its inches. One undo step. */
+  async setPageSize(sz) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const named = v => DOC_SIZES.find(x => x.id === String(v).toLowerCase() || x.name.toLowerCase() === String(v).toLowerCase());
+    let d = null;
+    if (typeof sz === 'string') d = named(sz);
+    else if (sz && typeof sz === 'object') {
+      if (sz.id || sz.name) d = named(sz.id || sz.name);
+      else {
+        const w = Number(sz.w), h = sz.h == null ? null : Number(sz.h);
+        if (Number.isFinite(w) && w >= 2 && w <= 60 && (h === null || (Number.isFinite(h) && h >= 2 && h <= 60)))
+          d = { name: h === null ? `${w}in wide` : `${w} × ${h} in`, w, h };
+      }
+    }
+    if (!d) return { ok: false, error: `setPageSize: one of ${DOC_SIZES.map(x => x.id).join(', ')}, or {w, h} in inches from 2 to 60 (h null for no fixed height)` };
+    pushHistory();
+    await applyDocSize(d);
+    const pg = layout.page || M.page || {};
+    return { ...docsync.api.status(), page: { w: pg.w, h: pg.h ?? null } };
   },
 
   /** Declare a source; cite it by putting its [^id] token into slot text. */
@@ -34684,9 +34815,19 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  undo step; dropFromLibrary(name) takes one out. */
   async library() { return { ok: true, pieces: (await libraryList()).map(p => ({ name: p.name, items: p.items.length,
       styles: Object.fromEntries(Object.entries(p.styles || {}).map(([k, v]) => [k, Object.keys(v)])), pictures: p.pictures || [] })) }; },
-  async saveToLibrary(name) {
-    if (!name || !String(name).trim()) return { ok: false, error: 'saveToLibrary(name) — with the pieces selected' };
-    const piece = pieceFromSelection(String(name).trim());
+  async saveToLibrary(name, ids) {
+    if (!name || !String(name).trim()) return { ok: false, error: 'saveToLibrary(name, ids?) — the pieces by id, or with them selected' };
+    let piece;
+    if (Array.isArray(ids) && ids.length) {
+      // By id, for a pilot that has no selection: selected for the moment
+      // pieceFromSelection reads, then the person's own selection is back.
+      const missing = ids.filter(id => !(shapeOf(id) || boxOf(id) || tableOf(id)));
+      if (missing.length) return { ok: false, error: `no shape, text box or placed table ${missing.map(m => `'${m}'`).join(', ')} — check inventory()` };
+      const keep = [...selIds];
+      selIds.clear(); ids.forEach(id => selIds.add(id));
+      try { piece = pieceFromSelection(String(name).trim()); }
+      finally { selIds.clear(); keep.forEach(id => selIds.add(id)); }
+    } else piece = pieceFromSelection(String(name).trim());
     if (!piece) return { ok: false, error: 'select shapes, text boxes or placed tables first' };
     try { await libraryChange('add', piece); } catch (e) { return { ok: false, error: e.message }; }
     return { ok: true, name: piece.name, items: piece.items.length, styles: piece.styles, pictures: piece.pictures };
