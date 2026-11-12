@@ -30993,7 +30993,23 @@ window.__dsTestReset = async () => {
   selected = null; lastXform = null; layersPid = null; chartTab = 'data';
   keyId = null; keyCandidate = null; chartPanelId = null; tablePanelId = null;
   document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
-  try { setSel($('out').contentDocument, []); } catch (e) { swallowed('test reset: selection', e); }
+  // The rest of what a test can leave that a fresh boot has not got: the
+  // sources panel and the story editor, a selected page (clearSel, not
+  // setSel(d, []), which keeps one), the "Claude is editing" chip a pilot
+  // op lights, ⌘C's clipboard, link checks, the presentation's slide, and
+  // the toggles kept in storage (zoom, guides, hidden characters, overrides).
+  // Each of these sent a reset to a full boot in CI (2026-11-12).
+  closeSources(); closeStoryEditor();
+  clip = null; styleClip = null; presentIdx = 0; linkStatus.clear();
+  agentLive = null; agentPaint();
+  for (const k of ['ds-zoom', 'ds-guides', 'ds-hidden', 'ds-overrides']) {
+    try { localStorage.removeItem(k); } catch (e) { /* file: */ }
+  }
+  zoomChoice = ''; guidesOn = false; showHidden = false; showOverrides = false;
+  document.querySelectorAll('#zoom button').forEach(x => x.classList.toggle('on', x.dataset.z === ''));
+  $('guides').classList.remove('on'); $('hiddenchars').classList.remove('on');
+  try { applyZoom(); } catch (e) { swallowed('test reset: zoom', e); }
+  try { clearSel($('out').contentDocument); } catch (e) { swallowed('test reset: selection', e); }
   source = original;
   layout = JSON.parse(layoutOrig || '{}');
   layout.positions = layout.positions || {};
