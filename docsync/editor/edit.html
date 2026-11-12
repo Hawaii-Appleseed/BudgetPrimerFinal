@@ -30578,8 +30578,12 @@ async function docStoreSave(layoutText, force = false, auto = false, leaving = f
     hubAutosaveNoticeSync();
     hubSavedAt = Date.now();
     markDirty();
-    $('stat').textContent = auto ? 'saved automatically — anyone opening this document gets this version'
-                                 : 'saved — anyone opening this document gets this version';
+    // Not a bare write: a render that starts a beat after the store answers
+    // (a collaborator's words adopted, or the tail of a restore they made)
+    // claims the row with "rendering…" and its idle hint, and the
+    // confirmation was gone before it could be read. It outlives that render.
+    sayNowAndAfterRender(auto ? 'saved automatically — anyone opening this document gets this version'
+                              : 'saved — anyone opening this document gets this version');
     return true;
   } catch (e) {
     if (auto) {
