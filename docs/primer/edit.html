@@ -31001,6 +31001,11 @@ window.__dsTestReset = async () => {
   await clearDraftCache();
   markDirty();
   await render();
+  // and again once it is drawn: the render can put back a scroll a pending
+  // scroll event recorded before the reset (our-mission came back at 90px).
+  try { const se = $('out').contentDocument.scrollingElement; se.scrollTop = 0; se.scrollLeft = 0; }
+  catch (e) { swallowed('test reset: scroll', e); }
+  scrollTopWas = 0;
   syncHistoryButtons();
   return { ok: true };
 };
