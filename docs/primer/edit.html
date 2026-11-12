@@ -14972,9 +14972,9 @@ function styleType(d, id) {
   if (el.tagName === 'IMG' || el.querySelector('img')) return 'image';
   return null;
 }
-function copyStyle(d) {
-  if (selIds.size !== 1) { $('stat').textContent = 'select one element to copy its style'; return; }
-  const id = [...selIds][0];
+/** The copyable look of one element, {type, data}, or null — ⌘⌥C's, and the
+ *  pilot's copyStyle(from, to). */
+function styleClipFor(d, id) {
   const type = styleType(d, id);
   let data;
   if (type === 'shape') data = pick(shapeOf(id), STYLE_SUBSET.shape);
@@ -14983,8 +14983,15 @@ function copyStyle(d) {
   else if (type === 'image') data = {                      // image style lives in TWO stores
     img: pick((layout.img || {})[id] || {}, ['radius', 'filter']),
     flip: ((layout.positions || {})[id] || {}).flip };
-  else { $('stat').textContent = 'that element has no copyable style'; return; }
-  styleClip = { type, data: clone(data) };
+  else return null;
+  return { type, data: clone(data) };
+}
+function copyStyle(d) {
+  if (selIds.size !== 1) { $('stat').textContent = 'select one element to copy its style'; return; }
+  const clip = styleClipFor(d, [...selIds][0]);
+  if (!clip) { $('stat').textContent = 'that element has no copyable style'; return; }
+  styleClip = clip;
+  const type = clip.type;
   $('stat').textContent = `style copied — select ${type}${type === 'box' ? 'es' : 's'} and press ⌘⌥V to paste it`;
 }
 /** The painter on a run of words (65): ⌘⌥C in the words takes the run's
@@ -15018,6 +15025,13 @@ async function pasteStyle(d) {
   const targets = [...selIds].filter(id => styleType(d, id) === styleClip.type);
   if (!targets.length) { $('stat').textContent = `paste style needs a selected ${styleClip.type}`; return; }
   pushHistory();
+  applyStyleClip(d, styleClip, targets);
+  markDirty();
+  await render();
+  $('stat').textContent = `style pasted to ${targets.length} ${styleClip.type}${targets.length > 1 ? 's' : ''}`;
+}
+/** Put a copied look onto targets of its kind — no history, no render. */
+function applyStyleClip(d, styleClip, targets) {
   targets.forEach(id => {
     if (styleClip.type === 'image') {
       layout.img = layout.img || {};
@@ -15041,9 +15055,6 @@ async function pasteStyle(d) {
         styleClip.data[k] !== undefined ? obj[k] = clone(styleClip.data[k]) : delete obj[k]);
     }
   });
-  markDirty();
-  await render();
-  $('stat').textContent = `style pasted to ${targets.length} ${styleClip.type}${targets.length > 1 ? 's' : ''}`;
 }
 
 function toggleLockSel(d) {
@@ -32920,6 +32931,155 @@ function _pilotObjData(base, el) {
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
 const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'qr'];
+
+// ---- the look verbs (CONNECTOR_PARITY.md step 5): what the right-click menu
+// writes, by name, into the same stores — so an object a pilot styled is the
+// object a person would have styled, and the menu reads it back.
+const _pilotEl = id => $('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"], [data-shape="${CSS.escape(id)}"]`);
+const SHADOW_DEFAULT = { offset: 0.05, direction: 135, blur: 0.08, alpha: 0.35 };
+function _pilotValidateLook(id, p) {
+  const v = _pilotValidatePlace(id);
+  if (!v.ok) return v;
+  if (!p || typeof p !== 'object' || Array.isArray(p))
+    return { ok: false, error: 'setLook(id, {alpha, blend, shadow}) — alpha: opacity 0.1 to 1; blend: a blend mode; shadow: true, {offset, direction, blur, alpha} or null' };
+  const bad = Object.keys(p).filter(k => !['alpha', 'blend', 'shadow'].includes(k));
+  if (bad.length) return { ok: false, error: `setLook: ${bad.join(', ')} — only alpha, blend and shadow` };
+  if ('alpha' in p && !(p.alpha == null || (typeof p.alpha === 'number' && p.alpha >= 0.1 && p.alpha <= 1)))
+    return { ok: false, error: 'setLook: alpha is an opacity from 0.1 to 1 (null for none)' };
+  if ('blend' in p) {
+    if (!objOf(id)) return { ok: false, error: `setLook: blend is for shapes, text boxes and placed tables — '${id}' is none of those` };
+    if (!(p.blend == null || BLENDS.includes(p.blend))) return { ok: false, error: `setLook: blend is one of ${BLENDS.join(', ')}` };
+  }
+  if ('shadow' in p) {
+    if (!(shapeOf(id) || boxOf(id))) return { ok: false, error: `setLook: a shadow is for shapes and text boxes (pictures included) — '${id}' is neither` };
+    const sh = p.shadow;
+    if (!(sh == null || sh === true || sh === false || (typeof sh === 'object' && !Array.isArray(sh))))
+      return { ok: false, error: 'setLook: shadow is true, {offset, direction, blur, alpha} or null' };
+    if (sh && typeof sh === 'object') {
+      const R = { offset: [0, 0.3], direction: [0, 360], blur: [0, 0.3], alpha: [0, 1] };
+      for (const [k, val] of Object.entries(sh)) {
+        if (!R[k]) return { ok: false, error: `setLook: shadow ${k} — offset, direction, blur or alpha` };
+        if (typeof val !== 'number' || val < R[k][0] || val > R[k][1]) return { ok: false, error: `setLook: shadow ${k} is ${R[k][0]} to ${R[k][1]}` };
+      }
+    }
+  }
+  return { ok: true };
+}
+function _pilotApplyLook(id, p) {
+  const out = { id };
+  if ('alpha' in p) {
+    const st = _pilotStoreOf(id) || ensureStore($('out').contentDocument, _pilotEl(id));
+    if (p.alpha == null || p.alpha >= 0.999) delete st.alpha; else st.alpha = p.alpha;
+    out.alpha = st.alpha ?? 1;
+  }
+  if ('blend' in p) {
+    const o = objOf(id);
+    delete o.blend;
+    if (p.blend && p.blend !== 'normal') o.blend = p.blend;
+    else if ((dressedObj(o).blend || 'normal') !== 'normal') o.blend = 'normal';
+    out.blend = dressedObj(o).blend || 'normal';
+  }
+  if ('shadow' in p) {
+    const o = shapeOf(id) || boxOf(id);
+    if (!p.shadow) delete o.shadow;
+    else o.shadow = { ...(o.shadow || SHADOW_DEFAULT), ...(p.shadow === true ? {} : p.shadow) };
+    out.shadow = o.shadow || null;
+  }
+  return out;
+}
+const ANIM_KINDS = ['fade', 'rise', 'drop', 'slide-left', 'slide-right', 'grow', 'pop', 'bars'];
+function _pilotValidateAnimate(id, a) {
+  const v = _pilotValidatePlace(id);
+  if (!v.ok) return v;
+  if (a == null) return { ok: true };
+  if (typeof a !== 'object' || !ANIM_KINDS.includes(a.kind))
+    return { ok: false, error: `animate(id, {kind, duration, delay} | null) — kind is ${ANIM_KINDS.join(', ')} (bars: a bar chart's bars grow in)` };
+  if (a.duration != null && !(typeof a.duration === 'number' && a.duration >= 0.1 && a.duration <= 3)) return { ok: false, error: 'animate: duration is 0.1 to 3 seconds' };
+  if (a.delay != null && !(typeof a.delay === 'number' && a.delay >= 0 && a.delay <= 3)) return { ok: false, error: 'animate: delay is 0 to 3 seconds' };
+  return { ok: true };
+}
+function _pilotApplyAnimate(id, a) {
+  const st = _pilotStoreOf(id) || ensureStore($('out').contentDocument, _pilotEl(id));
+  if (!a) { delete st.anim; return { id, anim: null }; }
+  const cur = st.anim || {};
+  st.anim = { kind: a.kind, duration: a.duration ?? cur.duration ?? 0.6, delay: a.delay ?? cur.delay ?? 0 };
+  return { id, anim: st.anim };
+}
+function _pilotValidateCrop(id, c) {
+  if (fitKind(id) !== 'img') return { ok: false, error: `'${id}' is not a designed picture — crop is for the report's own pictures; a picture box is framed with fit` };
+  if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+  if (c == null) return { ok: true };
+  const n = k => typeof c[k] === 'number' && isFinite(c[k]);
+  if (typeof c !== 'object' || !n('imgW') || c.imgW <= 0 || (c.dx != null && !n('dx')) || (c.dy != null && !n('dy')))
+    return { ok: false, error: 'crop(id, {imgW, dx, dy} | null) — in inches: how wide the whole picture is drawn, and how far right and down the frame sits into it; null shows it uncropped' };
+  return { ok: true };
+}
+function _pilotApplyCrop(id, c) {
+  layout.img = layout.img || {};
+  const g = (layout.img[id] = layout.img[id] || {});
+  if (!c) { delete g.crop; if (!Object.keys(g).length) delete layout.img[id]; return { id, crop: null }; }
+  const d = $('out').contentDocument, el = _pilotEl(id);
+  const st = ensureStore(d, el);                       // the window is a fixed frame, as Crop makes it
+  if (st.w == null || st.h == null) { const b = inchBox(el, el.closest('section.page')); st.w = st.w ?? +b.w.toFixed(2); st.h = st.h ?? +b.h.toFixed(2); }
+  g.crop = { imgW: +c.imgW.toFixed(2), dx: +(c.dx || 0).toFixed(2), dy: +(c.dy || 0).toFixed(2) };
+  delete g.fit; delete g.fitAlign; delete g.h;
+  return { id, crop: g.crop, frame: { w: st.w, h: st.h } };
+}
+const TONE_KEYS = { bright: [0.3, 1.7, 1], contrast: [0.3, 1.7, 1], sat: [0, 2, 1], gray: [0, 1, 0] };
+const TONE_ALIAS = { brightness: 'bright', saturation: 'sat', colour: 'sat', color: 'sat', mono: 'gray', grayscale: 'gray' };
+function _pilotValidateTone(id, t) {
+  if (fitKind(id) !== 'img') return { ok: false, error: `'${id}' is not a designed picture — tone is for the report's own pictures` };
+  if (t == null) return { ok: true };
+  if (typeof t !== 'object' || Array.isArray(t)) return { ok: false, error: 'tone(id, {bright, contrast, sat, gray} | null)' };
+  for (const [k0, v] of Object.entries(t)) {
+    const k = TONE_ALIAS[k0] || k0, R = TONE_KEYS[k];
+    if (!R) return { ok: false, error: `tone: ${k0} — bright, contrast, sat (colour) or gray (mono)` };
+    if (!(v == null || (typeof v === 'number' && v >= R[0] && v <= R[1]))) return { ok: false, error: `tone: ${k} is ${R[0]} to ${R[1]} (${R[2]} is unchanged)` };
+  }
+  return { ok: true };
+}
+function _pilotApplyTone(id, t) {
+  layout.img = layout.img || {};
+  const g = (layout.img[id] = layout.img[id] || {});
+  if (t == null) delete g.filter;
+  else {
+    g.filter = g.filter || {};
+    Object.entries(t).forEach(([k0, v]) => {
+      const k = TONE_ALIAS[k0] || k0;
+      if (v == null || Math.abs(v - TONE_KEYS[k][2]) < 0.001) delete g.filter[k]; else g.filter[k] = v;
+    });
+    if (!Object.keys(g.filter).length) delete g.filter;
+  }
+  const f = g.filter || null;
+  if (!Object.keys(g).length) delete layout.img[id];
+  return { id, tone: f };
+}
+const TABLE_LINE_OPS = ['insert', 'delete', 'move', 'even', 'fit'];
+function _pilotValidateTableLine(kind, id, op, at, to) {
+  const t = tableOfId(String(id || ''));
+  const name = kind === 'row' ? 'tableRow' : 'tableCol';
+  if (!t || t.flow) return { ok: false, error: `no placed table '${id}' — check inventory()` };
+  const ops = kind === 'row' ? ['insert', 'delete', 'move', 'even'] : ['insert', 'delete', 'move', 'fit'];
+  if (!ops.includes(op)) return { ok: false, error: `${name}(id, ${ops.join(' | ')}, at, to?) — ${kind === 'row' ? 'even spaces the rows evenly' : 'fit sizes every column to its words'}` };
+  if (op === 'even' || op === 'fit') return { ok: true };
+  const n = kind === 'row' ? t.rows.length : t.rows[0].length;
+  const top = op === 'insert' ? n : n - 1;
+  if (!Number.isInteger(at) || at < 0 || at > top) return { ok: false, error: `${name}: at is ${op === 'insert' ? 'where the new one goes, ' : ''}0 to ${top}` };
+  if (op === 'delete' && n <= 1) return { ok: false, error: `${name}: a table keeps at least one ${kind}` };
+  if (op === 'move' && (!Number.isInteger(to) || to < 0 || to > n - 1)) return { ok: false, error: `${name}: to is 0 to ${n - 1}` };
+  return { ok: true };
+}
+function _pilotApplyTableLine(kind, id, op, at, to) {
+  const t = tableOfId(String(id));
+  if (op === 'even' || op === 'fit') {
+    const host = _pilotEl('table.' + t.id);
+    const tableEl = host && (host.tagName === 'TABLE' ? host : host.querySelector('table'));
+    if (op === 'even') tableDistributeRows(t, tableEl); else tableFitColumns(t, tableEl);
+  } else if (op === 'insert') (kind === 'row' ? tableInsertRow : tableInsertCol)(t, at);
+  else if (op === 'delete') (kind === 'row' ? tableDeleteRow : tableDeleteCol)(t, at);
+  else { const step = to > at ? 1 : -1; for (let i = at; i !== to; i += step) (kind === 'row' ? tableMoveRow : tableMoveCol)(t, i, step); }
+  return { id: 'table.' + t.id, rows: t.rows.length, cols: t.rows[0].length };
+}
 function _pilotValidateAddShape(o = {}) {
   const { kind = 'rect', page } = o || {};
   if (!PILOT_SHAPE_KINDS.includes(kind))
@@ -32932,7 +33092,7 @@ function _pilotValidateAddShape(o = {}) {
   return _pilotPageDraws(page, 'addShape');
 }
 function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
-                               stroke, sw, z, rx, r, data } = {}) {
+                               stroke, sw, z, rx, r, data, sides, points, inner } = {}) {
   const pid = page != null ? _pilotPageId(page) : visiblePageId();
   const id = freeShapeId(kind);
   // Same defaults as the Shapes panel (solid, on top, sage) so an argless
@@ -32948,8 +33108,9 @@ function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
   // A rectangle's corner radius, in inches — the engine reads `r` (rx is not a rect key).
   if (r != null && kind === 'rect' && +r > 0) sh.r = +r;
   if (kind === 'qr') { sh.data = String(data || 'https://www.hiappleseed.org'); sh.fill = fill || '#000000'; sh.stroke = 'none'; if (h == null) sh.h = sh.w; }
-  if (kind === 'polygon') sh.sides = 6;
-  if (kind === 'star') { sh.points = 5; sh.inner = 0.5; }
+  if (kind === 'polygon') sh.sides = Number.isInteger(sides) && sides >= 3 && sides <= 12 ? sides : 6;
+  if (kind === 'star') { sh.points = Number.isInteger(points) && points >= 3 && points <= 24 ? points : 5;
+                         sh.inner = typeof inner === 'number' && inner >= 0.2 && inner <= 0.9 ? inner : 0.5; }
   wearDefaults('shape', sh, Object.entries({ fill, stroke, sw, rx }).filter(([, v]) => v != null).map(([k]) => k));
   layout.shapes.push(sh);
   return { id, page: pid };
@@ -33528,10 +33689,11 @@ const PILOT_BATCH_VERBS = {
       const s = shapeOf(id);
       if (!s) return { ok: false, error: `no shape '${id}' — setShape works on shapes; a text box styles through setStyle` };
       if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+      const KEYS = ['r', 'stroke', 'sw', 'z', 'dash', 'ends', 'sides', 'points', 'inner', 'data'];
       if (!p || typeof p !== 'object' || Array.isArray(p))
-        return { ok: false, error: 'setShape(id, {r, stroke, sw, z}) — r: corner radius in inches (rectangles), stroke: #hex | "none", sw: outline width in inches, z: stacking order' };
-      const bad = Object.keys(p).filter(k => !['r', 'stroke', 'sw', 'z'].includes(k));
-      if (bad.length) return { ok: false, error: `setShape: ${bad.join(', ')} not settable here — r, stroke, sw, z` };
+        return { ok: false, error: `setShape(id, {${KEYS.join(', ')}}) — r: corner radius in inches (rectangles), stroke: #hex | "none", sw: outline width in inches, z: stacking order, dash: solid | dashed | dotted, ends: none | end | both (lines), sides (polygon), points and inner (star), data (QR code)` };
+      const bad = Object.keys(p).filter(k => !KEYS.includes(k));
+      if (bad.length) return { ok: false, error: `setShape: ${bad.join(', ')} not settable here — ${KEYS.join(', ')}` };
       if ('r' in p) {
         if (s.kind !== 'rect') return { ok: false, error: `setShape: only rectangles have corners, '${id}' is a ${s.kind}` };
         if (typeof p.r !== 'number' || !isFinite(p.r) || p.r < 0 || p.r > 0.4)
@@ -33543,16 +33705,48 @@ const PILOT_BATCH_VERBS = {
         return { ok: false, error: 'setShape: z is a number — higher is nearer the front; text boxes sit at 3' };
       if ('stroke' in p && !(p.stroke === 'none' || (typeof p.stroke === 'string' && HEX_RE.test(p.stroke.trim()))))
         return { ok: false, error: 'setShape: stroke is a #hex or "none"' };
+      if ('dash' in p && !(p.dash == null || ['solid', 'dashed', 'dotted'].includes(p.dash)))
+        return { ok: false, error: 'setShape: dash is solid, dashed or dotted' };
+      if ('ends' in p) {
+        if (s.kind !== 'line') return { ok: false, error: `setShape: only lines have ends, '${id}' is a ${s.kind}` };
+        if (!['none', 'end', 'both', null].includes(p.ends ?? null)) return { ok: false, error: 'setShape: ends is none, end (an arrowhead) or both' };
+      }
+      const whole = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+      if ('sides' in p && (s.kind !== 'polygon' || !whole(p.sides, 3, 12)))
+        return { ok: false, error: 'setShape: sides is for a polygon, 3 to 12' };
+      if ('points' in p && (s.kind !== 'star' || !whole(p.points, 3, 24)))
+        return { ok: false, error: 'setShape: points is for a star, 3 to 24' };
+      if ('inner' in p && (s.kind !== 'star' || !(typeof p.inner === 'number' && p.inner >= 0.2 && p.inner <= 0.9)))
+        return { ok: false, error: 'setShape: inner is a star\'s inner radius, 0.2 to 0.9 of the outer' };
+      if ('data' in p && (s.kind !== 'qr' || typeof p.data !== 'string' || !p.data.trim()))
+        return { ok: false, error: 'setShape: data is what a QR code says (a link or text)' };
       return { ok: true };
     },
     apply: (id, p) => {
       const s = shapeOf(id);
       if ('r' in p) { if (p.r) s.r = p.r; else delete s.r; }
-      if ('stroke' in p) s.stroke = p.stroke.trim();
+      if ('stroke' in p) { s.stroke = p.stroke.trim(); if (s.stroke !== 'none' && (s.sw ?? 0) < 0.005 && !('sw' in p)) s.sw = 0.02; }
       if ('sw' in p) s.sw = p.sw;
       if ('z' in p) s.z = p.z;
-      return { id, r: s.r || 0, stroke: s.stroke, sw: s.sw, z: s.z };
+      // The same presets as the right-click menu's Dashed / Dotted rows.
+      if ('dash' in p) { const pr = { dashed: [0.08, 0.05], dotted: [0.02, 0.04] }[p.dash]; if (pr) s.dash = pr; else delete s.dash; }
+      if ('ends' in p) { if (!p.ends || p.ends === 'none') delete s.ends; else s.ends = p.ends; }
+      if ('sides' in p) s.sides = p.sides;
+      if ('points' in p) s.points = p.points;
+      if ('inner' in p) s.inner = p.inner;
+      if ('data' in p) s.data = p.data.trim();
+      return { id, r: s.r || 0, stroke: s.stroke, sw: s.sw, z: s.z,
+               dash: !s.dash ? 'solid' : (s.dash[0] <= 0.03 ? 'dotted' : 'dashed'),
+               ...(s.kind === 'line' ? { ends: s.ends || 'none' } : {}) };
     } },
+  setLook: { validate: (id, p) => _pilotValidateLook(id, p), apply: (id, p) => _pilotApplyLook(id, p) },
+  animate: { validate: (id, a) => _pilotValidateAnimate(id, a), apply: (id, a) => _pilotApplyAnimate(id, a) },
+  crop: { validate: (id, c) => _pilotValidateCrop(id, c), apply: (id, c) => _pilotApplyCrop(id, c) },
+  tone: { validate: (id, t) => _pilotValidateTone(id, t), apply: (id, t) => _pilotApplyTone(id, t) },
+  tableRow: { validate: (id, op, at, to) => _pilotValidateTableLine('row', id, op, at, to),
+              apply: (id, op, at, to) => _pilotApplyTableLine('row', id, op, at, to) },
+  tableCol: { validate: (id, op, at, to) => _pilotValidateTableLine('col', id, op, at, to),
+              apply: (id, op, at, to) => _pilotApplyTableLine('col', id, op, at, to) },
   flip: { validate: (id, f) => {
       const v = _pilotValidatePlace(id);
       if (!v.ok) return v;
@@ -33825,7 +34019,8 @@ const PILOT_BATCH_VERBS = {
 // to the room's ASKS (collab/src/room.js) and the hub's check_report list.
 const ASK_READS = ['preflight', 'audit', 'hyperlinks', 'colours', 'fontsInUse', 'links', 'styles', 'notes', 'overrides', 'stories'];
 const PILOT_SINGLE_VERBS = new Set(['fitFrame', 'remove', 'duplicate', 'addPage', 'duplicatePage', 'removePage', 'applyScheme', 'addEndnotesSection', 'anchor', 'wrap', 'master', 'masterFrom', 'detachMaster', 'styles', 'align', 'distribute',
-  'movePage', 'showPage', 'setPageSize', 'continueEndnotes', 'saveToLibrary', 'placeFromLibrary', 'loadStyles', 'undo', 'redo']);
+  'movePage', 'showPage', 'setPageSize', 'continueEndnotes', 'saveToLibrary', 'placeFromLibrary', 'loadStyles', 'undo', 'redo',
+  'copyStyle', 'setWebsite']);
 
 /** A pilot op relayed by the hub's room — the connector's arrange_report —
  *  applied here as docsync.api.batch(), one undo step, the same validation
@@ -34731,6 +34926,53 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async setCell(id, r, c, md) { return _pilotOne('setCell', [id, r, c, md]); },
   /** setShape(id, {r, stroke, sw, z}) — a shape's corner radius (inches, rectangles), outline and stacking order. */
   async setShape(id, p) { return _pilotOne('setShape', [id, p]); },
+  /** The right-click menu's look, by name (step 5): setLook(id, {alpha, blend,
+   *  shadow}); animate(id, {kind, duration, delay} | null); crop(id, {imgW, dx,
+   *  dy} | null) and tone(id, {bright, contrast, sat, gray} | null) on a
+   *  designed picture; tableRow / tableCol(id, op, at, to?) — insert, delete,
+   *  move, and even (rows) or fit (columns). */
+  async setLook(id, p) { return _pilotOne('setLook', [id, p]); },
+  async animate(id, a) { return _pilotOne('animate', [id, a ?? null]); },
+  async crop(id, c) { return _pilotOne('crop', [id, c ?? null]); },
+  async tone(id, t) { return _pilotOne('tone', [id, t ?? null]); },
+  async tableRow(id, op, at, to) { return _pilotOne('tableRow', [id, op, at, to]); },
+  async tableCol(id, op, at, to) { return _pilotOne('tableCol', [id, op, at, to]); },
+  /** copyStyle(from, [to]) — the format painter in one step: from's look onto
+   *  each of to (the same kind of thing: shape, text box, table or picture). */
+  async copyStyle(from, to) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const d = $('out').contentDocument;
+    const clip = styleClipFor(d, from);
+    if (!clip) return { ok: false, error: `'${from}' has no look to copy — a shape, text box, placed table or picture` };
+    const list = (Array.isArray(to) ? to : [to]).filter(Boolean);
+    const wrong = list.filter(id => styleType(d, id) !== clip.type);
+    if (!list.length || wrong.length) return { ok: false, error: `copyStyle: every target is a ${clip.type}${wrong.length ? ` — not ${wrong.join(', ')}` : ''}` };
+    pushHistory();
+    applyStyleClip(d, clip, list);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), from, to: list, kind: clip.type };
+  },
+  /** setWebsite({site, slug} | null) — File ▸ Publish as a website: the
+   *  address the page will have. Nothing is public until a person Publishes. */
+  async setWebsite(w) {
+    if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
+    const sites = M.sites || {};
+    if (M.site || !Object.keys(sites).length) return { ok: false, error: 'this report cannot be published as a website — no site is set up for it' };
+    if (w == null) {
+      if (!layout.website) return { ...docsync.api.status(), website: null, unchanged: true };
+      pushHistory(); delete layout.website; markDirty(); await render();
+      return { ...docsync.api.status(), website: null };
+    }
+    const site = w.site || Object.keys(sites)[0], slug = String(w.slug || '').trim();
+    if (!sites[site]) return { ok: false, error: `no website '${site}' — ${Object.keys(sites).join(', ')}` };
+    if (!WEBSITE_SLUG_RE.test(slug)) return { ok: false, error: 'setWebsite: slug is lowercase letters, numbers and hyphens, 2 to 64 characters, no hyphen at either end' };
+    pushHistory();
+    layout.website = { site, slug, home: docStore() ? 'hub' : 'local' };
+    markDirty(); await render();
+    return { ...docsync.api.status(), website: layout.website, url: websiteUrl(layout.website),
+             note: 'nothing is public yet: it goes live the next time a person Publishes' };
+  },
   /** Style housekeeping (76): unusedStyles() — {text, object, cell,
    *  swatches} nothing uses; dropUnusedStyles(kinds?) deletes them;
    *  duplicateStyle(scope, name, newName?); overrides() — text whose own keys
