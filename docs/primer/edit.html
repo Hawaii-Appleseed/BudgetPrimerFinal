@@ -23741,6 +23741,76 @@ function collabParaNeutralFiles() {
   return { content: source.replace(slotRe(key), () => m[0]), layout };
 }
 
+/** Two people who add a thing in the same second or two are each handed the
+ *  first free id — the same one — because neither editor has heard of the
+ *  other's yet; the shared document then holds both, as it should, under ONE
+ *  id. The engine refuses a layout with a duplicate id, so the page stopped
+ *  drawing for everyone in the session, and every move, restyle or delete by
+ *  id went to whichever of the two came first. (Measured on a local hub: two
+ *  editors each adding six shapes at once collided on all six.)
+ *
+ *  So what the document hands over is untangled before it is drawn: the
+ *  first holder of an id keeps it, a later one takes the next free id. Every
+ *  editor reads the same document in the same order and works out the same
+ *  names, so each writing its answer back lands on one value. Shapes, text
+ *  boxes and tables are one namespace (as the engine holds them, with the
+ *  shared layouts' items); added pages are another, renamed together with
+ *  their entry in the page order. Returns how many it renamed. */
+function collabUntangleIds() {
+  let n = 0;
+  try {
+    const seen = new Set(masterIds());
+    const each = (list, fresh) => {
+      for (const it of Array.isArray(list) ? list : []) {
+        if (!it || typeof it.id !== 'string') continue;
+        if (seen.has(it.id)) { it.id = fresh(it); n++; }
+        seen.add(it.id);
+      }
+    };
+    const freeIn = make => { let k = 1; while (seen.has(make(k))) k++; return make(k); };
+    each(layout.shapes, s => {
+      const kind = (/^s\d+-(.+)$/.exec(s.id) || [])[1] || s.kind || 'shape';
+      return freeIn(k => `s${k}-${kind}`);
+    });
+    each(layout.boxes, () => freeIn(k => 't' + k));
+    each(layout.tables, () => freeIn(k => 't' + k));
+    const pg = layout.pages;
+    if (pg && Array.isArray(pg.blanks)) {
+      const pages = new Set(), order = Array.isArray(pg.order) ? pg.order : null;
+      const held = new Map();   // id -> how many of its places in the order are spoken for
+      for (const b of pg.blanks) {
+        if (!b || typeof b.id !== 'string') continue;
+        const was = b.id;
+        if (pages.has(was)) {
+          let k = 1;
+          while (pages.has('p' + k) || pg.blanks.some(x => x && x.id === 'p' + k)) k++;
+          b.id = 'p' + k; n++;
+          // Its own place in the order: the next one under the old name that
+          // an earlier page of that name has not already taken.
+          if (order) {
+            let skip = held.get(was) || 0;
+            for (let i = 0; i < order.length; i++) {
+              if (order[i] !== was) continue;
+              if (skip-- > 0) continue;
+              order[i] = b.id; break;
+            }
+          }
+        } else if (order) held.set(was, (held.get(was) || 0) + 1);
+        pages.add(b.id);
+      }
+      // A name left twice in the order with one page behind it draws that page twice.
+      if (order) {
+        const once = new Set();
+        for (let i = order.length - 1; i >= 0; i--) {
+          if (typeof order[i] !== 'string' || !pages.has(order[i])) continue;
+          if (once.has(order[i])) { order.splice(i, 1); n++; } else once.add(order[i]);
+        }
+      }
+    }
+  } catch (e) { swallowed('collabUntangleIds', e); }
+  return n;
+}
+
 /** Document -> local, then paint. `why` is adopt (joined), remote (someone
  *  else's edit), undo or redo. */
 async function collabAdopt(files, why) {
@@ -23750,6 +23820,9 @@ async function collabAdopt(files, why) {
   layout.positions = layout.positions || {};
   layout.shapes = layout.shapes || [];
   layout.sections = layout.sections || {};
+  // Before anything draws or acts on it; and said to the room at once, so
+  // nobody else spends a render on a layout the engine refuses.
+  if (collabUntangleIds()) collabFlushDirty();
   syncPageSize();
   markDirty();
   if (para) {
@@ -24107,7 +24180,12 @@ async function startCollab() {
     files: { content: source, layout },
     baseSha,
     busy: collabBusy,
-    beforeRemote: collabNoteCaret,
+    // The editor's last word before the document moves under it. A change
+    // made here and not yet said to the room (it waits for a render, and a
+    // render waits its turn behind one already running) would be replaced by
+    // the document's copy the moment a colleague's edit is adopted: said
+    // now, it merges with theirs instead.
+    beforeRemote: () => { collabNoteCaret(); collabFlushDirty(); },
     onBaseSha: collabSaved,
     onFiles: (files, why) => { collabAdopt(files, why); },
     onStatus: st => {
