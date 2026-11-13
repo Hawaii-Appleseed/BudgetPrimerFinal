@@ -673,9 +673,19 @@
      meaning what it has always meant — the LIVE document is up. Anything that
      waits on that (the test fixture, muscle memory, code) must never be
      satisfied by a read-only stand-in. */
-  #out, #ds-warm { border:0; display:block; width:1200px; height:100%;
+  #out, #ds-warm, #ds-histprev { border:0; display:block; width:1200px; height:100%;
          transform-origin:0 0; background:var(--canvas); }
   #ds-warm { position:absolute; inset:0; z-index:5; }
+  /* #ds-histprev is a saved version drawn over the page while its row is open
+     in the history panel: read-only, its own frame for the same reason as
+     #ds-warm, so the live document under it is never touched by a preview. */
+  #ds-histprev { position:absolute; inset:0; z-index:6; }
+  #ds-histchip { position:fixed; z-index:44; transform:translateX(-50%); display:flex; align-items:center; gap:10px;
+         max-width:min(680px, 92vw); background:#2F3E46; color:#fff; padding:8px 10px 8px 14px;
+         border-radius:var(--r-card); font:13px/1.35 system-ui; box-shadow:0 4px 16px rgba(0,0,0,.25); }
+  #ds-histchip button { font:600 12.5px system-ui; border-radius:var(--r-ctl); padding:5px 10px; cursor:pointer;
+         border:1px solid rgba(255,255,255,.45); background:transparent; color:#fff; white-space:nowrap; }
+  #ds-histchip button.go { background:#fff; color:#2F3E46; border-color:#fff; }
   /* Page strip: Canva's filmstrip across the bottom — each chip is a real
      PREVIEW of its page (the rendered section itself, cloned into a shadow
      root and scaled), numbered, drag to reorder, eye to hide. */
@@ -16323,9 +16333,9 @@ const pageCopyOf = pid => (pageBlanks().find(b => String(b.id) === String(pid)) 
 /** Render this document with another layout, in edit mode, and hand back the
  *  HTML — nothing on screen changes. The virtual layout file is overwritten,
  *  which the next render() overwrites again with the real one. */
-async function renderWith(lay) {
+async function renderWith(lay, src = source) {
   await renderIdle();
-  py.globals.set('SRC', source);
+  py.globals.set('SRC', src);
   py.globals.set('LAYOUT', JSON.stringify(lay, null, 2));
   py.globals.set('CONTENT', M.content);
   py.globals.set('LAYOUT_PATH', M.layout || '');
@@ -16812,6 +16822,7 @@ function applyZoom(recompute = true) {
     d.documentElement.style.scrollPaddingTop = Math.round(CTX_CLEAR / s) + 'px';
   syncZoomBar();
   if (typeof hubMarginQueue === 'function') hubMarginQueue(false);   // the comment cards follow the page's new scale
+  if (typeof hubPreviewFit === 'function') hubPreviewFit();           // and a version being previewed sits exactly over the page
 }
 
 /** The bar shows the scale ACTUALLY in effect, never the choice that asked for
@@ -28285,7 +28296,7 @@ async function hubHistoryToggle(open) {
   $('history').classList.toggle('on', show);
   hubGutterSync();
   if (show) await hubHistoryLoad();
-  else { hubHistorySel = null; hubHistoryPaint($('out') && $('out').contentDocument); }
+  else { hubHistorySel = null; hubPreviewClose(); hubHistoryPaint($('out') && $('out').contentDocument); }
 }
 /** The stage makes room for whichever side panel is open on a wide window;
  *  under 1100px both float over the page. */
@@ -28438,16 +28449,115 @@ async function hubVersionFiles(version) {
 }
 async function hubHistorySelect(v) {
   const d = $('out') && $('out').contentDocument;
+  hubPreviewClose();
   if (hubHistorySel && hubHistorySel.version === v.version) { hubHistorySel = null; hubHistoryRender(); hubHistoryPaint(d); return; }
   hubHistorySel = { version: v.version, loading: true };
   hubHistoryRender();
+  let files = null;
   try {
-    const { content, layoutText } = await hubVersionFiles(v.version);
+    files = await hubVersionFiles(v.version);
     if (!hubHistorySel || hubHistorySel.version !== v.version) return;   // moved on meanwhile
-    hubHistorySel = { version: v.version, ...hubHistoryDiff(content, layoutText) };
-  } catch (e) { hubHistorySel = { version: v.version, error: e.message }; }
+    hubHistorySel = { version: v.version, ...hubHistoryDiff(files.content, files.layoutText) };
+  } catch (e) { files = null; hubHistorySel = { version: v.version, error: e.message }; }
   hubHistoryRender();
   hubHistoryPaint(d);
+  // The version itself, on the page - unless it IS what is on screen.
+  const sel = hubHistorySel;
+  if (files && !(v.version === docVersion && !sel.unsaved)) await hubPreviewOpen(v, sel, files);
+}
+// --- a version, shown on the page before anyone restores it ----------------
+//
+// A row in the panel said what a version changed, in words; what it LOOKED
+// like was only knowable by restoring it. So an open row draws its version
+// over the page: the same renderer, that version's words and layout, in a
+// frame of its own (#ds-histprev) laid exactly over #out. Nothing of the
+// document is touched - not `source`, not `layout`, not the room - so closing
+// the row (or the panel, or pressing Back) is all it takes to be where you
+// were, and Restore is the only thing that changes anything.
+let hubPreviewSeq = 0;
+function hubPreviewClose() {
+  hubPreviewSeq++;
+  for (const id of ['ds-histprev', 'ds-histchip']) { const el = $(id); if (el) el.remove(); }
+}
+async function hubPreviewOpen(v, sel, files) {
+  const seq = ++hubPreviewSeq;
+  if (!py) return;
+  sel.preview = 'drawing'; hubHistoryRender();
+  let html;
+  try {
+    let lay = layout;
+    if (M.layout && files.layoutText != null) {
+      lay = JSON.parse(files.layoutText);
+      lay.positions = lay.positions || {}; lay.shapes = lay.shapes || []; lay.sections = lay.sections || {};
+    }
+    html = await renderWith(lay, files.content);
+  } catch (e) {
+    if (seq !== hubPreviewSeq || hubHistorySel !== sel) return;
+    sel.preview = 'failed';
+    sel.previewError = String(e.message || e).split('\n').filter(l => l.trim()).slice(-1)[0] || 'it does not build';
+    hubHistoryRender();
+    return;
+  }
+  if (seq !== hubPreviewSeq || hubHistorySel !== sel) return;   // closed, or another row, meanwhile
+  html = prepPreviewHtml(html);
+  // True size like the editor's own page, and inert: this is a picture of a
+  // version, and a click that seemed to edit it would edit nothing.
+  html = html.replace(/<\/head>/i, '<style>.page{max-width:none} body{pointer-events:none;user-select:none}</style></head>');
+  const live = $('out').contentDocument;
+  const keep = live && live.scrollingElement ? live.scrollingElement.scrollTop : 0;
+  const fr = document.createElement('iframe');
+  fr.id = 'ds-histprev';
+  fr.title = 'a saved version (read-only preview)';
+  fr.onload = () => {
+    const pd = fr.contentDocument;
+    if (pd && pd.scrollingElement) pd.scrollingElement.scrollTop = keep;   // the same place in the report
+    hubPreviewPaint();
+  };
+  fr.srcdoc = html;
+  $('stage').appendChild(fr);
+  const chip = document.createElement('div');
+  chip.id = 'ds-histchip';
+  const say = document.createElement('span');
+  say.textContent = `Previewing the version from ${fmtWhen(v.updated_at)}${v.label ? ` (“${v.label}”)` : ''}. Nothing has changed.`;
+  chip.appendChild(say);
+  if (!hubViewOnly() && v.version !== docVersion) {
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'go'; go.id = 'ds-histchip-restore';
+    go.textContent = 'Restore this version';
+    go.onclick = () => { hubHistoryToggle(false); hubRestore(v); };
+    chip.appendChild(go);
+  }
+  const back = document.createElement('button'); back.type = 'button'; back.id = 'ds-histchip-back';
+  back.textContent = 'Back to current';
+  back.onclick = () => { hubPreviewClose(); hubHistorySel = null; hubHistoryRender(); hubHistoryPaint($('out') && $('out').contentDocument); };
+  chip.appendChild(back);
+  document.body.appendChild(chip);
+  hubPreviewFit();
+  sel.preview = 'shown'; hubHistoryRender();
+}
+/** The preview frame takes the page frame's size, scale and place. */
+function hubPreviewFit() {
+  const fr = $('ds-histprev'), out = $('out'), st = $('stage');
+  if (!fr || !out || !st) return;
+  for (const k of ['width', 'height', 'transform', 'marginLeft']) fr.style[k] = out.style[k];
+  const chip = $('ds-histchip');
+  if (chip) {
+    const r = st.getBoundingClientRect();
+    chip.style.top = Math.round(r.top + 12) + 'px';
+    chip.style.left = Math.round(r.left + r.width / 2) + 'px';
+  }
+}
+/** In the preview, mark the paragraphs that differ from what is on screen. */
+function hubPreviewPaint() {
+  const fr = $('ds-histprev'), d = fr && fr.contentDocument;
+  if (!d || !d.body) return;
+  if (!d.getElementById('ds-hist-css')) {
+    const st = d.createElement('style'); st.id = 'ds-hist-css'; st.textContent = HIST_CSS;
+    d.head.appendChild(st);
+  }
+  d.querySelectorAll('.ds-hist-changed').forEach(el => el.classList.remove('ds-hist-changed'));
+  if (!hubHistorySel || !$('hpanel-show').checked) return;
+  for (const c of hubHistorySel.changed || []) { const el = hubCommentEl(d, c.key); if (el) el.classList.add('ds-hist-changed'); }
+  for (const k of hubHistorySel.gone || []) { const el = hubCommentEl(d, k); if (el) el.classList.add('ds-hist-changed'); }
 }
 /** What is on screen against a version: per paragraph, what went and what
  *  came; paragraphs that exist only on one side; whether the layout differs.
@@ -28492,6 +28602,13 @@ function hubHistoryDiffEl(sel) {
   }
   for (const k of sel.gone) { const l = document.createElement('span'); l.className = 'lay'; l.textContent = `${k}: only in this version`; box.appendChild(l); }
   for (const k of sel.added) { const l = document.createElement('span'); l.className = 'lay'; l.textContent = `${k}: only on screen`; box.appendChild(l); }
+  if (sel.preview) {
+    const p = document.createElement('span'); p.className = 'lay prev';
+    p.textContent = sel.preview === 'drawing' ? 'Drawing this version on the page…'
+      : sel.preview === 'failed' ? 'This version could not be drawn on the page: ' + sel.previewError
+      : 'This version is shown on the page. Nothing changes unless you press Restore.';
+    box.insertBefore(p, sum.nextSibling);
+  }
   return box;
 }
 // --- what changed while you were away -------------------------------------
@@ -28601,7 +28718,7 @@ function hubHistoryPaint(d) {
 }
 $('hpanel-close').onclick = () => hubHistoryToggle(false);
 $('hpanel-named').onclick = () => { hubHistoryNamedOnly = !hubHistoryNamedOnly; hubHistoryRender(); };
-$('hpanel-show').onchange = () => hubHistoryPaint($('out') && $('out').contentDocument);
+$('hpanel-show').onchange = () => { hubHistoryPaint($('out') && $('out').contentDocument); hubPreviewPaint(); };
 /** Bring a version back: a new version on top, everyone in the session gets it. */
 /** Who in the room holds words no Save has recorded, and which paragraphs of
  *  them a restore to `v` would replace, as a sentence for the confirm. Empty
