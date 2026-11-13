@@ -6062,10 +6062,15 @@ with tempfile.TemporaryDirectory() as _td:
                       env={k: v for k, v in os.environ.items() if k != "DOCSYNC_OUT"})
     check_eq("native run: with no DOCSYNC_OUT nothing is rewritten", _plain.returncode, 0)
 
-# The two starting points the hub offers: no placeholder source, no endnotes
+# The starting points the hub offers (two documents, the slide sizes, the social
+# and link-card canvases, landscape Letter and the tabloid poster): no placeholder source, no endnotes
 # page, one empty sheet at the right size; and an empty citation list builds
 # in publish mode too (a document that cites nothing has no sources to list).
-for _slug, _wh in (("blank-document", (8.5, 11.0)), ("slides", (10.0, 7.5))):
+for _slug, _wh in (("blank-document", (8.5, 11.0)), ("slides", (10.0, 7.5)),
+                   ("slides-widescreen", (13.333, 7.5)), ("social-square", (11.25, 11.25)),
+                   ("social-portrait", (11.25, 14.0625)), ("social-story", (11.25, 20.0)),
+                   ("link-card", (12.5, 6.5625)), ("letter-landscape", (11.0, 8.5)),
+                   ("poster-tabloid", (11.0, 17.0))):
     _proj = Path(__file__).resolve().parent.parent / "projects" / _slug
     _cmd = (_proj / "content.md").read_text()
     check_eq(f"{_slug}: no placeholder source", "example.com" in _cmd or "placeholder" in _cmd.lower(), False)

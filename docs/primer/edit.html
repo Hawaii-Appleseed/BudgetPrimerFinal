@@ -20502,6 +20502,31 @@ function syncHistoryButtons() {
   const u = $('undo'), r = $('redo');
   if (u) u.disabled = !(collab ? collab.canUndo() : past.length);
   if (r) r.disabled = !(collab ? collab.canRedo() : future.length);
+  // The open list of steps follows what it lists.
+  if ($('histpop') && !$('histpop').hidden && typeof historyRender === 'function') historyRender();
+}
+// In a session the steps are items on the document's Y.UndoManager, which
+// knows what to take back and nothing a person could read. So each item is
+// given, as it is made, the state on its far side: an edit's item the state
+// BEFORE the edit (pushHistory's), an undone step's item the state it would
+// redo TO. The list of steps names each one from those, exactly as it names
+// the local snapshots. Keyed by the item itself, so a cleared or popped item
+// takes its record with it.
+const collabSteps = new WeakMap();   // stack item -> {before | after, time}
+let collabStepBefore = null;         // the state when the step in hand began
+function collabStepsWatch(um) {
+  um.on('stack-item-added', ev => {
+    try {
+      if (ev.origin === um) {
+        // Made by an undo (a redo item) or a redo (an undo item): the editor
+        // still shows the state from before it, which is this item's far side.
+        collabSteps.set(ev.stackItem, ev.type === 'redo' ? { after: snapshot(), time: Date.now() } : { before: snapshot(), time: Date.now() });
+      } else if (ev.type === 'undo') {
+        collabSteps.set(ev.stackItem, { before: collabStepBefore, time: Date.now() });
+        collabStepBefore = null;
+      }
+    } catch (e) { swallowed('collabStepsWatch', e); }
+  });
 }
 // In a live session the snapshot stack gives way to the document's own
 // Y.UndoManager (collab/client/session.mjs): a snapshot restore would put
@@ -20521,7 +20546,7 @@ const stepTimes = new Map();
 function pushHistory() {
   historySeq++;
   suggestCapture();
-  if (collab) { collab.mark(); syncHistoryButtons(); return; }
+  if (collab) { collabStepBefore = snapshot(); collab.mark(); syncHistoryButtons(); return; }
   const sn = snapshot();
   past.push(sn);
   stepTimes.set(sn, Date.now());
@@ -20612,6 +20637,7 @@ const H_TOP = { positions: 'placed', fill: 'colour', img: 'picture', textStyles:
  *  empty: no history step ever said which slot's words had changed. */
 function historyLabel(aJson, bJson) {
   let a, b;
+  if (!aJson || !bJson) return 'a change';
   try { a = JSON.parse(aJson); b = JSON.parse(bJson); } catch (e) { return 'a change'; }
   const bits = [];
   if (a.source !== b.source) {
@@ -20640,15 +20666,25 @@ const hTime = t => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', min
 /** [{i, label, time, state: 'past' | 'now' | 'ahead'}] — newest first. */
 function historyList() {
   const now = snapshot(), rows = [];
-  for (let k = future.length - 1; k >= 0; k--) {
-    const after = future[k], before = k === future.length - 1 ? now : future[k + 1];
-    rows.push({ i: future.length - k, state: 'ahead', label: historyLabel(before, after), time: null });
+  // The same two stacks either way: the state before each step that can be
+  // undone, the state after each that can be redone. In a session they come
+  // off the shared document's undo items (collabSteps).
+  let pastS = past, futureS = future, timeOf = k => stepTimes.get(past[k]) || null;
+  if (collab) {
+    const um = collab.undoManager, rec = it => collabSteps.get(it) || {};
+    pastS = um.undoStack.map(it => rec(it).before || null);
+    futureS = um.redoStack.map(it => rec(it).after || null);
+    timeOf = k => rec(um.undoStack[k]).time || null;
+  }
+  for (let k = futureS.length - 1; k >= 0; k--) {
+    const after = futureS[k], before = k === futureS.length - 1 ? now : futureS[k + 1];
+    rows.push({ i: futureS.length - k, state: 'ahead', label: historyLabel(before, after), time: null });
   }
   const out = rows.reverse();               // the furthest redo at the top
   out.push({ i: 0, state: 'now', label: 'now', time: null });
-  for (let k = past.length - 1; k >= 0; k--) {
-    const after = k === past.length - 1 ? now : past[k + 1];
-    out.push({ i: -(past.length - k), state: 'past', label: historyLabel(past[k], after), time: stepTimes.get(past[k]) || null });
+  for (let k = pastS.length - 1; k >= 0; k--) {
+    const after = k === pastS.length - 1 ? now : pastS[k + 1];
+    out.push({ i: -(pastS.length - k), state: 'past', label: historyLabel(pastS[k], after), time: timeOf(k) });
   }
   return out;
 }
@@ -20659,7 +20695,6 @@ async function historyGo(n) {
 function historyRender() {
   const host = $('hist-list');
   host.textContent = '';
-  if (collab) { host.textContent = 'In a live session the steps are kept with the shared document — ⌘Z and ⌘⇧Z go through them.'; return; }
   const rows = historyList();
   if (rows.length === 1) { host.textContent = 'Nothing to undo yet.'; return; }
   rows.forEach(r => {
@@ -24135,6 +24170,7 @@ async function startCollab() {
     onPeers: peers => collabPeersArrived(peers),
     debug: !!localStorage.getItem('collab-debug'),
   });
+  collabStepsWatch(collab.undoManager);   // so the list of steps can name them
   // The snapshot stack is meaningless from here on: its entries predate the
   // shared document and a restore would clobber everyone.
   past.length = 0; future.length = 0;
@@ -27996,6 +28032,16 @@ document.addEventListener('keydown', e => {
 // a script) refuses with 409 and the person chooses.
 let docStoreBase = null;    // '/api/docs/<room>' when the document lives on the hub
 let docVersion = null;      // the store's version the files on screen came from
+// Which of the two files the STORE holds. A Save sends only what changed, and
+// the store copies the other file into the version from its own copy - so a
+// document whose words were never saved (a deck or a flyer: every box lives in
+// layout.json) had versions with a layout and NO content, and the store
+// answered "no such version" to every Restore and every look at one. A Save
+// now carries a file the store lacks, changed or not, so every version is a
+// whole document; and a version from before that reads the missing file from
+// what the deployment served (docSeed), which is what the document held then.
+const storeHas = { content: true, layout: true };
+const docSeed = { content: null, layout: null };
 const docStore = () => docStoreBase;
 // The store's three files, requested the moment the store is chosen — all
 // three at once, not meta and THEN the two the meta admits to. They used to
@@ -28294,19 +28340,31 @@ function hubHistoryRow(v, canChange) {
   row.addEventListener('click', e => { if (e.target.closest('input, button, a')) return; hubHistorySelect(v); });
   return row;
 }
+/** A saved version's two files. A version from before Saves carried whole
+ *  documents can lack one (see storeHas): that file is read from what the
+ *  deployment served, and named in `filled` so a Restore can hand it to the
+ *  store. Throws when the version is not there at all, or the hub failed. */
+async function hubVersionFiles(version) {
+  const [rc, rl] = await Promise.all([
+    fetch(`${docStore()}/history/${version}/content`, { cache: 'no-store' }),
+    M.layout ? fetch(`${docStore()}/history/${version}/layout`, { cache: 'no-store' }) : null,
+  ]);
+  for (const r of [rc, rl]) if (r && !r.ok && r.status !== 404) throw new Error(`the hub answered ${r.status}`);
+  let content = rc.ok ? await rc.text() : null;
+  let layoutText = rl && rl.ok ? await rl.text() : null;
+  if (content == null && layoutText == null) throw new Error('the hub does not hold this version');
+  const filled = {};
+  if (content == null) content = filled.content = docSeed.content != null ? docSeed.content : original;
+  if (M.layout && layoutText == null) layoutText = filled.layout = docSeed.layout != null ? docSeed.layout : (layoutOrig || '{}');
+  return { content, layoutText, filled };
+}
 async function hubHistorySelect(v) {
   const d = $('out') && $('out').contentDocument;
   if (hubHistorySel && hubHistorySel.version === v.version) { hubHistorySel = null; hubHistoryRender(); hubHistoryPaint(d); return; }
   hubHistorySel = { version: v.version, loading: true };
   hubHistoryRender();
   try {
-    const [rc, rl] = await Promise.all([
-      fetch(`${docStore()}/history/${v.version}/content`, { cache: 'no-store' }),
-      fetch(`${docStore()}/history/${v.version}/layout`, { cache: 'no-store' }),
-    ]);
-    if (!rc.ok) throw new Error(`the hub answered ${rc.status}`);
-    const content = await rc.text();
-    const layoutText = rl.ok ? await rl.text() : null;
+    const { content, layoutText } = await hubVersionFiles(v.version);
     if (!hubHistorySel || hubHistorySel.version !== v.version) return;   // moved on meanwhile
     hubHistorySel = { version: v.version, ...hubHistoryDiff(content, layoutText) };
   } catch (e) { hubHistorySel = { version: v.version, error: e.message }; }
@@ -28478,14 +28536,10 @@ async function hubRestoreWarning(v) {
   let m = null;
   if (collab && collab.mergeRestore) {
     try {
-      const [c, l] = await Promise.all([
-        fetch(`${docStore()}/history/${v.version}/content`, { cache: 'no-store' }),
-        M.layout ? fetch(`${docStore()}/history/${v.version}/layout`, { cache: 'no-store' }) : null]);
-      if (c.ok && (!l || l.ok)) {
-        m = collab.mergeRestore({ content: original, layout: layoutOrig || '{}' },
-          { content: await c.text(), layout: l ? await l.text() : (layoutOrig || '{}') },
-          { content: source, layout: layout });
-      }
+      const vf = await hubVersionFiles(v.version);
+      m = collab.mergeRestore({ content: original, layout: layoutOrig || '{}' },
+        { content: vf.content, layout: vf.layoutText != null ? vf.layoutText : (layoutOrig || '{}') },
+        { content: source, layout: layout });
     } catch (e) { /* the generic sentence below is true without it */ }
   }
   // A slot added since the saved version has no place in the restored one: it goes.
@@ -28513,10 +28567,16 @@ async function hubRestore(v) {
   $('stat').textContent = 'restoring…';
   try {
     if (collab) await collab.drainNow();   // a collaborator's words still held back by an open box count
+    // A version that lacks a file (hubVersionFiles) is restored whole all the
+    // same: the store is handed the missing one and writes both.
+    const vf = await hubVersionFiles(v.version);
     const r = await fetch(`${docStore()}/restore`, { method: 'POST',
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v.version }) });
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: v.version, ...vf.filled }) });
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
+    if (j.content == null) j.content = vf.content;
+    if (M.layout && j.layout == null) j.layout = vf.layoutText;
+    storeHas.content = true; if (M.layout) storeHas.layout = true;
     // Adopt the files the way a collaborator's change lands, then record the
     // version the way a Save does: the room learns it through baseSha.
     // As a per-slot diff: a paragraph the restored version does not change
@@ -30483,16 +30543,22 @@ async function docStoreLoad(urls, files) {
   // The requests docStoreDecide sent ahead, or fresh ones (a call with none
   // ahead: a retry, a test). Taken once — a second load asks again.
   const ahead = docStoreAhead; docStoreAhead = null;
+  docSeed.content = files[urls.indexOf('engine/' + M.content)];
+  docSeed.layout = M.layout ? files[urls.indexOf('engine/' + M.layout)] : null;
   try {
     const r = await (ahead ? ahead.meta : fetch(docStore(), { cache: 'no-store' }));
     const m = await hubJson(r);
     if (!r.ok) throw new Error(m.error || `the store answered ${r.status}`);
     if (!m.exists) {
+      storeHas.content = storeHas.layout = false;
       $('stat').textContent = 'first time on the hub — Save puts this document in the store';
       return;
     }
     const get = async what => {
       const q = await (ahead ? ahead[what] : fetch(`${docStore()}/${what}`, { cache: 'no-store' }));
+      // Only a plain "not there" means the store lacks the file: a failure
+      // must not make the next Save send a file over one the store does hold.
+      if (q.status === 404) storeHas[what] = false;
       return q.ok ? q.text() : null;
     };
     const [c, l] = await Promise.all([get('content'), M.layout ? get('layout') : Promise.resolve(null)]);
@@ -30540,9 +30606,12 @@ async function docStoreSave(layoutText, force = false, auto = false, leaving = f
     // not what is on screen when the answer comes - or the edit in between
     // reads as saved and is never sent.
     const sent = source;
-    if (sent !== original) body.content = sent;
-    if (M.layout && layoutText !== layoutOrig) body.layout = layoutText;
-    if (body.content == null && body.layout == null) { markDirty(); return true; }
+    const changedC = sent !== original, changedL = !!M.layout && layoutText !== layoutOrig;
+    if (!changedC && !changedL) { markDirty(); return true; }
+    // A file the store has never held goes too (see storeHas): the version
+    // this Save makes is then a whole document, which Restore can bring back.
+    if (changedC || !storeHas.content) body.content = sent;
+    if (M.layout && (changedL || !storeHas.layout)) body.layout = layoutText;
     const why = pendingSaveWhy;
     if (why) body.label = why;
     const payload = JSON.stringify(body);
@@ -30589,6 +30658,8 @@ async function docStoreSave(layoutText, force = false, auto = false, leaving = f
     hubHistoryAdd(j);                            // the open panel lists it without asking the store again
     hubMarkSeen(j.version);
     if (collab) collab.setBaseSha(j.version);   // everyone in the room: this is the saved one
+    if (body.content != null) storeHas.content = true;
+    if (body.layout != null) storeHas.layout = true;
     original = sent; layoutOrig = layoutText;
     clearDraftCache();
     hubAutosaveHold = false; hubAutosaveFails = 0; hubAutosaveHoldWhy = '';   // a Save that landed: automatic ones may resume
