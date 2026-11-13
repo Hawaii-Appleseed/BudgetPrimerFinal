@@ -1,0 +1,572 @@
+
+===== page 1 =====
+HAWAIʻI TAX REVIEW COMMISSION
+What the Tax Review Commission
+report will cover
+A roadmap for the draft report (Friday, October 2) and the final report (Friday,
+November 20)
+Dylan Moore · UHERO, University of Hawaiʻi at Mā noa
+Commission meeting · Tuesday, September 29, 2026
+
+===== page 2 =====
+WHY WE ARE HERE TODAY
+Anything to Add?
+TODAY FRIDAY DRAFT YOUR REVIEW FINAL REPORT COMMISSION
+Tue, Sep 29 Fri, Oct 2 Oct – Nov Fri, Nov 20 Mon, Dec 21
+This roadmap and your Draft report, end of day Commission feedback on UHERO final report to the Commission's own report
+feedback the draft Commission due
+1 · Add 2 · Emphasize 3 · Prioritize
+Which topics did we miss? What deserves deeper treatment? Which reform scenarios do you
+want numbers on?
+A tax, credit, exemption, or administrative More evidence, more Hawaiʻi context, or
+issue not yet on our list more detail on a topic
+For example, a capital gains change paired
+with an offset
+UHERO · What the TRC report will cover · 2
+
+===== page 3 =====
+THE FULL REPORT AT A GLANCE
+Proposed report outline: what should we add?
+1 2 3 4
+Framework Income tax General excise tax Visitors & tourism
+Responsiveness (incl. Rates, brackets · EITC, Grocery & rent exemptions · Transient accommodations tax ·
+enforcement) · spillovers · budget food/excise & dependent-care luxury rates · who really pays · hotel tiers · green fees · visitors’
+payback · competitiveness, credits · capital gains · migration · pyramiding & capital goods credit share of GET · visitor responses &
+fairness & revenue stability retirement & pension income · service-tax comparisons spillovers
+5 6 7 8
+Property & real estate Business taxes Wealth & estates Tax credits
+Assessments · rates by owner & Corporate income tax · single Estate tax · exemption for closely Seven-question screen ·
+use (nonresident, vacant, rental) · sales factor apportionment · held family businesses · wealth renewable energy (solar) · film ·
+conveyance tax & controlling pass-throughs (S corps, tax: feasibility, avoidance, renewable fuels · other business
+interests · 1031 clawback partnerships) · wages & jobs European experience credits · recurring evaluation
+9 10 11
+Administration Data & uncertainty Revenue-neutral packages
+Voluntary disclosure · filing Linking DoTax data across Joint GET, income & capital gains reforms · offsets within the same
+extensions · appeals · audit & agencies · migration · long-run income groups · who gains and who loses, by income group
+reporting conformity · agency payback · AI and the future labor
+capacity market
+UHERO · What the TRC report will cover · 3
+
+===== page 4 =====
+PART 1 · THE FRAMEWORK
+How taxes change behavior: two dimensions
+DIMENSION 1 DIMENSION 2
+Responsiveness Spillovers
+How easily can the tax base shrink, move, or hide? When a tax changes behavior, who else feels it?
+Shrink: work, invest, or sell less Workers: pay and jobs
+Move: leave Hawaiʻi Customers: prices
+Hide: under-report income Suppliers: local sales
+Enforcement is part of responsiveness. A base the state can’t
+measure is the easiest to escape. Land is easy to see; wealth and
+self-employment income are not.
+Why it matters: the same $1 of revenue costs Land (can't move) smaller cost
+the economy more when raised from a mobile Mobile capital larger cost
+base.
+Illustrative, not to scale
+UHERO · What the TRC report will cover · 4
+
+===== page 5 =====
+HOW TAXES CHANGE BEHAVIOR
+From land to wealth: a ladder of responsiveness
+TAX BASE HOW IT RESPONDS HAWAIʻI EXAMPLE
+Cannot move. A tax can lower its value, but the land can't Property tax
+Land
+disappear. Levied by the counties
+Sales can be delayed (“lock-in”) or restructured, such as Conveyance tax
+Property sales
+transfers through entities. Due on property transfers
+People and their
+Can work less, turn down a raise, or move away: then the Individual income tax
+paychecks state gets nothing, not less. Wages and business income
+Sales are timed; gains vanish at death (step-up); a Capital gains tax
+Capital gains
+genuine move takes the revenue. 7.25% max, qualifying gains
+Money moves across state lines easily, and so can Corporate income tax
+Business capital
+reported profits. Taxes profits earned here
+Estate tax
+Wealth Hard even to measure: you can't tax what you can't see.
+Rates 10–20% above $5.49M
+UHERO · What the TRC report will cover · 5 A rough ordering, not a measure of size.
+→
+LESS
+RESPONSIVE
+MORE
+RESPONSIVE
+
+--- page 5 table 1 ---
+
+--- page 5 table 2 ---
+Cannot move. A tax can lower its value, but the land can't Property tax Land disappear. Levied by the counties
+Sales can be delayed (“lock-in”) or restructured, such as Conveyance tax Property sales transfers through entities. Due on property transfers
+People and their Can work less, turn down a raise, or move away: then the Individual income tax paychecks state gets nothing, not less. Wages and business income
+Sales are timed; gains vanish at death (step-up); a Capital gains tax Capital gains genuine move takes the revenue. 7.25% max, qualifying gains
+Money moves across state lines easily, and so can Corporate income tax Business capital reported profits. Taxes profits earned here
+Estate tax Wealth Hard even to measure: you can't tax what you can't see. Rates 10–20% above $5.49M
+
+--- page 5 table 3 ---
+
+===== page 6 =====
+HOW TAXES CHANGE BEHAVIOR
+Less versus nothing: why people and land differ
+CAN THE TAX BASE… Land A salaried worker A self-employed owner
+Can it shrink?
+Its price can fall; the acres Fewer hours, a turned- Can scale back work or
+Some Some Some
+Less of it stay. down raise. sales.
+Moving away can take their
+Can it move?
+Owner or business can
+No It cannot leave the islands. Yes wages out of Hawaiʻi's tax Yes
+Leave the state relocate.
+base.
+Can it hide?
+Parcels are mapped and on Employers report wages No employer report; easier
+No No Yes
+Go unreported public record. and withhold tax. to under-report.
+No = the base stays taxable here · Some = it partly escapes · Yes = it can escape entirely
+So land and property taxes rank well on
+Stays, same work Full tax
+Less versus
+efficiency
+nothing
+Stays, works less Less tax
+…but they raise their own fairness questions,
+Nothing on those
+Illustrative
+Moves away
+covered later in the report.
+wages
+UHERO · What the TRC report will cover · 6
+
+===== page 7 =====
+FRAMEWORK · RESPONSIVENESS
+Gains and home sales respond through timing
+Capital gains: pick the moment Conveyance tax: wait it out
+Buy: the gain starts Hold: no tax while Sell: taxed, up to Needs change: new Sale: 0.10%–1.25% of Or wait: no sale, no
+to grow unsold 7.25%* job, kids leave the full price tax
+Time the sale — wait for a low-income year; sell losers to Lock-in — owners delay selling, or don’t move at all
+offset winners
+Restructure — selling the entity that owns a property can
+Hold until death — heirs’ basis “steps up,” so the lifetime gain sidestep the tax
+is never taxed
+Price jumps — the rate applies to the whole price, so tax
+Move away for real — stock gains leave with you; Hawaiʻi jumps at each band
+real-estate gains stay taxable
+Friday draft: hard numbers. Evidence on how gains respond is Takeaway: a transfer tax costs more than an annual property tax
+strong, including moves out of state. raising the same revenue.
+*7.25% is Hawaiʻi’s top rate on qualifying long-term gains; short-term gains are taxed as ordinary income.
+UHERO · What the TRC report will cover · 7
+
+===== page 8 =====
+FRAMEWORK · RESPONSIVENESS
+Capital and wealth are the most mobile bases
+Corporate tax: a tax on capital Wealth: hard even to measure
+Capital is responsive. From Hawaiʻi’s view it is extremely
+Visible: land and Hidden: stocks, private
+mobile: tax it here and investment goes elsewhere.
+buildings, already taxed firms, trusts, art
+yearly
+So the burden spreads. Part of it falls on workers, through
+lower pay, and on land, through lower values.
+Switzerland: rise in reported taxable wealth within
+Investment has spillovers. Business investment raises 43%+
+six years of a 1-percentage-point rate cut; only
+productivity, pay, and local spending, so losing it costs more
+about a quarter from people moving
+than the tax itself.
+OECD countries with annual wealth taxes, 1990 vs.
+12 4
+That is why a state corporate income tax, in particular, may →
+2017
+be problematic.
+Estate tax: wealth measured once, at death. Largely
+Hawaiʻi 4.4% 5.4% 6.4%
+follows federal definitions, with its own exemption and
+rates
+first $25k $25k–$100k over $100k
+rates.
+UHERO · What the TRC report will cover · 8
+
+===== page 9 =====
+FRAMEWORK · SPILLOVERS, THE SECOND DIMENSION
+Who else bears the tax? Business tax cuts “trickle down to
+the top”
+Business taxes reach workers’ pay, jobs, and local ↑ More spillovers Illustrative
+spending. The gains from cuts flow mostly upward.
+Costliest bases to tax
+of short-run income gains from a U.S.
+87% Corporate income tax
+corporate tax cut went to the top 10%
+(Kennedy et al. 2026)
+30–
+Pass-through income
+of a U.S. state corporate tax falls on workers
+Cheapest bases to tax
+35% (Suárez Serrato & Zidar 2016)
+Income tax on wages
+Wealth tax
+of German local business tax falls on workers
+~50% Conveyance tax
+(Fuest et al. 2018)
+Capital gains
+Land / property tax
+C corporations: spillovers S corps, partnerships: less
+likely large clear
+Less responsive More responsive
+→
+UHERO · What the TRC report will cover · 9
+
+--- page 9 table 1 ---
+ |  | Costliest bases to tax Corporate income tax Pass-through income
+ | Cheapest bases to tax Income tax on wage Conveyance tax Land / property tax | s Wealth tax Capital gains
+
+===== page 10 =====
+FRAMEWORK · SPILLOVERS ACROSS GENERATIONS
+A slower spillover: family support repays part of its cost
+20 to 30 years later
+Today Childhood Young adults Decades later
+Family support Kids do better More schooling Budget payback
+EITC, child tax credit, and Better health and school More likely to finish college Steadier jobs, higher pay,
+likely the food/excise credit outcomes and find work more taxes, less public
+assistance
+The cost is paid now Hoynes, Schanzenbach & Bastian & Michelmore 2018
+Almond 2016 Hendren & Sprung-Keyser
+2020
+NEAR-TERM SPILLOVERS LONG-RUN SPILLOVERS
+Business investment, pay and jobs: effects within a Children’s outcomes: 20 to 30 years out. Reported
+few years. Our revenue-neutral packages balance alongside, but not treated as equivalent for the
+over this horizon. state budget.
+UHERO · What the TRC report will cover · 10
+
+===== page 11 =====
+WHAT ARRIVES WHEN
+Three standards of evidence, and when each arrives
+Number in draft Number in final Evidence review
+Topic
+Friday, Oct 2 Friday, Nov 20 Research + theory
+Income tax rates and brackets Yes Updated
+Income tax credits (EITC, food/excise credit) Yes Updated
+Removing the renewable energy credit Yes Updated
+Capital gains: eliminate, tax as ordinary, adjust Yes Updated
+GET exemptions: groceries, rent Yes Updated
+Joint GET + income + capital gains packages Yes Updated
+Migration responses Separate scenario Updated
+Pass-through business income Yes Refined treatment
+GET pyramiding across industries Scenarios + evidence New numbers
+Transient accommodations tax (Nick Lacoste) Scenarios + evidence New numbers
+Property tax, linked to household income data Scenarios + evidence New numbers
+Corporate tax and single sales factor — Wage and job effects Main output
+Film production credit: remove, reform, or expand — Deeper analysis Main output
+Estate tax + closely held business exemption — — Main output
+Wealth tax — — Main output
+Conveyance tax — — Main output
+Differential property taxation (value, ownership) — — Main output
+Draft numbers may be refined as the model improves, not because they were wrong. Each is our best current estimate.
+UHERO · What the TRC report will cover · 11
+
+--- page 11 table 1 ---
+Income tax rates and brackets Yes Updated
+Income tax credits (EITC, food/excise credit) Yes Updated
+Removing the renewable energy credit Yes Updated
+Capital gains: eliminate, tax as ordinary, adjust Yes Updated
+GET exemptions: groceries, rent Yes Updated
+Joint GET + income + capital gains packages Yes Updated
+Migration responses Separate scenario Updated
+Pass-through business income Yes Refined treatment
+GET pyramiding across industries Scenarios + evidence New numbers
+Transient accommodations tax (Nick Lacoste) Scenarios + evidence New numbers
+Property tax, linked to household income data Scenarios + evidence New numbers
+Corporate tax and single sales factor — Wage and job effects Main output
+Film production credit: remove, reform, or expand — Deeper analysis Main output
+Estate tax + closely held business exemption — — Main output
+Wealth tax — — Main output
+Conveyance tax — — Main output
+Differential property taxation (value, ownership) — — Main output
+
+===== page 12 =====
+WHAT A “HARD NUMBER” MEANS
+A hard number: every household, two sets of tax rules
+Revenue
+1 2 3
+Statewide change in tax
+Hawaiʻi households Two sets of rules Compare, household
+collected
+by household
+Public surveys, with missing
+Today’s tax rules
+income filled in from tax The difference in each
+data, then weighted to Proposed rules household’s tax bill is its
+Who gains, who
+match 32 Hawaiʻi totals. gain or loss.
+Every tax and credit, loses
+calculated both ways.
+By income group
+BUILT-IN ASSUMPTIONS, STATED UP FRONT
+People stay put Gains respond Refunds get spent Savings, later
+Headline assumes income taxes Capital-gains responses from Money returned to households is Money saved is spent later: taxed
+don’t make people move. A published research are included. spent, and pays GET. later, not untaxed.
+migration scenario is shown
+alongside.
+UHERO · What the TRC report will cover · 12
+
+===== page 13 =====
+REVENUE-NEUTRAL PACKAGES
+Revenue-neutral packages: offset each change within the
+same income groups
+Any cut can pair with any increase, so the combinations are endless. We start with natural pairings and take your requests.
+The goal: most people win, and no one loses dramatically.
+Capital gains Income tax Property tax Luxury GET rate
+pair with
+Top end on high earners: the reaches owners of reaches rich visitors;
+Eliminate, tax as ordinary
+most direct lever high-value property buyers may shop
+high income income, or a modest raise or cut
+elsewhere
+and wealth
+Groceries Rent exemption Rent credit Targeted credit
+Bottom drop the GET on rent similar households, e.g. food/excise credit
+Exempt them from the GET; less compare
+instead paid as an income tax aimed at low incomes
+end
+help to low-income folks than it
+credit
+looks
+lower-income
+households
+Even within an income group, it's never exactly the same people. Showing how the burden shifts is the point.
+UHERO · What the TRC report will cover · 13
+
+===== page 14 =====
+PRELIMINARY ESTIMATES
+WORKED EXAMPLE 1 · GROCERY EXEMPTION
+A grocery exemption: who gets the $267.4 million?
+Where the $267.4M goes Dollars rise with income; share of income falls
+Visitors $53.3M · 20%
+$742
+$645
+$583
+$541
+Residents $486
+$466
+$407
+$214.1M $355
+$219
+$ per
+80% · about $451 per
+$107
+resident household household
+Income
+State GET $237.7M + county surcharge
+decile 1 2 3 4 5 6 7 8 9 10
+$29.7M
+% of income 0.77% 0.60% 0.62% 0.52% 0.47% 0.39% 0.35% 0.31% 0.26% 0.11%
+Bottom 40% of households get 24% Why the bottom 10% gets only $107: food-benefit purchases (SNAP, WIC, summer EBT:
+of residents' relief; top 20% get 30%. about $764M in 2027) are already exempt.
+Source: UHERO grocery memo, Sept 2, 2026. 2027 estimate; broad food-at-home definition; assumes prices fall by the full tax.
+UHERO · What the TRC report will cover · 14
+
+===== page 15 =====
+PRELIMINARY ESTIMATES
+WORKED EXAMPLE 2 · MAKING IT REVENUE-NEUTRAL
+Making it revenue-neutral: residents must replace the
+visitors' share too
+Residents' side of the ledger ($ per year, 2027) Designing the offset
+Totals: UHERO grocery memo, Sept 2, 2026
+Raise each income group’s income tax in proportion
+$267.4M to what it gained.
+−$53.3M Residents must raise more than they gained:
+$214.1M
+$53.3M of the savings went to visitors.
+If the offset protects households with no income tax
+liability, they keep their grocery savings. Other
+−$267.4M taxpayers collectively pay more than their own
+savings.
+$0
+The model will show which households gain or lose
+−$53.3M under the specified offset.
+Illustrative · preliminary numbers
+Tax cut from Goes to Residents’ Income tax Residents’ net
+exemption visitors grocery increase on change
+savings residents
+UHERO · What the TRC report will cover · 15
+
+--- page 15 table 1 ---
+−$267.4M
+
+===== page 16 =====
+BUSINESS TAXES
+Three questions about taxing business income
+Corporate tax Apportionment Pass-throughs
+First $25k 4.4% Today: three equal factors
+S corp or partnership earns profit
+$25k–$100k 5.4% Property Payroll Sales
+Over $100k 6.4%
+Reform option: sales only
+Taxed on owners’ personal returns
+Effectively a tax on capital, and capital
+Sales
+The model must decide which households
+moves easily across state lines.
+receive this income.
+Decides how much of a multistate firm’s
+Investment also has positive spillovers,
+profit Hawaiʻi can tax. Single sales factor
+Those assumptions will be refined for the
+which is why a state corporate tax may be
+taxes firms by where they sell, not where
+problematic. final report.
+they build or hire.
+For all three: we will estimate effects on wages, jobs, and employees’ local spending.
+UHERO · What the TRC report will cover · 16
+
+===== page 17 =====
+WEALTH AND PROPERTY
+Estate, wealth, property, and conveyance taxes
+Estate tax Wealth tax Conveyance tax
+Hawaiʻi exemption (federal: OECD countries with one, 1990 Paid only when a property
+$5.49M 12 4 Timing
+→
+$15M in 2026) vs 2017 sells, so sales get delayed
+Largely follows federal definitions, with its Hawaiʻi already taxes the visible part of 0.10%–1.25% of the full price when
+own exemption and rates. wealth: real property. property changes hands.
+Should closely held family businesses be Other assets are hard to measure, so Owners delay moves (lock-in); some
+exempt? avoidance is easy. transfer via entities.
+Property tax Differential property tax
+Efficiency: land can’t move or hide, so responses Rates can differ by home value and by who owns it and how it’s used:
+Promising
+are small.
+Home value Nonresident Vacation home
+Fairness: inaccurate assessments tend to over-tax
+Mixed
+lower-value homes; evidence of racial disparities. Vacation rental Vacancy tax Owner vs rental
+UHERO · What the TRC report will cover · 17
+
+===== page 18 =====
+GENERAL EXCISE AND VISITOR TAXES
+GET pyramiding and the visitor tax
+GET stacks up along the chain Visitor tax (TAT)
+Numbers: final report
+$816.2M
+Maker Wholesaler Retailer Customer
++0.5% +0.5% +4.5% Pays it all
+(illustrative: full State TAT revenue, FY2025
+pass-through)
+Visitors are a major group of taxpayers. Nick
+Lacoste is estimating how visitors respond to
+the TAT.
+Preliminary estimates are still being checked
+0.5% wholesale/maker rate 4% state + 0.5% county, retail state by state.
+Tax paid earlier rides along in the price and is taxed again. Final report: how this shifts effective
+In the final report
+rates across industries, plus an evidence-based look at supply chains.
+Capital goods excise tax credit refunds 4% on qualifying equipment, offsetting one
+piece. It ends after tax year 2027 (Act 24).
+UHERO · What the TRC report will cover · 18
+
+===== page 19 =====
+TAX CREDITS
+Tax credits come in two kinds
+Goal: tax relief for specific households Goal: change what people and firms do
+Relief In between Behavior change
+For targeted groups of households A bit of both Pay to cause new activity
+Earned income tax credit Dependent care credit Film production credit
+Relief for families, and helps parents work
+Food/excise tax credit Renewable energy credit
+Capital goods excise credit
+Renewable fuels credit
+Success test: did the money reach the Offsets GET pyramiding on business
+households it was meant for? equipment
+Other business credits
+Success test: did it cause activity worth its
+cost?
+Detailed studies: renewable energy,
+IN THE REPORT A framework for every credit Others at a high level, unless you ask
+film
+UHERO · What the TRC report will cover · 19
+
+===== page 20 =====
+Draft — your reactions wanted
+TAX CREDITS · EVALUATION FRAMEWORK
+Seven questions for assessing a tax credit
+What problem are we solving? Relief, energy, jobs,
+1
+Renewable energy (solar) credit
+culture? Pick a measurable goal.
+Mixed Count residents' gains apart from global climate gains; compare
+Who actually benefits? Hawaiʻi residents, or out-of-state
+2
+utility-scale solar.
+workers and vendors?
+Would it happen anyway? How much new activity does
+3
+Renewable fuels (biofuel) credit
+the credit really cause?
+Mixed Pays per unit of fuel sold, not per ton of emissions cut; cost per
+What is the gain after costs? Payroll and spending aren't
+4
+ton unproven.
+automatically gains.
+What is the real budget cost? Credit dollars minus extra
+5
+Film production credit
+tax revenue coming back.
+Weak Flaw 1: pays nonresident salaries (local-hire bonus counts heads,
+Could the money do more elsewhere? Cash relief, a grant,
+6
+not payroll).
+a public service.
+Flaw 2: pays for goods and services from out-of-state
+What would change our answer? Name the missing fact;
+7
+businesses.
+set a review date.
+If the goal is culture, use cultural criteria: stories about Hawaiʻi.
+Initial assessments; they may change as we learn more:
+Promising (e.g., EITC) Mixed Weak
+UHERO · What the TRC report will cover · 20
+
+===== page 21 =====
+UNCERTAINTY AND DATA
+What we can't know yet, and how Hawaiʻi could know
+more
+Highly uncertain today An opportunity: link the data we already have
+Long-run budget payback DoTax data
+Sharper
+Children helped today may earn more and pay more Excellent work, real
+State Data estimates
+tax decades from now: real, but hard to size. constraints
+Officer
+Payback,
+migration, and who
+Interagency data
+Migration
+Other state
+gains or loses
+sharing
+Who would move if income taxes change? Shown as a agencies' data
+separate scenario.
+e.g., jobs, benefits
+AI and the future of work
+FOR THE COMMISSION TO ENCOURAGE
+A tax system tuned to the past may not fit a labor
+Link DoTax data with other agencies' data through the State
+market that AI reshapes.
+Data Officer.
+UHERO · What the TRC report will cover · 21
+
+===== page 22 =====
+YOUR TURN
+Questions for you
+Which reform packages do you most want numbers
+1 2
+What is missing from the list?
+on?
+Any tax credits you want examined beyond solar and
+3 4
+Which topics deserve deeper treatment?
+film?
+DRAFT REPORT FINAL REPORT COMMISSION’S OWN REPORT
+Friday, October 2 Friday, November 20 December 21
+end of day after your feedback submission deadline
+Dylan Moore · UHERO, University of Hawaiʻi at Mā noa

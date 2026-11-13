@@ -1,0 +1,170 @@
+
+===== page 1 =====
+TAX REVIEW COMMISSION 2025-2027
+Meeting Minutes,
+Thursday, October 8, 2026
+Virtual Meeting
+Meeting was held virtually and video recorded.
+Recorded Video Link: https://youtu.be/jzgmt3kGSZ4
+Thursday, October 8, 2026
+2:00 p.m.
+PRESENT:
+Commission Members:
+Jonathan White (Chair), Mark Fukunaga, Jeffrey Ueoka and Jon Yasuda
+Staff Members:
+Department of Taxation (DOTAX): Director Gary Suganuma, TRC Executive
+Director Dr. Baybars Karacaovali (DOTAX Tax Research & Planning Officer)
+Guest Panelists:
+Dr. John Knox (Former Commission Member and Writer, Observer/Commenter)
+1. CALL TO ORDER
+Chair White called the meeting to order at 2:02 p.m. A quorum was present.
+Roll Call:
+Mr. Jonathan White Present
+Mr. Mark Fukunaga Present
+Mr. Jeffrey Ueoka Present
+Mr. Jon Yasuda Present
+2. COMMUNICATIONS TO THE COMMISSION AND PUBLIC COMMENT
+Chair White opened the floor for public comment. No members of the public provided
+testimony.
+
+===== page 2 =====
+Minutes of the Tax Review Commission Meeting
+Thursday, October 8, 2026
+Page 2 of 5
+3. MINUTES OF THE MEETING OF SEPTEMBER 29, 2026
+Chair White asked the Commission if there were any changes to September 29, 2026, minutes.
+Chair White asked if there were no objections, the minutes would be approved by acclamation.
+There were no objections, so the minutes got approved.
+4. TRC DISCUSSION OF THE UNIVERSITY OF HAWAI‘I ECONOMIC RESEARCH
+ORGANIZATION (UHERO) DRAFT REPORT AND DEVELOPMENT OF
+FEEDBACK TO UHERO
+Chair White opened the main agenda item: discussion of the 172-page UHERO draft report
+delivered the day prior. Members acknowledged the limited time to fully review the report but
+agreed it was important to begin substantive discussion.
+4.1 Initial Observations
+Members briefly exchanged comments about the report’s length, complexity, and technical
+density. Although no one had completed a full read, members emphasized the importance of
+identifying themes, questions, and potential recommendations early.
+4.2 Revenue-Neutral Tax Pairings (UHERO Report p.161)
+Chair White noted UHERO’s list of preliminary “pairs of changes” intended to be revenue
+neutral. These included possible exemptions (e.g., groceries) offset by rate increases. He
+expressed a strong personal preference against exempting groceries from the GET, describing it
+as a “red line” from a policy standpoint, while acknowledging he is one of seven votes.
+Commissioners discussed whether such examples should remain in the report’s framing, with
+several indicating interest in offering UHERO guidance on which policy options should receive
+emphasis or further analysis.
+4.3 GET Structure, Tourism Burden, and Visitor-Focused Taxation
+Commissioner Fukunaga raised the question of whether the General Excise Tax (GET) could be
+structured to capture more revenue from visitors, citing UHERO’s findings on the substantial
+share of GET paid by tourists. Ideas discussed included:
+• Evaluating mechanisms to adjust GET burdens without harming tourism.
+• Examining historical issues such as tourism-related income-splitting provisions.
+• Considering special districts (e.g., Waikīkī) with differentiated GET rates to reflect
+visitor-oriented activity.
+• Acknowledging historical constitutional concerns regarding differential treatment of
+residents vs. non-residents (e.g., Commerce Clause and Privileges and Immunities
+challenges).
+
+===== page 3 =====
+Minutes of the Tax Review Commission Meeting
+Thursday, October 8, 2026
+Page 3 of 5
+Members agreed that the feasibility of such mechanisms is complex and should be modeled
+cautiously.
+4.4 GET Pyramiding and Economic Distortions
+Commissioners engaged in an extended discussion on pyramiding in the GET, its distributional
+and economic consequences, and possible reforms. Themes included:
+• Whether reducing or restructuring wholesale rates could produce a more neutral, less
+distortionary tax system.
+• The administrative complexity of determining wholesale qualification for services.
+• Potential impacts on different industries, including whether tourism-related purchases
+would benefit or be burdened by reforms.
+• The role of UHERO’s simulation model (under construction) in quantifying different
+reform scenarios.
+The Commission expressed interest in UHERO modeling several “what-if” scenarios related to
+pyramiding relief and corresponding rate adjustments.
+4.5 Tourism Impacts, TAT, and Elasticity of Visitor Demand
+Chair White invited commentary from subject-matter contributor Dr. John Knox regarding the
+Tourism and Transient Accommodations Tax (TAT) sections of the UHERO draft.
+Key points raised:
+• The UHERO draft has focused more on revenue mechanics than on tourism
+competitiveness considerations.
+• The concept of compensating residents for increased TAT burdens may be problematic
+because only a subset of residents pay TAT as consumers.
+• Estimating the elasticity of visitor demand in response to TAT increases is complex due
+to:
+– Multiyear booking patterns;
+– Multiple simultaneous price components (airfare, room rates, fees);
+– Small proportionate contribution of TAT to total trip cost.
+• UHERO intends to update elasticity estimates in the final report; commissioners asked
+that UHERO expand competitiveness benchmarking and segment analysis (luxury vs.
+budget market impacts).
+Commissioners discussed the general difficulty of isolating the effects of TAT increases but
+noted that updated modeling would be valuable before the Commission considers any
+recommendation involving TAT rates.
+5. Discussion of Tax Credits
+Commissioners reviewed UHERO’s findings on tax credit expenditures (~$600M total), noting:
+• Only about $150M constitutes what might be considered “economic development
+credits.”
+
+===== page 4 =====
+Minutes of the Tax Review Commission Meeting
+Thursday, October 8, 2026
+Page 4 of 5
+• A large share of that is concentrated in film credits and (historically) renewable energy
+credits, though the latter are being phased out.
+• The UHERO framework for evaluating credits—especially assessing whether benefits
+accrue primarily to non-residents—was viewed as useful for preventing future policy
+mistakes.
+Several commissioners supported developing an evaluative framework for future tax credits,
+even if the landscape has narrowed.
+6. Estate Tax Discussion and Report from Meeting with the Governor
+Commissioner Fukunaga reported on a meeting held that morning with the Governor, joined by
+Chair White. The Governor expressed interest in exploring ways Hawaiʻi might:
+• Attract high-net-worth individuals, particularly if states like California adopt wealth
+taxes;
+• Encourage investment or charitable contributions that produce local economic benefits;
+• Potentially adjust or “pre-pay” estate tax mechanisms tied to beneficial economic
+activity.
+• Commissioners noted:
+Such reforms would require significant further study and careful attention to
+o
+cultural sensitivities surrounding wealthy in-migrants’ land ownership and
+community impacts.
+The concept is likely too complex to develop fully within this Commission’s
+o
+timeline but may warrant inclusion as a “topic for future study” in the final report.
+Any recommendation must ensure public benefit and avoid merely providing
+o
+preferential tax treatment detached from measurable economic gains.
+7. Structure of the Commission’s Final Report
+Chair White shared preliminary thoughts on organizing the Commission’s Final Report,
+including:
+• An introductory fiscal overview (federal funding volatility, post-COVID shifts).
+• A primary section on tax competitiveness, synthesizing UHERO analysis and
+Commission recommendations.
+• A secondary section covering Commission-initiated topics, such as retirement income,
+single-sales-factor apportionment, conveyance tax issues, estate tax considerations, and
+others discussed in prior meetings.
+• A third section for items requiring further study (e.g., estate tax incentive structures,
+Waikīkī district taxation, potential combined-reporting reforms).
+He noted the absence of a dedicated TRC researcher/writer this cycle and acknowledged that he
+may need to prepare initial drafting, with commissioners contributing topical memos as was done
+in the previous cycle.
+
+===== page 5 =====
+Minutes of the Tax Review Commission Meeting
+Thursday, October 8, 2026
+Page 5 of 5
+Commissioners discussed Sunshine Law compliance in collaborative drafting and agreed to seek
+guidance from the Attorney General regarding permissible practices.
+5. SCHEDULING OF FUTURE MEETINGS
+Upcoming meetings:
+• October 20, 2026 – Discussion continues, similar agenda.
+• October 28, 2026 – Full membership expected (except possibly Commissioner Katakura).
+• November 9, 2026 – Further review and drafting session.
+• December meeting (Dec. 17 or 18?) – Final review and signatures.
+The final report is due December 21, 2026. Commissioners tentatively agreed that a complete
+draft around Thanksgiving would allow adequate revision time.
+6. ADJOURNMENT:
+With no further business, Chair White adjourned the meeting at approximately 3:52 PM.

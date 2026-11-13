@@ -1,0 +1,205 @@
+
+===== page 1 =====
+TAX REVIEW COMMISSION 2025-2027
+Meeting Minutes,
+Wednesday, October 28, 2026
+Virtual Meeting
+Meeting was held virtually and video recorded.
+Recorded Video Link: https://youtu.be/nkFXj3cTz4Q
+Wednesday, October 28, 2026
+2:00 p.m.
+PRESENT:
+Commission Members:
+Jonathan White (Chair), Judith Chock (Vice-Chair), Jessica Enos, Mark
+Fukunaga, Jeffrey Ueoka, and Jon Yasuda
+Staff Members:
+Department of Taxation (DOTAX): Director Gary Suganuma, TRC Executive
+Director Dr. Baybars Karacaovali (Tax Research & Planning Officer)
+Guest Panelists:
+Assistant Professor Dr. Dylan Moore (UHERO & Department of Economics,
+University of Hawai‘i at Manoa)
+1. CALL TO ORDER
+Chair White called the meeting to order at 2:04 p.m. A quorum was present.
+Roll Call:
+Mr. Jonathan White Present
+Ms. Judith Chock Present
+Ms. Jessica Enos Present
+Mr. Mark Fukunaga Present
+Mr. Jeffrey Ueoka Present
+Mr. Jon Yasuda Present
+Ms. Stacey Katakura was excused.
+
+===== page 2 =====
+Minutes of the Tax Review Commission Meeting
+Wednesday, October 28, 2026
+Page 2 of 6
+2. COMMUNICATIONS TO THE COMMISSION AND PUBLIC COMMENT
+Chair White asked if there was any communication to the Tax Review Commission (TRC).
+Dr. Karacaovali said there were two written testimonies received and circulated to the
+commissioners prior to the meeting (and will be posted on the TRC webpage). He also invited
+public to come forward using the chat/Q&A function over Zoom. Devin Thomas (Director of
+Tax & Budget Policy from Hawai‘i Appleseed Center for Law & Economic Justice), who was
+representing the Hawai‘i Tax Fairness Coalition, had a public comment to provide.
+Mr. Thomas highlighted the following policy priorities:
+a) Continued review of the conveyance tax, including consideration of a marginal rate system
+and possible controlled interest provision to ensure high‑value, non–owner‑occupied properties
+face appropriate taxation.
+b) Use of conveyance tax or capital gains revenue to support tax credits for working families,
+emphasizing affordability and retention of local residents.
+c) Encouragement for the Commission to examine tax credits more broadly as instruments to
+support household financial stability.
+No additional public comments were offered.
+3. MINUTES OF THE MEETING OF OCTOBER 20, 2026
+Chair White asked the Commission if there were any changes to the October 20, 2026 minutes.
+Chair White asked if there were no objections, the minutes would be approved by acclamation.
+There were no objections, so the minutes got approved.
+4. PRESENTATION BY TRC CHAIR JONATHAN WHITE ON “SINGLE SALES
+FACTOR” AND TRC DISCUSSION
+Chair White presented a detailed written analysis (previously posted on the Commission website)
+proposing that Hawai‘i transition from its current equally-weighted three-factor corporate
+income tax apportionment formula (property, payroll, sales) to a single sales factor (SSF)
+formula.
+Key Themes Presented:
+1. Policy Alignment & Competitiveness
+Most states have already adopted SSF; Hawaii is increasingly an outlier.
+o
+
+===== page 3 =====
+Minutes of the Tax Review Commission Meeting
+Wednesday, October 28, 2026
+Page 3 of 6
+Maintaining property and payroll factors may unintentionally discourage in-state
+o
+investment and hiring by increasing tax burdens on firms expanding their
+workforce or physical presence in Hawaii.
+2. Simplification
+Moving to SSF reduces administrative complexity for taxpayers and the
+o
+Department.
+3. Revenue Implications
+Past modeling suggested a potential net revenue increase, although not the
+o
+primary driver of the recommendation.
+Additional modeling may be needed to understand impacts on specific industries.
+o
+4. Alternative Apportionment Conforming Amendment
+Chair White recommended conforming language to reflect that SSF measures
+o
+market activity, not “business activity,” mirroring an approach used in Illinois.
+5. Options for Transition
+Immediate switch to SSF
+o
+Gradual phase-in (as used in other states)
+o
+Hybrid formulas (double-weighted sales)
+o
+Optional or mandatory industry-specific deviations (e.g., real estate, agriculture)
+o
+Commission Discussion Highlights:
+• Commissioners Fukunaga, Chock, Enos, Yasuda, and Ueoka expressed overall
+conceptual support for the SSF framework and its simplification benefits.
+• Commissioners emphasized the need for modeling, noting that effects may vary by
+industry (e.g., lodging, real estate, multi-state corporations).
+• Discussion explored rental income apportionment and whether Hawaii might someday
+consider industry-specific formulas; consensus favored not making industry-carveout
+recommendations at this time.
+• General agreement formed around presenting SSF as the primary recommendation, while
+listing—but not endorsing—alternative options that the Legislature could consider.
+Next Steps:
+Chair White will refine the draft write-up based on feedback and bring the matter forward for a
+vote at a future meeting.
+
+===== page 4 =====
+Minutes of the Tax Review Commission Meeting
+Wednesday, October 28, 2026
+Page 4 of 6
+5. PRESENTATION BY TRC CHAIR JONATHAN WHITE ON “CONVEYANCE TAX
+– CONTROLLING INTEREST PROVISION” AND TRC DISCUSSION
+Chair White presented a conceptual outline of a recommendation to address longstanding
+horizontal inequity between taxpayers who transfer real property directly (and pay conveyance
+tax) and those who transfer ownership indirectly through sale of a controlling interest in an entity
+holding real property (currently not taxed).
+Key Themes Presented:
+1. Policy Rationale
+Approximately 17 states impose conveyance tax on transfers of controlling
+o
+interests.
+Hawaii has considered legislation repeatedly (2013, 2014, 2016, 2024, 2026) but
+o
+none has passed.
+2. Design Approaches
+Broad application: apply the tax to all entities holding real property.
+o
+Narrow application: limit to entities primarily engaged in real estate business or
+o
+exceeding asset thresholds.
+Valuation methods debated in past bills include fair market value, county assessed
+o
+value, or the lesser of assessed value and a qualified appraisal.
+3. Administrative Considerations
+Some testimony in past sessions emphasized complexity; Chair White noted that
+o
+other states administer such provisions successfully.
+Commission Discussion Highlights:
+• Commissioner Ueoka described practical challenges with existing conveyance tax rules
+for LLC transfers, exemptions, and uncertainty in administrative guidance.
+• Commissioners discussed potential impacts on small businesses, real estate transactions,
+and compliance burdens.
+• Commissioner Fukunaga raised concerns about structuring and avoidance issues in large
+commercial real estate transactions, highlighting the need for careful definitions of
+“change of control.”
+• Commissioners agreed the inequity is significant, but further research is required to
+determine administrative feasibility and appropriate design details.
+Chair White will evaluate whether to prepare a fuller recommendation.
+
+===== page 5 =====
+Minutes of the Tax Review Commission Meeting
+Wednesday, October 28, 2026
+Page 5 of 6
+6. COMPETITIVENESS FRAMEWORK DISCUSSION
+The Commission continued its strategic discussion on how the forthcoming competitiveness
+section of the final report should be structured.
+Key Themes Raised:
+1. Defining Competitiveness
+Commissioner Fukunaga emphasized Hawaii’s stagnant real per-capita income
+o
+over two decades and the relationship between economic opportunity,
+out-migration, and tax structure.
+Competitiveness should focus on attracting talent, capital, and business formation,
+o
+rather than simply adjusting tax rates.
+2. Potential Ingredients for a "Competitiveness Cocktail"
+Improving tax neutrality by shifting burdens away from mobile factors (labor,
+o
+capital) and toward more stable bases.
+Considering measures to encourage remote-friendly mainland companies to hire
+o
+Hawaii residents.
+Enhancing Department of Taxation capacity, especially collections, which could
+o
+reduce the tax gap and improve fairness.
+Evaluating adjustments to the wholesale GET rate or rules to reduce pyramiding
+o
+and improve business cost structures.
+3. Provocative / High-Level Ideas (Not Endorsed)
+Chair White noted theoretical large-scale reforms (e.g., VAT replacing income
+o
+tax), but acknowledged such concepts exceed the Commission’s practical scope.
+4. Upcoming Input
+The Commission will receive a future presentation from Dr. Nicholas Lacoste
+o
+(co-researcher with Dr. Dylan Moore at University of Hawai‘i, and co-
+investigator for the UHERO study fir TRC) regarding the Transient
+Accommodations Tax (TAT).
+7. NEXT STEPS AND FUTURE AGENDA ITEMS
+• Next meeting: November 9, 2026.
+• Commissioners may submit topics for presentation (e.g., policy proposals, research
+findings) within one week for inclusion on the agenda.
+• Chair White will circulate refined drafts on SSF and conveyance tax as available.
+
+===== page 6 =====
+Minutes of the Tax Review Commission Meeting
+Wednesday, October 28, 2026
+Page 6 of 6
+8. ADJOURNMENT:
+With no further business, Chair White adjourned the meeting at approximately 4:00 PM.

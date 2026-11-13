@@ -1,0 +1,350 @@
+
+===== page 1 =====
+How TAT revenue responded to Hawaiʻi’s rate
+increases
+Evidence from the 1999 and 2009–10 increases
+INTERIM RESULTS · under review · not for citation
+Nicholas Lacoste and Dylan Moore
+UHERO, University of Hawaiʻi at Mānoa
+Hawaiʻi Tax Review Commission · November 2026
+Numbers come from preliminary statistical models that are still in code review and will be regenerated; small
+changes are expected.
+
+===== page 2 =====
+THE TRANSIENT ACCOMMODATIONS TAX (TAT)
+The TAT: $824 million, 1 in 13 state tax dollars
+Where the State’s 11% goes
+State tax revenue, 2025
+1.00 Honolulu rail (to 2030)
+TAT
+0.75 “Green fee” (2026)
+7.5% nature, climate, destination mgmt.
+Other
+18% General fund
+9.25
+minus small fixed set-asides
+GET
+Income
+43%
+32%
++ 3% county TAT on top
+Revenue: UHERO (TR, TRGT, TRIN, TRCO, TRTT @HI.A); income = individual + corporate. Split: Act 1 SS 2021; Act
+96 SLH 2025.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 2/21
+
+--- page 2 table 1 ---
+9.25
+
+===== page 3 =====
+THE GOAL
+What TAT rate raises the most revenue?
+TAT + GET revenue
+Peak: most revenue
+• Theory: aim near the peak
+Moore (2025), Taxing Paradise
+? TAT rate
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 3/21
+
+===== page 4 =====
+THE GOAL
+Why revenue rises by less than the rate
+Visitors respond
+Â Go somewhere else
+TAT revenue
++ < 1%
+TAT rate
+ǃ Stay cheaper or shorter
++1%
+Ȏ Spend less on tours & dining Less GET
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 4/21
+
+===== page 5 =====
+HISTORY
+The TAT rate has more than doubled since 1987
+1999 2009–10 2018
+15%
+14% with county
+County TATs
+added, 2021–22
+11% state
+10
+5%
+5
+0
+1990 2000 2010 2020
+State: Acts 340/1986, 7 SS/1993, 156/1998, 61/2009, 1 SS/2017, 96/2025. County: Act 1 SS 2021, county
+ordinances.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 5/21
+
+--- page 5 table 1 ---
+ |  |  | County added, 202
+
+===== page 6 =====
+THE MEASURE
+What we need to know: the revenue response (elasticity)
+% change in TAT revenue when the TAT rate rises 1%
+Revenue rises 1%
+Revenue falls Revenue rises, by less
+nobody changes plans
+past the peak visitors respond
+0 1
+visitors respond more
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 6/21
+
+--- page 6 table 1 ---
+Revenue falls past the peak | Revenue rises, by less visitors respond
+
+===== page 7 =====
+THE METHOD
+Building a “synthetic Hawaiʻi”
+TAT revenue
+Hawaiʻi raises its TAT
+If nobody changed plans
+Hawaiʻi
+effect
+Synthetic Hawaiʻi
+Before: the blend tracks Hawaiʻi
+time
+A blend of tourism places in FL MT NE NH NY OR VA WA Guam
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 7/21
+
+--- page 7 table 1 ---
+FL | MT | NE | NH | NY | OR | VA | WA | Guam
+
+===== page 8 =====
+THE COMPARISON PLACES
+Which places can stand in for Hawaiʻi?
+Rule Why
+̝
+Tourism-heavy places They move like Hawaiʻi
+hotel jobs at least 1.5× the U.S. share
+Ǯ
+Didn’t change their own lodging tax Otherwise their revenue
+in the years around Hawaiʻi’s increase jumps for the same reason
+ˍ
+No big change in what is taxed Same reason
+e.g. starting to tax Airbnb bookings
+Places that fail any rule are left out. Tourism-heavy: accommodation (NAICS 721) location quotient at least
+1.5× the U.S. average and at least 250 accommodation jobs, averaged over the 3 years before each increase.
+Source: BLS QCEW; Guam: Guam’s employment survey.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 8/21
+
+===== page 9 =====
+THE COMPARISON PLACES
+Who made the cut: examples
+1999 2009–10 2018
+Fort Myers & Orlando Naples & Fort Myers Florida Keys & Orlando
+Florida Florida Florida
+Yellowstone & Glacier Guam Virginia Beach
+Montana Virginia
+Mt Hood & the coast
+White Mountains & Lakes Oregon Catskills & Adirondacks
+New Hampshire New York
+Long Beach peninsula
+Washington Leavenworth & San Juans
+Washington
+12 places in all 11 places in all 17 places in all
+Counties, cities and tourism regions in each state, and Guam as a whole.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 9/21
+
+===== page 10 =====
+RESULTS
+TAT revenue rose almost 1-to-1 with the TAT rate
+past the visitors respond median 0.83 1 = nobody 1999
+peak changed plans
+median 0.91 2009–10
+0 0.5 1 1.5
+Revenue response (elasticity)
+Each bar counts versions of the analysis, each with different reasonable choices.
+Revenue fell in 0 of 144 versions (1999) and 3 of 192 (2009–10).
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 10/21
+
+--- page 10 table 1 ---
+past the peak | visitors respond median 0.83 |  |  |  |  |  |  |  |  |  | 1 = nobody 1999 changed plans
+
+--- page 10 table 2 ---
+ | median 0.91 |  |  |  |  |  |  |  |  |  | 2009–10 |  | 
+
+===== page 11 =====
+RESULTS
+Hawaiʻi is safely below the revenue peak for TAT revenue
+alone
+TAT revenue
+Higher rate → more revenue Higher rate → less revenue
+Hawaiʻi
+today
+peak TAT rate
+The best rate may sit below the peak: more TAT can mean less GET from tours and
+dining.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 11/21
+
+--- page 11 table 1 ---
+Higher rate → more revenue Hawaiʻi today | Higher rate → less revenue
+
+===== page 12 =====
+RESULTS
+Where exactly is the peak? Our data can’t really say
+TAT revenue
+peak?
+peak?
+peak?
+Hawaiʻi today
+TAT rate
+We know that we’re below the peak. But we need more data to guess what the peak is.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 12/21
+
+===== page 13 =====
+LEAKAGE
+How much revenue leaked away?
+If nobody had changed plans: $51.6M (1999), $80.9M (2009–10)
+$8.2M leaked
+$9.5M leaked
+$72.7M
+raised
+$42.0M
+raised
+1999 2009–10
+6% → 7.25% 7.25% → 9.25%
+New TAT revenue per year from each increase, 2025 dollars; middle (median) of all versions of the analysis.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 13/21
+
+--- page 13 table 1 ---
+$72.7M raised
+
+--- page 13 table 2 ---
+$42.0M raised
+
+===== page 14 =====
+COUNTING THE GET
+Did visitors spend less on other things?
+% change when the TAT rate rises 1%
+1999 2009–10
+ˍ GET collections −0.09 −0.03
+GET dipped a little after both increases.
+Main specification. Early estimates: imprecise, more data coming.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 14/21
+
+===== page 15 =====
+COUNTING THE GET
+About 1 in 5 GET dollars comes from visitors
+State GET revenue, 2025 đ
+Visitors paid about 18% of
+state GET in 2025
+Visitors
+18% ƥ 16–22% every year since
+2001
+Everyone
+ǫ
+Hotel bills, meals, tours,
+else shops
+82% so when visitors spend less,
+GET falls too
+Visitors’ GET = 4% × visitor spending (DBEDT, via UHERO) ÷ state GET revenue (Census; excludes the Honolulu
+surcharge). Rough: not all visitor spending is taxed at 4%.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 15/21
+
+===== page 16 =====
+COUNTING THE GET
+What if all visitor spending moved with their hotel stays?
+If nobody changed plans TAT raised TAT + GET raised
+$81M
+$73M
+$59M
+$52M
+$42M
+$23M
+1999 2009–10
+What-if, not an estimate: all visitor spending moves by the same % as their hotel spending. Per year, 2025
+dollars; TAT: middle of all versions.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 16/21
+
+--- page 16 table 1 ---
+
+--- page 16 table 2 ---
+
+===== page 17 =====
+COUNTING THE GET
+Counting GET, much of the TAT gain is lost
+If nobody changed plans TAT raised TAT + GET raised
+$81M
+$73M
+$52M
+$42M $44M
+−$7M
+1999 2009–10
+New revenue per year from each increase, 2025 dollars. TAT: middle of all versions; GET: main version. Early
+estimates.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 17/21
+
+--- page 17 table 1 ---
+
+--- page 17 table 2 ---
+
+===== page 18 =====
+LOOKING AHEAD
+2026: counting GET, about half the expected gain
+State TAT 10.25% → 11%: new revenue per year
+$58M
+$50M
+$29M
+If nobody Expected Expected
+changes plans TAT TAT + GET
+Lower GET takes back about $21M a year.
+Note: This is a projection based on the average of 1999 and 2009 estimates. This is not an estimate based on
+data we have observed.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 18/21
+
+===== page 19 =====
+LOOKING AHEAD
+Counting GET, Hawaiʻi could be anywhere up to the peak
+Counting GET:
+Revenue
+somewhere in here
+could keep as much as 73%,
+or we could be losing money
+TAT alone
+keeps 81–90%
+peak TAT rate
+We can’t say exactly where Hawaiʻi sits, but the GET losses could be large.
+Counting GET, the TAT may be a costlier way to raise revenue than it looks.
+Schematic: the curve’s shape is assumed. Positions use the share of the expected new revenue each increase
+kept (1999, 2009–10), from our estimates and the what-if.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 19/21
+
+===== page 20 =====
+LOOKING AHEAD
+Recreation payroll fell; restaurants barely moved
+% change in payroll when the TAT rate rises 1%
+Ȏ Restaurants Ɍ Recreation & attractions
+1999 2009–10
+−0.01
+fell in
+−0.09
+every version
+−0.25
+fell in
+every version
+−0.59
+Suggestive: visitors may cut back on activities more than on meals.
+Payroll (BLS QCEW). Recreation = NAICS 713: golf, attractions, marinas, fitness; most tour operators are
+counted elsewhere. Middle of all versions. Payroll is not sales; recreation data are thin. Not counted: possible
+losses in income tax collections on these wages.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 20/21
+
+===== page 21 =====
+LOOKING AHEAD
+Takeaways (interim)
+̝
+TAT increases raised TAT revenue
+little leaked: about $8M–$10M a year (1999, 2009–10)
+ˍ
+Counting GET, Hawaiʻi may be much nearer the peak
+GET from visitor spending dipped after each increase
+Ã
+2026 increase: about $29M of the expected $58M a year
+a projection from past responses, not yet measured
+Ǒ
+A TAT increase also picks losers
+suggestive: recreation payroll fell; restaurants barely moved
+Early estimates, more data coming. GET effects can’t yet be told apart from zero. 2018: first year only.
+Interim results — not for citation UHERO · Hawaiʻi Tax Review Commission study 21/21

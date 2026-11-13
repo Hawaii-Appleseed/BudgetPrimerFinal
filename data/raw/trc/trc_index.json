@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-09-24T20:16:52+00:00",
+  "checked_at": "2026-11-13T19:33:45+00:00",
   "documents": {
     "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-01-15-TRC_Presentation-DOTAX-TRP.pdf": {
       "doc_type": "presentation",
@@ -77,15 +77,64 @@
       "text": "data/raw/trc/extracted/2026-09-18-Dr_John_Knox_Presentation.txt",
       "title": "Dr. John Knox Presentation-2026-09-18"
     },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-09-29_Dylan_Moore_Presentation_Roadmap.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-09-29",
+      "pdf": "data/raw/trc/pdfs/2026-09-29_Dylan_Moore_Presentation_Roadmap.pdf",
+      "text": "data/raw/trc/extracted/2026-09-29_Dylan_Moore_Presentation_Roadmap.txt",
+      "title": "Dylan Moore (UHERO) Presentation-Roadmap-2026-09-29"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-10-08_UHERO_draft_report.pdf": {
+      "doc_type": "minutes_draft",
+      "meeting_date": "2026-10-08",
+      "pdf": "data/raw/trc/pdfs/2026-10-08_UHERO_draft_report.pdf",
+      "text": "data/raw/trc/extracted/2026-10-08_UHERO_draft_report.txt",
+      "title": "UHERO Draft Report-2026-10-06"
+    },
     "https://files.hawaii.gov/tax/stats/trc/docs2025/HCR _82.pdf": {
       "doc_type": "presentation",
       "meeting_date": null,
       "title": "House Concurrent Resolution HCR 182"
     },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/Jonathan_White-Proposed_Recommendation-Single_Sales_Factor.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": null,
+      "pdf": "data/raw/trc/pdfs/Jonathan_White-Proposed_Recommendation-Single_Sales_Factor.pdf",
+      "text": "data/raw/trc/extracted/Jonathan_White-Proposed_Recommendation-Single_Sales_Factor.txt",
+      "title": "Jonathan White-Proposed Recommendation-Single Sales Factor"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/Jonathan_White-Recommendation-Conveyance_Tax.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": null,
+      "pdf": "data/raw/trc/pdfs/Jonathan_White-Recommendation-Conveyance_Tax.pdf",
+      "text": "data/raw/trc/extracted/Jonathan_White-Recommendation-Conveyance_Tax.txt",
+      "title": "Jonathan White Proposed Recommendation Conveyance Tax Controlling Interest"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/Lacoste-UHERO-TAT_Presentation_TRC.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": null,
+      "pdf": "data/raw/trc/pdfs/Lacoste-UHERO-TAT_Presentation_TRC.pdf",
+      "text": "data/raw/trc/extracted/Lacoste-UHERO-TAT_Presentation_TRC.txt",
+      "title": "UHERO-TAT Presentation to TRC by Dr. Lacoste"
+    },
     "https://files.hawaii.gov/tax/stats/trc/docs2025/SR19_SD1_Certified.pdf": {
       "doc_type": "presentation",
       "meeting_date": null,
       "title": "Senate Resolution SR19 SD1"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/Testimony1_to_Tax_Review_Commission-2026-10-28-Hawaii_Tax_Fairness_Coalition.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": null,
+      "pdf": "data/raw/trc/pdfs/Testimony1_to_Tax_Review_Commission-2026-10-28-Hawaii_Tax_Fairness_Coalition.pdf",
+      "text": "data/raw/trc/extracted/Testimony1_to_Tax_Review_Commission-2026-10-28-Hawaii_Tax_Fairness_Coalition.txt",
+      "title": "Testimony 1 to Tax Review Commission-2026-10-28-Hawai\u02bbi Tax Fairness Coalition"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/Testimony2 _to_Tax_Review_Commission-2026-10-28-Hawaii_Children's_Action_Network_Speaks!.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": null,
+      "pdf": "data/raw/trc/pdfs/Testimony2-_to_Tax_Review_Commission-2026-10-28-Hawaii_Children-s_Action_Network_Speaks.pdf",
+      "text": "data/raw/trc/extracted/Testimony2-_to_Tax_Review_Commission-2026-10-28-Hawaii_Children-s_Action_Network_Speaks.txt",
+      "title": "Testimony 2 to Tax Review Commission-2026-10-28-Hawai\u2018i Children\u2019s Action Network Speaks"
     },
     "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc01-15.pdf": {
       "doc_type": "notice",
@@ -196,17 +245,77 @@
       "meeting_date": "2026-09-18",
       "title": "September 18, 2026 at 2:00 P.M."
     },
-    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-18_min_draft.pdf": {
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-18_min.pdf": {
       "doc_type": "minutes_final",
       "meeting_date": "2026-09-18",
-      "pdf": "data/raw/trc/pdfs/2026trc09-18_min_draft.pdf",
-      "text": "data/raw/trc/extracted/2026trc09-18_min_draft.txt",
+      "pdf": "data/raw/trc/pdfs/2026trc09-18_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc09-18_min.txt",
       "title": "September 18, 2026"
     },
     "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-29.pdf": {
       "doc_type": "notice",
       "meeting_date": "2026-09-29",
       "title": "September 29, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc09-29_min.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-09-29",
+      "pdf": "data/raw/trc/pdfs/2026trc09-29_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc09-29_min.txt",
+      "title": "September 29, 2026"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc10-08.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-10-08",
+      "title": "October 8, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc10-08_min.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-10-08",
+      "pdf": "data/raw/trc/pdfs/2026trc10-08_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc10-08_min.txt",
+      "title": "October 8, 2026"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc10-20.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-10-20",
+      "title": "October 20, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc10-20_min.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-10-20",
+      "pdf": "data/raw/trc/pdfs/2026trc10-20_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc10-20_min.txt",
+      "title": "October 20, 2026"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc10-28.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-10-28",
+      "title": "October 28, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc10-28_min.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-10-28",
+      "pdf": "data/raw/trc/pdfs/2026trc10-28_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc10-28_min.txt",
+      "title": "October 28, 2026"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-09.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-11-09",
+      "title": "November 9, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-09_min_draft.pdf": {
+      "doc_type": "minutes_draft",
+      "meeting_date": "2026-11-09",
+      "pdf": "data/raw/trc/pdfs/2026trc11-09_min_draft.pdf",
+      "text": "data/raw/trc/extracted/2026trc11-09_min_draft.txt",
+      "title": "November 9, 2026 \u2013 Draft"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-18.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-11-18",
+      "title": "November 18, 2026 at 2:00 P.M."
     },
     "https://www.youtube.com/watch?v=-YIVfkYDMSE": {
       "doc_type": "video",
@@ -258,11 +367,36 @@
       "meeting_date": "2026-07-14",
       "title": "July 14, 2026 VIDEO"
     },
+    "https://youtu.be/KQVUdBnDlOU": {
+      "doc_type": "video",
+      "meeting_date": "2026-10-20",
+      "title": "October 20, 2026 VIDEO"
+    },
+    "https://youtu.be/MNNMtG1T6Pk": {
+      "doc_type": "video",
+      "meeting_date": "2026-09-29",
+      "title": "September 29, 2026 VIDEO"
+    },
+    "https://youtu.be/a3IqfjcJDP0": {
+      "doc_type": "video",
+      "meeting_date": "2026-11-09",
+      "title": "November 9, 2026 VIDEO"
+    },
+    "https://youtu.be/jzgmt3kGSZ4": {
+      "doc_type": "video",
+      "meeting_date": "2026-10-08",
+      "title": "October 8, 2026 VIDEO"
+    },
+    "https://youtu.be/nkFXj3cTz4Q": {
+      "doc_type": "video",
+      "meeting_date": "2026-10-28",
+      "title": "October 28, 2026 VIDEO"
+    },
     "https://youtu.be/v7zeavWffq4": {
       "doc_type": "video",
       "meeting_date": "2026-09-01",
       "title": "September 1, 2026 VIDEO"
     }
   },
-  "page_last_updated": "September 22, 2026"
+  "page_last_updated": "November 10, 2026"
 }

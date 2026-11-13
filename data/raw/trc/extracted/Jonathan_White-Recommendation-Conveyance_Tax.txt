@@ -1,0 +1,335 @@
+
+===== page 1 =====
+Conveyance Tax Controlling Interest:
+Objective:
+To increase the equity and efficiency of Hawai‘i’s Conveyance Tax by adding a provision that will
+trigger the tax upon the transfer of entities holding interests in real property.
+Proposed Recommendation:
+Add a provision that would trigger the conveyance tax if a buyer purchases a controlling share of a
+company or trust that owns real estate in the state.
+On Effectiveness:
+One issue considered by the Commission was the possibility that a conveyance tax applied to
+controlling interests would be only marginally more difficult to avoid than the current conveyance
+tax. This is a valid concern. Every law creates a way around itself. However, it is difficult to believe
+that the other seventeen states with controlling interest provisions are just being walked all over. The
+Commission’s recommendation below is built from the practices of several states’ taxes and should
+ensure broad but not perfect application.
+Nonetheless, the effectiveness of states’ controlling interest provisions is difficult to judge. A 2018
+proposal from New York proposed to expand the state’s controlling interest provision. The expansion
+would have applied the conveyance tax to all transfers of an interest in an entity that held New York
+real estate if real estate comprised fifty percent or more of the entity’s total value after the transfer.
+In other words, the requirement of a transfer of fifty percent or more of the voting shares of an entity
+would be gone for these entities. The change was estimated to produce an additional $5 million per
+year. The point of this is not to recommend it for Hawai‘i. The point is only to highlight that the
+controlling interest provision must be taxing at least some transfers of controlling interests if there is
+a proposal to expand it in this way that is also estimated to raise revenue.1
+There will be tax planning; some of it successful.2 The exact amount is impossible to predict.
+Regardless, the Commission believes improvement of horizontal equity justifies imposing a tax on
+the transfer of a controlling interest in real property.
+Narrative and Detail:
+Hawai‘i’s conveyance tax applies to the transfer of real property interests.3 However, the tax does not
+apply to the transfer of an interest in an entity that itself owns a real property interest. This is a
+violation of horizontal equity. The Commission believes the conveyance tax should apply to all
+transfers of real property whether the interest is held by an individual or a legal entity.
+Seventeen jurisdictions agree and apply a controlling interest provision within their conveyance
+taxes, while fourteen jurisdictions do not impose a real estate conveyance tax at all.4 Thus, slightly
+1 EY, New York State Governor proposes significant changes to the New York State Real Estate Transfer Tax
+Rules, (Feb. 9, 2017) https://taxnews.ey.com/news/2017-0287-new-york-state-governor-proposes-
+significant-changes-to-the-new-york-state-real-estate-transfer-tax-rules.
+2 See e.g., Robert Willens, Transfer of Noncontrolling Economic Interest Not Subject to RPTT, 114 TAX NOTES
+STATE 259 (2024).
+3 HAW. REV. STAT. § 247-1.
+4 Citation forthcoming
+1
+
+===== page 2 =====
+less than a majority of the jurisdictions that impose conveyance taxes apply those taxes to the
+transfer of a controlling interest in an entity that hold a real estate interest.
+Jurisdictions have done this using two distinct approaches. One approach is to trigger the
+conveyance tax on any transfer of a controlling interest in an entity holding real estate. The
+jurisdictions using this approach include Connecticut, New Jersey, New York, Minnesota, Maine, and
+Washington. The various bills considered in Hawai‘i all proposed this type of imposition. For this
+reason, the Commission has chosen to focus on this approach.5 A survey of states’ controlling
+interest laws and a recent Hawai‘i proposal follows.
+New Jersey:
+New Jersey’s controlling interest transfer provisions are considered among the best and most
+straightforward of any state.6 New Jersey’s law contains less than 1,200 words in total.
+The law contains the standard and near universal definition of a “controlling interest.” Under the
+definition, a controlling interest is, for a corporation, more than fifty percent of the total combined
+voting power of all classes of stock, and for a partnership, association, trust, or other organization,
+more than fifty percent of the beneficial ownership of classified real property of that partnership,
+association, trust, or other organization.7 All of the laws surveyed below contain similar definitions
+of a “controlling interest.”
+New Jersey’s law contains language to include a “direct or indirect” transfer.8 The inclusion of both
+direct and indirect transfers ensures taxation of the transfer of an upper tier entity that owns no
+property itself but instead owns a lower tier entity that owns the interest in real property.9
+New Jersey’s tax base depends on the classification of the property. The tax base is the sales price if
+the entity holds only “classified real property” but is the property’s equalized assessed value (for
+property tax) if the entity owned other property in addition to “classified real property.10 “Classified
+real property” is a defined term and, in general, includes “commercial properties.”11
+The use of a property tax assessment value avoids administrative issues that can arise when both
+real property and other property types are involved. In stock sale or membership interest
+transactions, there may be disagreement and disparate incentives over how much of a sales price to
+assign to the real property assets and the other assets.12 New Jersey’s use of an option between sales
+5 The other approach is to apply the controlling interest provision only to entities that engage in the real estate
+business or hold significant real estate assets. The jurisdictions using this approach include Delaware, the
+District of Columbia, Illinois, Maryland, Michigan, New Hampshire, and Pennsylvania.
+6 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16 (2017).
+7 N.J. REV. STAT. § 54:15C-1(g).
+8 N.J. REV. STAT. § 54:15C-1(a)(1).
+9 N.J. ADMIN. CODE § 18:16A-1.5(a); see also, Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer
+Taxes: A (Mostly Critical) Review, 26-JAN J. MULTISTATE TAX’N 16, 16 (2017).
+10 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16 (2017).
+11 N.J. REV. STAT. § 54:15C-1(g).
+12 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16-17 (2017).
+2
+
+===== page 3 =====
+price and assessed value controls this. If the entity being transferred owns any type of property other
+than “classified real property,” then the tax must be calculated on the equalized assessed value.13
+New Jersey presumes that transactions occurring within six months of each other are part of a series
+of transactions making up a single transfer.14 In addition, purchasers that are related15 to one another
+are presumed to be acting in concert.16
+The New Jersey law contains two noteworthy exemptions. The first is for transfers that are incidental
+to a corporate merger or acquisition if the equalized assessed value of the real property transferred
+is less than 20 percent of the total value of all assets exchanged in the merger or acquisition.17 The
+second is for transfers that are intercompany transfers within a combined group that constitutes a
+unitary business.18
+Additionally, commentators consider New Jersey’s controlling interest transfer tax form19 to be well-
+designed and comprehensive.20
+New York:
+New York imposes tax on each conveyance of real property or interest therein when the consideration
+exceeds $500.21 New York’s law has been described as one of the best and most straightforward in
+the nation.22
+New York’s law defines a “controlling interest” in the common way. In the case of a corporation, a
+controlling interest is either fifty percent or more of the total combined voting power of all classes of
+stock of such corporation, or fifty percent or more of the capital, profits, or beneficial interest in such
+voting stock of such corporation. In the case of a partnership, association, trust, or other entity, a
+controlling interest is fifty percent or more of the capital, profits, or beneficial interest in such
+partnership, association, trust or other entity.23
+New York’s administrative rules provide that a transfer of a controlling interest includes a transfer by
+parties acting in concert. The rules provide that persons are considered to be acting in concert when
+there is a relationship between them such that one person influences or controls the actions of
+13 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16-17 (2017).
+14 N.J. REV. STAT. § 54:15C-1(a)(2).
+15 New Jersey law defines “related parties” in reference to Internal Revenue Code sections 318, 1504, and
+1563; see N.J. REV. STAT. § 54:15C-1(g).
+16 N.J. REV. STAT. § 54:15C-1(a)(2).
+17 N.J. REV. STAT. § 54:15C-1(c)(5).
+18 N.J. REV. STAT. § 54:15C-1(c)(6).
+19 See Form CITT-1, “Controlling Interest Transfer Tax, Form CITT-1,
+https://www.nj.gov/treasury/taxation/pdf/current/cbt/citt_1.pdf.
+20 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16 (2017).
+21 N.Y. TAX LAW § 1402(a); see also N.Y. State Dep’t of Tax. & Fin., Pub. 576, at 3-5.
+22 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 17 (2017).
+23 N.Y. TAX LAW § 1401(b).
+3
+
+===== page 4 =====
+another.24 The language of this rule suggests this only occurs when there is a relationship through
+common ownership. In the absence of common control or ownership, persons are considered to be
+acting in concert when the way in which the transfer is negotiated and consummated supports that
+they are acting in concert.25
+New York’s law contains the direct or indirect application language that New Jersey’s law contains,
+to the same effect.26
+New York’s tax is based on the “consideration,” which for a controlling interest transfer is the fair
+market value of the real property or interest that the entity holds, apportioned based on the
+percentage of the ownership interest transferred or acquired in the entity.27 The use of a single
+measure complicates the tax’s application to multi-property transactions.28 New York’s law contains
+a provision allowing for the use of fair market value if consideration other than money is involved.29
+New York has provided substantial administrative rules and other administrative guidance.30
+Washington:
+Washington imposes a real estate excise tax that applies to the transfer of a controlling interest of
+fifty percent or more.31 The definition of controlling interest is similar to that of other states. For “profit
+corporations,” the measure is fifty percent or more of the total combined voting power of all classes
+of stock entitled to vote, or, fifty percent of the capital, profits, or beneficial interest in the voting stock
+of the corporation. For any other corporation, or a partnership, association, trust or other entity, it is
+fifty percent or more of the capital, profits, or beneficial interest in such entity.32
+The Washington law provides for different methods of calculating the tax base, similar to New
+Jersey’s law. The tax base is the “true and fair value” of the real property owned by the entity and
+located in Washington.33 However, if total consideration for the sale, or the value of the property,
+cannot be reasonably determined, the “market value assessment” from county property tax records
+must be used.34 Similar to New Jersey’s method, this method will provide ease compliance and
+administrative.35
+24 N.Y. Comp. Codes R. & Regs. tit. 20, § 575.6(b)(1).
+25 N.Y. Comp. Codes R. & Regs. tit. 20, § 575.6(b)(2).
+26 N.Y. TAX LAW § 1402(a).
+27 N.Y. TAX LAW § 1401(d)(iii).
+28 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 17 (2017).
+29 N.Y. TAX LAW § 1404(b).
+30 See N.Y. Comp. Codes R. & Regs. tit. 20, § 575; N.Y. State Dep’t of Tax. & Fin., Pub. 576; N.Y. Dep’t of Tax. &
+Fin., Tax Bulletin RE-885 (Nov. 7, 2011),
+https://www.tax.ny.gov/pubs_and_bulls/tg_bulletins/rett/controlling_interest.htm.
+31 WASH. REV. CODE § 82.45.033.
+32 WASH. REV. CODE § 82.45.033.
+33 WASH. REV. CODE § 82.45.030(2).
+34 WASH. REV. CODE § 82.45.030(4).
+35 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16-17 (2017). To be converted to See supra notes ## and accompanying text later.
+4
+
+===== page 5 =====
+Washington’s law provides that the transfer of a controlling interest includes the transfer or
+acquisition, within any 36-month period, of a controlling interest in any entity with an interest in real
+property in Washington for a consideration.36
+Washington’s law also provides for the aggregation of transfers made in concert. The language
+determining whether parties have acted in concert is similar to the language used by New York. When
+there is common ownership, the question is whether there is a relationship such that one person
+influences or controls the actions of another through that common ownership. When there is no
+common control or ownership, the question is whether the way in which the transfer is negotiated
+and consummated supports that the parties are acting as a single entity.37
+Washington’s law provides the common exemption for a transfer that is a mere change of identify or
+form of ownership.38 Washington’s law also provides an exemption for a transfer that does not involve
+the recognition of gain or loss for entity formation, liquidation or dissolution, and reorganization.39
+However, this exemption is backed up by a limiting provision that denies the exemption where a
+transfer precedes the exempt transfer, or follows the exempt transfer, by thirty-six months if the other
+transfers result in the transfer of a controlling interest for valuable consideration, and in which one
+or more persons previously holding a controlling interest receive cash or property.40
+Washington’s law requires reporting of transfers of controlling interests41 and specifically provides
+for the application of existing penalties for failure to report a transfer of a controlling interest.42
+Connecticut:
+Connecticut also imposes tax on the transfer of a controlling interest.43 The definition of “controlling
+interest” is based on the common definition. In the case of a corporation, a controlling interest is
+more than fifty per cent of the total combined voting power of all classes of stock. In the case of a
+partnership, association, trust, or other entity, a controlling interest is more than fifty per cent of the
+capital, profits, or beneficial interest in such entity.44 The tax base is the “true and actual value of the
+property.45
+Connecticut’s law provides that transactions within six months of one another are presumed to be
+part of a series of transactions.46 The law provides that a taxable transfer includes a sale made by a
+group of sellers acting in concert and that parties related to each other by blood or marriage are
+36 WASH. REV. CODE § 82.45.010(2).
+37 WASH. REV. CODE § 82.45.010(2)(c).
+38 WASH. REV. CODE § 82.45.010(3)(p) (Washington’s law, because it is a standalone tax on controlling interest
+transfers, restates all the general exemptions from Washington’s conveyance tax, other states, like New York,
+integrated their controlling interest provisions into the existing conveyance tax statute and thus do not restate
+the exemptions).
+39 WASH. REV. CODE § 82.45.010(3)(q)(i).
+40 WASH. REV. CODE § 82.45.010(3)(q)(ii).
+41 WASH. REV. CODE § 82.45.030(2).
+42 WASH. REV. CODE § 43.07.390.
+43 CONN. GEN. STAT. § 12-638a et seq.
+44 CONN. GEN. STAT. § 12-638a.
+45 CONN. GEN. STAT. § 12-638b(a)(1).
+46 CONN. GEN. STAT. § 12-638b(a)(2).
+5
+
+===== page 6 =====
+presumed to be acting in concert.47 These provisions are not as detailed as those in New York’s
+administrative rules, discussed above, or those in the proposed bill from Hawai‘i, discussed below.
+The law contains an exemption for the sale or transfer of a controlling interest in any entity that only
+causes a change of identity, or form of ownership or organization, and that makes no change in
+beneficial ownership.48
+A Previous Hawai‘i Proposal and Specific Commission Recommendations:
+In 2026, the Legislature considered H.B. 1918.49 H.B. 1918 proposed to impose tax on transfers of
+controlling interests generally, as did all of the Hawai‘i bills the Commission surveyed. The
+Commission considers this bill a great starting point and suggests a few amendments below.
+H.B. 1918 defined “controlling interest” for corporations, and separately, for partnerships,
+associations, trusts, and other entities. For corporations, a controlling interest is fifty percent or more
+of the total combined voting power of all classes of the corporation’s stock, or, fifty percent or more
+of the capital, profits, or beneficial interest in the voting stock of the corporation. For partnerships,
+associations, trusts, and other entities, a controlling interest is fifty percent or more of the capital,
+profits, or beneficial interest in the partnership, association, trust, or other entity. This language is
+standard language and shared across many jurisdictions’ controlling interest provisions.50 The
+Commission recommends this language be maintained.
+H.B. 1918 would have applied the conveyance tax to transfers that result in (1) the transfer of a
+controlling interest in an entity with an interest in real property located in the Hawai‘i for valuable
+consideration; and (2) the transfer of control or ownership of the real property located in Hawai‘i.
+The proposed imposition would have applied to a transfer or series of transfers “by any person or
+entity acting alone or in concert, within any twelve-month period.” The bill provided that persons are
+acting in concert when there is a relationship between them such that one person influences or
+controls the actions of another through common ownership. The bill further provides that persons
+are only considered to be acting in concert when the way in which the transfer is negotiated and
+consummated supports that they are acting in concert.51
+These words are very similar to language used in other states’ laws, for example New York, but the
+meaning is different here. In other states, these two clauses are two independent ways in which
+persons can be found to be acting in concert. In H.B. 1918, the conjunctive “and” is used between
+these two clauses. This means the second clause would restrict the application of the first. This
+means that to be acting in concert the parties would have to have a relationship such that one
+influences the other through common ownership and the way in which the transfer is negotiated and
+consummated would have to support that they are acting in concert.
+47 CONN. GEN. STAT. § 12-638b(a)(3).
+48 CONN. GEN. STAT. § 12-638b(b)(2).
+49 H.B. 1918, H.D. 1, S.D.1 33rd Leg., Reg. Sess. (Haw. 2026).
+50 See N.Y. TAX LAW § 1401(b); N.J. REV. STAT. § 54:15C-1(g); WASH. REV. CODE § 82.45.033; CONN. GEN. STAT. § 12-
+638a.
+51 Another bill from 2013 provides a set of factors for determining whether parties are acting in concert, see
+H.B. 680, S.D. 1, 27th Leg., Reg. Sess. (Haw. 2013).
+6
+
+===== page 7 =====
+The Commission recommends using this language in the way other states use it. This will make
+Hawai‘i’s law more consistent with other states.
+H.B. 1918 contained one provision that is different from other states. The bill provided an explicit
+statement that under some circumstances a series of transactions would be considered separate
+acquisitions. The Commission recommends maintaining this language.
+H.B. 1918 defined the tax base as the fair market value of the real property owned by the entity at the
+time the controlling interest was transferred or acquired. Fair market value was defined as the value
+of real property as stated on the most recent real property assessment. The Commission
+recommends using the tax base determination used by New Jersey and Washington. This method
+provides that the tax base is either the price paid for the property, or, if that cannot be reasonably be
+determined, the most recent assessed value used for property tax.
+The bill excluded from taxation any transfer consisting of only a change in identity or form of
+ownership of an entity where there is no change in the beneficial ownership. This includes transfers
+to an entity wholly owned, directly or indirectly, by the same common ownership as the transferor.
+This is a very common exemption.52 The Commission recommends this exemption be maintained.
+The Commission recommends considering two exemptions provided in New Jersey’s law. The first is
+for transfers that are incidental to a corporate merger or acquisition if the equalized assessed value
+of the real property transferred is less than 20 percent of the total value of all assets exchanged in the
+merger or acquisition.53 The second is for transfers that are intercompany transfers within a
+combined group that constitutes a unitary business.54
+H.B. 1918 does not contain an exemption for transfers that are solely a change in controlling interest
+if the people that the transfer is between have held their interests for three years or more immediately
+before the transfer. Such an exemption was suggested in testimony.55 The Commission recommends
+considering an exemption for a conveyance for certain transfers involving projects for which a low-
+income housing tax credit has been issues. An exemptions for this was considered in prior bills.56
+The bill provides for taxation of the transfer of a controlling interest at the lowest rate of conveyance
+tax in certain circumstances. These items are removed from the current list of exemptions and are
+not unrelated to the controlling interest provisions. However, the language of these applications at
+the lowest rate mirror some of the exemptions provided in other states’ laws.57 The Commission
+recommends considering converting these to outright exemptions.
+For administration, the Commission recommends including reporting requirements in any legislation
+to impose conveyance tax on transfers of controlling interests. Testimony submitted on a prior
+52 See CONN. GEN. STAT. § 12-638b(b)(2); N.Y. TAX LAW § 1405(b)(6) and N.Y. Comp. Codes R. & Regs. tit. 20, §
+575.10; WASH. REV. CODE § 82.45.010(2).
+53 N.J. REV. STAT. § 54:15C-1(c)(5).
+54 N.J. REV. STAT. § 54:15C-1(c)(6).
+55 S.B. 97, 27th Leg., Reg. Sess. (Haw. 2013) (testimony of Alexander & Baldwin, Inc.); this exemption was
+included in H.B. 680, S.D. 1, 27th Leg., Reg. Sess. (Haw. 2013).
+56 H.B. 680, S.D. 1, 27th Leg., Reg. Sess. (Haw. 2013).
+57 See N.J. REV. STAT. § 54:15C-1(c)(2)-(6).
+7
+
+===== page 8 =====
+Hawai‘i proposal recommended requiring a certificate of conveyance with transfer of a controlling
+interest.58 The Commission recommends requiring this, or something similar, as a way to ensure a
+paper trail is created to track taxable transfers. Washington’s law addresses this by requiring all
+transfers of controlling interests to be reported to the state,59 and specifically providing for the
+application of existing penalties for failure to report.60
+The Commission recommends relying on New Jersey’s forms and administrative rules as well as New
+York’s administrative rules and guidance. New Jersey’s forms are considered the leading examples61
+and New York’s guidance is extensive.
+The Commission recommends imposing the tax on transfers taking place on or after January 1 of the
+year following the year after the change is made. For example, if the Legislature amends the law in
+2027, the recommended imposition date would be January 1, 2029. This will give the Department,
+Bureau of Conveyances, landowners, and planners ample opportunity to adjust and prepare.
+The Commission recommends considering transition language to safe-harbor agreements entered
+into before the effective date of the bill. This would be the effective date of the bill, not the imposition
+date of the tax. Presumably, this would be the date the bill was signed by the Governor, the date it
+became law without the Governor’s signature, or, some other date chosen and assigned by the
+Legislature. The earliest this date would be is the date the law became effective and the latest date
+would be the tax imposition date.
+58 S.B. 97, 27th Leg., Reg. Sess. (Haw. 2013) (testimony of The Nature Conservancy) (the language was
+subsequently added to the S.D. 2 version of S.B. 97).
+59 WASH. REV. CODE § 82.45.030(2).
+60 WASH. REV. CODE § 43.07.390.
+61 Clark Calhoun & Kathleen Cornett, Controlling Interest Transfer Taxes: A (Mostly Critical) Review, 26-JAN J.
+MULTISTATE TAX’N 16, 16 (2017); see Form CITT-1, “Controlling Interest Transfer Tax, Form CITT-1,
+https://www.nj.gov/treasury/taxation/pdf/current/cbt/citt_1.pdf
+8

@@ -1,0 +1,135 @@
+
+===== page 1 =====
+Single sales factor, for discussion purposes only
+Objective:
+Simplify Hawai‘i’s corporate income tax by simplifying the apportionment formula. Align
+Hawai‘i’s corporate income tax system with that of other states. The recommended
+adjustment will likely raise revenue.
+Proposed Recommendation:
+Adopt a corporate income tax apportionment formula based on a single factor reflecting
+sales in Hawai‘i. Make a conforming amendment to the alternative apportionment
+provision.
+Narrative:
+Currently, Hawai‘i’s corporate income tax system uses an equally weighted three-factor
+apportionment formula to apportion taxpayer income between the states.1 This method
+was the original method under the Uniform Division of Income for Tax Purposes Act2 but
+has been replaced by a single factor reflecting sales (singles sales factor) in most states.3
+The single-sales factor was ruled constitutional by the United States Supreme Court in
+1978.4
+Apportioning corporate net income using a single sales factor apportionment is more
+efficient and competitive. The single sales factor encourages investment in employees and
+plant and equipment in the state compared to the current three-factor formula.5
+The current three-factor formula takes a combination of sales, property, and payroll into
+account when apportioning net income to Hawai‘i. As a result, a corporate taxpayer with
+increasing employees and assets in Hawai‘i will face an increasing tax liability. Another way
+to say this is that the three-factor formula places a tax on jobs and buildings in the state.6
+Under a single sales factor system, the share of income Hawai‘i taxes will only increase as
+a result of an increase in sales sourced to Hawai‘i relative to total nationwide sales. The
+share will not increase due to an increase in employees or property in the state. Thus, one
+potential impediment to local expansion is removed.
+1 HAW. REV. STAT. § 235-29.
+2 UNIF. DIV. INCOME FOR TAX PURPOSES ACT § 9 (Unif. L. Comm. 1957).
+3 HELLERSTEIN, HELLERSTEIN & APPLEBY, STATE TAXATION § 8.15 (3d ed.)
+4 Moorman Mfg. v. Bair, 437 U.S. 267 (1978).
+5 JOEL MICHAEL, HOUSE RESEARCH, SINGLE SALES APPORTIONMENT OF CORPORATE FRANCHISE TAX (2015).
+6 UHERO draft report page 108.
+
+===== page 2 =====
+The corollary to this is that multistate and multinational taxpayers will not be able to dodge
+Hawai‘i’s corporate income tax by reducing their workforce, or their plant or equipment,
+within Hawai‘i.7
+Adopting single sales factor apportionment will also align Hawai‘i’s corporate income tax
+with that of most other states. Thirty-six states use single sales factor apportionment
+already, several more use a three-factor formula with a double-weighted sales factor, and
+only five or six still use an equally weighted three-factor formula, including Hawai‘i.8
+The arguments against are that sales only reflects one aspect of a business’s activities.9 A
+system apportioning income using a single sales factor ignores the factors of production:
+land, capital, and labor. Many argue, including the developers of the Uniform Division of
+Income for Tax Purposes Act, that these factors should be considered.10 Other arguments
+are that the competitiveness gains are not significant enough to justify a one-sided
+formula.11 The impact of business tax policy, though important, is only one aspect
+determining a business’s decision, and often tax policy is one of the least significant
+ones.12
+Some arguments are outdated. For example, one argument is that adoption of single sales
+factor apportionment will lead to double taxation for some corporations. The reasoning is
+that any non-uniformity among the states in their apportionment factors creates the
+potential for double taxation.13 This is a good argument, just outdated. Outdated because
+most states that tax corporate income now do so using a single sales factor apportionment
+method. It is the three-factor formulas that are the outliers and source of non-uniformity
+now.
+The transition to single sales factor apportionment is expected to raise revenue for the
+state. The Department’s revenue estimate is $...
+7 KURT WISE, MASS. BUDGET & POLICY CENTER, DUE TO SINGLE SALES FACTOR APPORTIONMENT, MULTINATIONAL
+CORPORATIONS CANNOT DODGE STATE TAXES BY REDUCING WORKFORCE OF CAPITAL INVESTMENTS IN MASSACHUSETTS 2
+(2025).
+8 Draft UHERO report page 103-104.
+9 MICHAEL MAZEROV, CENTER ON BUDGET AND POLICY PRIORITIES, THE “SINGLE SALES FACTOR” FORMULA FOR STATE
+CORPORATE TAXES: A BOON TO ECONOMIC DEVELOPMENT OR A COSTLY GIVEAWAY? 16 (2005).
+10 Cite forthcoming
+11 MICHAEL MAZEROV, CENTER ON BUDGET AND POLICY PRIORITIES, THE “SINGLE SALES FACTOR” FORMULA FOR STATE
+CORPORATE TAXES: A BOON TO ECONOMIC DEVELOPMENT OR A COSTLY GIVEAWAY? 4 and 58 (2005).
+12 See MICHAEL MAZEROV, CENTER ON BUDGET AND POLICY PRIORITIES, THE “SINGLE SALES FACTOR” FORMULA FOR STATE
+CORPORATE TAXES: A BOON TO ECONOMIC DEVELOPMENT OR A COSTLY GIVEAWAY? 4 (2001).
+13 MICHAEL MAZEROV, CENTER ON BUDGET AND POLICY PRIORITIES, THE “SINGLE SALES FACTOR” FORMULA FOR STATE
+CORPORATE TAXES: A BOON TO ECONOMIC DEVELOPMENT OR A COSTLY GIVEAWAY? 58 (2005) (this paper itself
+acknowledges this point, we are just repeating it here).
+
+===== page 3 =====
+Options
+There are several options that do not involve full or immediate adoption of single sales
+factor apportionment. We describe several here.
+Gradual transition
+One option is to gradually transition into single sales factor apportionment over time. This
+can be done by maintaining the property and payroll factors temporarily while increasing
+the weighting of the sales factor in the formula each year, then removing the property and
+payroll factors completely in a target year. For an example of effective language, see
+Tennessee’s statute, which now requires single sales factor, but retains the language from
+the transition years.14
+Election only
+Another option is to allow taxpayers to elect into single sales factor apportionment. An
+example of this is Arizona’s current method, which allows a choice between a three-factor
+formula with a double-weighted sales factor and the single sales factor method.15 Typically,
+once such an election is made, it cannot be revoked for a number of years.
+Certain industries
+Another option is to require or allow single sales factor apportionment to select industries.
+Some statutes or proposals allow the method only for certain industries16 while some
+require single sales factor to be used but then provide exceptions to certain industries.17
+However, these exceptions are likely based on local conditions and local lobbying, so we
+will not provide a common list of excepted industries here.
+Double weighted sales factor
+Finally, a three-factor with a double-weighted sales factor can be adopted. This option will
+increase the emphasis on the sales factor while maintaining a reflection of the payroll and
+property in the state. For an example of what a three-factor formula with a double-weighted
+sales factor looks like, see Florida’s apportionment factor.18
+The Conforming Amendment
+The adoption of a requirement for single sales factor apportionment requires a conforming
+amendment to the state’s alternative apportionment statute.
+14 TENN. CODE. ANN. § 67-4-2012; see also, ARIZ. REV. STAT. ANN. § 43-1139(A)(7).
+15 ARIZ. REV. STAT. ANN. § 43-1139(A)(7); see also, H.B. 551, 2024 Reg. session (Virginia 2024).
+16 Massachusetts and Maryland, among others, offer SSF for manufacturing; see also, H.B. 2110, 2023 Reg.
+Sess. (Kansas 2023) (election available to taxpayers engaged in manufacturing, production or storage of
+electricity, certain agricultural activities, scientific and technical consulting services for the biofuel industry,
+wholesale distribution of petroleum and other wholesale trades, and wireless communication carriers).
+17 CAL. REV. & TAX. CODE § 25128(b) and (c) (businesses with more than 50 percent of their gross income from
+agricultural or extractive activities must apportion using an equally-weighted three-factor formula).
+18 FLA. STAT. § 220.15(1).
+
+===== page 4 =====
+Alternative apportionment is a relief valve for formulary apportionment. It is necessary
+because of the obvious truth that a fixed formula will not be adequate for all taxpayers in all
+tax years. The provision allows the Department to impose, or a taxpayer to request, an
+adjustment of the standard apportionment formula if the results of that formula “do not
+fairly represent the extent of the taxpayer’s the business activity in this State.”19 It is
+possible that courts may find that “business activity” refers to more than just a taxpayer’s
+market, as reflected by its sales, even though the state has changed the apportionment
+formula to only reflect sales. If the Legislature opts to adopt singles sales factor
+apportionment, it is recommended to change this language.
+Illinois is the only state that has done so. Illinois changed its alternative apportionment to
+refer to market rather than business activity. After amendment, Illinois language reads “[i]f
+the allocation and apportionment provisions of subsections (a) through (e) and of
+subsection (h) do not […] fairly represent the market for the person's goods, services, or
+other sources of business income, the person may petition for, or the Director may, without
+a petition, permit or require, in respect of all or any part of the person's business activity, if
+reasonable…”20
+19 HAW. REV. STAT. §235-38 (emphasis added).
+20 35 ILL. COMP. STAT. 5/304(f).
