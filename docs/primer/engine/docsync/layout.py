@@ -26,6 +26,7 @@ import json
 import math
 import os
 import re
+import sys
 from html import escape as _html_escape
 from pathlib import Path
 
@@ -5163,6 +5164,7 @@ class Layout:
         # STAGE2_AUTOMATION.md. Emitted by sec().
         self.sections = raw.get("sections") or {}
         self._validate()
+        _register_built(self)   # only a Layout that built: finish_html() looks here
 
     def endnote_order(self) -> list:
         """The editor's endnote order override (ids), or [] for none."""
@@ -8076,3 +8078,187 @@ class Layout:
             elif x < 0 or y < 0 or x + w > self.page_w + 0.01 or y + h > self.page_h + 0.01:
                 bad.append(f"shape '{s['id']}' extends past page {s['page']}")
         return bad
+
+
+# ---------------------------------------------------------------------------
+# Finishing a render: every sheet layout.pages names gets drawn (2026-11-12)
+#
+# A renderer decides which sheets exist. Most call L.page_order() and draw a
+# sheet per id, so a page added in the editor (addPage, duplicatePage, the "+"
+# in the page strip) is drawn like any other. A renderer that writes its own
+# <section class="page"> blocks never reads layout.pages at all: the blank
+# page was saved in layout.json and never drawn, so the editor refused every
+# placed object on it ("page p1 does not draw placed objects") and a deck
+# could not grow past the pages its template was born with. PR #135 taught
+# demo-report's renderer to do it; this is the same thing done ONCE for every
+# renderer, without touching any of them.
+#
+# finish_html(html) is called on a renderer's finished output (the editor's
+# three render paths call finish_output() on the file the renderer wrote, and
+# a native run does it itself at exit): every blank page layout.pages puts in
+# its order, and which the markup does not carry, is drawn by L.sheet() and
+# spliced in after the sheet that precedes it in the order. A render with no
+# such page is returned UNCHANGED, byte for byte.
+#
+# The once-per-document head (the page-size override, print colour, the
+# mobile rules) needs nothing special: it rides out with the first layer()
+# call, and L.sheet() makes one, so a document whose renderer never called
+# layer() (every hand-built sheet but the added ones) still gets its page size
+# on the added sheets, wherever the first drawn sheet is.
+# ---------------------------------------------------------------------------
+
+_BUILT: list = []          # Layouts built in this process, oldest first
+_BUILT_SEQ = [0]
+
+
+def _register_built(layout) -> None:
+    """Remember a Layout so finish_html() can find the renderer's own. A
+    renderer builds one; the list is capped so a long-lived process (the
+    editor's Pyodide, which renders on every edit) never grows it."""
+    _BUILT_SEQ[0] += 1
+    layout._built_seq = _BUILT_SEQ[0]
+    _BUILT.append(layout)
+    del _BUILT[:-8]
+    global _AT_EXIT
+    # A native run (`python3 render_report.py`, which docsync.check, the hub
+    # and serve.py all do, always with DOCSYNC_OUT) has no editor to call
+    # finish_output() for it, so it does it itself when the script ends.
+    if not _AT_EXIT and os.environ.get("DOCSYNC_OUT") and sys.platform != "emscripten":
+        _AT_EXIT = True
+        import atexit
+        atexit.register(_finish_at_exit)
+
+
+_AT_EXIT = False
+
+
+def _finish_at_exit() -> None:
+    out = os.environ.get("DOCSYNC_OUT")
+    if not out or not os.path.isfile(out):
+        return
+    try:
+        finish_output(out)
+    except Exception as e:                                 # noqa: BLE001
+        # Never turn a build that wrote its page into one that did not.
+        print(f"docsync: could not draw the pages layout.pages adds: {e}", file=sys.stderr)
+
+
+_HIDE = re.compile(r"<!--.*?-->|<script\b.*?</script\s*>|<style\b.*?</style\s*>", re.S | re.I)
+_SECTION_TAG = re.compile(r"<(/?)section\b((?:[^>\"\']|\"[^\"]*\"|\'[^\']*\')*)>", re.I)
+_ATTR = r"\b{}\s*=\s*(?:\"([^\"]*)\"|\'([^\']*)\')"
+
+
+def _attr(attrs: str, name: str):
+    m = re.search(_ATTR.format(name), attrs, re.I)
+    return None if not m else (m.group(1) if m.group(1) is not None else m.group(2))
+
+
+def top_sheets(html: str) -> list[tuple[int, int, str]]:
+    """The page sheets in a rendered document: (start, end, id) for each
+    top-level <section class="page …">, in document order. The id is its
+    data-page when it has one, else its 1-based position among the sheets —
+    the same rule the editor's docSheets() uses. Comments, <script> and
+    <style> are looked past, so a section named in a string never counts."""
+    hidden = _HIDE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), html)
+    out, depth, start, ident = [], 0, None, None
+    for m in _SECTION_TAG.finditer(hidden):
+        if m.group(1):                                     # </section>
+            if depth:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    out.append((start, m.end(), ident))
+                    start = None
+            continue
+        if depth == 0 and "page" in (_attr(m.group(2), "class") or "").split():
+            start, ident = m.start(), _attr(m.group(2), "data-page")
+        depth += 1
+    return [(a, b, i if i is not None else str(n)) for n, (a, b, i) in enumerate(out, 1)]
+
+
+def _renderer_layout():
+    """The Layout the renderer drew with: the newest one that has emitted a
+    layer (a throwaway built later for a measurement has not), else the newest."""
+    for lay in reversed(_BUILT):
+        if lay._print_color_sent:
+            return lay
+    return _BUILT[-1] if _BUILT else None
+
+
+def _sized(sheet: str, L) -> str:
+    """The sheet's height, said on the sheet itself, when the report has been
+    resized. page_style() sets only min-height (so a flowing page can grow), and
+    a renderer whose own stylesheet pins `.page{height:11in}` (uhero-trc-summary)
+    then keeps that height whatever File ▸ Page size says. A sheet the engine
+    drew for a page the person added is an artboard, never a flow, so it takes
+    the report's size exactly. Pageless (no height) and an unresized report
+    (the renderer's own CSS is the size) are left alone."""
+    if not L.page or L.page[1] is None:
+        return sheet
+    h = f"height:{float(L.page[1]):g}in"
+    m = re.match(r'<section\b[^>]*?\bstyle="', sheet)
+    if m:
+        return sheet[:m.end()] + h + ";" + sheet[m.end():]
+    return sheet.replace(">", f' style="{h}">', 1)
+
+
+def finish_html(html: str, layout=None) -> str:
+    """Draw the blank pages layout.pages names that `html` does not carry.
+
+    Returns `html` itself, the same object, when there is nothing to add —
+    which is every report with no added page."""
+    L = layout or _renderer_layout()
+    if L is None:
+        return html
+    blanks = set(map(str, L.blank_ids()))
+    if not blanks:
+        return html
+    order = [p for p in (L.pages.get("order") or [])]
+    sheets = top_sheets(html)
+    ids = [i for _, _, i in sheets]
+    if not order:                         # blanks with no order: they follow the design
+        order = [int(i) if i.isdigit() else i for i in ids] + L.blank_ids()
+    missing = [p for p in order if str(p) in blanks and str(p) not in ids]
+    if not missing:
+        return html
+    end_of = {i: e for _, e, i in sheets}
+    inserts: dict[int, list[str]] = {}
+    fn = getattr(L, "_fn", None)
+    for pid in missing:
+        at = order.index(pid)
+        # After the nearest sheet before it in the order that IS drawn; with
+        # none, before the first sheet; with no sheets at all, before </body>.
+        prev = next((str(q) for q in reversed(order[:at]) if str(q) in end_of), None)
+        if prev is not None:
+            pos = end_of[prev]
+        elif sheets:
+            pos = sheets[0][0]
+        else:
+            m = list(re.finditer(r"</body\s*>", html, re.I))
+            pos = m[-1].start() if m else len(html)
+        sheet = _sized(L.sheet(pid), L)
+        if fn is not None and "[^" in sheet:               # a citation in a box on it
+            sheet = fn.resolve(sheet)
+            if 'class="fn"' in html:
+                sheet = fn.linkify(sheet)
+        inserts.setdefault(pos, []).append(sheet)
+    out, last = [], 0
+    for pos in sorted(inserts):
+        out.append(html[last:pos])
+        out.extend(inserts[pos])
+        last = pos
+    out.append(html[last:])
+    return "".join(out)
+
+
+def finish_output(path) -> bool:
+    """finish_html() on the file a renderer wrote. True when it changed it.
+    The editor calls this after every render (docsync/editor/edit.html); a
+    native run does it at exit, so a report builds the same either way."""
+    p = Path(path)
+    html = p.read_text()
+    done = finish_html(html)
+    _BUILT.clear()
+    if done is html or done == html:
+        return False
+    p.write_text(done)
+    return True

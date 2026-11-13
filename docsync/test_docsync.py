@@ -527,7 +527,9 @@ try:
              parse_sources(""), {})
 finally:
     del os.environ["DOCSYNC_EDIT"]
-check("but publishing still refuses it", _content_error_src(""), "is empty")
+# …and not a wall when published either: a document that cites nothing has no
+# sources to list. The refusal that matters is a citation with none.
+check_eq("an empty sources block is allowed when published too", parse_sources(""), {})
 
 check_eq("a style aimed at an unstyleable slot is reported",
          _layout({"text": {"cip.body": {"size": 12}}}).unknown_text_keys({"a.b"}),
@@ -5974,6 +5976,112 @@ try:
     FAILS.append("a render with no sheet must be refused")
 except ValueError as e:
     check("a render with no sheet says so", str(e), "no <section class=\"page\">")
+
+# ---- every renderer draws the pages the editor adds (finish_html) ----------
+# A renderer that writes its own <section class="page"> blocks never read
+# layout.pages, so an added or duplicated page was saved and never drawn (and a
+# pilot's placed objects on it refused). finish_html() draws the blank pages
+# layout.pages names that the markup lacks, after the sheet before them in the
+# order; a render with none to add comes back as the SAME object.
+import subprocess as _sp2
+import textwrap as _tw
+from docsync import layout as _lm
+
+_hand = ('<html><head><style>.page{width:8.5in}</style></head><body>'
+         '<section class="page cover"><section class="card">one</section></section>\n'
+         '<section class="page">two</section>\n'
+         '<div class="endnotes">notes</div></body></html>')
+
+
+def _fin(layout_dict, html=_hand):
+    lay = _layout(layout_dict)
+    return _lm.finish_html(html, lay), lay
+
+
+_out, _lay = _fin({"positions": {}})
+check_eq("finish_html: no added page, the markup is returned untouched", _out is _hand, True)
+_out, _lay = _fin({"pages": {"order": [1, 2, "p1"], "blanks": [{"id": "p1"}]}})
+check_eq("finish_html: an added page is drawn once, as a data-page sheet",
+         _out.count('data-page="p1"'), 1)
+check_eq("finish_html: after the sheet before it in the order, ahead of what trails",
+         _out.index('data-page="p1"') > _out.index(">two</section>")
+         and _out.index('data-page="p1"') < _out.index('class="endnotes"'), True)
+_out, _lay = _fin({"pages": {"order": ["p1", 1, 2], "blanks": [{"id": "p1"}]}})
+check_eq("finish_html: a page first in the order goes before the first sheet",
+         _out.index('data-page="p1"') < _out.index("one"), True)
+_out, _lay = _fin({"pages": {"order": [1, "p1", "p2", 2], "blanks": [{"id": "p1"}, {"id": "p2"}]}})
+check_eq("finish_html: two in a row keep their order, between the designed sheets",
+         _out.index("one") < _out.index('data-page="p1"') < _out.index('data-page="p2"') < _out.index("two"), True)
+_again = _lm.finish_html(_out, _lay)
+check_eq("finish_html: a render that has them already is not touched again", _again is _out, True)
+check_eq("finish_html: a section named inside a script or a comment is not a sheet",
+         [i for _, _, i in _lm.top_sheets(
+             '<script>var h = \'<section class="page" data-page="9">\';</script>'
+             '<!-- <section class="page"> --><section class="page" data-page="3">x</section>')], ["3"])
+# A resized report: the added sheet is drawn at the report's size even where the
+# renderer's own stylesheet pins .page{height:11in}; an unresized one has no
+# inline size, so the renderer's own CSS stays the truth.
+_out, _lay = _fin({"page": {"w": 10, "h": 7.5}, "fill": {"page.p1": "#354F52"},
+                   "pages": {"order": [1, 2, "p1"], "blanks": [{"id": "p1"}]}})
+check("finish_html: a resized report's added sheet carries its height", _out, 'height:7.5in;background:#354F52')
+check_eq("finish_html: with no fill the height is a style of its own",
+         'style="height:7.5in"' in _fin({"page": {"w": 10, "h": 7.5},
+                                         "pages": {"order": [1, 2, "p1"], "blanks": [{"id": "p1"}]}})[0], True)
+check_eq("finish_html: an unresized report's added sheet has no inline height",
+         "height:" in _fin({"pages": {"order": [1, 2, "p1"], "blanks": [{"id": "p1"}]}})[0].split('data-page="p1"')[1].split(">")[0], False)
+# The page-size / print head is emitted once, even though no sheet of the
+# renderer ever called layer(): it rides out with the first sheet the engine draws.
+_out, _lay = _fin({"page": {"w": 10, "h": 7.5}, "pages": {"order": [1, 2, "p1"], "blanks": [{"id": "p1"}]}})
+check_eq("finish_html: the page-size head arrives once", _out.count("@page{size:10.0in 7.5in;margin:0}"), 1)
+
+# End to end, the way docsync.check, the hub and serve.py run a renderer: a
+# script that writes DOCSYNC_OUT, no editor to call finish_output for it. It
+# finishes its own output when the script ends.
+with tempfile.TemporaryDirectory() as _td:
+    _td = Path(_td)
+    (_td / "content.md").write_text("[[title]]\nT\n\n[[sources]]\n")
+    (_td / "layout.json").write_text(json.dumps(
+        {"pages": {"order": [1, "p1"], "blanks": [{"id": "p1"}]},
+         "boxes": [{"id": "n1", "page": "p1", "x": 1, "y": 1, "w": 3, "md": "On the added page"}]}))
+    (_td / "r.py").write_text(_tw.dedent(f"""
+        import sys
+        sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})
+        from pathlib import Path
+        from docsync.layout import Layout
+        L = Layout(Path({str(_td / "layout.json")!r}), page=(8.5, 11.0))
+        Path({str(_td / "out.html")!r}).write_text(
+            '<html><body><section class="page">hand built</section></body></html>')
+        """))
+    _r = _sp2.run([sys.executable, str(_td / "r.py")], capture_output=True, text=True,
+                  env={**os.environ, "DOCSYNC_OUT": str(_td / "out.html")})
+    check_eq("native run: the renderer built", _r.returncode, 0)
+    _o = (_td / "out.html").read_text()
+    check("native run: the added page was drawn at exit", _o, 'data-page="p1"')
+    check("native run: with the words placed on it", _o, "On the added page")
+    _plain = _sp2.run([sys.executable, str(_td / "r.py")], capture_output=True, text=True,
+                      env={k: v for k, v in os.environ.items() if k != "DOCSYNC_OUT"})
+    check_eq("native run: with no DOCSYNC_OUT nothing is rewritten", _plain.returncode, 0)
+
+# The two starting points the hub offers: no placeholder source, no endnotes
+# page, one empty sheet at the right size; and an empty citation list builds
+# in publish mode too (a document that cites nothing has no sources to list).
+for _slug, _wh in (("blank-document", (8.5, 11.0)), ("slides", (10.0, 7.5))):
+    _proj = Path(__file__).resolve().parent.parent / "projects" / _slug
+    _cmd = (_proj / "content.md").read_text()
+    check_eq(f"{_slug}: no placeholder source", "example.com" in _cmd or "placeholder" in _cmd.lower(), False)
+    with tempfile.TemporaryDirectory() as _td2:
+        for _edit in ("", "1"):
+            _env = {k: v for k, v in os.environ.items() if k != "DOCSYNC_EDIT"}
+            if _edit:
+                _env["DOCSYNC_EDIT"] = "1"
+            _env["DOCSYNC_OUT"] = str(Path(_td2) / "o.html")
+            _r = _sp2.run([sys.executable, str(_proj / "render_report.py")], capture_output=True,
+                          text=True, env=_env)
+            check_eq(f"{_slug}: builds ({'edit' if _edit else 'published'} mode) — {_r.stderr[-200:]}", _r.returncode, 0)
+            _h = (Path(_td2) / "o.html").read_text()
+            check_eq(f"{_slug}: one sheet", _h.count('<section class="page"'), 1)
+            check_eq(f"{_slug}: no endnotes list", 'class="endnotes"' in _h, False)
+            check(f"{_slug}: its page size", _h, f"width:{_wh[0]}in")
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
