@@ -16339,6 +16339,11 @@ open('/repo/' + CONTENT, 'w').write(SRC)
 if LAYOUT_PATH: open('/repo/' + LAYOUT_PATH, 'w').write(LAYOUT)
 with contextlib.redirect_stdout(io.StringIO()):
     runpy.run_path('/repo/' + RENDER, run_name='__main__')
+try:                                         # draw the pages layout.pages adds that the renderer did not
+    from docsync.layout import finish_output
+    finish_output('/repo/' + OUT)
+except ImportError:                          # an older staged engine: nothing to draw them with
+    pass
 open('/repo/' + OUT).read()
 `);
 }
@@ -25621,6 +25626,11 @@ if PURGE:
     for m in [m for m in sys.modules if m.startswith('docsync')]: del sys.modules[m]
 with contextlib.redirect_stdout(io.StringIO()):
     runpy.run_path('/repo/' + RENDER, run_name='__main__')
+try:                                         # draw the pages layout.pages adds that the renderer did not
+    from docsync.layout import finish_output
+    finish_output('/repo/' + OUT)
+except ImportError:                          # an older staged engine: nothing to draw them with
+    pass
 open('/repo/' + OUT).read()
 `);
     engineDirty = false;      // the fresh engine is imported; renders may reuse it
@@ -31894,6 +31904,11 @@ if PURGE:
     for m in [m for m in sys.modules if m.startswith('docsync')]: del sys.modules[m]
 with contextlib.redirect_stdout(io.StringIO()):
     runpy.run_path('/repo/' + RENDER, run_name='__main__')
+try:                                         # draw the pages layout.pages adds that the renderer did not
+    from docsync.layout import finish_output
+    finish_output('/repo/' + OUT)
+except ImportError:                          # an older staged engine: nothing to draw them with
+    pass
 open('/repo/' + OUT).read()
 `);
 }

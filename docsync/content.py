@@ -67,15 +67,13 @@ def parse_sources(block: str) -> dict:
         if sid in src:
             raise ContentError(f"duplicate source id '[{sid}]'")
         src[sid] = (txt, url)
-    if not src and not os.environ.get("DOCSYNC_EDIT"):
-        # Empty is a state to pass THROUGH while editing, not a wall: deleting
-        # your last source (or writing the sources of a new report one at a
-        # time) made the whole draft stop building, and a document that will
-        # not render is a document you cannot get back into to fix it. The
-        # same bargain raw() strikes for a missing slot — publishing still
-        # refuses here, and a citation with no source still renders as the red
-        # '?' marker resolve() draws in the editor.
-        raise ContentError("[[sources]] section is empty")
+    # An empty list is a legitimate state, in the editor AND published: a blank
+    # document, a deck or a flyer cites nothing, and refusing to build it
+    # stopped its Download, Present and Publish with an error nobody could
+    # act on (the "Blank document" and "Slides" starting points are born this
+    # way, 2026-11-12). What protects a published page is not this line but the
+    # citation check: a [^id] with no entry here still refuses in _number(), and
+    # shows as the red '?' marker resolve() draws while editing.
     return src
 
 
