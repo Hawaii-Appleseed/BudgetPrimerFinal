@@ -32625,7 +32625,9 @@ let pdfBusy = false;
 async function inlineCssUrls(css, missed) {
   const re = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
   const urls = new Set();
-  for (const m of css.matchAll(re)) if (!/^(data:|#|about:)/i.test(m[2])) urls.add(m[2]);
+  // %23 is a # written inside a data: URI (an SVG filter="url(%23n)"): a
+  // reference to a part of that same picture, not a file.
+  for (const m of css.matchAll(re)) if (!/^(data:|#|%23|about:)/i.test(m[2])) urls.add(m[2]);
   if (!urls.size) return css;
   const got = new Map();
   await Promise.all([...urls].map(async u => {
