@@ -28,6 +28,14 @@
       "text": "data/raw/cor/extracted/2026-09-03-GF-Rpt2-GOV_Final.txt",
       "title": "General Fund Forecast \u2013 September 3, 2026"
     },
+    "https://files.hawaii.gov/tax/useful/cor/2026-10-29-TPI_Rpt2GOV-Final.pdf": {
+      "doc_type": "tpi_forecast",
+      "first_seen": "2026-11-13",
+      "meeting_date": "2026-10-29",
+      "pdf": "data/raw/cor/pdfs/2026-10-29-TPI_Rpt2GOV-Final.pdf",
+      "text": "data/raw/cor/extracted/2026-10-29-TPI_Rpt2GOV-Final.txt",
+      "title": "Total Personal Income Forecast \u2013 October 29, 2026"
+    },
     "https://files.hawaii.gov/tax/useful/cor/2026gf01-07_attach_1.pdf": {
       "doc_type": "attachment",
       "first_seen": "2026-08-17",
@@ -160,17 +168,29 @@
       "meeting_date": "2026-07-30",
       "title": "July 30, 2026 minutes"
     },
-    "https://files.hawaii.gov/tax/useful/cor/2026tpi09_03_min_draft.pdf": {
+    "https://files.hawaii.gov/tax/useful/cor/2026tpi09_03_min.pdf": {
       "doc_type": "minutes",
-      "first_seen": "2026-09-28",
+      "first_seen": "2026-11-13",
       "meeting_date": "2026-09-03",
-      "title": "September 3, 2026 minutes \u2013 draft"
+      "title": "September 3, 2026 minutes"
+    },
+    "https://files.hawaii.gov/tax/useful/cor/2026tpi10_29-DOTAX-Presentation.pdf": {
+      "doc_type": "presentation",
+      "first_seen": "2026-11-13",
+      "meeting_date": "2026-10-29",
+      "title": "DOTAX Presentation"
     },
     "https://files.hawaii.gov/tax/useful/cor/COR-Minutes-March-10-2026-GF-Final.pdf": {
       "doc_type": "minutes",
       "first_seen": "2026-08-17",
       "meeting_date": "2026-03-10",
       "title": "March 10, 2026 minutes"
+    },
+    "https://files.hawaii.gov/tax/useful/cor/COR-TPI_Forecast_Minutes_October-29-2026-Draft.pdf": {
+      "doc_type": "minutes",
+      "first_seen": "2026-11-13",
+      "meeting_date": "2026-10-29",
+      "title": "October 29, 2026 Minutes"
     },
     "https://www.youtube.com/watch?v=k1Cy-XF7ot8": {
       "doc_type": "video",
@@ -201,10 +221,16 @@
       "first_seen": "2026-09-14",
       "meeting_date": "2026-09-03",
       "title": "September 3, 2026 VIDEO"
+    },
+    "https://youtu.be/i0x0vXn8cLs": {
+      "doc_type": "video",
+      "first_seen": "2026-11-13",
+      "meeting_date": "2026-10-29",
+      "title": "October 29, 2026 VIDEO"
     }
   },
-  "generated": "2026-09-28",
+  "generated": "2026-11-13",
   "next_meeting": null,
-  "page_last_updated": "September 22, 2026",
+  "page_last_updated": "October 30, 2026",
   "source": "https://tax.hawaii.gov/useful/a9_1cor/"
 }
