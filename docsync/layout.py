@@ -967,6 +967,26 @@ MIN_LABEL_IN = MIN_LABEL_PT / PT_PER_IN            # 0.1389in
 MIN_SUBLABEL_IN = MIN_SUBLABEL_PT / PT_PER_IN      # 0.125in
 
 
+# A chart's type was tuned on a Letter page, 8.5in across: a 0.2in cap (19px,
+# 14pt) reads well there and is what every published chart has been drawn with.
+# On a canvas wider than that — a 13.333in slide, a 1080px social post, a
+# landscape sheet — the same 0.2in is a smaller share of what the reader sees,
+# and a 1280px slide's axis text came out at 14-19px against a 21px floor for
+# labels on a slide of that width. So the type scales with the canvas the way
+# every other size on a slide does: by how much wider the page is than the one
+# the numbers were tuned on. A page at or under Letter's width keeps scale 1.0,
+# and a chart drawn with no page to ask (blocks.chart, a bare chart_svg call)
+# keeps the sizes it always had.
+CHART_REF_W_IN = 8.5
+
+
+def chart_text_scale(canvas_w_in=None) -> float:
+    """How much a chart's type grows on a page `canvas_w_in` inches across."""
+    if not canvas_w_in:
+        return 1.0
+    return max(1.0, float(canvas_w_in) / CHART_REF_W_IN)
+
+
 def _lfs(size_in: float) -> float:
     """A chart label's font-size in inches, floored at the legibility minimum.
 
@@ -2030,12 +2050,16 @@ def bar_anim_attrs(anim, i: int) -> str:
 
 
 def chart_svg(c: dict, x: float, y: float, w: float, h: float,
-              anim=None) -> str:
+              anim=None, canvas_w=None) -> str:
     """A chart as SVG, in the page's inch coordinates. Every length here is an
     inch, so the drawing scales with the box the way any other shape does.
 
     `anim` is the SHAPE's entrance, passed in because a part animation ('bars')
     is drawn INTO the parts — the chart data has no idea it is being animated.
+
+    `canvas_w` is the width in inches of the page the chart sits on, passed in
+    for the same reason: a chart spec knows nothing about its page. Wider than
+    Letter, the type grows with it (`chart_text_scale`); left out, it does not.
     """
     kind = c.get("type", "bar")
     labels = [str(v) for v in (c.get("labels") or [])]
@@ -2052,7 +2076,8 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
     # on paper, and the sub-label multipliers took it to under four. The cap
     # rises with the floor: 0.13in sat BELOW MIN_LABEL_IN, so a floored size
     # would have been clamped straight back down by its own ceiling.
-    fs = max(MIN_LABEL_IN, min(0.2, h * 0.055))
+    k = chart_text_scale(canvas_w)
+    fs = max(MIN_LABEL_IN, min(0.2, h * 0.055) * k)
     parts = []
     top = y
     if title:
@@ -2090,7 +2115,7 @@ def chart_svg(c: dict, x: float, y: float, w: float, h: float,
     body_h = max(0.0 if kind == "meter" else 0.2,
                  (y + h) - body_top - (lg_h if pos == "bottom" else 0.0))
 
-    ink = {"label": c_label, "axis": c_axis, "grid": c_grid}
+    ink = {"label": c_label, "axis": c_axis, "grid": c_grid, "k": k}
     args = (c, kind, labels, series, body_x + t_left, body_top,
             body_w - t_left, body_h - t_bot, fs, ink)
     # Only the bar family has bars to grow; every other chart type takes a
@@ -2171,7 +2196,9 @@ def _meter_svg(c, kind, labels, series, x, y, w, h, fs, ink) -> str:
         return "".join(parts)
     show_vals = bool(c.get("values"))
     fmt = _num_format(c)
-    lsz = _lfs(min(0.2, h * 0.5))
+    # The cap grows with the canvas; the other limit is the bar's own thickness,
+    # which a wider page does not change.
+    lsz = _lfs(min(0.2 * ink.get("k", 1.0), h * 0.5))
     at, drawn = x, [i for i, v in enumerate(vals) if v > 0]
     for n, i in enumerate(drawn):
         x1 = min(x + w, at + w * vals[i] / total)   # parts past axisMax are cut at the end
@@ -7933,7 +7960,7 @@ class Layout:
             return (f'<g {" ".join(attrs)}>'
                     f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{bg}"'
                     f' pointer-events="fill"/>'
-                    f'{chart_svg(s.get("chart") or {}, x, y, w, h, s.get("anim"))}</g>')
+                    f'{chart_svg(s.get("chart") or {}, x, y, w, h, s.get("anim"), self.page_w)}</g>')
         if s["kind"] == "qr":
             from .qr import svg_path
             dpath, side = svg_path(s["data"])
