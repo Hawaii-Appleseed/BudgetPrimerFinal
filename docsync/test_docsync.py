@@ -587,6 +587,44 @@ check_eq("no chart label is drawn below the sub-label floor",
 check_eq("a chart squeezed flat still labels at 9pt",
          round(min(_sizes) * 72, 1), 9.0)
 
+# A chart's type grows with the canvas (2026-11-13): the 0.2in cap was tuned on a
+# Letter page, so on a 13.333in slide the smallest label was 15px against a 21px
+# floor for a slide of that width. A page at or under Letter, or no page, is as before.
+from docsync.layout import chart_text_scale as _cts                # noqa: E402
+_deck = {"type": "bar", "labels": ["A", "B", "C", "D"], "values": True,
+         "series": [{"name": "s", "data": [40, 65, 30, 55]}]}
+
+
+def _px(svg):
+    return [float(v) * 96 for v in re.findall(r'font-size="([\d.]+)"', svg)]
+
+
+check_eq("a page at or under Letter's width does not grow a chart's type",
+         [_cts(None), _cts(8.5), _cts(7.0)], [1.0, 1.0, 1.0])
+check_eq("a page 13.333in wide grows it by its width over Letter's",
+      round(_cts(13.333), 4), round(13.333 / 8.5, 4))
+check_eq("a chart on a Letter page is drawn exactly as with no page",
+         chart_svg(dict(_deck), 0.9, 1.7, 11.5, 4.5, None, 8.5),
+         chart_svg(dict(_deck), 0.9, 1.7, 11.5, 4.5))
+check_eq("a chart on a 1280px slide labels at 21px or more, value labels too",
+      min(_px(chart_svg(dict(_deck), 0.9, 1.7, 11.5, 4.5, None, 13.333))) >= 21, True)
+check_eq("...where the same chart with no page is under 16px",
+      max(_px(chart_svg(dict(_deck), 0.9, 1.7, 11.5, 4.5))) < 16, True)
+check_eq("a chart with legend, axis titles and a grid is all 21px or more on the slide too",
+      min(_px(chart_svg(dict(_deck, legend=True, grid=True, axisTitle="Dollars", catTitle="Year",
+                           series=[{"name": "A", "data": [40, 65, 30, 55]},
+                                   {"name": "B", "data": [10, 20, 30, 40]}]),
+                        0.9, 1.7, 11.5, 4.5, None, 13.333))) >= 21, True)
+check_eq("a meter's value label also grows with the canvas",
+      max(_px(chart_svg({"type": "meter", "values": True,
+                         "series": [{"name": "a", "data": [60], "color": "#52796F"},
+                                    {"name": "b", "data": [40], "color": "#84A98C"}]},
+                        0.5, 0.5, 11, 0.6, None, 13.333)))
+      > max(_px(chart_svg({"type": "meter", "values": True,
+                           "series": [{"name": "a", "data": [60], "color": "#52796F"},
+                                      {"name": "b", "data": [40], "color": "#84A98C"}]},
+                          0.5, 0.5, 11, 0.6))), True)
+
 
 # ----------------------------------------------------------------- effects
 from docsync.layout import EFFECTS, EFFECT_PARAMS                # noqa: E402

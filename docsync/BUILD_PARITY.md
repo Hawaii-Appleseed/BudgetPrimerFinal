@@ -14,6 +14,29 @@ after it, and it is the record for whoever next asks why a published page
 is not what it was. Charts have `docsync/CHART_PARITY.md` for the same
 reason.
 
+## 2026-11-13 — a chart's type grows with the canvas it sits on
+
+One of the 30 reports `docsync.build_parity` builds moved: `deck-branded`
+(16:9, 13.333in wide). Its slide-5 bar chart's type went from 15–16px to
+23.5–24.7px: `chart_svg` now takes the page's width (`Layout._shape_plain`
+passes `self.page_w`) and multiplies its label size by
+`layout.chart_text_scale(page_w)`, which is `page_w / 8.5` for a page wider than
+Letter and 1.0 otherwise. Before, a chart's labels were capped at 0.2in
+(19px) whatever the canvas, so on a 1280px slide the smallest ones were 15px
+against a 21px floor for labels on a slide of that width. The bars moved too
+(`x`/`width` in the diff): the value gutter is derived from the label size,
+and a bigger label asks for more room. The other 29 pages are byte for byte
+what they were — none of them draws a chart shape on a page wider than
+Letter. A chart drawn with no page to ask (`blocks.chart`, a bare `chart_svg`
+call) keeps its old size, so `docsync.chart_parity` is unchanged (0 of 37,009
+differ).
+
+A hub report whose layout holds a chart SHAPE on a page wider than Letter (a
+deck made on the hub from `slides`, `slides-widescreen` or a resized page)
+will draw that chart's type larger once this ships there, which is the point
+of the change; nothing in this repo builds such a page, so no parity run here
+can list them.
+
 ## 2026-10-29 — every report prints in its true colours
 
 Every bound report moved (all 15 that `docsync.build_parity` builds). Each page's first `layer()` now carries one extra

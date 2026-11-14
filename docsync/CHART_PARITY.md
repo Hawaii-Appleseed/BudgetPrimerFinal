@@ -37,6 +37,12 @@ Closed in the Tier 1 + multi-line + tooltips pass:
 - **Tooltips.** `tips`, with the runtime injected once per document by
   `Layout._chart_tip_once()` and suppressed under `DOCSYNC_EDIT`.
 
+Added 2026-11-13: **a chart's type grows with its canvas.** `chart_svg(…,
+canvas_w=)` scales the label size by `layout.chart_text_scale(canvas_w)` —
+`canvas_w / 8.5` on a page wider than Letter, 1.0 otherwise. `Layout._shape_plain`
+passes the page's width; every other caller passes none, so no chart `chart_parity`
+draws moves. A chart on a 13.333in slide has labels of 23-25px where it had 15-16.
+
 Every one of these is opt-in or fires only where the old behaviour was wrong:
 1,260 old-vs-new renders across every type, dataset and flag are
 byte-identical except stacked + `values`, which is the fix. **Keep that
