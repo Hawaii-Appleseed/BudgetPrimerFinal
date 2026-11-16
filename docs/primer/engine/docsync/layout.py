@@ -671,6 +671,94 @@ def _cat_label(name, budget: float, base: float, wrap_lines: int,
     return size, _label_parts(name, size, wrap=budget, max_lines=lmax)
 
 
+def _wide_row_names(labels, fs: float, pad_l: float, w: float, slot: float,
+                    wrap_lines: int) -> tuple:
+    """A row chart's names on a page wider than Letter: the long ones keep
+    the size of the short ones, wrapped onto a second line.
+
+    The gutter that holds a row chart's names stops growing at 0.4 of the
+    chart's width, and a name wider than the gutter is shrunk to fit it. On a
+    page the type scaled up for (`chart_text_scale`) that is the label nobody
+    can read: "Couple with children" at 12px beside "Single parent" at 17px
+    on a 960px slide. A name would rather take two lines at the same size as
+    its neighbours, so this finds the narrowest gutter (never wider than the
+    old one) that holds every name on two lines — three when two will not do
+    and the rows are deep enough to take a third; `wrapLines` raises the
+    least it tries.
+
+    Returns `(rows, pad_l)`. `rows[i]` is `(size, lines)` for name i, and the
+    drawing pass uses it as is, so the pass that sizes the gutter and the one
+    that draws cannot disagree. `(None, pad_l)` means leave the chart to the
+    ordinary rule: no name is shrunk (nothing to do), or the rows are too
+    close together to take a second line without touching the next one.
+
+    A name that needs more lines than the rows have room for still wraps as
+    far as it may and then shrinks its widest line to the gutter, never below
+    the legibility floor: the old rule, applied to the wrapped name instead of
+    the whole.
+    """
+    base = _lfs(fs * 0.82)
+    budget = pad_l * 0.9
+    old = [None] * len(labels)
+    short = []
+    for i, nm in enumerate(labels):
+        if not nm:
+            continue
+        old[i] = _cat_label(nm, budget, base, wrap_lines, fit_single=True)
+        if old[i][0] < base:
+            short.append(i)
+    if not short:
+        return None, pad_l
+    cap = int(budget / (base * _EM_W) + 1e-9)       # characters per line, at most
+
+    def room(lines):
+        """Do `lines` lines, centred on a bar, clear the rows either side?"""
+        return slot >= base * (1.15 * (lines - 1) + 1.3)
+
+    def wrapped(nm, per, lines):
+        out = []
+        for piece in str(nm).split("\n"):
+            # half a character of slack, so int() cannot drop a whole one
+            out.extend(_wrap_label(piece, (per + 0.5) * base * _EM_W, base,
+                                   lines))
+        return out
+
+    least = max(2, wrap_lines)
+    plan = None                                     # (lines allowed, per line)
+    for lines in range(least, max(3, wrap_lines) + 1):
+        if not room(lines):
+            break
+        for per in range(1, cap + 1):
+            fits = True
+            for i in short:
+                ls = wrapped(labels[i], per, lines)
+                if len(ls) > lines or max(len(ln) for ln in ls) > per:
+                    fits = False
+                    break
+            if fits:
+                plan = (lines, per)
+                break
+        if plan:
+            break
+    if plan is None:
+        if not room(least):
+            return None, pad_l
+        plan = (least, cap)
+    lines, chosen = plan
+    rows = [None] * len(labels)
+    for i, nm in enumerate(labels):
+        if not nm:
+            continue
+        if i in short:
+            ls = wrapped(nm, chosen, lines)
+            rows[i] = (_fit_size("\n".join(ls), budget, base), ls)
+        else:
+            rows[i] = old[i]
+    need = max((len(ln) * sz * _EM_W for sz, ls in filter(None, rows)
+                for ln in ls), default=0.0) / 0.9
+    return rows, max(fs * 3.4, min(pad_l, need))
+
+
 def _lines_from(parts: list, x: float, size: float, center: bool = False) -> str:
     """Already-split lines as the inside of a <text>. One line is the bare
     string, so a chart that never wrapped renders byte-for-byte as before."""
@@ -2605,6 +2693,14 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
     if show_vals and not horizontal and not stacked and min(
             (v for s in series for v in s["data"]), default=0) < 0:
         pad_b += fs * 0.9
+    # On a page wider than Letter a row chart's long names wrap and keep their
+    # size instead of shrinking to the gutter. A Letter-wide or narrower page
+    # (and a chart drawn with no page: k is 1) never asks, so every chart
+    # drawn there stays what it was.
+    row_names = None
+    if horizontal and labels and ink.get("k", 1.0) > 1.0:
+        row_names, pad_l = _wide_row_names(
+            labels, fs, pad_l, w, max(0.1, h - pad_b) / n, wrap_lines)
     px, py = x + pad_l, y
     pw, ph = max(0.1, w - pad_l - pad_r), max(0.1, h - pad_b)
     span = vmax - vmin
@@ -2757,8 +2853,11 @@ def _bars_svg(c, kind, labels, series, x, y, w, h, fs, ink, anim=None) -> str:
             # what leaves every existing chart byte-for-byte unchanged.
             budget = (pad_l * 0.9) if horizontal else (slot * 0.95)
             # Same question the band measurement asked, same answer.
-            csize, cparts = _cat_label(name, budget, _lfs(fs * 0.82),
-                                       wrap_lines, fit_single=horizontal)
+            if row_names is not None and gi < len(row_names) and row_names[gi]:
+                csize, cparts = row_names[gi]
+            else:
+                csize, cparts = _cat_label(name, budget, _lfs(fs * 0.82),
+                                           wrap_lines, fit_single=horizontal)
             if horizontal:
                 parts.append(f'<text x="{px - fs * 0.3:.4f}" '
                              f'y="{base + inner / 2 + fs * 0.3:.4f}" text-anchor="end" '
