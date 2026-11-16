@@ -14,6 +14,21 @@ after it, and it is the record for whoever next asks why a published page
 is not what it was. Charts have `docsync/CHART_PARITY.md` for the same
 reason.
 
+## 2026-11-13 (later) — a row chart's long names wrap on a wide page
+
+Nothing moved: all 30 reports `docsync.build_parity` builds are byte for byte
+what they were. `Layout._shape_plain` already hands `chart_svg` the page's width,
+and when that is wider than Letter `_bars_svg` now wraps a ROW chart's long
+category names onto a second line at the size the short ones have, instead of
+shrinking them to a gutter capped at 0.4 of the chart's width
+(`layout._wide_row_names`). No bound report draws a row chart on a page wider than
+Letter (`deck-branded`'s chart is a column chart; `fact-sheet` and
+`top-three-fact-sheet` sit on Letter), so none can move. A hub report whose layout
+holds a row chart on a wider page, a deck made from `slides` or
+`slides-widescreen` say, will draw its long names at full size once this ships
+there; nothing in this repo builds such a page, so no parity run here can list
+them.
+
 ## 2026-11-13 — a chart's type grows with the canvas it sits on
 
 One of the 30 reports `docsync.build_parity` builds moved: `deck-branded`

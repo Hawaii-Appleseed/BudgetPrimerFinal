@@ -43,6 +43,16 @@ canvas_w=)` scales the label size by `layout.chart_text_scale(canvas_w)` —
 passes the page's width; every other caller passes none, so no chart `chart_parity`
 draws moves. A chart on a 13.333in slide has labels of 23-25px where it had 15-16.
 
+Added 2026-11-13 (later): **a row chart's long names wrap instead of shrinking,
+on a page wider than Letter.** The gutter that holds a row chart's names stops at
+0.4 of the chart's width and a name wider than it was shrunk to fit — 12px beside
+17px on a 10in slide. `_wide_row_names` (called from `_bars_svg` only when
+`ink["k"] > 1`, i.e. the page is wider than Letter) wraps those names onto two
+lines (three when two will not hold them and the rows are deep enough; `wrapLines`
+raises the least it tries) at the size the short names have, and narrows the
+gutter to the longest line. A name too long even for that still shrinks, floored by
+`_lfs`. No chart `chart_parity` draws has a page, so none moves.
+
 Every one of these is opt-in or fires only where the old behaviour was wrong:
 1,260 old-vs-new renders across every type, dataset and flag are
 byte-identical except stacked + `values`, which is the fix. **Keep that

@@ -625,6 +625,64 @@ check_eq("a meter's value label also grows with the canvas",
                                       {"name": "b", "data": [40], "color": "#84A98C"}]},
                           0.5, 0.5, 11, 0.6))), True)
 
+# A row chart's long names keep the size of the short ones on a page wider than
+# Letter (2026-11-13). The gutter that holds the names stops at 0.4 of the chart's
+# width and a name wider than it was shrunk to fit, so on a 10in slide "Couple with
+# children" drew at 12px beside "Single parent" at 17px. Now it takes a second line.
+from docsync.layout import _wide_row_names as _wrn                   # noqa: E402
+_LONG = ["Single parent", "Couple with children", "Single, no children",
+         "Couple, no children"]
+_MID = ["Single parent with children under 18", "Married couple with children under 18",
+        "Single adult living alone, no children", "Adult sharing a home with other relatives"]
+_VLONG = ["Households headed by a single parent with children under 18",
+          "Married couple households with children under 18",
+          "Single adults living alone", "Adults sharing a home with relatives"]
+
+
+def _row(labels):
+    return {"type": "row", "labels": labels, "values": True, "legend": False,
+            "grid": False, "series": [{"name": "s", "data": [40, 65, 30, 55]}]}
+
+
+def _names(svg):
+    """The category names' sizes (px at 96/in): the end-anchored text."""
+    return [round(float(v) * 96, 1) for v in re.findall(r'text-anchor="end" font-size="([\d.]+)"', svg)]
+
+
+def _first_bar_x(svg):
+    return float(re.search(r'class="ds-cbar ds-cbar-x" x="([\d.\-]+)"', svg).group(1))
+
+
+_d10 = chart_svg(_row(_LONG), 0.7, 1.5, 5.8, 4.4, None, 10.0)
+check_eq("on a 10in slide a row chart's long names are all one size",
+         len(set(_names(_d10))), 1)
+check_eq("...the size its short names have (18px or more)", _names(_d10)[0] >= 18, True)
+check_eq("...with the long ones on two lines", _d10.count("<tspan"), 6)
+check_eq("...the names' gutter no wider than the old cap (0.4 of the chart)",
+         _first_bar_x(_d10) - 0.7 <= 5.8 * 0.4 + 1e-6, True)
+check_eq("on a 13.333in slide too", len(set(_names(
+    chart_svg(_row(_LONG), 0.9, 1.6, 6.4, 4.4, None, 13.333)))), 1)
+check_eq("a Letter page draws a row chart exactly as with no page",
+         chart_svg(_row(_LONG), 0.7, 1.5, 5.8, 4.4, None, 8.5),
+         chart_svg(_row(_LONG), 0.7, 1.5, 5.8, 4.4))
+check_eq("...and a narrower page too",
+         chart_svg(_row(_LONG), 0.7, 1.5, 5.8, 4.4, None, 7.0),
+         chart_svg(_row(_LONG), 0.7, 1.5, 5.8, 4.4))
+check_eq("with no page a long name still shrinks to its gutter (as ever)",
+         len(set(_names(chart_svg(_row(_LONG), 0.7, 1.5, 4.2, 4.4)))) > 1, True)
+check_eq("names of 36-40 characters take the room they need and keep one size",
+         len(set(_names(chart_svg(_row(_MID), 0.7, 1.5, 5.8, 4.4, None, 10.0)))), 1)
+_v = _names(chart_svg(_row(_VLONG), 0.7, 1.5, 5.8, 4.4, None, 10.0))
+check_eq("a name too long for the rows' lines still wraps and shrinks, not below the floor",
+         min(_v) >= MIN_SUBLABEL_IN * 96 - 0.05, True)
+check_eq("...while the names that fit keep the full size", max(_v) >= 18, True)
+check_eq("names that already fit are left to the ordinary rule",
+         _wrn(["Yes", "No", "Maybe"], 0.236, 2.32, 5.8, 1.0, 1), (None, 2.32))
+check_eq("rows too close to take a second line are left to the ordinary rule",
+         _wrn(_LONG, 0.236, 2.32, 5.8, 0.2, 1), (None, 2.32))
+check_eq("a vertical bar chart is not touched on a wide page",
+         chart_svg(dict(_deck, labels=_LONG), 0.9, 1.7, 11.5, 4.5, None, 13.333).count("<tspan"), 0)
+
 
 # ----------------------------------------------------------------- effects
 from docsync.layout import EFFECTS, EFFECT_PARAMS                # noqa: E402
