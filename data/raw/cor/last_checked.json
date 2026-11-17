@@ -1,8 +1,8 @@
 {
-  "last_checked": "2026-11-13",
+  "last_checked": "2026-11-17",
   "documents_tracked": 36,
   "page_last_updated": "October 30, 2026",
   "next_meeting": null,
-  "change_detected": true,
-  "packet": "data/raw/cor/changes/2026-11-13-cor-change.md"
+  "change_detected": false,
+  "packet": null
 }
