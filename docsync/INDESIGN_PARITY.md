@@ -1592,7 +1592,7 @@ points for type, typed units accepted.
 1. Docked bar, object mode, reusing today's controls — **item 86, done**.
 2. Character and paragraph modes — **item 87, done**.
 3. Reference point, proportion link / scale X·Y, flip indicator, fitting options — **item 88, done**.
-4. The right-hand panel dock, rehoming the existing popovers.
+4. The right-hand panel dock, rehoming the existing popovers — **item 89, done**.
 5. Per-character size / leading / tracking / kerning in the engine, then the
    remaining missing settings.
 
@@ -1671,4 +1671,37 @@ points for type, typed units accepted.
     Found doing it: `placer().put()` keeps a frame on the page by the size it
     measured, so a resize about the right edge must hand it the new size
     first. `tests/editor/control-bar.spec.js`.
-
+89. **The right-hand panel dock. — CLOSED 2026-11-17.** `#dock`, the last
+    column of `#work`: a 40px strip of icons on the window's right edge, the
+    canvas stopping where it starts (InDesign's dock collapsed to icons). An
+    icon flies its panel out over the page, so the canvas does not move, and a
+    click on the page or Escape puts it away; ⇥ pins it, and the panel then
+    stays open and takes its 272px from the canvas (re-fitted, rulers
+    following). On by default; View ▸ Panel dock turns it off (`ds-dock`),
+    and pinned (`ds-dockpin`) is kept too.
+    The panels are the editor's own popovers MOVED in while their tab is
+    shown (`dockAttach()` / `dockDetach()`: ids, markup and handlers come
+    along) and put back where they live when it closes: Layers, Transform &
+    align (the Position popover), Stroke, Transparency, Effects, Object
+    styles, Text styles, Paragraph, Swatches (Colours in use), Links,
+    Hyperlinks, Notes, Preflight. So every button that opened one before
+    (View ▸ Layers, Check ▸ Links, the strip's Effects) still opens its
+    popover, unless the dock is pinned on that panel, which it leaves there
+    (`togglePop()`). A first build sent every such button to the dock and
+    broke eleven specs about popovers; a panel is in one place at a time, and
+    the place you opened it from is the one that wins. A DOCUMENT panel is
+    filled when it is shown; a SELECTION panel is refilled by a click on its
+    own opener on every change of selection (`dockPaint()`, from
+    `arrangeBar()`), and with nothing it applies to it says what to select
+    instead of showing the last thing's settings. A panel action that hides
+    its popover (Stroke's Dashed) is answered by refilling the tab.
+    Not docked: Glyphs (it inserts at the caret it was opened from), Undo
+    history, and the menus. Transform & align follows the arrange strip, so a
+    lone text box (which shows the type card) gets "select an object"; its
+    geometry is on the Control bar in ▭ mode. No drag to rearrange or tear
+    off panels, and one panel open at a time rather than InDesign's stacks.
+    Found doing it: writing `hidden` onto a popover that is already hidden is
+    still a mutation, and an observer answering it hung the page; and the
+    40px strip took the last 5px by which a chart's first label cleared the
+    Chart panel (claude-creates now renames the second).
+    `tests/editor/panel-dock.spec.js`.
