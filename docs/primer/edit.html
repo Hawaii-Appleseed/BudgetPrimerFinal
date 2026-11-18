@@ -137,6 +137,89 @@
             this. */
          overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
   #bar::-webkit-scrollbar { display:none; }
+  /* The Control bar (#ctl): docked under the menu bar, in the column's flow,
+     so the canvas starts below it and the rulers (placed from the stage's
+     rect every frame) follow it down. Light, like the contextual card whose
+     controls it takes over; a fixed height so a change of selection never
+     moves the canvas. Scrolls sideways, never wraps, like #bar. */
+  #ctl { flex:none; display:flex; align-items:center; gap:5px; height:44px;
+         box-sizing:border-box; padding:0 12px; position:relative; z-index:3;
+         background:#fff; color:var(--ink); border-bottom:1px solid #D9E1DB;
+         overflow-x:auto; overflow-y:hidden; scrollbar-width:none; white-space:nowrap; }
+  #ctl::-webkit-scrollbar { display:none; }
+  #ctl[hidden], #ctl [hidden] { display:none !important; }
+  #ctl > *, #cb-obj > *, .cb-grp > * { flex:none; }
+  #cb-obj, .cb-grp { display:inline-flex; align-items:center; gap:5px; }
+  .cb-grp.ty-seg { gap:0; }
+  .cb-lab { font:600 12px system-ui; color:#2F3E46; background:#E7EEE8;
+            padding:3px 10px; border-radius:99px; }
+  .cb-hint { font:12px system-ui; color:#7A8E85; }
+  .cb-f { display:inline-flex; align-items:center; gap:4px; font:11.5px system-ui;
+          color:#5B6E66; cursor:default; }
+  .cb-f input, .cb-f select { font:12.5px system-ui; width:58px; height:29px; padding:0 6px;
+          box-sizing:border-box; border:1px solid #D9E1DB; border-radius:7px;
+          background:#fff; color:#2F3E46; transition:border-color .12s; }
+  .cb-f select { width:auto; }
+  .cb-narrow input { width:48px; }
+  .cb-f input:hover, .cb-f select:hover { border-color:var(--sage); }
+  .cb-f input:focus, .cb-f select:focus, #cb-obj button:focus-visible
+        { outline:2px solid rgba(107,158,120,.55); outline-offset:1px; }
+  .cb-f input.bad { border-color:#C0603F; }
+  #cb-obj button { display:inline-flex; align-items:center; justify-content:center;
+          min-width:29px; height:29px; padding:0 7px; cursor:pointer; font:12.5px system-ui;
+          border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46;
+          transition:background .12s, border-color .12s; }
+  #cb-obj .ty-seg button { border-radius:0; box-shadow:none; }
+  #cb-obj .ty-seg button:first-child { border-radius:7px 0 0 7px; }
+  #cb-obj .ty-seg button:last-child { border-radius:0 7px 7px 0; }
+  #cb-obj button:hover { border-color:var(--sage); background:#EDF4EE; }
+  #cb-obj button.on { background:var(--sage); border-color:var(--sage); color:#fff; }
+  #cb-obj button:disabled { background:#fff; border-color:#E6ECE7; color:#A6B4AB; opacity:.7; cursor:default; }
+  #cb-obj button svg { display:block; pointer-events:none; }
+  .cb-ic { display:block; color:#5B6E66; }
+  /* Docked, the strip leads with what you change most — fill, stroke,
+     transparency, effects — where the floating card ended with fill. */
+  #ctl #ar-fill { order:-2; }
+  #ctl #ar-border, #ctl #ar-alpha, #ctl #ar-fxbtn { order:-1; }
+  #ctl #arrange select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
+          border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46; }
+  /* Text in the bar (phase 2). #type docks here too; the mode on #ctl
+     (ctlPaint: frame, char, para) says which of its controls show. The
+     .cb-only fields exist for the docked bar alone. */
+  body:not(.ds-ctlbar) .cb-only { display:none !important; }
+  #ctl[data-mode=char] #type .cb-para, #ctl[data-mode=para] #type .cb-char { display:none !important; }
+  #ctl[data-mode=frame] #type > :not(#ty-key):not(#ty-box):not(#ty-anchor):not(#ty-comment):not(.pop)
+        { display:none !important; }
+  #ctl #type #ty-size { display:none !important; }
+  #ctl #type .ty-step #cb-size { width:54px; height:29px; box-sizing:border-box; margin:0 -1px;
+          font:12.5px system-ui; text-align:center; color:#2F3E46; background:#fff;
+          border:1px solid #D9E1DB; border-radius:0; position:relative; z-index:1; }
+  #ctl #type .ty-step #cb-size.bad { border-color:#C0603F; }
+  #ctl #type #cb-lead { width:62px; }
+  #ctl #type #cb-smcp { width:62px; }
+  #ctl #type .ty-sep { flex:none; }
+  #ctl #cb-mode button { display:inline-flex; align-items:center; justify-content:center;
+          min-width:31px; height:29px; padding:0 7px; cursor:pointer; color:#2F3E46;
+          border:1px solid #D9E1DB; background:#fff; margin-left:-1px; border-radius:0; }
+  #ctl #cb-mode button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
+  #ctl #cb-mode button:last-child { border-radius:0 7px 7px 0; }
+  #ctl #cb-mode button:hover { border-color:var(--sage); background:#EDF4EE; }
+  #ctl #cb-mode button.on { background:var(--ink); border-color:var(--ink); color:#fff; position:relative; z-index:1; }
+  #ctl #cb-mode button svg { display:block; pointer-events:none; }
+  #ctl #type select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
+          border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46; }
+  #ctl #type .cb-f input { width:52px; }
+  #ctl #type .cb-f input.cb-narrowin { width:44px; }
+  #ctl #type .cb-f select { width:auto; }
+  #cb-paraf { gap:5px; }
+  #ctl #type #cb-lmark { width:112px; }
+  /* The arrange strip, docked: no card of its own — it is a run of the bar. */
+  #ctl #type { background:transparent; box-shadow:none; border-radius:0; padding:0;
+          margin:0; width:auto; max-width:none; height:auto; overflow:visible;
+          justify-content:flex-start; pointer-events:auto; }
+  #ctl #arrange { background:transparent; box-shadow:none; border-radius:0; padding:0;
+          margin:0; width:auto; max-width:none; height:auto; overflow:visible;
+          justify-content:flex-start; pointer-events:auto; }
   /* A thin rule between the history/commit group and the rest. */
   .bar-sep { flex:none; width:1px; height:18px; background:var(--line); margin:0 1px; }
   #stat { flex:1 1 40px; min-width:40px; opacity:.9; overflow:hidden;
@@ -214,7 +297,7 @@
      shrink or fade — it leaves, and the stage becomes a dark room with one
      page in it. The overlay is the whole input surface: it swallows every
      click so nothing underneath can start an edit mid-presentation. */
-  body.ds-present #bar, body.ds-present #context, body.ds-present #leftrail,
+  body.ds-present #bar, body.ds-present #ctl, body.ds-present #context, body.ds-present #leftrail,
   body.ds-present #rail, body.ds-present #side { display:none !important; }
   body.ds-present #work, body.ds-present #stage { background:#14181B; }
   body.ds-present #stage { overflow:hidden; }
@@ -2232,6 +2315,10 @@
     <button class="shp" id="frameedges"><svg class="shp-i" viewBox="0 0 14 14"
       ><rect x="2" y="2" width="10" height="10" stroke-dasharray="2 1.5"/></svg
       ><span class="shp-t">Frame edges</span></button>
+    <button class="shp" id="ctlbar"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5h11"/><path
+        d="M3.5 3.5h1.5M6 3.5h1.5M8.5 3.5h2"/></svg
+      ><span class="shp-t">Control bar</span><span class="shp-k">⌥⌘6</span></button>
     <button class="shp" id="hiddenchars"><span class="shp-i shp-glyph" aria-hidden="true">¶</span
       ><span class="shp-t">Hidden characters</span><span class="shp-k">⌥⌘I</span></button>
     <button class="shp" id="layers"><svg class="shp-i" viewBox="0 0 14 14"
@@ -2561,6 +2648,95 @@
        selected chart (renderChartPanel). -->
   <div class="pop" id="chartpop" hidden></div>
 </div>
+<!-- The Control bar: InDesign's Control panel, docked under the menu bar and
+     always there while you edit (View ▸ Control bar, ⌥⌘6, hides it). It is
+     phase 1 of INDESIGN_PARITY.md's control-bar plan: OBJECT mode. Nothing in
+     it is a second copy of a control — the X/Y/W/H fields run the Position
+     panel's own appliers (arApply), the turn buttons right-click's
+     turnObjects, the fitting buttons right-click ▸ Fitting's applyFitting,
+     the align buttons are .ar-al like the panel's, and the frame fields the
+     Box panel's setBoxFrame. The arrange strip itself (#arrange: fill, border,
+     transparency, effects, object style, group, layer, lock, delete) MOVES in
+     here while the bar is on (ctlDock), same ids and handlers, and back into
+     the floating #context card when it is off. A selected text box keeps its
+     floating type card for the words; the bar shows it as a FRAME.
+     Hooks for the later phases: #cb-mode (A / ¶ switch, phases 2) and
+     #cb-ref (the nine-point reference grid, phase 3) are the reserved slots,
+     and ctlPaint() is the one function that decides what the bar shows. -->
+<div id="ctl" role="toolbar" aria-label="Control bar">
+  <!-- Text selected: InDesign's three modes. ▭ the frame (#cb-obj), A the
+       character controls, ¶ the paragraph ones (.cb-char / .cb-para inside
+       #type, which docks here like #arrange). ctlPaint() picks. -->
+  <span class="ty-seg" id="cb-mode" hidden role="radiogroup" aria-label="Control bar mode">
+    <button data-m="frame" role="radio" aria-label="Frame — position, size and look of the box"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+      stroke="currentColor" stroke-width="1.4"><rect x="2" y="2.5" width="10" height="9"/><path d="M4.5 5.5h5M4.5 8.5h3" stroke-width="1.2"/></svg></button>
+    <button data-m="char" role="radio" aria-label="Character — font, size, leading, tracking (⌥⌘7)"><b style="font:700 13px Georgia,serif">A</b></button>
+    <button data-m="para" role="radio" aria-label="Paragraph — alignment, indents, spacing, drop cap (⌥⌘7)"><b style="font:700 13px Georgia,serif">¶</b></button>
+  </span>
+  <span id="cb-ref" hidden></span>
+  <div class="cb-grp" id="cb-empty">
+    <span class="cb-lab" id="cb-page"></span>
+    <span class="cb-hint">Select an object to set its position, size and look here</span>
+  </div>
+  <div id="cb-obj" hidden>
+    <span class="cb-grp" id="cb-geo">
+      <label class="cb-f" title="Left edge — inches; type 36pt, 3p or 1cm too">X<input id="cb-x" data-ar="ar-x" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f" title="Top edge — inches; type 36pt, 3p or 1cm too">Y<input id="cb-y" data-ar="ar-y" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f" id="cb-wwrap" title="Width — inches; type 36pt, 3p or 1cm too">W<input id="cb-w" data-ar="ar-w" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f" id="cb-hwrap" title="Height — inches; type 36pt, 3p or 1cm too">H<input id="cb-h" data-ar="ar-h" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f" id="cb-swrap" title="Scale, percent"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 2h3.5v3.5M12 2L7.5 6.5M5.5 12H2V8.5M2 12l4.5-4.5"/></svg><input id="cb-scale" data-ar="ar-scale" data-unit="pct" inputmode="decimal" autocomplete="off"></label>
+    </span>
+    <span class="ty-sep"></span>
+    <span class="cb-grp" id="cb-turn">
+      <label class="cb-f cb-narrow" title="Rotation, degrees"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h10"/><path d="M2 12L10 4"/><path d="M7.5 12a5.5 5.5 0 0 0-1.6-3.9"/></svg><input id="cb-rot" data-ar="ar-rot" data-unit="deg" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f cb-narrow" title="Shear, degrees (±60)"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7.5l-2.5 9H2z"/></svg><input id="cb-skew" data-ar="ar-skew" data-unit="deg" inputmode="decimal" autocomplete="off"></label>
+      <span class="ty-seg">
+        <button id="cb-rotccw" data-turn="-90" aria-label="Rotate 90° counter-clockwise"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+          stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 6.4A4.2 4.2 0 1 1 4.6 10.6"/><path d="M1.6 4.4l1.6 2 2-1.5"/></svg></button>
+        <button id="cb-rotcw" data-turn="90" aria-label="Rotate 90° clockwise"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+          stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.8 6.4A4.2 4.2 0 1 0 9.4 10.6"/><path d="M12.4 4.4l-1.6 2-2-1.5"/></svg></button>
+        <button id="cb-fliph" data-flip="h" aria-label="Flip horizontal"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+          stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M7 1.5v11" stroke-dasharray="1.5 1.3"/><path d="M5.5 3.5L1.5 10.5h4z"/><path d="M8.5 3.5l4 7h-4z" fill="currentColor" fill-opacity=".35"/></svg></button>
+        <button id="cb-flipv" data-flip="v" aria-label="Flip vertical"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+          stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M1.5 7h11" stroke-dasharray="1.5 1.3"/><path d="M3.5 5.5L10.5 1.5v4z"/><path d="M3.5 8.5l7 4v-4z" fill="currentColor" fill-opacity=".35"/></svg></button>
+      </span>
+    </span>
+    <span class="ty-sep" id="cb-cornersep"></span>
+    <span class="cb-grp" id="cb-corner">
+      <label class="cb-f" title="Corner size — inches; a rectangle's rounded corners"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12V7a5 5 0 0 1 5-5h5"/></svg><input id="cb-r" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+    </span>
+    <span class="ty-sep" id="cb-fitsep"></span>
+    <span class="cb-grp ty-seg" id="cb-fit" title="Frame fitting">
+      <button data-fit="cover" aria-label="Fill frame proportionally"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="2.5" width="9" height="9"/><rect x=".8" y="3.8" width="12.4" height="6.4" fill="currentColor" fill-opacity=".3" stroke="none"/></svg></button>
+      <button data-fit="contain" aria-label="Fit content proportionally"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11"/><rect x="1.5" y="4.5" width="11" height="5" fill="currentColor" fill-opacity=".3" stroke="none"/></svg></button>
+      <button data-fit="fill" aria-label="Fit content to frame (stretches)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" fill="currentColor" fill-opacity=".3"/><path d="M4 7h6M4 7l1.5-1.5M4 7l1.5 1.5M10 7L8.5 5.5M10 7L8.5 8.5"/></svg></button>
+      <button data-fit="none" aria-label="Center content (actual size)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11"/><rect x="4.5" y="4.5" width="5" height="5" fill="currentColor" fill-opacity=".3"/></svg></button>
+      <button data-fit="frame" aria-label="Fit frame to content"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="8" height="8" fill="currentColor" fill-opacity=".3"/><path d="M1.5 4V1.5H4M10 1.5h2.5V4M12.5 10v2.5H10M4 12.5H1.5V10"/></svg></button>
+    </span>
+    <span class="ty-sep" id="cb-framesep"></span>
+    <span class="cb-grp" id="cb-frame" title="Text frame options">
+      <label class="cb-f" title="Columns in this text frame"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2" width="4.5" height="10"/><rect x="8" y="2" width="4.5" height="10"/></svg><select id="cb-cols"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+      <label class="cb-f" id="cb-gapwrap" title="Gutter between columns — inches">gutter<input id="cb-gap" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f" title="Inset spacing — inches, all four sides">inset<input id="cb-pad" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <span class="ty-seg" title="Vertical justification">
+        <button data-va="" aria-label="Align top"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 1.8h11M4 4.5h6M4 7h6"/></svg></button>
+        <button data-va="middle" aria-label="Align centre"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5.7h6M4 8.3h6M1.5 1.8h11M1.5 12.2h11" stroke-opacity=".45"/></svg></button>
+        <button data-va="bottom" aria-label="Align bottom"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 12.2h11M4 7h6M4 9.5h6"/></svg></button>
+        <button data-va="justify" aria-label="Justify vertically — spread the paragraphs"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 1.8h11M1.5 12.2h11M4 4.5h6M4 9.5h6"/></svg></button>
+      </span>
+    </span>
+    <span class="ty-sep"></span>
+    <span class="cb-grp ty-seg" id="cb-align" title="Align (to the page; to the selection when several)">
+      <button class="ar-al" data-al="left" aria-label="Align left"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 1.5v11M4.5 4.5h7M4.5 9.5h4.5"/></svg></button>
+      <button class="ar-al" data-al="hcenter" aria-label="Align horizontal centre"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 1.5v11M3.5 4.5h7M4.75 9.5h4.5"/></svg></button>
+      <button class="ar-al" data-al="right" aria-label="Align right"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 1.5v11M2.5 4.5h7M5 9.5h4.5"/></svg></button>
+      <button class="ar-al" data-al="top" aria-label="Align top"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 2h11M4.5 4.5v7M9.5 4.5v4.5"/></svg></button>
+      <button class="ar-al" data-al="vcenter" aria-label="Align vertical centre"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 7h11M4.5 3.5v7M9.5 4.75v4.5"/></svg></button>
+      <button class="ar-al" data-al="bottom" aria-label="Align bottom"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 12h11M4.5 2.5v7M9.5 5v4.5"/></svg></button>
+    </span>
+    <span class="ty-sep" id="cb-arsep"></span>
+  </div>
+</div>
 <!-- What a conversion had to decide for you (L.notices() in the renderer, and
      docsync.ingest is what writes them). Filled in by renderNotices(); empty
      and hidden for every report that was authored rather than converted. -->
@@ -2593,13 +2769,20 @@
     <div id="ty-boxbody"></div>
   </div>
   <span class="ty-sep"></span>
-  <select id="ty-font" title="Font"></select>
-  <select id="ty-weight" title="Weight"></select>
-  <span class="ty-step" title="Size (px)">
+  <select id="ty-font" class="cb-char" title="Font"></select>
+  <select id="ty-weight" class="cb-char" title="Weight"></select>
+  <span class="ty-step cb-char" title="Size (px)">
     <button id="ty-down" aria-label="Smaller">−</button><input id="ty-size" type="number"
-      min="10.5" max="200" step="0.5"><button id="ty-up" aria-label="Bigger">+</button>
+      min="10.5" max="200" step="0.5"><input id="cb-size" class="cb-only cb-num" data-proxy="ty-size"
+      data-unit="pt" title="Size, points — or type 16px" inputmode="decimal" autocomplete="off"
+      aria-label="Size in points"><button id="ty-up" aria-label="Bigger">+</button>
   </span>
-  <span class="ty-seg" id="ty-marks" hidden title="Formatting — applies to the selected words">
+  <!-- Docked only: leading in points ("(auto)" in brackets when the style
+       sets none) and tracking in thousandths of an em, as InDesign shows
+       them; both write the Spacing panel's own fields (ty-lead, ty-track). -->
+  <label class="cb-f cb-only cb-char" title="Leading, points — or a multiple like 1.4; empty for auto"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5 2.5h7M5 7h7M5 11.5h7M2 2v10M1 3.2L2 2l1 1.2M1 10.8L2 12l1-1.2"/></svg><input id="cb-lead" data-proxy="ty-lead" data-unit="lead" inputmode="decimal" autocomplete="off"></label>
+  <label class="cb-f cb-only cb-char" title="Tracking, thousandths of an em"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2 3l2 6 2-6M8 3h4M10 3v6M1.5 12h11M1.5 12l1.2-1M1.5 12l1.2 1M12.5 12l-1.2-1M12.5 12l-1.2 1"/></svg><input id="cb-track" data-proxy="ty-track" data-unit="track" inputmode="decimal" autocomplete="off"></label>
+  <span class="ty-seg cb-char" id="ty-marks" hidden title="Formatting — applies to the selected words">
     <button id="ty-mb" aria-label="Bold the selection"><b>B</b></button>
     <button id="ty-mi" aria-label="Italicise the selection"><i>I</i></button>
     <button id="ty-mu" aria-label="Underline the selection"><u>U</u></button>
@@ -2616,13 +2799,19 @@
       <path d="M1.5 2.6l1-.6v3" stroke-width="1.1"/><path d="M1.2 8.4c1.6-1.6 2.2.6.2 1.6h2" stroke-width="1.1" fill="none"/></svg></button>
   </span>
   <span class="ty-sep"></span>
-  <button id="ty-i" aria-label="Italic"><svg width="14" height="14" viewBox="0 0 14 14"
+  <button id="ty-i" class="cb-char" aria-label="Italic"><svg width="14" height="14" viewBox="0 0 14 14"
     fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
     <path d="M6 2h5M3 12h5M8.5 2l-3 10"/></svg></button>
-  <button id="ty-u" aria-label="Underline"><svg width="14" height="14" viewBox="0 0 14 14"
+  <button id="ty-u" class="cb-char" aria-label="Underline"><svg width="14" height="14" viewBox="0 0 14 14"
     fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
     <path d="M3.5 1.8v4.7a3.5 3.5 0 0 0 7 0V1.8M2.5 12.4h9"/></svg></button>
-  <span class="ty-seg">
+  <!-- Docked only: the Paragraph panel's small caps, strikethrough and
+       baseline shift, on the bar (they write ty-smcp, ty-strike, ty-shift). -->
+  <select id="cb-smcp" class="cb-only cb-char" data-proxy="ty-smcp" title="Small caps">
+    <option value="">Tt</option><option value="small">Tᴛ small caps</option><option value="all">ᴛᴛ all small caps</option></select>
+  <button id="cb-strike" class="cb-only cb-char" data-proxy="ty-strike" aria-label="Strikethrough"><s>S</s></button>
+  <label class="cb-f cb-only cb-char" title="Baseline shift, points"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 11h6M9 3l2-1.5L13 3M11 1.5v7"/></svg><input id="cb-shift" placeholder="0" class="cb-narrowin" data-proxy="ty-shift" data-unit="pt" inputmode="decimal" autocomplete="off"></label>
+  <span class="ty-seg cb-para" id="ty-alseg">
     <button class="ty-al" data-a="left" aria-label="Align left"><svg width="14" height="14"
       viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
       <path d="M2 3h10M2 6h6M2 9h10M2 12h6"/></svg></button>
@@ -2636,21 +2825,36 @@
       viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
       <path d="M2 3h10M2 6h10M2 9h10M2 12h10"/></svg></button>
   </span>
-  <select id="ty-case" title="Letter case">
+  <!-- Docked only: the Paragraph panel's indents, spacing, drop cap,
+       baseline grid, hyphenation and list marker, each writing that panel's
+       own field (data-proxy), lengths in inches with typed units. -->
+  <span class="cb-only cb-para cb-grp" id="cb-paraf">
+    <label class="cb-f" title="Left indent — inches; 18pt, 1p6 too"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M6 2.5h6.5M6 5.5h6.5M6 8.5h6.5M6 11.5h6.5M1.5 4.5L4 7l-2.5 2.5"/></svg><input id="cb-il" placeholder="0" data-proxy="ty-il" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+    <label class="cb-f" title="First-line indent — inches"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5.5 2.5h7M1.5 5.5h11M1.5 8.5h11M1.5 11.5h11"/></svg><input id="cb-ti" placeholder="0" data-proxy="ty-ti" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+    <label class="cb-f" title="Right indent — inches"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 2.5H8M1.5 5.5H8M1.5 8.5H8M1.5 11.5H8M12.5 4.5L10 7l2.5 2.5"/></svg><input id="cb-ir" placeholder="0" data-proxy="ty-ir" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+    <label class="cb-f" title="Space before — inches"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 7.5h11M1.5 10.5h11M7 1.5v4M5.5 4L7 5.5 8.5 4"/></svg><input id="cb-sb" placeholder="0" data-proxy="ty-sb" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+    <label class="cb-f" title="Space after — inches"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 6.5h11M7 12.5v-4M5.5 10L7 8.5 8.5 10"/></svg><input id="cb-sa" placeholder="0" data-proxy="ty-sa" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+    <label class="cb-f" title="Drop cap, lines"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 2h4.5v4.5H1.5zM8 2.5h4.5M8 5.5h4.5M1.5 9h11M1.5 12h11"/></svg><select id="cb-dcap" data-proxy="ty-dcap">
+      <option value="">0</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+    <button id="cb-grid" data-proxy="ty-grid" aria-label="Align to baseline grid"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" stroke-dasharray="1.2 1.4"/><path d="M3 3.5v-1M5 3.5v-1.4M7.5 7V5.6M10 7V5.8" stroke-width="1.5"/></svg></button>
+    <button id="cb-hyph" data-proxy="ty-hyph" aria-label="Hyphenate"><span style="font:600 12px system-ui">hy-</span></button>
+    <select id="cb-lmark" data-proxy="ty-lmark" title="List marker"></select>
+  </span>
+  <select id="ty-case" class="cb-char" title="Letter case">
     <option value="none">Aa</option><option value="upper">AA</option>
     <option value="lower">aa</option><option value="title">Aa Bb</option>
   </select>
   <span class="ty-sep"></span>
-  <button id="ty-colorbtn" aria-label="Text colour"><span class="A">A</span><span
+  <button id="ty-colorbtn" class="cb-char" aria-label="Text colour"><span class="A">A</span><span
     class="Abar" id="ty-Abar"></span></button>
-  <button id="ty-spacebtn" aria-label="Letter spacing and line height"><svg width="14"
+  <button id="ty-spacebtn" class="cb-char" aria-label="Letter spacing and line height"><svg width="14"
     height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
     stroke-linecap="round"><path d="M2 2v10M12 2v10M4.6 7h4.8M4.6 7l1.5-1.5M4.6 7l1.5 1.5M9.4 7L7.9 5.5M9.4 7l-1.5 1.5"/></svg></button>
   <button id="ty-parabtn" aria-label="Paragraph — line breaks, keeping, figures, drop cap, list"><svg width="14"
     height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"
     stroke-linecap="round"><path d="M9.5 2v10M11.5 2v10M12.5 2H6.5a2.6 2.6 0 0 0 0 5.2h3"/></svg></button>
-  <select id="ty-fx" title="Effect"></select>
-  <span id="ty-fxp"></span>
+  <select id="ty-fx" class="cb-char" title="Effect"></select>
+  <span id="ty-fxp" class="cb-char"></span>
   <button id="ty-reset" aria-label="Put this text back the way the report designed it">Reset</button>
   <div class="pop" id="ty-colorpop" hidden>
     <p class="pop-h">Text colour</p>
@@ -6410,6 +6614,16 @@ function _pilotApplyFit(id, mode, align) {
   if (align !== undefined) { if (align) g.fitAlign = align; else delete g.fitAlign; }
   return { id, fit: mode, align: g.fitAlign || 'center' };
 }
+/** One fitting command from a person (right-click ▸ Fitting, the Control
+ *  bar's fitting buttons): one undo step, then a render. `fn` is one of the
+ *  appliers above; a refusal ({ok:false}) leaves nothing changed. */
+async function applyFitting(id, fn) {
+  pushHistory();
+  const r = fn();
+  if (r && r.ok === false) { withdrawStep(); $('stat').textContent = r.error; return r; }
+  markDirty(); await render();
+  return r;
+}
 /** Fit Frame to Content: the frame's height becomes what the picture's own
  *  shape makes it at the frame's width, so nothing is cut or letterboxed. */
 function _pilotApplyFitFrame(id) {
@@ -7063,12 +7277,7 @@ function layerMenu(d, el, e) {
       const row = (label, fn, on) => {
         const b = d.createElement('button');
         b.textContent = (on ? '✓ ' : '') + label;
-        b.addEventListener('click', async () => {
-          closeMenu(d); pushHistory();
-          const r = fn();
-          if (r && r.ok === false) { $('stat').textContent = r.error; return; }
-          markDirty(); await render();
-        });
+        b.addEventListener('click', () => { closeMenu(d); applyFitting(id, fn); });
         sub.appendChild(b);
       };
       FIT_LABELS.forEach(([mode, label]) => row(label, () => _pilotApplyFit(id, mode), cur.fit === mode));
@@ -12255,6 +12464,7 @@ function showType(key) {
   anchorButtonsPaint();
   $('type').hidden = false;
   $('arrange').hidden = true;            // the fixed row holds one toolbar at a time
+  if (document.body.classList.contains('ds-ctlbar')) ctlPaintText();
 }
 
 /** The style picker at the head of the type toolbar: what this text wears. */
@@ -13257,6 +13467,29 @@ $('ar-style-more').addEventListener('click', () => {
 // page draws) and WRITES the box itself (the nearer author is the stronger),
 // so a slider moved on a box wearing a style creates an override, which the
 // picker then marks with a +.
+/** A text frame's options — columns, gutter, inset, vertical justification
+ *  and first baseline — set as ONE undo step and a render. The Box panel and
+ *  the Control bar both write through here. A key set to null goes back to
+ *  what the box's object style says (or the default); one column on a box
+ *  whose style has more says so explicitly, or the style would win. */
+async function setBoxFrame(id, patch) {
+  const bx = boxOf(id);
+  if (!bx) return false;
+  pushHistory();
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === 'cols') {
+      const n = Math.max(1, Math.min(4, Math.round(+v) || 1));
+      if (n > 1) bx.cols = n; else { delete bx.cols; if (dressedObj(bx).cols > 1) bx.cols = 1; }
+    } else if (k === 'gap' || k === 'pad') {
+      if (v == null) delete bx[k]; else bx[k] = +Math.max(0, Math.min(2, +v)).toFixed(3);
+    } else if (k === 'vAlign' || k === 'firstBaseline') {
+      if (v) bx[k] = v; else delete bx[k];
+    }
+  }
+  markDirty();
+  await render();
+  return true;
+}
 function renderBoxPanel() {
   const host = $('ty-boxbody');
   host.textContent = '';
@@ -13388,9 +13621,7 @@ function renderBoxPanel() {
       opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
       sel.value = eff[key] && eff[key] !== 'top' && eff[key] !== 'leading' ? eff[key] : '';
       sel.addEventListener('change', async () => {
-        pushHistory();
-        if (sel.value) bx[key] = sel.value; else delete bx[key];
-        await commit();
+        await setBoxFrame(selected, { [key]: sel.value || null }); refresh();
       });
       r.appendChild(sel);
     });
@@ -13404,10 +13635,7 @@ function renderBoxPanel() {
   });
   csel.value = String(eff.cols || 1);
   csel.addEventListener('change', async () => {
-    pushHistory();
-    const nn = +csel.value;
-    if (nn > 1) bx.cols = nn; else { delete bx.cols; if (dressedObj(bx).cols > 1) bx.cols = 1; }
-    await commit();
+    await setBoxFrame(selected, { cols: +csel.value }); refresh();
   });
   cl.appendChild(csel);
   if ((eff.cols || 1) > 1) {
@@ -13911,20 +14139,24 @@ function contextDodge(d) {
   const els = card ? selEls(d) : [];
   if (!els.length) { ctx.classList.remove('low'); return; }
   const fb = fr.getBoundingClientRect(), k = fb.width / fr.offsetWidth || 1;
-  const cb = card.getBoundingClientRect();
   const pad = 12;                                 // a handle and its ring
-  const under = els.some(el => {
+  const under = cb => els.some(el => {
     const r = el.getBoundingClientRect();
     if (!r.width && !r.height) return false;
     const top = fb.top + r.top * k - pad, bottom = fb.top + r.bottom * k + pad;
     const left = fb.left + r.left * k - pad, right = fb.left + r.right * k + pad;
     return top < cb.bottom && bottom > cb.top && left < cb.right && right > cb.left;
   });
-  // Only move it when the selection is near the TOP: a tall selection that
-  // also reaches the foot would be under it either way, and the top is home.
-  const low = under && !ctx.classList.contains('low');
-  const stay = under && ctx.classList.contains('low');
-  ctx.classList.toggle('low', low || stay);
+  // Judged against the card's HOME, whichever place it is in now: measured
+  // where it stood, a card already at the foot found nothing under it and went
+  // home — over the selection — on the next scroll, and back down on the one
+  // after. Two layout reads, no paint between them, so nothing flickers.
+  ctx.classList.remove('low');
+  if (!under(card.getBoundingClientRect())) return;
+  // Only move it when that clears the selection: a tall selection that also
+  // reaches the foot would be under it either way, and the top is home.
+  ctx.classList.add('low');
+  if (under(card.getBoundingClientRect())) ctx.classList.remove('low');
 }
 
 // ------------------------------------------------------------ mini toolbar
@@ -14157,7 +14389,13 @@ function selectClick(d, id, e) {
   return true;
 }
 
+/** The selection's strip, then the Control bar: every path through the strip
+ *  (a page, a text box that takes the type card, an object) ends with the
+ *  bar painted from the same selection. */
 function arrangeBar(d) {
+  try { arrangeStrip(d); } finally { ctlPaint(d); }
+}
+function arrangeStrip(d) {
   const n = selIds.size;
   // Anyone else who cares what is selected (the comments panel names the
   // thing a new comment is about) hears it here, on every change.
@@ -14314,60 +14552,69 @@ function arrangeBar(d) {
   if ($('ar-alpha').hidden) $('ar-alphapop').hidden = true;
   if ($('ar-fxbtn').hidden) $('ar-fxpop').hidden = true;
   if (!one) return;
-  const page = one.closest('section.page') || d.querySelector('section.page');
-  const b = shapeBox(one, page);
-  const st = storeOf(idOf(one)) || {};
-  $('ar-x').value = (st.x ?? b.x).toFixed(2);
-  $('ar-y').value = (st.y ?? b.y).toFixed(2);
-  // A graphic reads out as a scale percent, not a width its box would ignore.
-  const graphic = isGraphic(one);
-  $('ar-wwrap').hidden = graphic;
-  $('ar-swrap').hidden = !graphic;
-  if (graphic) $('ar-scale').value = Math.round((st.scale || 1) * 100);
-  else $('ar-w').value = (st.w ?? b.w).toFixed(2);
-  const hasH = !graphic && (!!one.dataset.shape || st.h != null);
-  $('ar-hwrap').hidden = !hasH;
-  if (hasH) $('ar-h').value = (st.h ?? b.h).toFixed(2);
-  $('ar-rot').value = st.rot ?? 0;
-  $('ar-skew').value = st.skew ?? 0;
+  const g = geoOf(d, one);
+  $('ar-x').value = g.x.toFixed(2);
+  $('ar-y').value = g.y.toFixed(2);
+  $('ar-wwrap').hidden = g.graphic;
+  $('ar-swrap').hidden = !g.graphic;
+  if (g.graphic) $('ar-scale').value = g.scale;
+  else $('ar-w').value = g.w.toFixed(2);
+  $('ar-hwrap').hidden = !g.hasH;
+  if (g.hasH) $('ar-h').value = g.h.toFixed(2);
+  $('ar-rot').value = g.rot;
+  $('ar-skew').value = g.skew;
+}
+
+/** One selected thing's placement as the Position panel and the Control bar
+ *  show it: inches from the sheet's corner, degrees, a percent. A graphic
+ *  reads out as a scale percent, not a width its box would ignore; a height
+ *  only where the thing keeps one (a shape, or a store that set it). */
+function geoOf(d, el) {
+  const page = el.closest('section.page') || d.querySelector('section.page');
+  const b = shapeBox(el, page);
+  const st = storeOf(idOf(el)) || {};
+  const graphic = isGraphic(el);
+  return { x: st.x ?? b.x, y: st.y ?? b.y, w: st.w ?? b.w, h: st.h ?? b.h,
+    graphic, hasH: !graphic && (!!el.dataset.shape || st.h != null),
+    scale: Math.round((st.scale || 1) * 100), rot: st.rot ?? 0, skew: st.skew ?? 0,
+    flip: st.flip || '' };
 }
 
 /** Typed placement goes through the same placer a drag uses — one rule for
- *  what a coordinate means, whichever finger set it. */
-const arField = (fid, apply) => $(fid).addEventListener('change', async () => {
+ *  what a coordinate means, whichever finger set it. Each field's applier is
+ *  kept by its id (AR_APPLY) so the Position panel's field and the Control
+ *  bar's (ctlPaint) run the very same code: arApply('ar-x', 2.5). An applier
+ *  that returns true wants a render (a size, which the engine lays out). */
+const AR_APPLY = {};
+async function arApply(fid, v) {
   const d = $('out').contentDocument;
-  const els = selEls(d);
-  if (els.length !== 1) return;
+  const els = d ? selEls(d) : [];
+  if (els.length !== 1 || typeof v !== 'number' || !isFinite(v)) return false;
   const el = els[0];
   const page = el.closest('section.page') || d.querySelector('section.page');
-  const v = parseFloat($(fid).value);
-  if (isNaN(v)) return;
   pushHistory();
-  apply(d, el, page, v);
+  const wantsRender = AR_APPLY[fid](d, el, page, v);
   clearGuides(d);
   markDirty();
-  paintSel(d);
-});
+  if (wantsRender) await render();
+  paintSel($('out').contentDocument);
+  return true;
+}
+const arField = (fid, apply) => {
+  AR_APPLY[fid] = apply;
+  $(fid).addEventListener('change', () => arApply(fid, parseFloat($(fid).value)));
+};
 arField('ar-x', (d, el, page, v) => {
   const P = placer(d, el, page); P.commit(P.put(v, P.box.y, false));
 });
 arField('ar-y', (d, el, page, v) => {
   const P = placer(d, el, page); P.commit(P.put(P.box.x, v, false));
 });
-arField('ar-w', (d, el, page, v) => {
-  const id = idOf(el);
-  const sh = shapeOf(id);
-  const b = boxOf(id);
-  if (sh) { sh.w = v; paintShape(d, id); }
-  else if (b) { b.w = v; el.style.width = v + 'in'; }
-  else { ensureStore(d, el).w = v; el.style.width = v + 'in'; }
-});
-arField('ar-h', (d, el, page, v) => {
-  const id = idOf(el);
-  const sh = shapeOf(id);
-  if (sh) { sh.h = v; paintShape(d, id); }
-  else { ensureStore(d, el).h = v; el.style.height = v + 'in'; }
-});
+// Sizes land through commitSize, the one place that knows where each kind
+// keeps its size (a text box's height floor, a paragraph's hmin, a table's
+// width only); the render that follows lays it out.
+arField('ar-w', (d, el, page, v) => { commitSize(d, el, { w: Math.max(0.1, v) }); return true; });
+arField('ar-h', (d, el, page, v) => { commitSize(d, el, { h: Math.max(0.1, v) }); return true; });
 arField('ar-scale', (d, el, page, v) => {
   const st = ensureStore(d, el);
   const s = Math.max(0.2, Math.min(5, v / 100));
@@ -15163,6 +15410,11 @@ const CHORDS = [
   // ⌘; is InDesign's Show Guides; ⌘R, its Show Rulers, is this window's
   // Reload (View ▸ Reload editor), so rulers and guides share the one switch.
   ['rulers & guides', (e, k) => k.mod && !k.alt && !k.shift && e.code === 'Semicolon', () => toggleGuides()],
+  // ⌥⌘6 is InDesign's Window ▸ Control.
+  ['control bar', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit6', () => toggleCtlBar()],
+  // ⌥⌘7: InDesign's switch between the bar's character and paragraph modes.
+  ['control bar: A / ¶', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit7' && !$('type').hidden,
+    () => setCtlMode($('ctl').dataset.mode === 'para' ? 'char' : 'para')],
   ['redo (Ctrl+Y)', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'y', () => redo()],
   ['to front / back', (e, k) => k.mod && !k.alt && k.shift && (e.code === 'BracketRight' || e.code === 'BracketLeft'),
     (d, e) => { if (selIds.size) layerStep(d, e.code === 'BracketRight' ? 1 : -1, true); }],
@@ -17761,6 +18013,343 @@ $('frameedges').addEventListener('click', () => {
   paintFrameEdges($('out').contentDocument);
   $('stat').textContent = frameEdges ? 'frame edges shown' : 'frame edges hidden';
 });
+
+// ------------------------------------------------------------- control bar
+// InDesign's Control panel (#ctl), docked under the menu bar; the markup's
+// comment lists what it holds and whose code each control runs. On by
+// default, as in InDesign; View ▸ Control bar (⌥⌘6) hides it, remembered per
+// editor like Rulers and Frame edges.
+let ctlOn = true;
+try { ctlOn = localStorage.getItem('ds-ctlbar') !== '0'; } catch (e) { /* file: */ }
+/** Put the arrange strip where the bar's state says — the bar, or the
+ *  floating card — and show or hide the bar. Moving the node keeps every id
+ *  and listener on it, so nothing about the strip's controls changes. */
+function ctlDock() {
+  const ctl = $('ctl'), ar = $('arrange'), ty = $('type'), ctx = $('context');
+  ctl.hidden = !ctlOn;
+  document.body.classList.toggle('ds-ctlbar', ctlOn);
+  if (ctlOn) {
+    // The type controls lead (after the mode switch), the frame's follow,
+    // then the arrange strip — the order InDesign's bar reads in.
+    if (ty.parentNode !== ctl) ctl.insertBefore(ty, $('cb-empty'));
+    if (ar.parentNode !== ctl) ctl.appendChild(ar);
+  } else {
+    if (ty.parentNode !== ctx) ctx.insertBefore(ty, ctx.firstChild);
+    if (ar.parentNode !== ctx) ctx.appendChild(ar);
+  }
+  $('ctlbar').classList.toggle('on', ctlOn);
+}
+// Text: which of InDesign's modes the bar is in. A or ¶ is remembered per
+// editor (InDesign keeps it too); ▭ Frame is for the selection it was
+// pressed on, and a new selection goes back to the words.
+let ctlTextMode = 'char', ctlFrameFor = null;
+try { if (localStorage.getItem('ds-ctlmode') === 'para') ctlTextMode = 'para'; } catch (e) { /* file: */ }
+function setCtlMode(m) {
+  if (m === 'frame') ctlFrameFor = [...selIds].join(' ') || null;
+  else {
+    ctlFrameFor = null; ctlTextMode = m === 'para' ? 'para' : 'char';
+    try { localStorage.setItem('ds-ctlmode', ctlTextMode); } catch (e) { /* file: */ }
+  }
+  const d = $('out').contentDocument;
+  if (d && d.body) arrangeBar(d); else ctlPaint(d);
+  return $('ctl').dataset.mode;
+}
+document.querySelectorAll('#cb-mode [data-m]').forEach(b =>
+  b.addEventListener('click', () => setCtlMode(b.dataset.m)));
+function toggleCtlBar(on = !ctlOn) {
+  ctlOn = !!on;
+  try { localStorage.setItem('ds-ctlbar', ctlOn ? '1' : '0'); } catch (e) { /* file: */ }
+  ctlDock();
+  const d = $('out').contentDocument;
+  if (d && d.body) { arrangeBar(d); contextDodge(d); }
+  startRulers();          // the stage moved; the rulers follow its rect
+  $('stat').textContent = ctlOn ? 'control bar shown'
+    : 'control bar hidden — View ▸ Control bar brings it back';
+}
+$('ctlbar').addEventListener('click', () => toggleCtlBar());
+ctlDock();
+
+/** A length typed into the bar, in inches. A bare number is inches; a unit
+ *  says otherwise, as InDesign takes it: in, ", pt, p (picas: 3p, 3p6, p6),
+ *  mm, cm, px. NaN when it is not a length. */
+function parseLen(str) {
+  const t = String(str ?? '').trim().toLowerCase().replace(/,/g, '.');
+  if (!t) return NaN;
+  let m = t.match(/^(-?)(\d*\.?\d*)\s*p\s*(\d*\.?\d*)$/);
+  if (m && (m[2] || m[3])) return (m[1] ? -1 : 1) * ((+m[2] || 0) * 12 + (+m[3] || 0)) / 72;
+  m = t.match(/^(-?\d*\.?\d+)\s*(in|inch|inches|"|″|pt|mm|cm|px)?$/);
+  if (!m) return NaN;
+  const v = +m[1];
+  return { pt: v / 72, mm: v / 25.4, cm: v / 2.54, px: v / 96 }[m[2]] ?? v;
+}
+/** What a bar field holds, as a number in the unit its applier takes. */
+function ctlValue(inp) {
+  const u = inp.dataset.unit;
+  if (u === 'len') return parseLen(inp.value);
+  const t = String(inp.value).trim().replace(/[°%\s]/g, '');
+  return t === '' ? NaN : +t;
+}
+const ctlSelected = () => { const d = $('out').contentDocument;
+  const els = d && d.body ? selEls(d) : []; return { d, els, one: els.length === 1 ? els[0] : null }; };
+const ctlShow = (inp, v, dp = 2) => {
+  if (document.activeElement === inp) return;    // never under a person's typing
+  inp.classList.remove('bad');
+  inp.value = v == null || !isFinite(v) ? '' : String(+(+v).toFixed(dp));
+};
+
+/** Paint the bar from the selection. Called at the end of every arrangeBar,
+ *  so it is never a step behind the strip. */
+function ctlPaint(d) {
+  if (!ctlOn) return;
+  const n = selIds.size;
+  const els = d && d.body ? selEls(d) : [];
+  const one = n === 1 && els.length === 1 ? els[0] : null;
+  const any = n > 0 && els.length > 0;
+  // Text in hand (the type controls are up): ▭ / A / ¶. Frame only when
+  // there is an object to be the frame — open words with nothing selected
+  // have none.
+  const text = !$('type').hidden;
+  const key = [...selIds].join(' ') || null;
+  const mode = !text ? (any ? 'obj' : 'empty')
+    : any && ctlFrameFor && ctlFrameFor === key ? 'frame' : ctlTextMode;
+  if (ctlFrameFor && ctlFrameFor !== key) ctlFrameFor = null;
+  const ctl = $('ctl');
+  ctl.dataset.mode = mode;
+  $('cb-mode').hidden = !text;
+  $('cb-mode').querySelector('[data-m="frame"]').hidden = !any;
+  $('cb-mode').querySelectorAll('[data-m]').forEach(b => {
+    b.classList.toggle('on', b.dataset.m === mode);
+    b.setAttribute('aria-checked', String(b.dataset.m === mode));
+  });
+  if (text) ctlPaintText();
+  // The strip sets these only on its own path; a text box takes the type
+  // path and would leave them as the last selection had them.
+  document.querySelectorAll('#cb-align .ar-al').forEach(b => { b.disabled = !any; });
+  $('cb-obj').hidden = !any || (text && mode !== 'frame');
+  // Nothing selected: the document, quietly, rather than an empty strip. A
+  // selected PAGE has its own strip (#arrange's page mode), so no hint.
+  $('cb-empty').hidden = any || text || !$('arrange').hidden;
+  if (!any) {
+    const pageless = PAGE_H_IN >= PAGELESS_H;
+    $('cb-page').textContent = pageless ? `Pageless · ${+PAGE_W_IN.toFixed(3)} in wide`
+      : `Page ${+PAGE_W_IN.toFixed(3)} × ${+PAGE_H_IN.toFixed(3)} in`;
+    return;
+  }
+  $('cb-arsep').hidden = $('arrange').hidden;
+  const id = one ? idOf(one) : null;
+  const locked = n > 0 && [...selIds].every(isLocked);
+  // Geometry: one thing at a time, as the Position panel.
+  $('cb-geo').hidden = !one;
+  $('cb-rot').closest('label').hidden = $('cb-skew').closest('label').hidden = !one;
+  if (one) {
+    const g = geoOf(d, one);
+    ctlShow($('cb-x'), g.x); ctlShow($('cb-y'), g.y);
+    $('cb-wwrap').hidden = $('cb-hwrap').hidden = g.graphic;
+    $('cb-swrap').hidden = !g.graphic;
+    if (g.graphic) ctlShow($('cb-scale'), g.scale, 0);
+    else { ctlShow($('cb-w'), g.w); ctlShow($('cb-h'), g.h); }
+    ctlShow($('cb-rot'), g.rot, 1); ctlShow($('cb-skew'), g.skew, 1);
+  }
+  const flip = one ? geoOf(d, one).flip : '';
+  $('cb-fliph').classList.toggle('on', flip.includes('h'));
+  $('cb-flipv').classList.toggle('on', flip.includes('v'));
+  document.querySelectorAll('#cb-turn button, #cb-geo input, #cb-turn input')
+    .forEach(x => { x.disabled = locked; });
+  // A rectangle's corners.
+  const sh = id && shapeOf(id);
+  const rect = !!sh && sh.kind === 'rect';
+  $('cb-corner').hidden = $('cb-cornersep').hidden = !rect;
+  if (rect) ctlShow($('cb-r'), sh.r || 0);
+  // A picture's frame fitting.
+  const fit = !!id && !!fitKind(id);
+  $('cb-fit').hidden = $('cb-fitsep').hidden = !fit;
+  if (fit) {
+    const cur = fitNow(id).fit;
+    document.querySelectorAll('#cb-fit button').forEach(b =>
+      b.classList.toggle('on', b.dataset.fit === cur));
+  }
+  // A text frame: columns, gutter, inset, vertical justification.
+  const bx = id && boxOf(id);
+  const frame = !!bx && fitKind(id) !== 'box';
+  $('cb-frame').hidden = $('cb-framesep').hidden = !frame;
+  if (frame) {
+    const eff = dressedObj(bx);
+    const cols = eff.cols || 1;
+    if (document.activeElement !== $('cb-cols')) $('cb-cols').value = String(cols);
+    $('cb-gapwrap').hidden = cols < 2;
+    ctlShow($('cb-gap'), eff.gap ?? 0.2);
+    const pad = Array.isArray(eff.pad) ? eff.pad[0] : eff.pad;
+    ctlShow($('cb-pad'), pad ?? (eff.fill ? 0.1 : 0));
+    const va = eff.vAlign && eff.vAlign !== 'top' ? eff.vAlign : '';
+    document.querySelectorAll('#cb-frame [data-va]').forEach(b =>
+      b.classList.toggle('on', b.dataset.va === va));
+  }
+}
+
+// Geometry fields: the Position panel's appliers, through arApply.
+document.querySelectorAll('#ctl input[data-ar]').forEach(inp => {
+  inp.addEventListener('change', async () => {
+    const v = ctlValue(inp);
+    if (!isFinite(v)) {
+      inp.classList.add('bad');
+      $('stat').textContent = inp.dataset.unit === 'len'
+        ? `“${inp.value}” is not a length — try 2.5, 2.5in, 36pt, 3p6 or 12mm` : `“${inp.value}” is not a number`;
+      return;
+    }
+    inp.classList.remove('bad');
+    const ok = await arApply(inp.dataset.ar, v);
+    if (!ok) ctlPaint($('out').contentDocument);
+  });
+});
+// Escape puts the field back and hands the keys back to the page; Enter
+// commits (change) and leaves the field, as InDesign's does.
+document.querySelectorAll('#ctl input').forEach(inp => {
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); inp.blur(); ctlPaint($('out').contentDocument); }
+    else if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+  });
+});
+// Rotate 90° and flip: right-click ▸ Rotate and flip's turnObjects, on the
+// whole selection, one undo step.
+document.querySelectorAll('#cb-turn [data-turn], #cb-turn [data-flip]').forEach(b =>
+  b.addEventListener('click', () => {
+    const d = $('out').contentDocument;
+    if (!d || !selIds.size) return;
+    turnObjects(d, [...selIds], b.dataset.flip ? { flip: b.dataset.flip } : { rot: +b.dataset.turn });
+  }));
+$('cb-r').addEventListener('change', async () => {
+  const { one } = ctlSelected();
+  const sh = one && shapeOf(idOf(one));
+  const v = parseLen($('cb-r').value);
+  if (!sh || !isFinite(v)) { $('cb-r').classList.add('bad'); return; }
+  pushHistory();
+  sh.r = +Math.max(0, Math.min(2, v)).toFixed(3);
+  markDirty(); await render();
+});
+// Fitting: right-click ▸ Fitting's appliers, through applyFitting.
+document.querySelectorAll('#cb-fit [data-fit]').forEach(b => b.addEventListener('click', () => {
+  const { one } = ctlSelected();
+  const id = one && idOf(one);
+  if (!id || !fitKind(id)) return;
+  const mode = b.dataset.fit;
+  applyFitting(id, mode === 'frame' ? () => _pilotApplyFitFrame(id) : () => _pilotApplyFit(id, mode));
+}));
+// Text frame options: the Box panel's setBoxFrame.
+const ctlBoxId = () => { const { one } = ctlSelected(); const id = one && idOf(one);
+  return id && boxOf(id) ? id : null; };
+$('cb-cols').addEventListener('change', () => { const id = ctlBoxId(); if (id) setBoxFrame(id, { cols: +$('cb-cols').value }); });
+['gap', 'pad'].forEach(k => $('cb-' + k).addEventListener('change', () => {
+  const id = ctlBoxId(), v = parseLen($('cb-' + k).value);
+  if (!id) return;
+  if (!isFinite(v) || v < 0) { $('cb-' + k).classList.add('bad'); return; }
+  setBoxFrame(id, { [k]: v });
+}));
+document.querySelectorAll('#cb-frame [data-va]').forEach(b => b.addEventListener('click', () => {
+  const id = ctlBoxId(); if (id) setBoxFrame(id, { vAlign: b.dataset.va || null });
+}));
+
+// ---- character and paragraph modes (phase 2)
+// Every docked text field PROXIES a field of the type card or its panels
+// (data-proxy): it shows that field's value in InDesign's units, and a
+// change writes the field in its own unit and fires the field's own event,
+// so the one handler there does the work — style, render, undo step.
+/** The size the selected text renders at, px: the style's, else the page's. */
+function ctlSizePx() {
+  const v = parseFloat($('ty-size').value);
+  return isFinite(v) && v > 0 ? v : parseFloat($('ty-size').placeholder) || 16;
+}
+const PX_PT = 0.75;
+/** A field's value, in the unit the bar shows it in. */
+function ctlTextShow(inp) {
+  const src = $(inp.dataset.proxy);
+  if (!src || (inp.tagName === 'INPUT' && document.activeElement === inp)) return;
+  inp.classList.remove('bad');
+  const u = inp.dataset.unit, px = ctlSizePx();
+  const n = v => String(+(+v).toFixed(2));
+  if (inp.tagName === 'SELECT') { inp.value = src.value; return; }
+  if (inp.tagName === 'BUTTON') { inp.classList.toggle('on', !!src.checked); return; }
+  if (u === 'pt' && inp.id === 'cb-size') { inp.value = n(px * PX_PT); return; }
+  if (u === 'pt') { inp.value = src.value === '' ? '' : n(+src.value); return; }
+  if (u === 'lead') {
+    // Auto (no leading in the style) shows in brackets, as InDesign does.
+    const set = src.value !== '';
+    const mult = set ? +src.value : parseFloat(src.placeholder) || 1.2;
+    const pt = n(mult * px * PX_PT);
+    inp.value = set ? pt : `(${pt})`;
+    return;
+  }
+  if (u === 'track') {
+    const t = src.value !== '' ? +src.value : parseFloat(src.placeholder) || 0;
+    inp.value = String(Math.round(t / px * 1000));
+    return;
+  }
+  inp.value = src.value === '' ? '' : n(+src.value);          // inches
+}
+/** What a person typed, converted to the proxied field's own unit — or
+ *  undefined when it is not a value, '' when it clears the field. */
+function ctlTextRead(inp) {
+  const t = String(inp.value).trim().toLowerCase(), u = inp.dataset.unit, px = ctlSizePx();
+  if (t === '' || t === 'auto' || /^\(.*\)$/.test(t)) return u === 'pt' && inp.id === 'cb-size' ? undefined : '';
+  if (u === 'pt' && inp.id === 'cb-size') {
+    const m = t.match(/^(\d*\.?\d+)\s*(pt|px)?$/);
+    if (!m) return undefined;
+    const v = m[2] === 'px' ? +m[1] : +m[1] / PX_PT;
+    return String(Math.round(Math.max(10.5, Math.min(200, v)) * 2) / 2);
+  }
+  if (u === 'pt') { const m = t.match(/^(-?\d*\.?\d+)\s*(pt)?$/); return m ? m[1] : undefined; }
+  if (u === 'lead') {
+    // Points, as InDesign; a bare number of 4 or under is a multiple of the
+    // size (no one sets 1.4-point leading), and "1.4x" says so outright.
+    const m = t.match(/^(\d*\.?\d+)\s*(pt|x|×)?$/);
+    if (!m) return undefined;
+    const v = +m[1];
+    const mult = m[2] === 'x' || m[2] === '×' || (!m[2] && v <= 4) ? v : v / (px * PX_PT);
+    return String(+Math.max(0.6, Math.min(4, mult)).toFixed(2));
+  }
+  if (u === 'track') {
+    const m = t.match(/^(-?\d*\.?\d+)$/);
+    if (!m) return undefined;
+    return String(+Math.max(-5, Math.min(20, +m[1] / 1000 * px)).toFixed(2));
+  }
+  const v = parseLen(t);                                       // inches
+  return isFinite(v) && v >= 0 ? String(+Math.min(3, v).toFixed(3)) : undefined;
+}
+/** Write the proxied field and fire its own events — as ONE undo step. The
+ *  type card's own handlers take none (an edit there joins the step its
+ *  selection opened); a value set from the bar is an act of its own. */
+function ctlTextWrite(src, value) {
+  pushHistory();
+  if (src.type === 'checkbox') src.checked = !!value; else src.value = value;
+  src.dispatchEvent(new Event('input', { bubbles: true }));
+  src.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function ctlPaintText() {
+  if (!selected) return;
+  try { fillParaPop(selected); } catch (e) { swallowed('ctlPaintText', e); }
+  // The list marker picker copies the panel's options once.
+  const lm = $('cb-lmark');
+  if (lm.options.length !== $('ty-lmark').options.length) lm.innerHTML = $('ty-lmark').innerHTML;
+  document.querySelectorAll('#type [data-proxy]').forEach(ctlTextShow);
+}
+document.querySelectorAll('#type input[data-proxy]').forEach(inp => {
+  inp.addEventListener('change', () => {
+    const v = ctlTextRead(inp);
+    if (v === undefined) {
+      inp.classList.add('bad');
+      $('stat').textContent = `“${inp.value}” is not a value here`;
+      return;
+    }
+    ctlTextWrite($(inp.dataset.proxy), v);
+  });
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); inp.blur(); ctlTextShow(inp); }
+    else if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+  });
+});
+document.querySelectorAll('#type select[data-proxy]').forEach(sel =>
+  sel.addEventListener('change', () => ctlTextWrite($(sel.dataset.proxy), sel.value)));
+document.querySelectorAll('#type button[data-proxy]').forEach(b =>
+  b.addEventListener('click', () => ctlTextWrite($(b.dataset.proxy), !$(b.dataset.proxy).checked)));
 
 // ----------------------------------------------------------------- layers
 // Canva's layers panel, scoped to the page in view: every FLOATING object —

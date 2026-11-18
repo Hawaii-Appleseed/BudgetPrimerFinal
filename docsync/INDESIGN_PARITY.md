@@ -1459,3 +1459,193 @@ export tags (the HTML is already semantic); Book, Index, Data Merge (a
 renderer loop makes a set of district fact sheets better than a merge
 would); InCopy assignments; page transitions; ink manager and trapping;
 alternate and liquid layouts (the phone reflow is the alternate layout).
+
+## A sixth pass: the Control bar and the panel dock — scoped 2026-11-17
+
+Devin asked for InDesign's **Control panel** (the bar under the menus that
+changes with the selection: frame/object, character, paragraph) and its
+**right-hand panel dock**. Sources: Adobe Help (the 2026 pages and the fuller
+2023 archived ones: transforming objects, frame fitting, aligning text, text
+frame fitting, paragraph and character styles, borders and shading, Effects,
+Stroke, workspace basics), Devin's InDesign 2026 screenshots, and an inventory
+of `edit.html` after PR #147. Adobe no longer publishes min/max limits; check a
+range in the app before hard-coding it.
+
+Where Cider stood: no docked bar — formatting lived in the floating `#context`
+card (`#type`, `showType()`; `#arrange`, `arrangeBar()`) shown only with a
+selection, with deeper settings in popovers; no right-hand dock (the right side
+holds Comments and Version history; Layers, Links, Colours, Table and Chart open
+as popovers or in the left `#side` host); and a good deal of InDesign already
+here but hidden — X/Y/W/H, rotate, shear and align inside Position, fitting,
+crop, flip, corners, stroke style and Pathfinder on right-click only.
+
+Legend: **Missing** = not in Cider. **Hidden** = exists, not on a bar.
+**Partial** = exists with less. **Bar** = on the Control bar since item 86.
+
+### A. Frame / object mode
+
+| InDesign control | Cider | Note |
+|---|---|---|
+| Reference-point grid (9 points) for X/Y, scale, rotate, flip | Missing | always top-left; `#cb-ref` is the slot (phase 3) |
+| X / Y / W / H | **Bar** | typed units (in, ", pt, p, mm, cm, px) |
+| Constrain proportions link (W/H) | Missing | phase 3 |
+| Scale X % / Y % with link | Partial | one scale % (graphics), on the bar |
+| Rotation angle, shear angle | **Bar** | |
+| Rotate 90° CW / CCW | **Bar** | right-click's `turnObjects` |
+| Flip horizontal / vertical, [P] indicator | **Bar** | the flip buttons light when flipped; no [P] glyph |
+| Select container / content, previous / next object | Missing | ⌥] / ⌥[ walk the stack, no buttons |
+| Fill swatch, stroke swatch | Partial | fill + border on the bar (the arrange strip, docked); no separate stroke swatch |
+| Stroke weight + type | Partial | weight and solid/dashed/dotted |
+| Corner options (shape + size per corner, live corners) | Partial | one size on the bar (rectangles); shape via Shape options |
+| Drop-shadow toggle, fx menu | Partial | 5 effects of InDesign's 9 |
+| Opacity | Yes | on the bar |
+| Text wrap (none, bounding box, object shape, jump object, jump to next column) | Partial | none/left/right, anchored objects only; in Position |
+| Frame fitting buttons | **Bar** | fill / fit proportionally, content to frame, centre, frame to content; no content-aware |
+| Auto-Fit, Frame Fitting Options (crop amounts, fitting on empty frame) | Missing | |
+| Text-frame columns + gutter | **Bar** | |
+| Text-frame inset | Partial | one value (on the bar); InDesign has T/L/B/R, linkable |
+| Vertical justification | **Bar** | top, centre, bottom, justify |
+| Align / distribute, Align To | Partial | align on the bar; distribute and Align To in Position; no Margins/Spread target |
+| Object style dropdown with "+", Clear overrides | Partial | on the bar; override marker not confirmed |
+
+### B. Character mode (phase 2; per-character engine work is phase 5)
+
+| InDesign control | Cider | Note |
+|---|---|---|
+| Font family, style | Yes | |
+| Size in pt | **Bar** (pt) | whole box/slot only (phase 5) |
+| Leading, "(auto)" | **Bar** (pt, auto in brackets) | whole box/slot only |
+| Tracking (1/1000 em) | **Bar** (1/1000 em) | whole box/slot only |
+| Kerning: Metrics / Optical / manual | Missing | |
+| All Caps, Small Caps | **Bar** | case picker; small caps / all small caps |
+| Superscript / Subscript | Missing | the engine has OpenType `sups`/`subs`; no button |
+| Underline, Strikethrough + options (weight, offset, colour) | Partial | on/off, both on the bar |
+| Vertical / horizontal scale % | Missing | |
+| Baseline shift | **Bar** | pt |
+| Skew (false italic) | Missing | |
+| Text fill colour | Yes | |
+| Text stroke colour / weight | Missing | effects only (hollow) |
+| Character style | Yes | |
+| Language, No Break | Missing | |
+| Change case incl. Sentence case | Partial | upper / lower / title |
+| OpenType menu | Partial | super/sub, titling, contextual, all small caps, numerator/denominator missing |
+
+**The biggest structural gap:** size, leading and tracking apply to a whole box,
+not to the selected characters. InDesign treats every character setting as
+per-character. The bar cannot offer these honestly until the engine's
+inline-run model carries them.
+
+### C. Paragraph mode (phase 2)
+
+| InDesign control | Cider | Note |
+|---|---|---|
+| Alignment left / centre / right / justify | **Bar** | |
+| Justify with last line left/centre/right, justify all | Missing | |
+| Left, right, first-line indents | **Bar** | inches, typed units |
+| Last-line right indent | Missing | |
+| Space before / after | **Bar** | |
+| Space between paragraphs of the same style | Missing | |
+| Drop cap lines | **Bar** | 2–5 |
+| Drop cap characters, drop cap character style | Missing | |
+| Align to baseline grid, balance ragged lines, hyphenate | Yes | grid and hyphenate on the bar |
+| Hyphenation settings (min word, before/after, limit, zone, capitalised) | Missing | |
+| Justification settings (word/letter spacing, glyph scaling, auto leading %) | Partial | word spacing only |
+| Keep options incl. "start in next column/frame/page" | Partial | keep together / with next only |
+| Span columns / split columns | Partial | span (`{span}`); no split |
+| Paragraph rules above/below; borders and shading | Yes | fewer offsets/corner options |
+| Bullets and numbering: custom glyph, text after, number format | Partial | marker type, colour, indent, levels |
+| Tabs with leaders | Yes | |
+| Paragraph style + "+" + clear | Yes | |
+| Optical margin alignment | Missing | |
+
+### D. Right-hand panel dock (phase 4)
+
+| Panel | Cider | Note |
+|---|---|---|
+| Pages | Partial | bottom page strip; no parent/master section in a panel |
+| Layers | Yes | View ▸ Layers popover |
+| Links | Yes | Check ▸ Picture links |
+| Stroke (cap, join, miter, align, arrowheads, gap colour, custom) | Partial | weight, colour, dash, arrowheads on lines |
+| Swatches | Yes | colour panel |
+| Gradient (linear/radial, stops, angle) | Partial | via the colour panel |
+| Effects (9; per-level object/stroke/fill/text; blend modes) | Partial | 5, object level only; blend modes yes |
+| Object styles, Paragraph and Character styles, Paragraph | Yes | from the bars and popovers, not as panels |
+| Glyphs | Yes | right-click ▸ Insert special |
+| Hyperlinks (URL, email, page, anchor) | Partial | Check ▸ Hyperlinks lists links |
+| Text wrap (5 modes, offsets, contour types) | Partial | see A |
+| Align | **Bar** | align buttons; distribute in Position |
+| Pathfinder (add, subtract, intersect, exclude, minus back) | Partial | no Minus Back; right-click only |
+| CC Libraries | n/a | Cider has its own Library |
+
+### The design, and the order
+
+A docked bar under the menu bar, always visible (View ▸ Control bar to hide),
+that changes with the selection: **object** mode (reference grid · X/Y/W/H +
+link · scale + link · rotate/shear · rotate 90° · flip · fill/stroke ·
+stroke weight/type · corners · fx/opacity · wrap · fitting ·
+columns/gutter/inset · vertical justification · align · object style),
+**character** mode (A) and **paragraph** mode (¶), with Alt-click on a control
+opening its full dialog. A right-hand dock, collapsible to icons, that the
+existing popovers MOVE into rather than being built twice. Inches for geometry,
+points for type, typed units accepted.
+
+1. Docked bar, object mode, reusing today's controls — **item 86, done**.
+2. Character and paragraph modes — **item 87, done**.
+3. Reference point, proportion link / scale X·Y, flip indicator, fitting options.
+4. The right-hand panel dock, rehoming the existing popovers.
+5. Per-character size / leading / tracking / kerning in the engine, then the
+   remaining missing settings.
+
+### Worth building
+
+86. **The Control bar, object mode. — CLOSED 2026-11-17.** `#ctl`, docked
+    under the menu bar in the column's flow (the canvas starts below it; the
+    rulers, placed from the stage's rect every frame, follow). On by default;
+    View ▸ **Control bar** and ⌥⌘6 (a `CHORDS` row) hide it, remembered per
+    editor (`localStorage['ds-ctlbar']`) like Rulers and Frame edges. Nothing
+    in it is a second copy: the **arrange strip itself moves in** while the bar
+    is on (`ctlDock()` re-parents `#arrange` — fill, border, transparency,
+    effects, object style, Position, group, layer, lock, delete — same ids and
+    listeners) and goes back into the floating card when it is off. Around it,
+    `ctlPaint()` (run at the end of every `arrangeBar()`) shows:
+    X / Y / W / H, scale, rotation and shear through the Position panel's own
+    appliers (`AR_APPLY` / `arApply()`; width and height now land through
+    `commitSize()` and a render, where they used to write `.w` / `.h`
+    directly); rotate 90° and flip through right-click's `turnObjects()`, the
+    flip buttons lit while flipped; a rectangle's corner size; a picture's
+    fitting buttons through `applyFitting()`, which right-click ▸ Fitting now
+    uses too; for a text box, columns, gutter, inset and vertical
+    justification through `setBoxFrame()`, which the Box panel now uses too;
+    and the align buttons (`.ar-al`, the Position panel's handler). A text
+    box keeps its floating type card for the words while the bar shows it as a
+    frame. With nothing selected the bar names the page size rather than
+    standing empty. Lengths take a bare number (inches) or a unit — `in`, `"`,
+    `pt`, `p` (picas: `3p`, `3p6`, `p6`), `mm`, `cm`, `px` (`parseLen()`); a
+    value that is not one is refused and marked, never written. `#cb-mode`
+    and `#cb-ref` are the empty slots phases 2 and 3 fill.
+    `tests/editor/control-bar.spec.js`.
+87. **The Control bar's character and paragraph modes. — CLOSED 2026-11-17.**
+    With text selected the bar switches between three modes, as InDesign's
+    does: **▭** the frame (item 86's controls), **A** character and **¶**
+    paragraph (⌥⌘7 flips A / ¶, a `CHORDS` row; A or ¶ is remembered per
+    editor in `localStorage['ds-ctlmode']`, ▭ only for the selection it was
+    pressed on). The type card (`#type`) docks into the bar like the arrange
+    strip (`ctlDock()`; back into the floating card when the bar is off),
+    and `#ctl[data-mode]` shows its `.cb-char` or `.cb-para` controls. The
+    stylesheet picker, Box, ☰ Paragraph panel and Reset show in both.
+    Character: font, weight, **size in points** (the float's px stepper keeps
+    its − / +), **leading in points with auto in brackets** (a bare number of
+    4 or under, or `1.4x`, is a multiple), **tracking in thousandths of an
+    em**, B / I / U, case, small caps, strikethrough, baseline shift (pt),
+    colour, effects. Paragraph: alignment, left / first-line / right indents,
+    space before / after (inches, typed units), drop cap lines, align to
+    baseline grid, hyphenate, list marker. Every bar-only field (`.cb-only`)
+    PROXIES a field of the type card or its panels (`data-proxy`): it shows
+    that field's value in InDesign's units and, on a change, writes the field
+    in its own unit and fires the field's own events, so the one handler
+    there does the work. A value set from the bar is one undo step
+    (`pushHistory()` in `ctlTextWrite`). Still per box or slot, not per
+    character: that is phase 5's engine work.
+    Found doing it: the type card's own handlers push no undo step, so a run
+    of changes made there undoes as one. Left as it was here.
+    `tests/editor/control-bar.spec.js`.
