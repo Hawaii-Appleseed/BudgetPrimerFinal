@@ -377,12 +377,12 @@
               box-shadow:var(--shadow-edge); }
   /* While one of the rail's own popovers is open it must outrank EVERYTHING —
      the rail's z-index:2 is a stacking context, so the .pop's z-index:1000
-     only counts inside it, and the page strip (#rail, z-index:6) was eating
+     only counts inside it, and the page strip (#rail, z-index:10) was eating
      clicks on any popover row that overlapped it: on CI's font metrics that
      was insert-image's "Upload from computer…", intercepted by a page chip
      ("chip-view intercepts pointer events") on every run. Scoped to open,
      undocked pops so normal layering returns the moment the menu closes. */
-  #leftrail:has(.pop:not(.docked):not([hidden])) { z-index:7; }
+  #leftrail:has(.pop:not(.docked):not([hidden])) { z-index:11; }   /* above the rulers (7-8) and the page strip (10) */
   /* Below the buttons there is NOTHING — not a veil, not a tint. The rail is
      the tools and stops there; the canvas owns the rest of that column, which
      is what frees the bottom-left corner for the page strip's own control. */
@@ -819,7 +819,7 @@
      made when the only options were "opaque bar" or "gone", with translucency
      not on the table. Pass over the strip and it comes back to full strength;
      the dim is idle state, never a state you are working in. */
-  #rail { position:absolute; left:0; right:0; bottom:0; z-index:6;
+  #rail { position:absolute; left:0; right:0; bottom:0; z-index:10;   /* over the tray (#side, 9), as it always was */
           display:flex; align-items:flex-end; gap:10px;
           overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
           padding:10px 12px;
@@ -1023,7 +1023,10 @@
      canvas, so opening a picker moved the very thing you were aiming at.
      Floating it leaves the page exactly where it was. #work is the
      positioning context; #stage keeps the full width underneath. */
-  #side { position:absolute; left:var(--rail-w); top:0; bottom:0; z-index:5; width:252px;
+  /* z-index:9, above the rulers (7, corner 8): they are fixed to the window,
+     so they outrank anything inside #work below 7 and used to run across the
+     tray's left edge and cut it off whenever rulers were on. */
+  #side { position:absolute; left:var(--rail-w); top:0; bottom:0; z-index:9; width:252px;
           display:flex; flex-direction:column; background:#fff; color:var(--ink);
           /* Rounded on the canvas side only, and no border: the same treatment
              as the rail it sits against, so the two read as one assembly
