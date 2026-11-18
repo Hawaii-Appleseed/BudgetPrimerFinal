@@ -937,6 +937,10 @@ FONTS = {
     # Google Fonts — the brand's italic accents are set in Poppins italic.
     "Manrope":        [400, 500, 600, 700, 800],
     "Poppins":        [300, 400, 500, 600, 700, 800],
+    # Glober (Fontfabric, commercial): offered in every picker, but its files
+    # live ONLY on the private staff hub (see HUB_FONTS). Never on Google, never
+    # in this repo; anywhere the hub is not serving them the family falls back.
+    "Glober":         [100, 300, 400, 500, 600, 700, 800, 900, 950],
 }
 
 # What primer.css already asks Google for. The report needs these whether or not
@@ -944,6 +948,35 @@ FONTS = {
 # from exactly this when nothing is.
 BRAND_FONTS = {"Barlow": [800, 900], "Source Sans 3": [300, 400, 600, 700]}
 BRAND_ITALICS = {"Source Sans 3": [400]}
+
+# Families whose files are NOT on Google Fonts and NOT in this repo: they are
+# licensed, so the bytes sit in the private staff hub (a private repo behind
+# Cloudflare Access) and the editor adds the @font-face only when it is running
+# there (edit.html, `hubFonts`). `dir` is a path on the hub's own origin; a face
+# is (file, weight, italic). `fallback` is a Google family a published page
+# draws instead, so a report that uses the family never makes a broken request
+# or falls to the browser's default serif. Do not add a font file to this repo.
+HUB_FONTS = {
+    "Glober": {
+        "dir": "/assets/fonts/glober/",
+        "fallback": "Barlow",
+        "faces": [
+            ["Glober-Thin.woff2", 100, False],
+            ["Glober-Light.woff2", 300, False],
+            ["Glober-LightItalic.woff2", 300, True],
+            ["Glober-Book.woff2", 400, False],
+            ["Glober-BookItalic.woff2", 400, True],
+            ["Glober-Regular.woff2", 500, False],
+            ["Glober-RegularItalic.woff2", 500, True],
+            ["Glober-SemiBold.woff2", 600, False],
+            ["Glober-Bold.woff2", 700, False],
+            ["Glober-BoldItalic.woff2", 700, True],
+            ["Glober-xBold.woff2", 800, False],
+            ["Glober-Heavy.woff2", 900, False],
+            ["Glober-Black.woff2", 950, False],
+        ],
+    },
+}
 
 # Effects. Each is a function from its parameters to CSS, so validation can
 # name the ones that exist and the editor can ask which parameters to show.
@@ -1528,7 +1561,9 @@ def text_css(st: dict) -> str:
         # Single quotes: this lands inside style="…", so a double quote here
         # would end the attribute and the rest of the style would become stray
         # markup. Family names are allowlisted, so no apostrophe can appear.
-        out.append(f"font-family:'{st['font']}'")
+        hub = HUB_FONTS.get(st["font"])
+        out.append(f"font-family:'{st['font']}','{hub['fallback']}',sans-serif" if hub
+                   else f"font-family:'{st['font']}'")
     if st.get("size"):
         # validate_style() already refuses anything below the floor, so this
         # only catches a style that reached CSS without being validated —
@@ -6826,6 +6861,10 @@ class Layout:
             if not fam:
                 continue
             w = int(st.get("weight") or 400)
+            if fam in HUB_FONTS:
+                # Not on Google: ask for the stand-in at the nearest weight, so a
+                # page published outside the hub still draws in the fallback.
+                fam, w = HUB_FONTS[fam]["fallback"], min(w, 900)
             (ital if st.get("italic") else want).setdefault(fam, set()).add(w)
             want.setdefault(fam, set())
         parts = []
