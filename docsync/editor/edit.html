@@ -52,6 +52,10 @@
           /* One number for the tool rail's width: #leftrail is that wide, and
              the floating panel starts exactly where it ends. */
           --rail-w:67px;
+          /* The right-hand panel dock's width (dockLayout keeps it): 0 with
+             the dock off, its icon strip folded, strip + panel pinned open.
+             What floats against the right edge stands this far in. */
+          --dock-w:0px;
           /* The colour BEHIND the report — the editor's own ground. Named
              because three surfaces have to agree on it: the canvas, the band
              the contextual controls float in, and whatever shows through a
@@ -310,7 +314,7 @@
      shrink or fade — it leaves, and the stage becomes a dark room with one
      page in it. The overlay is the whole input surface: it swallows every
      click so nothing underneath can start an edit mid-presentation. */
-  body.ds-present #bar, body.ds-present #ctl, body.ds-present #context, body.ds-present #leftrail,
+  body.ds-present #bar, body.ds-present #ctl, body.ds-present #dock, body.ds-present #context, body.ds-present #leftrail,
   body.ds-present #rail, body.ds-present #side { display:none !important; }
   body.ds-present #work, body.ds-present #stage { background:#14181B; }
   body.ds-present #stage { overflow:hidden; }
@@ -962,6 +966,51 @@
      #bar > button[hidden] and .pop .shp. Hidden when the renderer declares no
      pages, so it has to actually win. */
   #rail-add[hidden] { display:none; }
+
+  /* -- the right-hand panel dock (INDESIGN_PARITY 89). A strip of icons at
+     the window's right edge, InDesign's dock "collapsed to icons": one opens
+     its panel beside the strip, over the canvas, and a click away closes it
+     again; pinned (the head's ⇥), the panel stays open and takes its width
+     from the canvas instead. The panels are the editor's own popovers MOVED
+     here (dockMount), ids, markup and handlers and all, never a second copy. */
+  #dock { flex:none; position:relative; z-index:8; display:flex; flex-direction:row-reverse;
+          background:var(--chrome2); border-left:1px solid var(--line); }
+  #dock[hidden] { display:none; }
+  #dock-icons { width:40px; box-sizing:border-box; padding:6px 4px; display:flex;
+          flex-direction:column; gap:3px; overflow-y:auto; scrollbar-width:none; }
+  #dock-icons button { width:32px; height:30px; padding:0; border:1px solid transparent;
+          border-radius:var(--r-ctl); background:none; color:var(--dim); cursor:pointer;
+          display:flex; align-items:center; justify-content:center; font:600 12px system-ui; }
+  #dock-icons button:hover { background:var(--ctl); color:var(--txt); }
+  #dock-icons button.on { background:var(--sage); color:#fff; }
+  #dock-icons svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.4;
+          stroke-linecap:round; stroke-linejoin:round; }
+  #dock-icons .dk-sep { height:1px; margin:3px 2px; background:var(--line); flex:none; }
+  #dock-panel { width:272px; display:flex; flex-direction:column; min-height:0;
+          background:#fff; color:var(--ink); }
+  #dock-panel[hidden] { display:none; }
+  #dock:not(.pinned) #dock-panel { position:absolute; right:40px; top:0; bottom:0;
+          border-radius:var(--r-edge) 0 0 var(--r-edge); box-shadow:-6px 0 22px rgba(20,30,35,.20); }
+  #dock.pinned #dock-panel { border-right:1px solid var(--line); }
+  #dock-head { display:flex; align-items:center; gap:2px; padding:8px 6px 7px 14px;
+          border-bottom:1px solid #E3EAE5; font:600 13px system-ui; }
+  #dock-title { flex:1; }
+  #dock-head button { width:26px; height:24px; padding:0; border:0; background:none;
+          border-radius:var(--r-ctl); color:#5B6E66; cursor:pointer; font:14px system-ui; }
+  #dock-head button:hover { background:#EDF4EE; color:var(--ink); }
+  #dock-head #dock-pin.on { background:#E2EEE5; color:var(--ink); }
+  #dock-body { flex:1; min-height:0; overflow:auto; padding:10px 14px 16px; }
+  #dock-empty { font:12.5px/1.45 system-ui; color:#5B6E66; margin:4px 0; }
+  #dock-empty[hidden] { display:none; }
+  #dock .pop.docked { max-height:none !important; overflow:visible !important; }
+  #dock .pop-h.dk-dup { display:none; }   /* the dock's head already says it */
+  body.ds-dock #rail { right:var(--dock-w); }
+  body.ds-dock #context { right:var(--dock-w); }
+  body.ds-dock.cmt-margin #rail, body.ds-dock.cmt-margin #context {
+          right:calc(var(--cmt-gutter, 384px) + var(--dock-w)); }
+  body.ds-dock #cpanel, body.ds-dock #hpanel { right:calc(12px + var(--dock-w));
+          width:min(360px, calc(100vw - 24px - var(--dock-w))); }
+  body.ds-dock #cpanel.margin, body.ds-dock #hpanel.gutter { right:var(--dock-w); }
 
   /* -- the left panel: a tool's full surface, where a popover would be
      cramped. Light, because it is a content surface rather than chrome. */
@@ -2332,6 +2381,10 @@
       ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5h11"/><path
         d="M3.5 3.5h1.5M6 3.5h1.5M8.5 3.5h2"/></svg
       ><span class="shp-t">Control bar</span><span class="shp-k">⌥⌘6</span></button>
+    <button class="shp" id="dockbtn"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M9.5 2v10"/><path
+        d="M11 4.5h0M11 7h0M11 9.5h0"/></svg
+      ><span class="shp-t">Panel dock</span></button>
     <button class="shp" id="hiddenchars"><span class="shp-i shp-glyph" aria-hidden="true">¶</span
       ><span class="shp-t">Hidden characters</span><span class="shp-k">⌥⌘I</span></button>
     <button class="shp" id="layers"><svg class="shp-i" viewBox="0 0 14 14"
@@ -3284,6 +3337,19 @@
   <canvas id="ruler-t" class="ruler" hidden title="Drag down onto a page for a horizontal guide"></canvas>
   <canvas id="ruler-l" class="ruler" hidden title="Drag right onto a page for a vertical guide"></canvas>
   <div id="ruler-c" class="ruler" hidden title="Rulers in inches, from each page’s top-left corner"></div>
+  <!-- The right-hand panel dock (dockMount fills it): icons on the window's
+       edge, the panel beside them. The popovers it holds keep their ids. -->
+  <aside id="dock" aria-label="Panels" hidden>
+    <div id="dock-icons" role="toolbar" aria-orientation="vertical" aria-label="Panels"></div>
+    <section id="dock-panel" hidden>
+      <div id="dock-head">
+        <span id="dock-title"></span>
+        <button id="dock-pin" aria-label="Keep this panel open beside the page" title="Keep open">⇥</button>
+        <button id="dock-x" aria-label="Close the panel" title="Close">✕</button>
+      </div>
+      <div id="dock-body"><p id="dock-empty" hidden></p></div>
+    </section>
+  </aside>
 </div>
 <div id="rail" hidden>
   <!-- Thirteen page thumbnails are worth their room while you are moving
@@ -5853,7 +5919,7 @@ async function openColorsPanel() {
   if (!$('side').hidden && $('side-title').textContent === 'Colors') { closeSide(); return; }
   undockPanel();
   sideFillId = null;
-  document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
+  document.querySelectorAll('.pop:not(.rdock)').forEach(p => { p.hidden = true; });
   $('side').hidden = false;
   unfoldSide();
   $('side-title').textContent = 'Colors';
@@ -8543,6 +8609,14 @@ function togglePop(pop, anchor) {
   // bar's top-left corner. data-owner names the bar button a menu hangs from.
   const menu = anchor && anchor.closest && anchor.closest('.pop.menu');
   if (menu && menu !== pop) anchor = menu.__opener || $(menu.dataset.owner || '') || anchor;
+  // A panel showing in the right-hand dock: its opener refilling it (the
+  // dock's own refresh) leaves it there, and so does its button while the
+  // dock is pinned — it is already open. A dock folded to icons hands it
+  // back, and it opens as the popover it always was.
+  if (pop.classList.contains('rdock')) {
+    if (dockRefreshing || dockPinned) return;
+    dockClose();
+  }
   const wasHidden = pop.hidden;
   // :not(.docked) — a picker that lives in the left panel is not a transient
   // popover, and opening Layers or Download must not blank it out.
@@ -8600,6 +8674,12 @@ function closeOnOutsideClick(target, insideChrome) {
     closeSources();
   if (RAIL_PICKERS.has(sidePanelTool) && !(chrome && chrome.closest('#side, #leftrail')))
     closeSide();
+  // The dock's panel, folded to icons, flies out and goes again on a click
+  // away, as InDesign's does; pinned, it stays. A click on the bar or the
+  // floating card (the panel's own opener, a fill beside it) is not away.
+  if (dockOn && !dockPinned && !$('dock-panel').hidden
+      && !(chrome && chrome.closest('#dock, #ctl, #context, #bar')))
+    dockClose();
 }
 
 addEventListener('mousedown', e => closeOnOutsideClick(e.target, true));
@@ -8668,7 +8748,7 @@ function dockPanel(tool, title, opts = {}) {
   sideFillId = null;                   // #side is about a tool now, not a colour
   sideColorsPanel = false;
   $('colors').classList.remove('on'); // the Colors panel is not pop-based
-  document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
+  document.querySelectorAll('.pop:not(.rdock)').forEach(p => { p.hidden = true; });
   const body = $('side-body');
   body.innerHTML = '';
   const pop = $(tool + 'pop');
@@ -11538,6 +11618,22 @@ function editBox(d, el, at) {
  *  the single [[sources]] block in content.md, and the Endnotes page's <li>
  *  list is rebuilt fresh from it on every render — so there is nothing else
  *  that could hold a second, stale copy for the two to fall out of sync. */
+/** The endnote entry (`[data-el="endnote.<id>"]`) that `t` sits in, when it
+ *  is inside the object `el` — a placed Endnotes section's box or a frame its
+ *  list runs on into — or null. */
+function endnoteEntryAt(el, t) {
+  const en = t && t.closest ? t.closest('[data-el^="endnote."]') : null;
+  return en && en !== el && el.contains(en) ? en : null;
+}
+
+/** Why a source's citation may not be emptied: the [^id] tokens citing it
+ *  would point at nothing. Said, never silently reverted. */
+function emptyCitationRefusal(id) {
+  const n = citeCount(id);
+  return `an endnote needs its citation text — [${id}] is cited ${n} time${n === 1 ? '' : 's'}; `
+    + 'nothing was changed (to remove it, take out its citations, then delete it in Sources)';
+}
+
 function editEndnote(d, li, sid) {
   if (editing) return;
   const s = parseSources().find(r => r.id === sid);
@@ -11573,7 +11669,9 @@ function editEndnote(d, li, sid) {
       // The URL may be cleared: a citation can be a book or an interview, and
       // requiring one here meant a source that had a link could never lose it.
       // The citation text itself still has to say something.
-      if (t && (t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url)) {
+      // Said past the render below, which would otherwise claim the row.
+      if (!t) sayNowAndAfterRender(emptyCitationRefusal(sid));
+      else if ((t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url)) {
         pushHistory();
         updateSource(sid, t, u);
         markDirty();
@@ -14430,7 +14528,7 @@ function selectClick(d, id, e) {
  *  (a page, a text box that takes the type card, an object) ends with the
  *  bar painted from the same selection. */
 function arrangeBar(d) {
-  try { arrangeStrip(d); } finally { ctlPaint(d); }
+  try { arrangeStrip(d); } finally { ctlPaint(d); dockPaint(); }
 }
 function arrangeStrip(d) {
   const n = selIds.size;
@@ -18105,6 +18203,231 @@ function toggleCtlBar(on = !ctlOn) {
 }
 $('ctlbar').addEventListener('click', () => toggleCtlBar());
 ctlDock();
+
+// ------------------------------------------------ the right-hand panel dock
+// InDesign keeps its panels in a dock on the window's right edge, collapsed
+// to icons; Cider kept them as popovers hung from the bar's buttons, gone at
+// the first click on the page (INDESIGN_PARITY 89). The dock MOVES those
+// popovers into #dock-body (dockMount) — ids, markup and every handler bound
+// to them come along — so there is one Layers, one Stroke, one Effects, and
+// each still opens from wherever it opened before (togglePop routes a docked
+// one here). Two kinds: a DOCUMENT panel is filled when it is shown; a
+// SELECTION panel is refilled by its own opener's click on every change of
+// selection (dockPaint, from arrangeBar), and says what to select when what
+// is selected has none of it.
+const dockObjOk = () => selIds.size > 0 && !$('arrange').hidden;
+const dockTextOk = () => !!selected && !$('type').hidden;
+const DOCK_ICON = {
+  layers: '<path d="M7 1.8L12.6 4.6 7 7.4 1.4 4.6z"/><path d="M1.4 7.2L7 10l5.6-2.8M1.4 9.8L7 12.6l5.6-2.8"/>',
+  xform: '<rect x="2" y="2" width="10" height="10" rx="1" stroke-dasharray="2 1.6"/><path d="M7 4.6v4.8M4.6 7h4.8"/>',
+  stroke: '<path d="M2 3.6h10" stroke-width="1"/><path d="M2 7h10" stroke-width="2"/><path d="M2 10.8h10" stroke-width="3"/>',
+  alpha: '<circle cx="5.3" cy="7" r="3.7"/><circle cx="8.7" cy="7" r="3.7" fill="currentColor" fill-opacity=".35"/>',
+  fx: '<path d="M2.5 11.5l1.2-6.4c.3-1.4 1-2 2.1-1.9M2.6 6.5h3.1M7.4 6.2l3.8 5.1M11.2 6.2L7.4 11.3"/>',
+  objstyles: '<rect x="2" y="2" width="10" height="10" rx="1.2"/><path d="M2 8.6L8.6 2" /><path d="M5 12l7-7"/>',
+  tstyles: '<path d="M2.2 11.6L5.4 2.6l3.2 9M3.4 8.4h4"/><path d="M10.2 5.6v6M12.2 5.6v6M10.2 5.6h2.4a1.4 1.4 0 0 1 0 2.8h-2.4"/>',
+  para: '<path d="M8 12V2M10.5 12V2M10.8 2H6a2.7 2.7 0 0 0 0 5.4h2"/>',
+  swatches: '<rect x="1.8" y="1.8" width="4.6" height="4.6" rx=".8"/><rect x="7.6" y="1.8" width="4.6" height="4.6" rx=".8" fill="currentColor" fill-opacity=".35"/><rect x="1.8" y="7.6" width="4.6" height="4.6" rx=".8" fill="currentColor" fill-opacity=".6"/><rect x="7.6" y="7.6" width="4.6" height="4.6" rx=".8"/>',
+  links: '<path d="M6 8l2-2"/><path d="M5.2 6.4L3.7 7.9a2 2 0 0 0 2.8 2.8l1.5-1.5M8.8 7.6l1.5-1.5a2 2 0 0 0-2.8-2.8L6 4.8"/>',
+  hyperlinks: '<circle cx="7" cy="7" r="5.2"/><path d="M1.8 7h10.4M7 1.8c1.6 1.6 1.6 8.8 0 10.4M7 1.8c-1.6 1.6-1.6 8.8 0 10.4"/>',
+  notes: '<path d="M2.5 2h9v6.6L8.6 12H2.5z"/><path d="M8.6 12V8.6h2.9M4.6 5h4.8M4.6 7.4h3"/>',
+  preflight: '<circle cx="7" cy="7" r="5.2"/><path d="M4.7 7.2l1.6 1.6 3-3.3"/>',
+};
+const DOCK_PANELS = [
+  { key: 'layers', pop: 'layerspop', title: 'Layers', fill: () => { layersRender(); docLayersRender(); } },
+  { key: 'xform', pop: 'ar-pospop', title: 'Transform & align', opener: 'ar-pos', ok: dockObjOk,
+    none: 'Select an object to place, align, distribute or arrange it.' },
+  { key: 'stroke', pop: 'ar-borderpop', title: 'Stroke', opener: 'ar-border',
+    ok: () => dockObjOk() && !$('ar-border').hidden, none: 'Select a shape to set its stroke.' },
+  { key: 'alpha', pop: 'ar-alphapop', title: 'Transparency', opener: 'ar-alpha',
+    ok: () => dockObjOk() && !$('ar-alpha').hidden, none: 'Select an object to set its opacity and blend.' },
+  { key: 'fx', pop: 'ar-fxpop', title: 'Effects', opener: 'ar-fxbtn',
+    ok: () => dockObjOk() && !$('ar-fxbtn').hidden, none: 'Select a shape or a text frame to give it a shadow or an effect.' },
+  { key: 'objstyles', pop: 'ar-stylepop', title: 'Object styles', opener: 'ar-style-more',
+    ok: () => dockObjOk() && selIds.size === 1 && !$('ar-style-more').hidden,
+    none: 'Select one object to give it a style, or make one from it.' },
+  { sep: true },
+  { key: 'tstyles', pop: 'ty-stylepop', title: 'Text styles', opener: 'ty-style-more', ok: dockTextOk,
+    none: 'Click into text, or select a text box, to give it a style.' },
+  { key: 'para', pop: 'ty-parapop', title: 'Paragraph', opener: 'ty-parabtn', ok: dockTextOk,
+    none: 'Click into text, or select a text box, to set its paragraphs.' },
+  { sep: true },
+  { key: 'swatches', pop: 'colourspop', title: 'Swatches', fill: () => coloursRender() },
+  { key: 'links', pop: 'linkspop', title: 'Links', fill: () => linksRender() },
+  { key: 'hyperlinks', pop: 'hyperlinkspop', title: 'Hyperlinks', fill: () => hyperlinksRender() },
+  { key: 'notes', pop: 'notespop', title: 'Notes', fill: () => notesRender() },
+  { key: 'preflight', pop: 'preflightpop', title: 'Preflight', fill: () => preflightRender() },
+];
+const DOCK_BY = Object.fromEntries(DOCK_PANELS.filter(p => p.key).map(p => [p.key, p]));
+let dockOn = true, dockPinned = false, dockTab = null, dockRefreshing = false, dockQueued = false;
+try {
+  dockOn = localStorage.getItem('ds-dock') !== '0';
+  dockPinned = localStorage.getItem('ds-dockpin') === '1';
+  dockTab = localStorage.getItem('ds-docktab');
+} catch (e) { /* file: */ }
+if (!DOCK_BY[dockTab]) dockTab = null;
+const dockHome = new Map();             // pop id -> [parent, next sibling]
+const dockStore = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* file: */ } };
+
+(function dockBuild() {
+  const strip = $('dock-icons');
+  DOCK_PANELS.forEach(p => {
+    if (p.sep) { const s = document.createElement('span'); s.className = 'dk-sep'; strip.appendChild(s); return; }
+    const b = document.createElement('button');
+    b.dataset.dock = p.key;
+    b.title = p.title;
+    b.setAttribute('aria-label', p.title);
+    b.innerHTML = '<svg viewBox="0 0 14 14" aria-hidden="true">' + DOCK_ICON[p.key] + '</svg>';
+    b.addEventListener('click', () => dockShow(p.key, { toggle: true }));
+    strip.appendChild(b);
+  });
+  // A panel's action that closes its popover (Dashed, a style picked) would
+  // blank the tab: an active panel that goes hidden is filled again, or
+  // says what to select.
+  // Only a SHOWN panel going hidden: writing hidden onto a hidden one is a
+  // mutation too, and answering that one fed this observer forever.
+  const mo = new MutationObserver(recs => {
+    if (dockRefreshing || !dockOn || $('dock-panel').hidden) return;
+    const act = DOCK_BY[dockTab];
+    if (act && recs.some(r => r.target.id === act.pop && r.target.classList.contains('rdock')
+      && r.oldValue === null && r.target.hidden)) dockPaint();
+  });
+  DOCK_PANELS.forEach(p => { if (p.pop) mo.observe($(p.pop), {
+    attributes: true, attributeFilter: ['hidden'], attributeOldValue: true }); });
+})();
+
+/** A panel into the dock while its tab is shown, and back where it lives
+ *  when it is not: every popover stays the popover it was everywhere else. */
+function dockAttach(p) {
+  const pop = $(p.pop);
+  if (pop.parentNode !== $('dock-body')) {
+    dockHome.set(p.pop, [pop.parentNode, pop.nextSibling]);
+    $('dock-body').appendChild(pop);
+  }
+  pop.classList.add('docked', 'rdock');
+  pop.dataset.dock = p.key;
+  pop.style.top = pop.style.left = pop.style.maxHeight = '';
+  const h = pop.querySelector(':scope > .pop-h');
+  if (h) h.classList.toggle('dk-dup', h.textContent.trim().toLowerCase() === p.title.toLowerCase());
+}
+function dockDetach(p) {
+  const pop = p && $(p.pop);
+  if (!pop || !pop.classList.contains('rdock')) return;
+  dockRefreshing = true;        // going home is not the tab hiding itself
+  try {
+    pop.hidden = true;
+    pop.classList.remove('docked', 'rdock');
+    const home = dockHome.get(p.pop);
+    if (home) home[0].insertBefore(pop, home[1] && home[1].parentNode === home[0] ? home[1] : null);
+  } finally { dockRefreshing = false; }
+}
+/** The dock shown or not, by the View menu's switch. */
+function dockMount() {
+  if (!dockOn) dockClose();
+  $('dock').hidden = !dockOn;
+  document.body.classList.toggle('ds-dock', dockOn);
+  $('dockbtn').classList.toggle('on', dockOn);
+  dockLayout();
+}
+/** Pinned or flying out, and how much of the window's right edge it takes. */
+function dockLayout() {
+  const dock = $('dock');
+  dock.classList.toggle('pinned', dockPinned);
+  $('dock-pin').classList.toggle('on', dockPinned);
+  $('dock-pin').title = dockPinned ? 'Let it fold away on a click elsewhere' : 'Keep open';
+  const open = !$('dock-panel').hidden;
+  dock.querySelectorAll('#dock-icons button').forEach(b =>
+    b.classList.toggle('on', open && b.dataset.dock === dockTab));
+  const w = dockOn ? dock.offsetWidth : 0;
+  const was = document.documentElement.style.getPropertyValue('--dock-w');
+  document.documentElement.style.setProperty('--dock-w', w + 'px');
+  if (was && was !== w + 'px') {
+    // the stage changed width: the page is re-fitted, the rulers follow
+    try { if ($('out').contentDocument && $('out').contentDocument.body) applyZoom(); }
+    catch (e) { swallowed('dock: zoom', e); }
+    try { startRulers(); } catch (e) { swallowed('dock: rulers', e); }
+  }
+}
+function dockShow(key, opts = {}) {
+  const p = DOCK_BY[key];
+  if (!p) return { ok: false, error: `no panel '${key}' in the dock` };
+  if (!dockOn) toggleDock(true);
+  const open = !$('dock-panel').hidden;
+  if (opts.toggle && open && dockTab === key) { dockClose(); return { ok: true, open: false }; }
+  if (dockTab !== key) dockDetach(DOCK_BY[dockTab]);
+  dockTab = key; dockStore('ds-docktab', key);
+  document.querySelectorAll('.pop:not(.docked)').forEach(x => { x.hidden = true; });
+  dockAttach(p);
+  $('dock-panel').hidden = false;
+  $('dock-title').textContent = p.title;
+  dockLayout();
+  dockRefresh(opts.filled);
+  return { ok: true, open: true, panel: key, empty: !$('dock-empty').hidden };
+}
+function dockClose() {
+  dockDetach(DOCK_BY[dockTab]);
+  $('dock-panel').hidden = true;
+  dockLayout();
+}
+/** Show the active tab, filled from what is selected now. */
+function dockRefresh(filled) {
+  const p = DOCK_BY[dockTab];
+  if (!p || !dockOn || $('dock-panel').hidden) return;
+  const pop = $(p.pop), ok = p.ok ? p.ok() : true;
+  $('dock-empty').hidden = ok;
+  $('dock-empty').textContent = ok ? '' : p.none;
+  if (!ok) { if (!pop.hidden) pop.hidden = true; return; }
+  if (!filled) {
+    dockRefreshing = true;
+    try { if (p.opener) $(p.opener).click(); else p.fill(); }
+    catch (e) { swallowed('dock: ' + p.key, e); }
+    finally { dockRefreshing = false; }
+  }
+  pop.hidden = false;
+}
+/** A selection changed (arrangeBar), or the open panel hid itself: a
+ *  SELECTION panel is filled again, once, after whatever is running now. */
+function dockPaint() {
+  if (dockQueued || dockRefreshing || !dockOn || $('dock-panel').hidden) return;
+  const p = DOCK_BY[dockTab];
+  if (!p || (!p.opener && !$(p.pop).hidden)) return;
+  dockQueued = true;
+  queueMicrotask(() => { dockQueued = false; dockRefresh(); });
+}
+function toggleDock(on = !dockOn) {
+  dockOn = !!on;
+  dockStore('ds-dock', dockOn ? '1' : '0');
+  dockMount();
+  $('stat').textContent = dockOn ? 'panel dock shown'
+    : 'panel dock hidden — its panels open from their buttons again; View ▸ Panel dock brings it back';
+}
+function dockPin(on = !dockPinned) {
+  dockPinned = !!on;
+  dockStore('ds-dockpin', dockPinned ? '1' : '0');
+  dockLayout();
+}
+/** Back to how a fresh editor has it (the test fixture's reset). */
+function dockReset() {
+  for (const k of ['ds-dock', 'ds-dockpin', 'ds-docktab']) {
+    try { localStorage.removeItem(k); } catch (e) { /* file: */ }
+  }
+  dockClose();
+  dockPinned = false; dockTab = null;
+  if (!dockOn) { dockOn = true; dockMount(); } else dockLayout();
+}
+$('dockbtn').addEventListener('click', () => toggleDock());
+$('dock-pin').addEventListener('click', () => dockPin());
+$('dock-x').addEventListener('click', () => dockClose());
+// Escape inside the flying-out panel puts it away, as a click elsewhere does;
+// a field in it keeps its own Escape.
+$('dock').addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || dockPinned || $('dock-panel').hidden) return;
+  if (e.target.matches && e.target.matches('input, textarea, select, [contenteditable]')) return;
+  e.preventDefault(); e.stopPropagation();
+  const back = $('dock-icons').querySelector(`[data-dock="${dockTab}"]`);
+  dockClose();
+  if (back) back.focus();
+});
+dockMount();
 
 /** A length typed into the bar, in inches. A bare number is inches; a unit
  *  says otherwise, as InDesign takes it: in, ", pt, p (picas: 3p, 3p6, p6),
@@ -22184,6 +22507,10 @@ function dragify(d, roots) {
     if ((el.dataset.el || '').startsWith('text.'))
       el.addEventListener('dblclick', e => {
         e.preventDefault();
+        // An endnote in a placed Endnotes section: the person is pointing at
+        // ONE citation, so it opens — no drill into the section's group first.
+        const en = endnoteEntryAt(el, e.target);
+        if (en) { editEndnote(d, en, en.dataset.el.slice('endnote.'.length)); return; }
         // Inside a group, the first double-click gets INSIDE the group, not
         // into the words — every other design tool works this way, and
         // without it a group's pieces were unreachable: two quick clicks
@@ -22794,8 +23121,16 @@ function typeOnClick(d, el, e0) {
   const t0 = e0.target;
   const t = shownNode(t0) ? t0 : (shownUnder(d, e0) || t0);
   const slot = t && t.closest ? t.closest('[data-slot]') : null;
+  // An entry of an Endnotes section the editor placed is a glued part of
+  // that section's text box (dragify), so a click on it reached the box and
+  // opened the section's HEADING — the citation itself could not be edited
+  // where it is read. It is a source: its own form, written to [[sources]].
+  const en = endnoteEntryAt(el, t);
   let opened = false;
-  if (slot && el.contains(slot) && !slot.closest('svg')) {
+  if (en) {
+    editEndnote(d, en, en.dataset.el.slice('endnote.'.length));
+    opened = editing;
+  } else if (slot && el.contains(slot) && !slot.closest('svg')) {
     const key = slot.dataset.slot;
     showType(key);
     edit(d, key, slot, at);
@@ -26952,7 +27287,21 @@ async function render() {
     const ws = renderWaiters; renderWaiters = [];
     ws.forEach(r => r());
     suggestSchedule();
+    syncSourcesPanel();
   }
+}
+
+/** The Sources panel is drawn from [[sources]] when it opens; anything else
+ *  that changes a source — an endnote edited on the page, ⌘Z, a colleague's
+ *  edit adopted from the room, the pilot's editSource — ends in a render, so
+ *  the panel redraws here when the list it shows is no longer the document's.
+ *  Not while a field in it has focus: that is somebody typing there. */
+function syncSourcesPanel() {
+  if (!srcPanel) return;
+  try {
+    if (srcPanel.contains(document.activeElement) && document.activeElement !== srcPanel) return;
+    if (srcPanel.dataset.drawn !== readSlot('sources')) renderSources();
+  } catch (e) { swallowed('syncSourcesPanel', e); }
 }
 
 // The status row has many writers, and render is the only one that fires
@@ -28540,6 +28889,7 @@ async function addSourceFromPanel() {
 
 function renderSources() {
   if (!srcPanel) return;
+  srcPanel.dataset.drawn = readSlot('sources');
   const list = srcPanel.querySelector('#srclist');
   list.textContent = '';
   const all = parseSources();
@@ -28647,7 +28997,7 @@ function renderSources() {
       const t = txt.value.trim(), u = url.value.trim();
       // The citation must say something; the LINK is optional — a book or an
       // interview has none, and a source that had one must be able to lose it.
-      if (!t) return;                             // never write a half-line
+      if (!t) { $('stat').textContent = emptyCitationRefusal(s.id); txt.value = s.text; return; }
       pushHistory(); updateSource(s.id, t, u); markDirty(); render();
     };
     txt.addEventListener('change', commit);       // fires on blur only when changed
@@ -32562,6 +32912,7 @@ window.__dsTestReset = async () => {
   closeSources(); closeStoryEditor();
   clip = null; styleClip = null; presentIdx = 0; linkStatus.clear();
   agentLive = null; agentPaint();
+  try { dockReset(); } catch (e) { swallowed('test reset: dock', e); }
   for (const k of ['ds-zoom', 'ds-guides', 'ds-hidden', 'ds-overrides']) {
     try { localStorage.removeItem(k); } catch (e) { /* file: */ }
   }
@@ -35492,6 +35843,28 @@ function _pilotApplyAddSource(id, text, url) {
   addSource(id, text.trim(), url.trim());
   return { id };
 }
+/** editSource(id, {text?, url?}): rewrite one source's citation and/or link —
+ *  what editing its endnote on the page or its row in Sources does. The id
+ *  (and so every [^id] citing it, and its number) stays put; a field left out
+ *  keeps its value; url '' drops the link. An empty citation is refused: the
+ *  citations would point at nothing. */
+function _pilotValidateEditSource(id, p) {
+  const s = parseSources().find(r => r.id === id);
+  if (!s) return { ok: false, error: `no source [${id}] — sources are ${sourceIds().map(x => `[${x}]`).join(', ') || 'none'}` };
+  if (!p || typeof p !== 'object' || (!('text' in p) && !('url' in p)))
+    return { ok: false, error: 'editSource(id, {text, url}) — give the new citation text, url, or both' };
+  if ('text' in p && !String(p.text ?? '').trim()) return { ok: false, error: emptyCitationRefusal(id) };
+  if ('url' in p && /\s/.test(String(p.url ?? '').trim())) return { ok: false, error: 'a url has no spaces' };
+  if (/\n/.test(String(p.text ?? ''))) return { ok: false, error: 'a citation is one line' };
+  return { ok: true };
+}
+function _pilotApplyEditSource(id, p) {
+  const s = parseSources().find(r => r.id === id);
+  const text = 'text' in p ? String(p.text).trim() : s.text;
+  const url = 'url' in p ? String(p.url ?? '').trim() : s.url;
+  updateSource(id, text, url);
+  return { id, text, url };
+}
 
 // A whole new prose section — the one thing that adds a slot, and only where
 // the report opened a page for it (editor.pages, from the manifest). Not a
@@ -35934,6 +36307,8 @@ const PILOT_BATCH_VERBS = {
     }, apply: (ids, n, dx, dy) => ({ copies: stepRepeatIds([].concat(ids), Math.round(+n), +dx || 0, +dy || 0) }) },
   addSource: { validate: (id, t, u) => _pilotValidateAddSource(id, t, u),
                apply: (id, t, u) => _pilotApplyAddSource(id, t, u) },
+  editSource: { validate: (id, p) => _pilotValidateEditSource(id, p),
+                apply: (id, p) => _pilotApplyEditSource(id, p) },
   addSection: { validate: (p, sl) => _pilotValidateAddSection(p, sl),
                 apply: (p, sl, md) => _pilotApplyAddSection(p, sl, md) },
   setStyle: { validate: (k, p) => _pilotValidateSetStyle(k, p), apply: (k, p) => _pilotApplySetStyle(k, p) },
@@ -36554,6 +36929,19 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     markDirty();
     await render();
     return { ...docsync.api.status(), id };
+  },
+
+  /** Rewrite a source's citation text and/or url (see _pilotValidateEditSource).
+   *  The endnote on the page, the Sources panel and any citation pop-up all
+   *  draw from that one [[sources]] line. One undo step. */
+  async editSource(id, patch) {
+    const v = _pilotValidateEditSource(id, patch);
+    if (!v.ok) return v;
+    pushHistory();
+    const r = _pilotApplyEditSource(id, patch);
+    markDirty();
+    await render();
+    return { ...docsync.api.status(), source: r };
   },
 
   /** Apply several ops as ONE undo step and ONE render — for a pilot doing
