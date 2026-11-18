@@ -289,7 +289,7 @@ check("a nonsense layer is caught",
 # the same bytes it always did — head included — or the whole premise ("the
 # design is the default, JSON only speaks where someone changed something")
 # quietly stops being true.
-from docsync.layout import text_css, FONTS                      # noqa: E402
+from docsync.layout import text_css, FONTS, HUB_FONTS                      # noqa: E402
 from docsync.content import Content                             # noqa: E402
 
 SHIPPED_LINK = ('<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@800;900'
@@ -308,6 +308,16 @@ check("the brand's own fonts survive a pick", styled.font_link(), "family=Barlow
 check("a weight the report asks for is actually requested",
       _layout({"text": {"a": {"font": "Barlow", "weight": 400}}}).font_link(),
       "Barlow:wght@400;800;900")
+# Glober is licensed: its files live only on the private hub, so a report that
+# wears it must never ask Google for it, and must name a fallback in its stack.
+_gl = _layout({"text": {"a": {"font": "Glober", "weight": 700}, "b": {"font": "Glober", "weight": 950}}})
+check_eq("Glober is never requested from Google", "Glober" in _gl.font_link(), False)
+check("Glober's stand-in is fetched at the nearest weight", _gl.font_link(), "Barlow:wght@700;800;900")
+check("Glober's style names its fallback stack", text_css({"font": "Glober"}),
+      "font-family:'Glober','Barlow',sans-serif")
+check_eq("a family on Google keeps its single-family stack", text_css({"font": "Lora"}), "font-family:'Lora'")
+check_eq("every HUB_FONTS face is a weight the picker offers",
+         sorted({w for _f, w, _i in HUB_FONTS["Glober"]["faces"]}), sorted(FONTS["Glober"]))
 check("italic moves the family onto the ital axis",
       _layout({"text": {"a": {"font": "Barlow", "weight": 400, "italic": True}}}).font_link(),
       "Barlow:ital,wght@0,800;0,900;1,400")

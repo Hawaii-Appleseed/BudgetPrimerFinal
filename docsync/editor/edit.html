@@ -11950,6 +11950,7 @@ function showFxParams(key) {
 // in-page strip does.
 let selected = null;                   // the slot key the type row is editing
 let fonts = {};                        // family -> weights, from the engine
+let hubFonts = {};                     // licensed families whose files only the staff hub serves
 
 // A text BOX carries its type style on the box object itself (b.style —
 // that is what the renderer reads, layout.py text_boxes), not in layout.text,
@@ -24833,6 +24834,8 @@ async function boot() {
   py.runPython("import sys\nsys.path.insert(0, '/repo')");
   fonts = JSON.parse(py.runPython(
     'import json\nfrom docsync.layout import FONTS\njson.dumps(FONTS)'));
+  hubFonts = JSON.parse(py.runPython(
+    'import json\nfrom docsync.layout import HUB_FONTS\njson.dumps(HUB_FONTS)'));
   fxParams = JSON.parse(py.runPython(
     'import json\nfrom docsync.layout import EFFECT_PARAMS\njson.dumps(EFFECT_PARAMS)'));
   // The text-colour popover: the report's own palette first, then the wheel.
@@ -26462,6 +26465,62 @@ function onHub() {
   const reg = REGISTRY && PROJECT && REGISTRY[PROJECT] && REGISTRY[PROJECT].collab;
   const cfg = reg || (M && M.collab) || null;
   return !!(cfg && cfg.path);
+}
+
+/** @font-face rules for the licensed families (HUB_FONTS) — only on the staff
+ *  hub, whose private tree holds the files. Anywhere else this is '' : no rule,
+ *  so no request that could 404, and the report's own fallback stack draws.
+ *  `urlFor` lets a caller swap each URL (the PDF path inlines them).  */
+function hubFontCss(only, urlFor) {
+  if (!onHub()) return '';
+  let css = '';
+  for (const [fam, f] of Object.entries(hubFonts || {})) {
+    if (only && !only.includes(fam)) continue;
+    for (const [file, w, it] of f.faces) {
+      const url = urlFor ? urlFor(f.dir + file) : f.dir + file;
+      css += `@font-face{font-family:'${fam}';font-weight:${w};font-style:${it ? 'italic' : 'normal'};`
+        + `font-display:swap;src:url("${url}") format("woff2")}\n`;
+    }
+  }
+  return css;
+}
+/** Into a document the editor shows: lazily fetched, so a face that no text
+ *  uses costs nothing. */
+function addHubFonts(d) {
+  const css = hubFontCss();
+  if (!css || !d.head || d.querySelector('style[data-ds-hubfonts]')) return;
+  const st = d.createElement('style');
+  st.setAttribute('data-ds-hubfonts', '');
+  st.textContent = css;
+  d.head.appendChild(st);
+}
+onEachDocument(addHubFonts);
+/** The PDF is drawn from an SVG image, which cannot fetch: embed the faces the
+ *  report names as data: URIs, in the export document only. */
+async function inlineHubFonts(doc) {
+  if (!onHub()) return;
+  const used = Object.keys(hubFonts || {}).filter(fam =>
+    doc.documentElement.outerHTML.includes(`'${fam}'`));
+  if (!used.length) return;
+  const uris = {};
+  for (const [fam, f] of Object.entries(hubFonts)) {
+    if (!used.includes(fam)) continue;
+    for (const [file] of f.faces) {
+      try {
+        const r = await fetchWithin(f.dir + file);
+        if (!r.ok) continue;
+        const buf = await r.blob();
+        uris[f.dir + file] = await new Promise(ok => {
+          const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(buf);
+        });
+      } catch (e) { swallowed('inlineHubFonts', e); }
+    }
+  }
+  const css = hubFontCss(used, u => uris[u] || u);
+  const st = doc.createElement('style');
+  st.setAttribute('data-ds-fonts', '');
+  st.textContent = css;
+  doc.head.appendChild(st);
 }
 async function detectLocal() {
   if (onHub()) { local = false; return; }
@@ -35169,6 +35228,7 @@ async function exportPdfInBrowser(pages, spec) {
     await tick();
     const doc = new DOMParser().parseFromString(await renderClean(), 'text/html');
     const inl = await inlineEverything(doc, { fonts: true, scripts: true });
+    await inlineHubFonts(doc);
     // What a print would see: the page's own width as the viewport, @media
     // print on and @media screen off. Resolved here, once, so the SVG a sheet
     // is drawn in (whose viewport is whatever it is) cannot answer them again.
