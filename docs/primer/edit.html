@@ -1363,8 +1363,12 @@
   #context.low { top:auto; bottom:104px; }
   #type, #arrange { display:flex; gap:6px; align-items:center;
           justify-content:safe center;   /* Canva's centered strip */
-          flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden;
-          padding:0 14px; height:46px; box-sizing:border-box;
+          /* The card is an overlay now, so wrapping cannot shove the canvas.
+             It must stay inside the page: with no max-width the flex item grew
+             to its content and ran off the window, so overflow-x never engaged. */
+          flex-wrap:wrap; overflow-x:hidden; overflow-y:auto;
+          max-width:100%; min-width:0; max-height:50vh;
+          padding:5px 14px; min-height:46px; box-sizing:border-box;
           pointer-events:auto;   /* the card is the only part that takes clicks */
           background:var(--chrome2); scrollbar-width:thin; }
   #type > *, #arrange > * { flex:none; }
@@ -17416,7 +17420,8 @@ function applyZoom(recompute = true) {
   // toolbar used to (see charts.spec.js).
   const d = out.contentDocument;
   if (d && d.documentElement)
-    d.documentElement.style.scrollPaddingTop = Math.round(CTX_CLEAR / s) + 'px';
+    d.documentElement.style.scrollPaddingTop = Math.round(Math.max(CTX_CLEAR,
+      ($('context') && [...$('context').children].find(c => !c.hidden && c.offsetHeight)?.offsetHeight + 12) || 0) / s) + 'px';
   syncZoomBar();
   if (typeof hubMarginQueue === 'function') hubMarginQueue(false);   // the comment cards follow the page's new scale
   if (typeof hubPreviewFit === 'function') hubPreviewFit();           // and a version being previewed sits exactly over the page
