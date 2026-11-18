@@ -57,6 +57,10 @@ try:
     from .metrics import ADV as _ADV       # the house fonts' measured advances
 except ImportError:                        # a checkout from before the table
     _ADV = {}
+try:
+    from .layout import HUB_FONTS          # families whose files only the hub has
+except ImportError:
+    HUB_FONTS = {}
 
 # --- the text ------------------------------------------------------------------
 
@@ -327,6 +331,9 @@ def _face(style: dict | None, bold: bool = False):
     if not style or not _ADV:
         return None
     fam = str(style.get("font") or "")
+    # A hub-only family (Glober) is measured as its stand-in: its files are not
+    # here to measure, and outside the hub the page draws the stand-in anyway.
+    fam = HUB_FONTS.get(fam, {}).get("fallback", fam)
     w = int(style.get("weight") or 400)
     w = max(w, 700) if bold else w
     slant = "italic" if style.get("italic") else "normal"
