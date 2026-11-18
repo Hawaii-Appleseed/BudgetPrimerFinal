@@ -1486,13 +1486,13 @@ Legend: **Missing** = not in Cider. **Hidden** = exists, not on a bar.
 
 | InDesign control | Cider | Note |
 |---|---|---|
-| Reference-point grid (9 points) for X/Y, scale, rotate, flip | Missing | always top-left; `#cb-ref` is the slot (phase 3) |
+| Reference-point grid (9 points) for X/Y, scale, rotate, flip | **Bar** | item 88; the bar's own changes only, not a drag |
 | X / Y / W / H | **Bar** | typed units (in, ", pt, p, mm, cm, px) |
-| Constrain proportions link (W/H) | Missing | phase 3 |
-| Scale X % / Y % with link | Partial | one scale % (graphics), on the bar |
+| Constrain proportions link (W/H) | **Bar** | item 88 |
+| Scale X % / Y % with link | **Bar** | frames: X% / Y% of the size now; graphics: one uniform % |
 | Rotation angle, shear angle | **Bar** | |
 | Rotate 90° CW / CCW | **Bar** | right-click's `turnObjects` |
-| Flip horizontal / vertical, [P] indicator | **Bar** | the flip buttons light when flipped; no [P] glyph |
+| Flip horizontal / vertical, [P] indicator | **Bar** | the P mirrors and turns with the frame |
 | Select container / content, previous / next object | Missing | ⌥] / ⌥[ walk the stack, no buttons |
 | Fill swatch, stroke swatch | Partial | fill + border on the bar (the arrange strip, docked); no separate stroke swatch |
 | Stroke weight + type | Partial | weight and solid/dashed/dotted |
@@ -1501,7 +1501,7 @@ Legend: **Missing** = not in Cider. **Hidden** = exists, not on a bar.
 | Opacity | Yes | on the bar |
 | Text wrap (none, bounding box, object shape, jump object, jump to next column) | Partial | none/left/right, anchored objects only; in Position |
 | Frame fitting buttons | **Bar** | fill / fit proportionally, content to frame, centre, frame to content; no content-aware |
-| Auto-Fit, Frame Fitting Options (crop amounts, fitting on empty frame) | Missing | |
+| Auto-Fit, Frame Fitting Options (crop amounts, fitting on empty frame) | Partial | fit + anchor (bar grid and dialog); Auto-Fit is what object-fit does anyway; crop amounts with a fit are refused by the engine |
 | Text-frame columns + gutter | **Bar** | |
 | Text-frame inset | Partial | one value (on the bar); InDesign has T/L/B/R, linkable |
 | Vertical justification | **Bar** | top, centre, bottom, justify |
@@ -1591,7 +1591,7 @@ points for type, typed units accepted.
 
 1. Docked bar, object mode, reusing today's controls — **item 86, done**.
 2. Character and paragraph modes — **item 87, done**.
-3. Reference point, proportion link / scale X·Y, flip indicator, fitting options.
+3. Reference point, proportion link / scale X·Y, flip indicator, fitting options — **item 88, done**.
 4. The right-hand panel dock, rehoming the existing popovers.
 5. Per-character size / leading / tracking / kerning in the engine, then the
    remaining missing settings.
@@ -1649,3 +1649,26 @@ points for type, typed units accepted.
     Found doing it: the type card's own handlers push no undo step, so a run
     of changes made there undoes as one. Left as it was here.
     `tests/editor/control-bar.spec.js`.
+88. **The Control bar's reference point, link and fitting options. — CLOSED
+    2026-11-17.** InDesign's nine-point reference proxy (`#cb-ref`) heads the
+    bar for one selected thing: X and Y read that point of the frame, and a
+    change made from the bar — X, Y, W, H, scale, rotation, rotate 90°, flip —
+    puts the frame back so the point has not moved (`ctlFrameChange()`, one
+    undo step; `frameOf()` / `refPointOf()` hold the model: the stored,
+    unrotated box, with rotation, scale and flip about its centre, as
+    `paintRot` draws it). Top left by default (what X and Y always measured),
+    remembered per editor (`ds-refpt`). A flip keeps where the point WAS, which
+    is the mirrored point of the flipped frame. A drag, a handle and
+    right-click ▸ Rotate and flip are not affected, as in InDesign; several
+    things selected turn about their own centres (`turnObjects`). The **link**
+    between W and H keeps proportions (`ds-linkwh`); **X% / Y%** scale a frame
+    by a percent of its size now and read 100 again; a graphic keeps its one
+    uniform scale. The **P** beside the flip buttons mirrors and turns as the
+    frame does. For a fitted picture the bar adds the **anchor** grid
+    (`fitAlign`) and **⋯ Frame fitting options** (fitting and anchor; also on
+    right-click ▸ Fitting). Not offered: crop amounts with a fit, which the
+    engine refuses (layout.py), and Auto-Fit, which object-fit already does.
+    Found doing it: `placer().put()` keeps a frame on the page by the size it
+    measured, so a resize about the right edge must hand it the new size
+    first. `tests/editor/control-bar.spec.js`.
+
