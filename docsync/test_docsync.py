@@ -4299,6 +4299,28 @@ _csh = _cs.layer(1)
 check_eq("one rule per style a run wears, and none for a name with no style",
          ('.ds-cs[data-cs="Accent"]{color:#C0392B}' in _csh, "Nobody" in _csh), (True, False))
 
+# --- local character formatting on a run (INDESIGN_PARITY 90) --------------
+check_eq("a run's size and leading in points, tracking and kerning in 1/1000 em, added",
+         _mdi("a [big **w**]{size=14 lead=18 track=50 kern=-20} b"),
+         'a <span class="ds-cr" data-cr="size=14 lead=18 track=50 kern=-20" '
+         'style="font-size:18.67px;line-height:24.00px;letter-spacing:0.03em">big <b>w</b></span> b')
+check_eq("a kern on one character is the space after it",
+         _mdi("[A]{kern=-60}V"),
+         '<span class="ds-cr" data-cr="kern=-60" style="letter-spacing:-0.06em">A</span>V')
+check_eq("a run sits inside a named style, the one way the editor writes it",
+         _mdi("[[pull]{size=14} x]{.Pull}"),
+         '<span class="ds-cs" data-cs="Pull"><span class="ds-cr" data-cr="size=14" '
+         'style="font-size:18.67px">pull</span> x</span>')
+check_eq("a link inside a run stays the link",
+         _mdi("[a [b](https://e.org) c]{track=20}"),
+         '<span class="ds-cr" data-cr="track=20" style="letter-spacing:0.02em">a '
+         '<a href="https://e.org">b</a> c</span>')
+check_eq("braces that are not a run's keys are words",
+         _mdi("[t]{color=1} [u]{size=big}"), "[t]{color=1} [u]{size=big}")
+check_raises("a run under the legibility floor is refused, not clamped",
+             lambda: _mdi("[t]{size=6}"), "under the")
+check_raises("leading of nothing is refused", lambda: _mdi("[t]{lead=0}"), "more than 0pt")
+
 # --- paragraph spacing and column alignment (INDESIGN_PARITY 14-15) ---------
 from docsync.layout import SPACE_CSS, decimal_tail, decimal_cell             # noqa: E402
 

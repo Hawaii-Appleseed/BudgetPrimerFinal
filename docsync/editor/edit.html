@@ -2868,6 +2868,9 @@
        them; both write the Spacing panel's own fields (ty-lead, ty-track). -->
   <label class="cb-f cb-only cb-char" title="Leading, points — or a multiple like 1.4; empty for auto"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M5 2.5h7M5 7h7M5 11.5h7M2 2v10M1 3.2L2 2l1 1.2M1 10.8L2 12l1-1.2"/></svg><input id="cb-lead" data-proxy="ty-lead" data-unit="lead" inputmode="decimal" autocomplete="off"></label>
   <label class="cb-f cb-only cb-char" title="Tracking, thousandths of an em"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2 3l2 6 2-6M8 3h4M10 3v6M1.5 12h11M1.5 12l1.2-1M1.5 12l1.2 1M12.5 12l-1.2-1M12.5 12l-1.2 1"/></svg><input id="cb-track" data-proxy="ty-track" data-unit="track" inputmode="decimal" autocomplete="off"></label>
+  <!-- Kerning (phase 5): between the two characters either side of the caret,
+       or across the selected words; a run of its own, never the box's. -->
+  <label class="cb-f cb-only cb-char" title="Kerning, thousandths of an em — at the caret, or across the selected words"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 9.5l2.2-6 2.2 6M2.3 7.4h2.8M7.8 3.5l2 6 2-6M4.5 12h5M4.5 12l1.1-1M4.5 12l1.1 1M9.5 12l-1.1-1M9.5 12l-1.1 1"/></svg><input id="cb-kern" data-unit="kern" inputmode="decimal" autocomplete="off" aria-label="Kerning, thousandths of an em" value="0"></label>
   <span class="ty-seg cb-char" id="ty-marks" hidden title="Formatting — applies to the selected words">
     <button id="ty-mb" aria-label="Bold the selection"><b>B</b></button>
     <button id="ty-mi" aria-label="Italicise the selection"><i>I</i></button>
@@ -3924,6 +3927,33 @@ const writeSlot = (k, v) => {
 const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 // content.py's CHAR_STYLE_RE: `[words]{.Name}`, a text style on a run of words.
 const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
+// content.py's CHAR_RUN_RE (INDESIGN_PARITY 90): `[words]{size=14 lead=18
+// track=50 kern=-20}`, InDesign's character settings on selected words — size
+// and leading in points, tracking and kerning in thousandths of an em. Read
+// before character styles, so a named run may hold one and not the reverse.
+const CHAR_RUN_RE_G = /\[([^\]^\[][^\]\[]*)\]\{((?:size|lead|track|kern)=-?\d+(?:\.\d+)?(?: (?:size|lead|track|kern)=-?\d+(?:\.\d+)?)*)\}/g;
+const CHAR_RUN_KEYS = ['size', 'lead', 'track', 'kern'];
+/** `size=14 kern=-20` -> {size: 14, kern: -20}. */
+function charRunParse(spec) {
+  const o = {};
+  String(spec || '').split(/\s+/).forEach(p => {
+    const [k, v] = p.split('=');
+    if (CHAR_RUN_KEYS.includes(k) && v !== undefined && v !== '' && isFinite(+v)) o[k] = +v;
+  });
+  return o;
+}
+/** The other way, keys in one order, nulls dropped: '' when nothing is set. */
+const charRunSpec = o => CHAR_RUN_KEYS.filter(k => o[k] != null && isFinite(o[k]))
+  .map(k => `${k}=${+(+o[k]).toFixed(2)}`).join(' ');
+/** content.py's char_run_css: what the span draws with. */
+function charRunCss(spec) {
+  const v = charRunParse(spec), css = [];
+  if ('size' in v) css.push(`font-size:${(v.size * 4 / 3).toFixed(2)}px`);
+  if ('lead' in v) css.push(`line-height:${(v.lead * 4 / 3).toFixed(2)}px`);
+  if ('track' in v || 'kern' in v)
+    css.push(`letter-spacing:${String(+(((v.track || 0) + (v.kern || 0)) / 1000).toFixed(6))}em`);
+  return css.join(';');
+}
 // content.py's VAR_RE, and the one place the editor spells it.
 const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|state:[^{}\n]{1,40})\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
@@ -4060,6 +4090,11 @@ function mdInlineToHtml(text, fnLabels) {
     conds.push(name);
     return `\x04CD${conds.length - 1}\x04${txt}\x05`;
   });
+  const runs = [];
+  s = s.replace(CHAR_RUN_RE_G, (m, txt, spec) => {
+    runs.push(spec.split(/\s+/).join(' '));
+    return `\x11CR${runs.length - 1}\x11${txt}\x12`;
+  });
   const cnames = [];
   s = s.replace(CHAR_STYLE_RE_G, (m, txt, name) => {
     cnames.push(name.trim());
@@ -4076,6 +4111,8 @@ function mdInlineToHtml(text, fnLabels) {
     (m, i, inner) => `<span class="ds-cond" data-cond="${escAttr(conds[+i])}">${inner}</span>`);
   s = s.replace(/\x02CS(\d+)\x02([\s\S]*?)\x03/g,
     (m, i, inner) => `<span class="ds-cs" data-cs="${escAttr(cnames[+i])}">${inner}</span>`);
+  s = s.replace(/\x11CR(\d+)\x11([\s\S]*?)\x12/g,
+    (m, i, inner) => `<span class="ds-cr" data-cr="${escAttr(runs[+i])}" style="${charRunCss(runs[+i])}">${inner}</span>`);
   s = s.replace(/\x00IMG(\d+)\x00/g, (m, i) => {
     const [alt, src] = imgs[+i];
     return `<img class="inline-img" contenteditable="false" src="${escAttr(src)}" alt="${escAttr(alt)}">`;
@@ -4365,9 +4402,25 @@ function nodeToMdInline(node, br = ' ') {
         ? edgeOut(inner, '\u0000').replace(/\u0000([\s\S]*)\u0000/, `[$1]{?${n.dataset.cond}}`) : inner;
       return;
     }
+    if (n.classList && n.classList.contains('ds-cr')) {
+      // A run of words wearing character settings. Its words may not hold a
+      // bracket of their own (links and pictures are fine: content.py reads
+      // them first), nor begin with ^ (a footnote ref): such a run keeps its
+      // words and loses the settings. Runs sit INSIDE a named style, never
+      // round one (applyCharRun keeps them so).
+      const inner = nodeToMdInline(n, br);
+      const bare = inner.replace(new RegExp(`!?\\[[^\\]]*\\]\\(${DEST}\\)`, 'g'), '');
+      const spec = charRunSpec(charRunParse(n.dataset.cr));
+      if (!inner.trim() || !spec || /[\[\]]/.test(bare) || inner.trim().startsWith('^')) { out += inner; return; }
+      out += edgeOut(inner, '\u0000').replace(/\u0000([\s\S]*)\u0000/, `[$1]{${spec}}`);
+      return;
+    }
     if (n.classList && n.classList.contains('ds-cs')) {
       const inner = nodeToMdInline(n, br);
-      const bare = inner.replace(new RegExp(`\\[[^\\]]*\\]\\(${DEST}\\)`, 'g'), '');
+      // A run of character settings inside it is read before the style, so
+      // its brackets are not the words' own.
+      const bare = inner.replace(new RegExp(`\\[[^\\]]*\\]\\(${DEST}\\)`, 'g'), '')
+        .replace(CHAR_RUN_RE_G, '$1');
       if (!inner.trim() || bare.includes(']')) { out += inner; return; }
       out += edgeOut(inner, '\u0000').replace(/\u0000([\s\S]*)\u0000/, `[$1]{.${n.dataset.cs}}`);
       return;
@@ -4622,6 +4675,131 @@ function applyCharStyle(d, host, name) {
     sel.addRange(nr);
   }
   host.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Character settings on the selected words (INDESIGN_PARITY.md 90): merge
+ *  `patch` ({size, lead, track, kern}; null takes a key off) into every run
+ *  the selection touches, and wrap the words that wore none in a new run.
+ *  Runs never nest, and sit inside a named style rather than round one, so a
+ *  selection inside a run is split out of it first, and a named style the
+ *  selection crosses gets a run of its own inside it. The words are selected
+ *  again after; returns the nodes set (null with nothing selected). */
+function applyCharRun(d, host, patch) {
+  const sel = d.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (r.collapsed || !host.contains(r.commonAncestorContainer)) return null;
+  const merged = base => {
+    const o = { ...base };
+    Object.entries(patch).forEach(([k, v]) => { if (v == null) delete o[k]; else o[k] = v; });
+    return charRunSpec(o);
+  };
+  const dress = (span, spec) => {
+    if (!spec) { span.replaceWith(...span.childNodes); return null; }
+    span.dataset.cr = spec; span.setAttribute('style', charRunCss(spec));
+    return span;
+  };
+  const wrap = (nodes, spec) => {
+    nodes = nodes.filter(x => x.isConnected || x.parentNode);
+    if (!spec || !nodes.length || !nodes.some(x => x.textContent)) return nodes;
+    const span = d.createElement('span');
+    span.className = 'ds-cr';
+    nodes[0].before(span);
+    nodes.forEach(x => span.appendChild(x));
+    return [dress(span, spec)];
+  };
+  let n = r.commonAncestorContainer;
+  if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+  const inside = n && n.closest && n.closest('span.ds-cr');
+  let out;
+  if (inside && host.contains(inside)) {
+    const base = charRunParse(inside.dataset.cr);
+    out = wrap(splitMarkOut(d, inside, r).filter(x => x.isConnected), merged(base));
+  } else {
+    const frag = r.extractContents();
+    // Within the fragment: a run takes the patch over its own settings; a
+    // named style is gone into, so the run lands inside it; anything else
+    // that holds neither is gathered with its neighbours into one new run.
+    const into = el => {
+      let group = [];
+      const flush = () => { if (group.length) wrap(group, merged({})); group = []; };
+      [...el.childNodes].forEach(c => {
+        if (c.nodeType === Node.ELEMENT_NODE && c.matches('span.ds-cr')) {
+          flush(); dress(c, merged(charRunParse(c.dataset.cr)));
+        } else if (c.nodeType === Node.ELEMENT_NODE
+                   && (c.matches('span.ds-cs') || c.querySelector('span.ds-cr, span.ds-cs'))) {
+          flush(); into(c);
+        } else group.push(c);
+      });
+      flush();
+    };
+    into(frag);
+    out = [...frag.childNodes];
+    r.insertNode(frag);
+  }
+  out = (out || []).filter(x => x && x.isConnected);
+  // The words that were set, by their text nodes: those survive the tidying
+  // below (it moves nodes, it does not remake them), the elements may not.
+  const texts = [];
+  out.forEach(x => {
+    if (x.nodeType === Node.TEXT_NODE) { if (x.length) texts.push(x); return; }
+    const w = d.createTreeWalker(x, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) if (w.currentNode.length) texts.push(w.currentNode);
+  });
+  // Neighbouring runs that now say the same thing are one run, and so are the
+  // two halves of a named style a selection crossed the edge of (taking the
+  // words out split it); empty ones go.
+  [...host.querySelectorAll('span.ds-cs, span.ds-cr')].reverse().forEach(el => {
+    if (!el.textContent) { el.remove(); return; }
+    const nx = el.nextSibling, cs = el.matches('span.ds-cs');
+    if (nx && nx.nodeType === Node.ELEMENT_NODE && nx.matches(cs ? 'span.ds-cs' : 'span.ds-cr')
+        && (cs ? nx.dataset.cs === el.dataset.cs : nx.dataset.cr === el.dataset.cr)) {
+      while (nx.firstChild) el.appendChild(nx.firstChild);
+      nx.remove();
+    }
+  });
+  const live = texts.filter(t => t.isConnected);
+  if (live.length) {
+    const nr = d.createRange();
+    nr.setStart(live[0], 0);
+    nr.setEnd(live[live.length - 1], live[live.length - 1].length);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+  }
+  host.dispatchEvent(new Event('input', { bubbles: true }));
+  return out;
+}
+
+/** Kerning at the caret: InDesign's pair kern is the space after the first
+ *  of the two characters, so it is a one-character run with that kern. */
+function kernAtCaret(d, host, v) {
+  const sel = d.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const c = sel.getRangeAt(0);
+  if (!c.collapsed || !host.contains(c.startContainer)) return false;
+  let t = c.startContainer, off = c.startOffset;
+  if (t.nodeType !== Node.TEXT_NODE) {
+    // the caret between elements: the last character before it
+    const w = d.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    let last = null;
+    while (w.nextNode()) {
+      const pr = d.createRange(); pr.selectNodeContents(w.currentNode);
+      if (pr.compareBoundaryPoints(Range.END_TO_START, c) <= 0 && w.currentNode.length) last = w.currentNode;
+    }
+    if (!last) return false;
+    t = last; off = last.length;
+  }
+  if (off < 1) return false;
+  const r = d.createRange();
+  r.setStart(t, off - 1); r.setEnd(t, off);
+  sel.removeAllRanges(); sel.addRange(r);
+  const out = applyCharRun(d, host, { kern: v || null });
+  const after = d.createRange();
+  if (out && sel.rangeCount) { const k = sel.getRangeAt(0); after.setStart(k.endContainer, k.endOffset); }
+  else after.setStart(t, off);
+  after.collapse(true);
+  sel.removeAllRanges(); sel.addRange(after);
+  return true;
 }
 
 /** Conditional text on the selected words (INDESIGN_PARITY.md 45): wrap them
@@ -4961,6 +5139,7 @@ function wireMarkState(d) {
     // it has no bold/italic-style conflict to block on either.
     mu.classList.toggle('on', markActive(d, richHost, 'u'));
   });
+  d.addEventListener('selectionchange', () => { if (richHost) ctlRunShow(d); });
 }
 
 async function link(d, host, dest) {
@@ -18864,6 +19043,131 @@ function ctlTextWrite(src, value) {
   src.dispatchEvent(new Event('input', { bubbles: true }));
   src.dispatchEvent(new Event('change', { bubbles: true }));
 }
+// ---- the selected words (phase 5)
+// With words selected in an open text, size, leading, tracking and kerning
+// act on THEM, as a run (`[words]{size=14 …}`, applyCharRun), the way
+// InDesign's Character panel does; a caret with nothing selected still sets
+// the box (kerning, at a caret, the pair either side of it). Pressing into
+// one of these fields keeps the words open — focus going to the bar would
+// otherwise end the edit (its blur commits) — and the selection is put back
+// when the field lets go, as the Glyphs panel does.
+const CB_RUN = { 'cb-size': 'size', 'cb-lead': 'lead', 'cb-track': 'track', 'cb-kern': 'kern' };
+let runCtx = null;
+function ctlRunHold(inp) {
+  if (runCtx || !richHost) return;
+  const d = $('out').contentDocument, r = d && saveRange(d, richHost);
+  if (!r || (r.collapsed && inp.id !== 'cb-kern')) return;
+  runCtx = { d, host: richHost, range: r, modal: !modalOpen };
+  if (runCtx.modal) modalOpen = true;
+}
+function ctlRunLetGo() {
+  const c = runCtx;
+  runCtx = null;
+  if (!c) return;
+  if (c.modal) modalOpen = false;
+  if (c.host.isConnected) {
+    c.host.focus();
+    const s2 = c.d.getSelection(); s2.removeAllRanges(); s2.addRange(c.range);
+  }
+}
+/** A run field's typed value, in the run's own unit (pt, or 1/1000 em):
+ *  null clears it, undefined is not a value. */
+function ctlRunRead(inp) {
+  const t = String(inp.value).trim().toLowerCase(), k = CB_RUN[inp.id];
+  if (t === '' || t === 'auto' || /^\(.*\)$/.test(t)) return k === 'size' ? undefined : null;
+  if (k === 'size' || k === 'lead') {
+    const m = t.match(/^(\d*\.?\d+)\s*(pt|px|x|×)?$/);
+    if (!m) return undefined;
+    let v = +m[1];
+    if (m[2] === 'px') v *= PX_PT;
+    if (k === 'lead' && (m[2] === 'x' || m[2] === '×' || (!m[2] && v <= 4))) v *= ctlRunSizePt();
+    if (k === 'size' && v < 10.5 * PX_PT - 1e-6) return undefined;     // the legibility floor
+    return +Math.min(k === 'size' ? 150 : 300, Math.max(0.5, v)).toFixed(2);
+  }
+  const m = t.match(/^(-?\d*\.?\d+)$/);
+  return m ? Math.max(-1000, Math.min(10000, Math.round(+m[1]))) : undefined;
+}
+/** The size the words at the selection draw at, in points. */
+function ctlRunSizePt() {
+  const c = runCtx, el = c && (c.range.startContainer.nodeType === Node.TEXT_NODE
+    ? c.range.startContainer.parentElement : c.range.startContainer);
+  const px = el && parseFloat(c.d.defaultView.getComputedStyle(el).fontSize);
+  return px ? px * PX_PT : ctlSizePx() * PX_PT;
+}
+/** A change in a run field while words are held: write the run. True when
+ *  it was taken (or refused), so the box is left alone. */
+function ctlRunChange(inp) {
+  const k = CB_RUN[inp.id];
+  if (!k || !runCtx) return false;
+  const v = ctlRunRead(inp);
+  if (v === undefined) {
+    inp.classList.add('bad');
+    $('stat').textContent = k === 'size' && /\d/.test(inp.value)
+      ? `${inp.value} is under the 7.875pt floor — nothing on the page goes smaller`
+      : `“${inp.value}” is not a value here`;
+    return true;
+  }
+  inp.classList.remove('bad');
+  const c = runCtx;
+  c.host.focus();
+  const s2 = c.d.getSelection(); s2.removeAllRanges(); s2.addRange(c.range);
+  const ok = c.range.collapsed ? kernAtCaret(c.d, c.host, v) : !!applyCharRun(c.d, c.host, { [k]: v });
+  if (s2.rangeCount) c.range = s2.getRangeAt(0).cloneRange();
+  $('stat').textContent = ok ? (c.range.collapsed ? `kerning ${v || 0} at the caret` : `${k} set on the selected words`)
+    : 'nothing to kern here — put the caret between two characters';
+  return true;
+}
+/** The four fields, from the run the selection starts in (or the box's own). */
+function ctlRunShow(d) {
+  if (runCtx) return;
+  const s = d.getSelection();
+  const r = s && s.rangeCount ? s.getRangeAt(0) : null;
+  if (!r || !richHost || !richHost.contains(r.startContainer)) return;
+  let el = r.startContainer;
+  if (!r.collapsed) {
+    // A selection that starts at the very end of one text node starts, as
+    // far as the words go, at the first character of the next.
+    const w = d.createTreeWalker(richHost, NodeFilter.SHOW_TEXT);
+    const nr = r.cloneRange();
+    if (el.nodeType !== Node.TEXT_NODE || r.startOffset >= el.length) {
+      w.currentNode = el.nodeType === Node.TEXT_NODE ? el : (el.childNodes[r.startOffset] || el);
+      let t = el.nodeType === Node.TEXT_NODE ? w.nextNode() : (w.currentNode.nodeType === Node.TEXT_NODE ? w.currentNode : w.nextNode());
+      while (t && !t.length) t = w.nextNode();
+      if (t && nr.intersectsNode(t)) el = t;
+    }
+  }
+  if (el.nodeType === Node.TEXT_NODE) {
+    // a caret at a run's end is still the run's: InDesign reads the
+    // character before the caret
+    if (r.collapsed && r.startOffset === 0 && el.previousSibling) el = el.previousSibling;
+    else el = el.parentElement;
+  }
+  const cr = el && el.closest ? el.closest('span.ds-cr') : null;
+  const v = cr && richHost.contains(cr) ? charRunParse(cr.dataset.cr) : {};
+  Object.entries(CB_RUN).forEach(([id, k]) => {
+    const inp = $(id);
+    if (document.activeElement === inp) return;
+    if (k in v) inp.value = String(v[k]);
+    else if (k === 'kern') inp.value = '0';
+    else ctlTextShow(inp);
+  });
+}
+Object.keys(CB_RUN).forEach(id => {
+  const inp = $(id);
+  inp.addEventListener('mousedown', () => ctlRunHold(inp), true);
+  inp.addEventListener('focus', () => ctlRunHold(inp));
+  inp.addEventListener('blur', () => setTimeout(ctlRunLetGo, 0));
+});
+$('cb-kern').addEventListener('change', () => {
+  if (ctlRunChange($('cb-kern'))) return;
+  $('cb-kern').value = '0';
+  $('stat').textContent = 'kerning is between characters — click into the words, between the two';
+});
+$('cb-kern').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('cb-kern').blur(); }
+  if (e.key === 'Escape') { e.preventDefault(); $('cb-kern').value = '0'; $('cb-kern').blur(); }
+});
+
 function ctlPaintText() {
   if (!selected) return;
   try { fillParaPop(selected); } catch (e) { swallowed('ctlPaintText', e); }
@@ -18874,6 +19178,7 @@ function ctlPaintText() {
 }
 document.querySelectorAll('#type input[data-proxy]').forEach(inp => {
   inp.addEventListener('change', () => {
+    if (ctlRunChange(inp)) return;      // the selected words, not the box
     const v = ctlTextRead(inp);
     if (v === undefined) {
       inp.classList.add('bad');
@@ -21707,6 +22012,10 @@ $('ty-marks').addEventListener('mousedown', e => e.preventDefault());
 // type control is touched.
 $('type').addEventListener('pointerdown', e => {
   if (!richHost || e.target.closest('#ty-marks')) return;
+  // Size, leading, tracking and kerning with words selected act on those
+  // words (ctlRunHold): the words stay open, nothing renders under them.
+  const runInp = e.target.closest('#cb-size, #cb-lead, #cb-track, #cb-kern');
+  if (runInp) { ctlRunHold(runInp); if (runCtx) return; }
   richHost.blur();     // finish(true): commit + re-render (single-flight)
 }, true);
 const richDo = fn => {
