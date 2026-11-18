@@ -213,6 +213,19 @@
   #ctl #type .cb-f select { width:auto; }
   #cb-paraf { gap:5px; }
   #ctl #type #cb-lmark { width:112px; }
+  /* The nine-point grids (reference point, picture anchor): InDesign's
+     proxy, a square of squares, the chosen one filled. */
+  .cb-refgrid { display:inline-grid !important; grid-template-columns:repeat(3, 7px);
+          grid-auto-rows:7px; gap:2px; padding:3px; border:1px solid #D9E1DB; border-radius:5px;
+          background:#fff; }
+  .cb-refgrid[hidden] { display:none !important; }
+  #ctl .cb-refgrid button, #cb-obj .cb-refgrid button { all:unset; box-sizing:border-box; width:7px; height:7px;
+          border:1.3px solid #7A8E85; border-radius:1px; cursor:pointer; background:#fff; }
+  #ctl .cb-refgrid button:hover { border-color:var(--sage); }
+  #ctl .cb-refgrid button.on { background:var(--ink); border-color:var(--ink); }
+  #ctl .cb-refgrid button:focus-visible { outline:2px solid rgba(107,158,120,.55); outline-offset:1px; }
+  #cb-pflag { display:inline-block; width:16px; text-align:center; font:700 13px Georgia,serif;
+          color:#5B6E66; transition:transform .15s; }
   /* The arrange strip, docked: no card of its own — it is a run of the bar. */
   #ctl #type { background:transparent; box-shadow:none; border-radius:0; padding:0;
           margin:0; width:auto; max-width:none; height:auto; overflow:visible;
@@ -2673,7 +2686,12 @@
     <button data-m="char" role="radio" aria-label="Character — font, size, leading, tracking (⌥⌘7)"><b style="font:700 13px Georgia,serif">A</b></button>
     <button data-m="para" role="radio" aria-label="Paragraph — alignment, indents, spacing, drop cap (⌥⌘7)"><b style="font:700 13px Georgia,serif">¶</b></button>
   </span>
-  <span id="cb-ref" hidden></span>
+  <!-- InDesign's reference point (phase 3): which of the frame's nine points
+       X and Y measure, and which stays put when the bar changes the size,
+       scale, rotation or flip. Remembered per editor; top left by default,
+       which is what X and Y always measured. A drag or a handle is not
+       affected, as in InDesign. -->
+  <span class="cb-refgrid" id="cb-ref" role="radiogroup" aria-label="Reference point — what X and Y measure, and what stays put when the bar changes the size, rotation or flip" hidden><button data-ref="tl" role="radio" aria-label="top left"></button><button data-ref="t" role="radio" aria-label="top"></button><button data-ref="tr" role="radio" aria-label="top right"></button><button data-ref="l" role="radio" aria-label="left"></button><button data-ref="c" role="radio" aria-label="centre"></button><button data-ref="r" role="radio" aria-label="right"></button><button data-ref="bl" role="radio" aria-label="bottom left"></button><button data-ref="b" role="radio" aria-label="bottom"></button><button data-ref="br" role="radio" aria-label="bottom right"></button></span>
   <div class="cb-grp" id="cb-empty">
     <span class="cb-lab" id="cb-page"></span>
     <span class="cb-hint">Select an object to set its position, size and look here</span>
@@ -2683,7 +2701,14 @@
       <label class="cb-f" title="Left edge — inches; type 36pt, 3p or 1cm too">X<input id="cb-x" data-ar="ar-x" data-unit="len" inputmode="decimal" autocomplete="off"></label>
       <label class="cb-f" title="Top edge — inches; type 36pt, 3p or 1cm too">Y<input id="cb-y" data-ar="ar-y" data-unit="len" inputmode="decimal" autocomplete="off"></label>
       <label class="cb-f" id="cb-wwrap" title="Width — inches; type 36pt, 3p or 1cm too">W<input id="cb-w" data-ar="ar-w" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <button id="cb-link" aria-label="Constrain proportions — W and H change together"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+        stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5.6 8.4l2.8-2.8"/><path d="M6.3 3.8l1.1-1.1a2.3 2.3 0 0 1 3.3 3.3l-1.1 1.1"/><path d="M7.7 10.2l-1.1 1.1a2.3 2.3 0 0 1-3.3-3.3l1.1-1.1"/></svg></button>
       <label class="cb-f" id="cb-hwrap" title="Height — inches; type 36pt, 3p or 1cm too">H<input id="cb-h" data-ar="ar-h" data-unit="len" inputmode="decimal" autocomplete="off"></label>
+      <!-- Scale X / Y for a frame: a percent of its size now, applied about the
+           reference point; it reads 100 again afterwards (InDesign with
+           "adjust scaling percentage" on, which is how a frame resizes). -->
+      <label class="cb-f cb-narrow" id="cb-sxwrap" title="Scale horizontally, percent of the width now">X%<input id="cb-sx" data-unit="pct" inputmode="decimal" autocomplete="off"></label>
+      <label class="cb-f cb-narrow" id="cb-sywrap" title="Scale vertically, percent of the height now">Y%<input id="cb-sy" data-unit="pct" inputmode="decimal" autocomplete="off"></label>
       <label class="cb-f" id="cb-swrap" title="Scale, percent"><svg class="cb-ic" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 2h3.5v3.5M12 2L7.5 6.5M5.5 12H2V8.5M2 12l4.5-4.5"/></svg><input id="cb-scale" data-ar="ar-scale" data-unit="pct" inputmode="decimal" autocomplete="off"></label>
     </span>
     <span class="ty-sep"></span>
@@ -2700,6 +2725,8 @@
         <button id="cb-flipv" data-flip="v" aria-label="Flip vertical"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"
           stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M1.5 7h11" stroke-dasharray="1.5 1.3"/><path d="M3.5 5.5L10.5 1.5v4z"/><path d="M3.5 8.5l7 4v-4z" fill="currentColor" fill-opacity=".35"/></svg></button>
       </span>
+      <!-- InDesign's flip indicator: a P turned and mirrored as the frame is. -->
+      <span id="cb-pflag" aria-hidden="true">P</span>
     </span>
     <span class="ty-sep" id="cb-cornersep"></span>
     <span class="cb-grp" id="cb-corner">
@@ -2712,6 +2739,12 @@
       <button data-fit="fill" aria-label="Fit content to frame (stretches)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11" fill="currentColor" fill-opacity=".3"/><path d="M4 7h6M4 7l1.5-1.5M4 7l1.5 1.5M10 7L8.5 5.5M10 7L8.5 8.5"/></svg></button>
       <button data-fit="none" aria-label="Center content (actual size)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="11" height="11"/><rect x="4.5" y="4.5" width="5" height="5" fill="currentColor" fill-opacity=".3"/></svg></button>
       <button data-fit="frame" aria-label="Fit frame to content"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="3" width="8" height="8" fill="currentColor" fill-opacity=".3"/><path d="M1.5 4V1.5H4M10 1.5h2.5V4M12.5 10v2.5H10M4 12.5H1.5V10"/></svg></button>
+    </span>
+    <!-- Where the picture sits in its frame once it is fitted (fitAlign), and
+         the Frame Fitting Options dialog. Shown with a fit set. -->
+    <span class="cb-grp" id="cb-fitx">
+      <span class="cb-refgrid" id="cb-fitref" role="radiogroup" aria-label="Anchor the picture in its frame"><button data-fa="tl" role="radio" aria-label="top left"></button><button data-fa="t" role="radio" aria-label="top"></button><button data-fa="tr" role="radio" aria-label="top right"></button><button data-fa="l" role="radio" aria-label="left"></button><button data-fa="c" role="radio" aria-label="centre"></button><button data-fa="r" role="radio" aria-label="right"></button><button data-fa="bl" role="radio" aria-label="bottom left"></button><button data-fa="b" role="radio" aria-label="bottom"></button><button data-fa="br" role="radio" aria-label="bottom right"></button></span>
+      <button id="cb-fitopts" aria-label="Frame fitting options…"><span style="font:600 12px system-ui">⋯</span></button>
     </span>
     <span class="ty-sep" id="cb-framesep"></span>
     <span class="cb-grp" id="cb-frame" title="Text frame options">
@@ -7282,6 +7315,10 @@ function layerMenu(d, el, e) {
       };
       FIT_LABELS.forEach(([mode, label]) => row(label, () => _pilotApplyFit(id, mode), cur.fit === mode));
       row('Fit frame to content', () => _pilotApplyFitFrame(id), false);
+      const fo = d.createElement('button');
+      fo.textContent = 'Frame fitting options…';
+      fo.addEventListener('click', () => { closeMenu(d); frameFittingOptions(id); });
+      sub.appendChild(fo);
       if (cur.fit) {
         const head = d.createElement('div'); head.className = 'ds-menu-head';
         head.textContent = 'Anchor the picture'; sub.appendChild(head);
@@ -18099,6 +18136,128 @@ const ctlShow = (inp, v, dp = 2) => {
 
 /** Paint the bar from the selection. Called at the end of every arrangeBar,
  *  so it is never a step behind the strip. */
+// ---- the reference point (phase 3)
+// A frame's place is its UNROTATED box (x, y, w, h — what the store keeps)
+// with rotation, scale and flip about its centre (paintRot; layout.py's
+// _style). The reference point is one of that box's nine points, carried
+// round by the rotation and the scale; a change made from the bar puts the
+// frame back so that point has not moved, as InDesign's Control panel does.
+const REF_PTS = { tl: [0, 0], t: [0.5, 0], tr: [1, 0], l: [0, 0.5], c: [0.5, 0.5],
+  r: [1, 0.5], bl: [0, 1], b: [0.5, 1], br: [1, 1] };
+const FIT_ALIGN_REF = { 'top left': 'tl', top: 't', 'top right': 'tr', left: 'l', center: 'c',
+  right: 'r', 'bottom left': 'bl', bottom: 'b', 'bottom right': 'br' };
+const REF_FIT_ALIGN = Object.fromEntries(Object.entries(FIT_ALIGN_REF).map(([a, r]) => [r, a]));
+let ctlRef = 'tl', ctlLink = false;
+try {
+  const r = localStorage.getItem('ds-refpt'); if (REF_PTS[r]) ctlRef = r;
+  ctlLink = localStorage.getItem('ds-linkwh') === '1';
+} catch (e) { /* file: */ }
+const rotVec = (deg, x, y) => {
+  const a = (deg || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  return [x * c - y * s, x * s + y * c];
+};
+/** One selected thing as a frame: its unrotated, unscaled box in page inches,
+ *  its scale, rotation and flip, and the centre they all turn about. */
+function frameOf(d, el) {
+  const id = idOf(el), st = storeOf(id) || {};
+  const page = el.closest('section.page') || d.querySelector('section.page');
+  const graphic = !el.dataset.shape && isGraphic(el);
+  let w, h;
+  if (el.dataset.shape) { const b = shapeBox(el, page); w = st.w ?? b.w; h = st.h ?? b.h; }
+  else {
+    w = st.w ?? (el.offsetWidth / DPI || inchBox(el, page).w);
+    h = st.h ?? (el.offsetHeight / DPI || inchBox(el, page).h);
+  }
+  const s = graphic ? (st.scale || 1) : 1;
+  let x = st.x, y = st.y;
+  if (x == null || y == null) {               // not placed yet: centred on what shows
+    const b = shapeBox(el, page);
+    x = b.x + b.w / 2 - w / 2; y = b.y + b.h / 2 - h / 2;
+  }
+  return { x, y, w, h, s, rot: +(st.rot || 0), flip: st.flip || '', graphic,
+    cx: x + w / 2, cy: y + h / 2 };
+}
+/** Where a frame's reference point is on the page. */
+function refPointOf(f, ref = ctlRef) {
+  const [fx, fy] = REF_PTS[ref];
+  const [ox, oy] = rotVec(f.rot, (fx - 0.5) * f.w * f.s, (fy - 0.5) * f.h * f.s);
+  return { x: f.cx + ox, y: f.cy + oy };
+}
+/** One change from the bar, about the reference point, as ONE undo step:
+ *  {X} / {Y} put the point there; {w} / {h} (both, with the link on) and
+ *  {sx} / {sy} resize; {scale} rescales a graphic; {rot} sets the angle and
+ *  {turn} adds to it; {flip: 'h' | 'v'} mirrors. Locked or several things:
+ *  refused (false). */
+async function ctlFrameChange(patch) {
+  const d = $('out').contentDocument;
+  const els = d && d.body ? selEls(d) : [];
+  if (els.length !== 1 || isLocked(idOf(els[0]))) return false;
+  const el = els[0], f = frameOf(d, el);
+  const P = refPointOf(f);
+  let { w, h, s, rot, flip } = f, ref = ctlRef;
+  if (patch.X != null) P.x = patch.X;
+  if (patch.Y != null) P.y = patch.Y;
+  if (patch.w != null) { const nw = Math.max(0.1, patch.w); if (ctlLink) h = h * nw / w; w = nw; }
+  if (patch.h != null) { const nh = Math.max(0.1, patch.h); if (ctlLink) w = w * nh / h; h = nh; }
+  if (patch.sx != null) { w *= patch.sx; if (ctlLink) h *= patch.sx; }
+  if (patch.sy != null) { h *= patch.sy; if (ctlLink) w *= patch.sy; }
+  if (patch.scale != null) s = Math.max(0.2, Math.min(5, patch.scale));
+  if (patch.rot != null || patch.turn != null) {
+    let v = patch.rot != null ? +patch.rot : rot + patch.turn;
+    v = ((v % 360) + 360) % 360; if (v > 180) v -= 360;
+    rot = +v.toFixed(2);
+  }
+  if (patch.flip) {
+    const cur = new Set(flip.split(''));
+    cur.has(patch.flip) ? cur.delete(patch.flip) : cur.add(patch.flip);
+    flip = ['h', 'v'].filter(a => cur.has(a)).join('');
+    // The point that stays is where the reference point WAS; on the mirrored
+    // frame that place is the mirrored point.
+    const [fx, fy] = REF_PTS[ref];
+    const m = patch.flip === 'h' ? [1 - fx, fy] : [fx, 1 - fy];
+    ref = Object.keys(REF_PTS).find(k => REF_PTS[k][0] === m[0] && REF_PTS[k][1] === m[1]);
+  }
+  const [fx, fy] = REF_PTS[ref];
+  const [ox, oy] = rotVec(rot, (fx - 0.5) * w * s, (fy - 0.5) * h * s);
+  const nx = P.x - ox - w / 2, ny = P.y - oy - h / 2;
+  const page = el.closest('section.page') || d.querySelector('section.page');
+  pushHistory();
+  const st = ensureStore(d, el);
+  if (rot !== f.rot) { lastXform = { kind: 'rot', deg: +(rot - f.rot).toFixed(1) }; if (rot) st.rot = rot; else delete st.rot; }
+  if (flip !== f.flip) { if (flip) st.flip = flip; else delete st.flip; }
+  if (f.graphic && s !== f.s) { if (Math.abs(s - 1) < 0.005) delete st.scale; else st.scale = +s.toFixed(3); }
+  const Pl = placer(d, el, page);
+  // put() keeps a frame on the page by the size it measured; a resize about
+  // the right edge must be kept on by the size it is about to have.
+  if (!f.graphic && Pl.box) { Pl.box.w = w; Pl.box.h = h; }
+  Pl.commit(Pl.put(+nx.toFixed(4), +ny.toFixed(4), false));
+  if (Math.abs(w - f.w) > 1e-6 || Math.abs(h - f.h) > 1e-6)
+    commitSize(d, el, { w: Math.abs(w - f.w) > 1e-6 ? w : undefined, h: Math.abs(h - f.h) > 1e-6 ? h : undefined });
+  clearGuides(d);
+  markDirty();
+  await render();
+  paintSel($('out').contentDocument);
+  return true;
+}
+/** InDesign's Frame Fitting Options, as far as this engine goes: how the
+ *  picture is fitted and where it is anchored. Auto-Fit is what the page does
+ *  already (object-fit refits on every layout); crop amounts with a fit are
+ *  refused by the engine (layout.py: crop and fit are two ways to frame one
+ *  image), so they are not offered. */
+async function frameFittingOptions(id) {
+  const now = fitNow(id);
+  const got = await dsForm('Frame fitting options', [
+    { name: 'fit', type: 'select', label: 'Fitting', value: now.fit || '',
+      options: [{ value: '', label: 'None (as placed)' },
+        ...FIT_LABELS.map(([v, l]) => ({ value: v, label: l }))] },
+    { name: 'align', type: 'select', label: 'Anchor the picture at', value: now.align || 'center',
+      options: Object.keys(FIT_ALIGN_REF).map(a => ({ value: a, label: a })) },
+  ], { okLabel: 'Apply' });
+  if (got == null) return;
+  if (!got.fit) return applyFitting(id, () => _pilotApplyFit(id, null));
+  return applyFitting(id, () => _pilotApplyFit(id, got.fit, got.align === 'center' ? null : got.align));
+}
+
 function ctlPaint(d) {
   if (!ctlOn) return;
   const n = selIds.size;
@@ -18138,21 +18297,36 @@ function ctlPaint(d) {
   $('cb-arsep').hidden = $('arrange').hidden;
   const id = one ? idOf(one) : null;
   const locked = n > 0 && [...selIds].every(isLocked);
-  // Geometry: one thing at a time, as the Position panel.
+  // Geometry: one thing at a time, as the Position panel. X and Y are the
+  // reference point's (top left unless the grid says otherwise).
   $('cb-geo').hidden = !one;
+  $('cb-ref').hidden = !one;
   $('cb-rot').closest('label').hidden = $('cb-skew').closest('label').hidden = !one;
+  document.querySelectorAll('#cb-ref [data-ref]').forEach(b => {
+    b.classList.toggle('on', b.dataset.ref === ctlRef);
+    b.setAttribute('aria-checked', String(b.dataset.ref === ctlRef));
+  });
   if (one) {
-    const g = geoOf(d, one);
-    ctlShow($('cb-x'), g.x); ctlShow($('cb-y'), g.y);
-    $('cb-wwrap').hidden = $('cb-hwrap').hidden = g.graphic;
+    const g = geoOf(d, one), f = frameOf(d, one), P = refPointOf(f);
+    ctlShow($('cb-x'), P.x); ctlShow($('cb-y'), P.y);
+    $('cb-wwrap').hidden = $('cb-hwrap').hidden = $('cb-link').hidden = g.graphic;
+    $('cb-sxwrap').hidden = $('cb-sywrap').hidden = g.graphic;
     $('cb-swrap').hidden = !g.graphic;
     if (g.graphic) ctlShow($('cb-scale'), g.scale, 0);
-    else { ctlShow($('cb-w'), g.w); ctlShow($('cb-h'), g.h); }
+    else { ctlShow($('cb-w'), f.w); ctlShow($('cb-h'), f.h); ctlShow($('cb-sx'), 100, 0); ctlShow($('cb-sy'), 100, 0); }
     ctlShow($('cb-rot'), g.rot, 1); ctlShow($('cb-skew'), g.skew, 1);
   }
+  $('cb-link').classList.toggle('on', ctlLink);
+  $('cb-link').setAttribute('aria-pressed', String(ctlLink));
   const flip = one ? geoOf(d, one).flip : '';
   $('cb-fliph').classList.toggle('on', flip.includes('h'));
   $('cb-flipv').classList.toggle('on', flip.includes('v'));
+  // The P: mirrored as the frame is flipped, turned as it is rotated.
+  const rotNow = one ? +(geoOf(d, one).rot || 0) : 0;
+  $('cb-pflag').hidden = !one;
+  $('cb-pflag').style.transform = `rotate(${rotNow}deg) scale(${flip.includes('h') ? -1 : 1},${flip.includes('v') ? -1 : 1})`;
+  $('cb-pflag').title = !one ? '' : (flip ? `flipped ${flip === 'hv' ? 'both ways' : flip === 'h' ? 'horizontally' : 'vertically'}` : 'not flipped')
+    + (rotNow ? `, turned ${rotNow}°` : '');
   document.querySelectorAll('#cb-turn button, #cb-geo input, #cb-turn input')
     .forEach(x => { x.disabled = locked; });
   // A rectangle's corners.
@@ -18163,10 +18337,18 @@ function ctlPaint(d) {
   // A picture's frame fitting.
   const fit = !!id && !!fitKind(id);
   $('cb-fit').hidden = $('cb-fitsep').hidden = !fit;
+  $('cb-fitx').hidden = !fit;
   if (fit) {
-    const cur = fitNow(id).fit;
+    const now = fitNow(id), cur = now.fit;
     document.querySelectorAll('#cb-fit button').forEach(b =>
       b.classList.toggle('on', b.dataset.fit === cur));
+    // The picture's anchor means something only once it is fitted.
+    $('cb-fitref').hidden = !cur;
+    const fa = FIT_ALIGN_REF[now.align || 'center'];
+    document.querySelectorAll('#cb-fitref [data-fa]').forEach(b => {
+      b.classList.toggle('on', b.dataset.fa === fa);
+      b.setAttribute('aria-checked', String(b.dataset.fa === fa));
+    });
   }
   // A text frame: columns, gutter, inset, vertical justification.
   const bx = id && boxOf(id);
@@ -18197,10 +18379,20 @@ document.querySelectorAll('#ctl input[data-ar]').forEach(inp => {
       return;
     }
     inp.classList.remove('bad');
-    const ok = await arApply(inp.dataset.ar, v);
+    // X, Y, size, scale and rotation go through the reference point; shear
+    // stays the Position panel's own (it has no pivot of its own here).
+    const route = { 'cb-x': { X: v }, 'cb-y': { Y: v }, 'cb-w': { w: v }, 'cb-h': { h: v },
+      'cb-scale': { scale: v / 100 }, 'cb-rot': { rot: v } }[inp.id];
+    const ok = route ? await ctlFrameChange(route) : await arApply(inp.dataset.ar, v);
     if (!ok) ctlPaint($('out').contentDocument);
   });
 });
+['cb-sx', 'cb-sy'].forEach(fid => $(fid).addEventListener('change', async () => {
+  const v = ctlValue($(fid));
+  if (!isFinite(v) || v <= 0) { $(fid).classList.add('bad'); return; }
+  const ok = await ctlFrameChange(fid === 'cb-sx' ? { sx: v / 100 } : { sy: v / 100 });
+  if (!ok) ctlPaint($('out').contentDocument);
+}));
 // Escape puts the field back and hands the keys back to the page; Enter
 // commits (change) and leaves the field, as InDesign's does.
 document.querySelectorAll('#ctl input').forEach(inp => {
@@ -18209,14 +18401,40 @@ document.querySelectorAll('#ctl input').forEach(inp => {
     else if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
   });
 });
-// Rotate 90° and flip: right-click ▸ Rotate and flip's turnObjects, on the
-// whole selection, one undo step.
+// Rotate 90° and flip. One thing: about the reference point (ctlFrameChange).
+// Several: right-click ▸ Rotate and flip's turnObjects, each about its own
+// centre, one undo step for the lot.
 document.querySelectorAll('#cb-turn [data-turn], #cb-turn [data-flip]').forEach(b =>
   b.addEventListener('click', () => {
     const d = $('out').contentDocument;
     if (!d || !selIds.size) return;
+    const op = b.dataset.flip ? { flip: b.dataset.flip } : { turn: +b.dataset.turn };
+    if (selIds.size === 1) return ctlFrameChange(op);
     turnObjects(d, [...selIds], b.dataset.flip ? { flip: b.dataset.flip } : { rot: +b.dataset.turn });
   }));
+document.querySelectorAll('#cb-ref [data-ref]').forEach(b => b.addEventListener('click', () => {
+  ctlRef = b.dataset.ref;
+  try { localStorage.setItem('ds-refpt', ctlRef); } catch (e) { /* file: */ }
+  ctlPaint($('out').contentDocument);
+}));
+$('cb-link').addEventListener('click', () => {
+  ctlLink = !ctlLink;
+  try { localStorage.setItem('ds-linkwh', ctlLink ? '1' : '0'); } catch (e) { /* file: */ }
+  ctlPaint($('out').contentDocument);
+});
+// The picture's anchor in its frame, and Frame Fitting Options.
+document.querySelectorAll('#cb-fitref [data-fa]').forEach(b => b.addEventListener('click', () => {
+  const { one } = ctlSelected();
+  const id = one && idOf(one);
+  if (!id || !fitKind(id) || !fitNow(id).fit) return;
+  const a = REF_FIT_ALIGN[b.dataset.fa];
+  applyFitting(id, () => _pilotApplyFit(id, fitNow(id).fit, a === 'center' ? null : a));
+}));
+$('cb-fitopts').addEventListener('click', () => {
+  const { one } = ctlSelected();
+  const id = one && idOf(one);
+  if (id && fitKind(id)) frameFittingOptions(id);
+});
 $('cb-r').addEventListener('change', async () => {
   const { one } = ctlSelected();
   const sh = one && shapeOf(idOf(one));
