@@ -164,6 +164,10 @@
           box-sizing:border-box; border:1px solid #D9E1DB; border-radius:7px;
           background:#fff; color:#2F3E46; transition:border-color .12s; }
   .cb-f select { width:auto; }
+  /* The icon or letter beside a number is a scrub handle: press and drag it
+     sideways to change the number, as InDesign's and Figma's do. */
+  .cb-f[data-scrub] { cursor:ew-resize; user-select:none; }
+  .cb-f[data-scrub] input { cursor:text; }
   .cb-narrow input { width:48px; }
   .cb-f input:hover, .cb-f select:hover { border-color:var(--sage); }
   .cb-f input:focus, .cb-f select:focus, #cb-obj button:focus-visible
@@ -19201,6 +19205,69 @@ document.querySelectorAll('#type select[data-proxy]').forEach(sel =>
   sel.addEventListener('change', () => ctlTextWrite($(sel.dataset.proxy), sel.value)));
 document.querySelectorAll('#type button[data-proxy]').forEach(b =>
   b.addEventListener('click', () => ctlTextWrite($(b.dataset.proxy), !$(b.dataset.proxy).checked)));
+
+// ---- hints and scrubbing for the bar's number fields
+// Each field is a bare icon (or X, Y, W, H) beside a box, so the hover chip says
+// what it stands for: the field's `title` becomes a `data-tip`, which wireTooltips
+// shows after a beat (a native title took a second or two and was easy to miss).
+// And the icon is a scrub handle: press it and drag sideways, and the number
+// moves — shift for ten times the pace, alt for a tenth. The number follows the
+// pointer; the change is made ONCE, on release, so it is one undo step and one
+// render, through the very handler a typed value goes through.
+const CTL_SCRUB_STEP = { len: 0.01, pt: 0.25, pct: 0.5, deg: 0.5, track: 1, kern: 1, lead: 0.25 };
+function ctlScrubStart(lab, inp, e0) {
+  const u = inp.dataset.unit;
+  const raw = String(inp.value).replace(/[()]/g, '').trim();
+  const start = parseFloat(raw) || (inp.placeholder ? parseFloat(inp.placeholder) : 0) || 0;
+  const signed = inp.id === 'cb-x' || inp.id === 'cb-y';
+  const lo = u === 'len' ? (signed ? -Infinity : 0) : u === 'pct' ? 1 : u === 'pt' ? 0.5 : -Infinity;
+  const dp = u === 'len' || u === 'pt' || u === 'lead' ? 2 : u === 'track' || u === 'kern' ? 0 : 1;
+  const hadRun = Object.prototype.hasOwnProperty.call(CB_RUN, inp.id);
+  if (hadRun) ctlRunHold(inp);                // keep the selected words open
+  let moved = false;
+  const move = e => {
+    const dx = e.clientX - e0.clientX;
+    if (!moved && Math.abs(dx) < 3) return;
+    moved = true;
+    let step = CTL_SCRUB_STEP[u] || 0.1;
+    if (u === 'lead' && start <= 4) step = 0.02;        // a multiple, not points
+    const pace = e.shiftKey ? 10 : e.altKey ? 0.1 : 1;
+    let v = Math.max(lo, start + dx * step * pace);
+    inp.value = String(+v.toFixed(dp));
+    inp.classList.remove('bad');
+    document.body.style.cursor = 'ew-resize';
+  };
+  const up = () => {
+    document.removeEventListener('mousemove', move, true);
+    document.removeEventListener('mouseup', up, true);
+    document.body.style.cursor = '';
+    if (!moved) { inp.focus(); inp.select(); return; }      // a plain click still enters the field
+    // the click that follows a drag would focus the field: swallow it
+    const eat = ev => { ev.preventDefault(); ev.stopPropagation(); };
+    lab.addEventListener('click', eat, { capture: true, once: true });
+    setTimeout(() => lab.removeEventListener('click', eat, true), 0);
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    if (hadRun) setTimeout(ctlRunLetGo, 0);
+  };
+  document.addEventListener('mousemove', move, true);
+  document.addEventListener('mouseup', up, true);
+}
+document.querySelectorAll('#ctl [title]:not(button)').forEach(el => {
+  const t = el.getAttribute('title');
+  if (!t) return;
+  const inp = el.matches('input, select') ? el : el.querySelector('input, select');
+  const scrubby = inp && inp.tagName === 'INPUT' && el.matches('label.cb-f') && inp.dataset.unit;
+  el.dataset.tip = scrubby ? t + ' · drag sideways to change' : t;
+  if (inp && !inp.getAttribute('aria-label')) inp.setAttribute('aria-label', t.split(' — ')[0]);
+  el.removeAttribute('title');
+  if (!scrubby) return;
+  el.dataset.scrub = '1';
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target === inp) return;
+    e.preventDefault();                       // no focus change, no text selection
+    ctlScrubStart(el, inp, e);
+  });
+});
 
 // ----------------------------------------------------------------- layers
 // Canva's layers panel, scoped to the page in view: every FLOATING object —
