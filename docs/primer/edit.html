@@ -667,6 +667,16 @@
            goes. */
         scrollbar-width:none; }
   #stage::-webkit-scrollbar { display:none; }
+  /* Rulers: fixed over the stage's top and left edges (drawRulers places
+     them from the stage's rect), drawn on canvases. color is the tick ink,
+     background the ruler off the sheet, --ruler-page the sheet's own span. */
+  .ruler { position:fixed; z-index:7; color:#4A5A61; background:#ECEEEA;
+           --ruler-page:#FFFFFF; --ruler-sel:rgba(18,181,165,.30); cursor:crosshair; }
+  #ruler-t { cursor:row-resize; }
+  #ruler-l { cursor:col-resize; }
+  #ruler-c { z-index:8; cursor:default; border:solid rgba(0,0,0,.18); border-width:0 1px 1px 0;
+             box-sizing:border-box; }
+  .ruler[hidden] { display:none; }
   /* #ds-warm is the warm-boot preview: the last render, painted into its OWN
      overlay iframe while Pyodide compiles, and removed by the first real
      swap. Its own frame and not #out, so that "#out has a page in it" keeps
@@ -2215,7 +2225,13 @@
     <button class="shp" id="guides"><svg class="shp-i" viewBox="0 0 14 14"
       ><rect x="1.5" y="1.5" width="11" height="11" rx="1"/><path
         d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"/></svg
-      ><span class="shp-t">Rulers &amp; guides</span></button>
+      ><span class="shp-t">Rulers &amp; guides</span><span class="shp-k">⌘;</span></button>
+    <button class="shp" id="guidelock"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="3" y="6.5" width="8" height="6" rx="1"/><path d="M4.8 6.5V4.6a2.2 2.2 0 0 1 4.4 0v1.9"/></svg
+      ><span class="shp-t">Lock guides</span></button>
+    <button class="shp" id="frameedges"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="2" y="2" width="10" height="10" stroke-dasharray="2 1.5"/></svg
+      ><span class="shp-t">Frame edges</span></button>
     <button class="shp" id="hiddenchars"><span class="shp-i shp-glyph" aria-hidden="true">¶</span
       ><span class="shp-t">Hidden characters</span><span class="shp-k">⌥⌘I</span></button>
     <button class="shp" id="layers"><svg class="shp-i" viewBox="0 0 14 14"
@@ -2516,6 +2532,9 @@
       <button class="shp" data-k="star"><span class="tile-art"><svg viewBox="0 0 15 15"
         fill="#CAD2C5" stroke="#52796F" stroke-width="1.1" stroke-linejoin="round"><path
         d="M7.5 1.5l1.7 3.9 4.2.4-3.2 2.8 1 4.1-3.7-2.2-3.7 2.2 1-4.1-3.2-2.8 4.2-.4z"/></svg></span>Star</button>
+      <button class="shp" data-spacer title="A gap marker (InDesign's spacer): an X'd box that holds a fixed distance between two things. Shows only here — never printed or published. With one object selected, it goes right under it."><span class="tile-art"><svg viewBox="0 0 15 15"
+        fill="none" stroke="#7C4DFF" stroke-width="1.1"><rect x="1.5" y="4.5" width="12" height="6" stroke-dasharray="2 1.2"/><path
+        d="M1.5 4.5l12 6M13.5 4.5l-12 6"/></svg></span>Spacer</button>
       <button class="shp" data-qr title="A QR code for a link — for a printed page"><span class="tile-art"><svg viewBox="0 0 15 15"
         fill="#52796F"><path d="M2 2h4v4H2zM9 2h4v4H9zM2 9h4v4H2zM8 8h2v2H8zM11 11h2v2h-2zM10 9h1v1h-1z"/></svg></span>QR code</button>
       <button class="shp" data-pen title="Click to place points, drag to pull a curve; Enter or the first point to close, Esc to finish open"><span class="tile-art"><svg viewBox="0 0 15 15"
@@ -3023,6 +3042,11 @@
     <button id="side-fold" aria-label="Collapse this panel"><span>‹</span></button>
   </aside>
   <div id="stage"><iframe id="out" title="editable draft"></iframe></div>
+  <!-- Rulers (drawRulers): window chrome over the stage's top and left
+       edges, in inches from the sheet's corner. Drag out of one for a guide. -->
+  <canvas id="ruler-t" class="ruler" hidden title="Drag down onto a page for a horizontal guide"></canvas>
+  <canvas id="ruler-l" class="ruler" hidden title="Drag right onto a page for a vertical guide"></canvas>
+  <div id="ruler-c" class="ruler" hidden title="Rulers in inches, from each page’s top-left corner"></div>
 </div>
 <div id="rail" hidden>
   <!-- Thirteen page thumbnails are worth their room while you are moving
@@ -7613,6 +7637,7 @@ function startResize(d, el, e0, dir) {
   const wordy = !shapeId && !graphic && (isHeadingEl(el) || isTextEl(el));
   const grab = { x: e0.clientX, y: e0.clientY };
   const priorSize = !shapeId && !graphic ? placementOf([id]) : null;
+  const spPre = graphic ? null : spacerSnapshot(d, page);
   el.classList.add('ds-lifted');
   d.body.classList.add('ds-resizing');
 
@@ -7701,7 +7726,9 @@ function startResize(d, el, e0, dir) {
     } else {
       markDirty();
     }
-    paintSel(d);                          // ring + handles + mini follow the new box
+    const kept = spacerFollow(spPre, [id]);
+    if (kept) render().then(() => { $('stat').textContent = kept; });
+    else paintSel(d);                     // ring + handles + mini follow the new box
   };
   dragListen(d, move, up);
 }
@@ -13807,7 +13834,7 @@ function shapeBox(el, page) {
   // is an icon's: the glyph sits inset in its square, and measuring the
   // glyph put inventory() and place() in different coordinates — a pilot
   // asking for x+0.25 from the box it was shown moved the icon 0.3.
-  if (s && (s.kind === 'chart' || s.kind === 'icon') && s.x !== undefined && +s.w > 0 && +s.h > 0)
+  if (s && (s.kind === 'chart' || s.kind === 'icon' || s.kind === 'spacer') && s.x !== undefined && +s.w > 0 && +s.h > 0)
     return { x: +s.x, y: +s.y, w: +s.w, h: +s.h };
   return inchBox(el, page);
 }
@@ -14085,7 +14112,7 @@ let selPage = null;
 
 const setSel = (d, ids) => {
   selIds.clear(); ids.forEach(i => selIds.add(i));
-  if (ids.length) selPage = null;
+  if (ids.length) { selPage = null; unselectGuide(d); }
   paintSel(d);
 };
 const clearSel = d => { selIds.clear(); selPage = null; paintSel(d); };
@@ -15133,6 +15160,9 @@ let lastNudge = 0, nudgeSeq = -1;
 const CHORDS = [
   // name, test, act — `mod` is ⌘ on a Mac and Ctrl elsewhere
   ['undo / redo', (e, k) => k.mod && !k.alt && k.key === 'z', (d, e) => e.shiftKey ? redo() : undo()],
+  // ⌘; is InDesign's Show Guides; ⌘R, its Show Rulers, is this window's
+  // Reload (View ▸ Reload editor), so rulers and guides share the one switch.
+  ['rulers & guides', (e, k) => k.mod && !k.alt && !k.shift && e.code === 'Semicolon', () => toggleGuides()],
   ['redo (Ctrl+Y)', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'y', () => redo()],
   ['to front / back', (e, k) => k.mod && !k.alt && k.shift && (e.code === 'BracketRight' || e.code === 'BracketLeft'),
     (d, e) => { if (selIds.size) layerStep(d, e.code === 'BracketRight' ? 1 : -1, true); }],
@@ -15155,6 +15185,7 @@ const CHORDS = [
   ['group / ungroup', (e, k) => k.mod && k.key === 'g', (d, e) => e.shiftKey ? ungroupSel(d) : groupSel(d)],
   // on the selection
   ['deselect', (e, k) => e.key === 'Escape' && selIds.size > 0, d => clearSel(d), { noPrevent: true }],
+  ['delete guide', (e, k) => (e.key === 'Delete' || e.key === 'Backspace') && !selIds.size && !!selGuide, () => deleteSelGuide()],
   ['delete', (e, k) => (e.key === 'Delete' || e.key === 'Backspace') && selIds.size > 0, d => deleteSel(d)],
   ['open the words', (e, k) => e.key === 'Enter' && !k.mod && !k.alt && !k.shift && selIds.size === 1,
     (d, e) => enterOpensBox(d, e), { maybe: true }],
@@ -17070,13 +17101,9 @@ function drawGuideLayer(d) {
         pg.appendChild(c);
       });
     }
-    ['t', 'l'].forEach(side => {
-      const r = d.createElement('div');
-      r.className = 'ds-rule ' + side;
-      r.title = 'Drag onto the page to add a guide';
-      r.addEventListener('mousedown', e => startGuideCreate(d, pg, side === 't' ? 'v' : 'h', e));
-      pg.appendChild(r);
-    });
+    // The rulers themselves live in the window, along the canvas's top and
+    // left edges (drawRulers), not on the sheet: a strip inside the page
+    // covered its first fifth of an inch and carried no measurements.
     guidesX().forEach((gx, i) => pg.appendChild(guideLine(d, pg, 'v', i, gx)));
     guidesY().forEach((gy, i) => pg.appendChild(guideLine(d, pg, 'h', i, gy)));
   });
@@ -17084,67 +17111,460 @@ function drawGuideLayer(d) {
 
 function guideLine(d, pg, axis, idx, pos) {
   const el = d.createElement('div');
-  el.className = 'ds-gd ' + axis;
+  el.className = 'ds-gd ' + axis + (guidesLocked ? ' ds-gd-lock' : '')
+    + (selGuide && selGuide.axis === axis && selGuide.idx === idx ? ' sel' : '');
+  el.dataset.axis = axis; el.dataset.idx = idx;
   el.style[axis === 'v' ? 'left' : 'top'] = pos + 'in';
-  el.title = `guide at ${pos}in — drag to move, off the page to delete`;
+  el.title = guidesLocked ? `guide at ${pos}in (guides are locked — View ▸ Lock guides)`
+    : `guide at ${pos}in — drag to move; click and Delete, or drag onto a ruler, to remove`;
   el.addEventListener('mousedown', e => startGuideDrag(d, pg, axis, idx, e));
   return el;
 }
 
-/** Pull a fresh guide out of a ruler. It follows the cursor from the first
- *  pixel and commits where you drop it (inside the page). */
-function startGuideCreate(d, pg, axis, e0) {
-  e0.preventDefault(); e0.stopPropagation();
-  const px = DPI * zoomOf(pg), pr = pg.getBoundingClientRect();
-  const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
-  const ghost = d.createElement('div');
-  ghost.className = 'ds-gd ' + axis;
-  pg.appendChild(ghost);
-  let pos = 0;
-  const at = e => round2(Math.max(0, Math.min(span,
-    axis === 'v' ? (e.clientX - pr.left) / px : (e.clientY - pr.top) / px)));
-  const move = e => {
-    pos = at(e);
-    ghost.style[axis === 'v' ? 'left' : 'top'] = pos + 'in';
-    $('stat').textContent = `guide at ${pos}in`;
+// One guide can be selected (a click on it), and Delete removes it — the
+// other way, besides dragging it back onto a ruler. It is not an object:
+// selecting one clears the object selection and an object selection clears
+// it, so Delete always means one thing.
+let selGuide = null;
+function unselectGuide(d) {
+  if (!selGuide) return;
+  selGuide = null;
+  (d || $('out').contentDocument)?.querySelectorAll('.ds-gd.sel').forEach(n => n.classList.remove('sel'));
+}
+function deleteSelGuide() {
+  if (!selGuide) return false;
+  const { axis, idx } = selGuide;
+  const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
+  if (idx >= arr.length) { selGuide = null; return false; }
+  pushHistory();
+  const [gone] = arr.splice(idx, 1);
+  selGuide = null;
+  if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+  drawGuideLayer($('out').contentDocument);
+  $('stat').textContent = `guide at ${gone}in removed`;
+  return true;
+}
+/** Add one ruler guide at `at` inches — 'x' a vertical line, 'y' a
+ *  horizontal one — the pilot's way to drag one out of a ruler. */
+function addGuide(axis, at) {
+  const v = round2(+at);
+  if (axis === 'x') { if (!guidesX().includes(v)) setGuides([...guidesX(), v], guidesY()); }
+  else if (!guidesY().includes(v)) setGuides(guidesX(), [...guidesY(), v]);
+  return v;
+}
+function removeGuide(axis, at) {
+  const v = round2(+at);
+  const arr = (axis === 'x' ? guidesX() : guidesY()).filter(g => Math.abs(g - v) > 0.005);
+  if (axis === 'x') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+}
+let guidesLocked = false;
+try { guidesLocked = localStorage.getItem('ds-guides-lock') === '1'; } catch (e) { /* file: */ }
+
+// ----------------------------------------------------------------- rulers
+// InDesign's rulers: inches along the canvas's top and left edges, 0 at the
+// sheet's top-left corner, following scroll and zoom. They are window chrome
+// (#ruler-t, #ruler-l: canvases over the stage's edges), not part of the
+// page, and show with the guides (View ▸ Rulers & guides, ⌘;). The top ruler
+// measures the sheet nearest the middle of the view; the left one restarts
+// at 0 on every sheet in view, as a stack of pages reads in InDesign. Drag
+// out of the top ruler for a horizontal guide, out of the left for a
+// vertical one; drag a guide back onto a ruler to delete it.
+const RULER_PX = 18;
+let rulerSig = '', rulerRaf = 0;
+/** The page geometry in WINDOW pixels: the iframe is scaled by a transform,
+ *  so a frame rect is (frame px x scale) from the iframe's own corner. */
+function rulerFrame() {
+  const out = $('out'), d = out && out.contentDocument;
+  if (!d || !d.body) return null;
+  const or = out.getBoundingClientRect();
+  const sc = or.width / (out.offsetWidth || 1) || 1;
+  const S = $('stage').getBoundingClientRect();
+  const pages = [...d.querySelectorAll('section.page')].filter(pg => pg.offsetWidth).map(pg => {
+    const r = pg.getBoundingClientRect();
+    return { pg, left: or.left + r.left * sc, top: or.top + r.top * sc, w: r.width * sc, h: r.height * sc,
+             pxIn: DPI * zoomOf(pg) * sc };
+  });
+  return { d, or, sc, S, pages };
+}
+function rulerRefPage(F) {
+  const mid = F.S.top + F.S.height / 2;
+  let best = null, dist = Infinity;
+  F.pages.forEach(p => {
+    const dd = mid < p.top ? p.top - mid : mid > p.top + p.h ? mid - p.top - p.h : 0;
+    if (dd < dist) { dist = dd; best = p; }
+  });
+  return best;
+}
+function rulerLeftX(S) {
+  const rail = $('leftrail');
+  if (!rail || !rail.offsetWidth) return S.left;
+  const r = rail.getBoundingClientRect();
+  return r.left <= S.left + 4 && r.right > S.left && r.right < S.left + S.width / 2 ? Math.round(r.right) : S.left;
+}
+const rulersShown = () => guidesOn && !document.body.classList.contains('ds-present');
+/** The selection's extent on the reference sheet, in inches, for the band
+ *  each ruler shades under it — InDesign's way of reading a box off a ruler. */
+function rulerSelBand(F) {
+  if (!selIds.size) return null;
+  const els = selEls(F.d).filter(Boolean);
+  if (!els.length) return null;
+  const pg = els[0].closest('section.page');
+  if (!pg) return null;
+  try {
+    const bs = els.filter(el => el.closest('section.page') === pg)
+      .map(el => (el.dataset.shape ? shapeBox(el, pg) : inchBox(el, pg)));
+    return { pg, ...unionBox(bs) };
+  } catch (err) { return null; }
+}
+function drawRulers() {
+  const T = $('ruler-t'), Lr = $('ruler-l'), C = $('ruler-c');
+  const F = rulersShown() ? rulerFrame() : null;
+  const show = !!(F && F.pages.length && F.S.width);
+  [T, Lr, C].forEach(n => { n.hidden = !show; });
+  if (!show) return;
+  const { S } = F;
+  const dpr = window.devicePixelRatio || 1;
+  const place = (n, x, y, w, h) => {
+    Object.assign(n.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+    if (n.tagName === 'CANVAS') {
+      const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+      if (n.width !== W) n.width = W;
+      if (n.height !== H) n.height = H;
+    }
   };
-  move(e0);
+  // The tool rail floats over the canvas's left edge; the left ruler stands
+  // just clear of it, as InDesign's stands clear of its Tools panel.
+  const lx = rulerLeftX(S);
+  const LS = { top: S.top, bottom: S.bottom, height: S.height, left: lx };
+  place(T, S.left, S.top, S.width, RULER_PX);
+  place(Lr, lx, S.top, RULER_PX, S.height);
+  place(C, lx, S.top, RULER_PX, RULER_PX);
+  const cs = getComputedStyle(T);
+  const ink = cs.color || '#2F3E46', bg = cs.backgroundColor || '#F4F5F3';
+  const sheet = cs.getPropertyValue('--ruler-page').trim() || '#FFFFFF';
+  const band = cs.getPropertyValue('--ruler-sel').trim() || 'rgba(18,181,165,.28)';
+  const ref = rulerRefPage(F);
+  const sel = rulerSelBand(F);
+  // One axis: `along` is the ruler's length in px, `o` the px where 0in is,
+  // `span` the sheet's extent in inches, `lim` whether ticks stop at the
+  // sheet (the left ruler, which holds several pages) or run on (the top).
+  const axis = (ctx, horiz, o, pxIn, span, lim, selFrom, selTo) => {
+    const along = horiz ? S.width : LS.height;
+    const tick = (at, len) => {
+      if (horiz) ctx.fillRect(Math.round(at), RULER_PX - len, 1, len);
+      else ctx.fillRect(RULER_PX - len, Math.round(at), len, 1);
+    };
+    ctx.fillStyle = sheet;
+    const a = Math.max(0, o), b = Math.min(along, o + span * pxIn);
+    if (b > a) { if (horiz) ctx.fillRect(a, 0, b - a, RULER_PX); else ctx.fillRect(0, a, RULER_PX, b - a); }
+    if (selFrom != null) {
+      ctx.fillStyle = band;
+      const s0 = o + selFrom * pxIn, s1 = o + selTo * pxIn;
+      if (horiz) ctx.fillRect(s0, 0, Math.max(1, s1 - s0), RULER_PX); else ctx.fillRect(0, s0, RULER_PX, Math.max(1, s1 - s0));
+    }
+    ctx.fillStyle = ink;
+    // Finer ticks as the inch grows: sixteenths at 72px an inch and up,
+    // down to halves when the whole sheet is a thumbnail.
+    const sub = pxIn >= 72 ? 16 : pxIn >= 40 ? 8 : pxIn >= 20 ? 4 : 2;
+    const every = pxIn >= 26 ? 1 : pxIn >= 13 ? 2 : 5;      // which inches get a number
+    let i0 = Math.floor(-o / pxIn * sub) - 1, i1 = Math.ceil((along - o) / pxIn * sub) + 1;
+    if (lim) { i0 = Math.max(i0, 0); i1 = Math.min(i1, Math.floor(span * sub + 1e-6)); }
+    ctx.font = '9px system-ui, -apple-system, sans-serif';
+    ctx.textBaseline = 'top';
+    for (let i = i0; i <= i1; i++) {
+      const at = o + i / sub * pxIn;
+      if (at < -1 || at > along + 1) continue;
+      const r = ((i % sub) + sub) % sub;
+      const len = r === 0 ? RULER_PX : r === sub / 2 ? 9 : r % (sub / 4) === 0 ? 6 : r % (sub / 8) === 0 ? 4 : 3;
+      tick(at, len);
+      if (r === 0 && (i / sub) % every === 0) {
+        const lab = String(i / sub);
+        if (horiz) ctx.fillText(lab, Math.round(at) + 3, 2);
+        else {
+          ctx.save(); ctx.translate(2, Math.round(at) + 3); ctx.rotate(Math.PI / 2);
+          ctx.fillText(lab, 0, -9); ctx.restore();
+        }
+      }
+    }
+  };
+  const tc = T.getContext('2d');
+  tc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  tc.fillStyle = bg; tc.fillRect(0, 0, S.width, RULER_PX);
+  // Test hook: where each ruler puts 0in, in window px, and how long an inch is.
+  window.__dsRuler = ref ? { x0: ref.left, pxIn: ref.pxIn, y0: F.pages.map(p => p.top), left: S.left, lx } : null;
+  if (ref) {
+    const sb = sel && sel.pg === ref.pg ? sel : null;
+    axis(tc, true, ref.left - S.left, ref.pxIn, ref.w / ref.pxIn, false, sb && sb.x, sb && sb.x + sb.w);
+  }
+  tc.fillStyle = 'rgba(0,0,0,.18)'; tc.fillRect(0, RULER_PX - 1, S.width, 1);
+  const lc = Lr.getContext('2d');
+  lc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  lc.fillStyle = bg; lc.fillRect(0, 0, RULER_PX, S.height);
+  F.pages.forEach(p => {
+    if (p.top > LS.bottom || p.top + p.h < LS.top) return;
+    const sb = sel && sel.pg === p.pg ? sel : null;
+    axis(lc, false, p.top - S.top, p.pxIn, p.h / p.pxIn, true, sb && sb.y, sb && sb.y + sb.h);
+  });
+  lc.fillStyle = 'rgba(0,0,0,.18)'; lc.fillRect(RULER_PX - 1, 0, 1, S.height);
+}
+/** Redraw when anything a ruler shows has moved: scroll, zoom, a resize, a
+ *  render, the selection. Polled each frame (cheap: a handful of rects) and
+ *  only while the rulers show, so no listener has to be rebound on every
+ *  fresh document. */
+function rulerTick() {
+  rulerRaf = 0;
+  if (!guidesOn) { drawRulers(); rulerSig = ''; return; }    // off: hide, and stop polling
+  if (!rulersShown()) { if (rulerSig !== 'off') { rulerSig = 'off'; drawRulers(); } rulerRaf = requestAnimationFrame(rulerTick); return; }
+  const F = rulerFrame();
+  let sig = '';
+  if (F) {
+    const r = F.pages[0];
+    sig = [rulerLeftX(F.S), F.S.left, F.S.top, F.S.width, F.S.height, F.or.left, F.or.top, F.or.width, F.pages.length,
+           r ? [r.left, r.top, r.w, r.h].join() : '', [...selIds].join(),
+           selEls(F.d).filter(Boolean).map(el => { const q = el.getBoundingClientRect(); return [q.left, q.top, q.width, q.height].join(); }).join(';')
+          ].join('|');
+  }
+  if (sig !== rulerSig) { rulerSig = sig; drawRulers(); }
+  rulerRaf = requestAnimationFrame(rulerTick);
+}
+function startRulers() {
+  rulerSig = '';
+  if (!rulerRaf) rulerRaf = requestAnimationFrame(rulerTick);
+}
+/** Is this pointer (in FRAME coordinates, as a drag hands them over) over a
+ *  ruler? That is where a guide goes to be deleted. */
+function overRuler(e) {
+  if (!rulersShown()) return false;
+  const out = $('out'), or = out.getBoundingClientRect();
+  const sc = or.width / (out.offsetWidth || 1) || 1;
+  const x = or.left + e.clientX * sc, y = or.top + e.clientY * sc;
+  return ['ruler-t', 'ruler-l'].some(id => {
+    const r = $(id).getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  });
+}
+/** Pull a fresh guide out of a ruler: the top one gives a horizontal guide,
+ *  the left one a vertical one. It follows the cursor onto whichever sheet is
+ *  under it and lands where you let go; let go over a ruler, or off every
+ *  sheet, and there is no guide. ⇧ lands it on the ruler's eighths. */
+function startRulerGuide(axis, e0) {
+  if (e0.button) return;
+  e0.preventDefault();
+  const d = $('out').contentDocument;
+  if (!d || !d.body) return;
+  const out = $('out'), or0 = out.getBoundingClientRect();
+  const sc = or0.width / (out.offsetWidth || 1) || 1;
+  const frameOf = e => ({ clientX: (e.clientX - or0.left) / sc, clientY: (e.clientY - or0.top) / sc,
+                          shiftKey: e.shiftKey });
+  const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
+  let ghost = null, pos = null, pg = null;
+  const sheetAt = y => {
+    let best = null, dist = Infinity;
+    d.querySelectorAll('section.page').forEach(p => {
+      const r = p.getBoundingClientRect();
+      if (!r.width) return;
+      const dd = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      if (dd < dist) { dist = dd; best = p; }
+    });
+    return best;
+  };
+  const move = e => {
+    pg = sheetAt(e.clientY);
+    if (!pg) return;
+    const pr = pg.getBoundingClientRect(), px = DPI * zoomOf(pg);
+    let v = axis === 'v' ? (e.clientX - pr.left) / px : (e.clientY - pr.top) / px;
+    if (e.shiftKey) v = Math.round(v * 8) / 8;
+    const inside = v >= 0 && v <= span && !overRuler(e)
+      && (axis === 'v' ? (e.clientY >= pr.top && e.clientY <= pr.bottom) : true);
+    pos = inside ? round2(v) : null;
+    if (!ghost || ghost.parentNode !== pg) {
+      if (ghost) ghost.remove();
+      ghost = d.createElement('div');
+      ghost.className = 'ds-gd ds-gd-ghost ' + axis;
+      pg.appendChild(ghost);
+    }
+    ghost.style.display = pos == null ? 'none' : '';
+    if (pos != null) ghost.style[axis === 'v' ? 'left' : 'top'] = pos + 'in';
+    $('stat').textContent = pos == null ? 'drop on a page to place the guide' : `guide at ${pos}in`;
+  };
   const up = () => {
     dragUnlisten(d, move, up);
+    if (ghost) ghost.remove();
+    if (pos == null) { $('stat').textContent = 'no guide placed'; return; }
     pushHistory();
-    if (axis === 'v') setGuides([...guidesX(), pos], guidesY());
-    else setGuides(guidesX(), [...guidesY(), pos]);
+    addGuide(axis === 'v' ? 'x' : 'y', pos);
+    drawGuideLayer(d);
+    $('stat').textContent = `guide at ${pos}in — objects snap to it; drag it onto a ruler to remove`;
+  };
+  dragListen(d, move, up);
+  move(frameOf(e0));
+}
+['ruler-t', 'ruler-l'].forEach(id => $(id).addEventListener('mousedown',
+  e => startRulerGuide(id === 'ruler-t' ? 'h' : 'v', e)));
+$('ruler-c').addEventListener('dblclick', () => {
+  // The corner, as InDesign's: nothing to set (the zero point is the sheet's
+  // corner), so it says what the rulers measure.
+  $('stat').textContent = 'rulers in inches from each page’s top-left corner';
+});
+window.addEventListener('resize', () => { rulerSig = ''; });
+
+/** Move an existing guide; drop it past a page edge, or back onto a ruler,
+ *  to delete it. A press that does not travel selects it (Delete removes). */
+function startGuideDrag(d, pg, axis, idx, e0) {
+  e0.preventDefault(); e0.stopPropagation();
+  if (guidesLocked) { $('stat').textContent = 'guides are locked — View ▸ Lock guides to move them'; return; }
+  const px = DPI * zoomOf(pg), pr = pg.getBoundingClientRect();
+  const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
+  const el = e0.currentTarget;
+  const raw = e => axis === 'v' ? (e.clientX - pr.left) / px : (e.clientY - pr.top) / px;
+  let pos = raw(e0), started = false, onRuler = false;
+  const grab = { x: e0.clientX, y: e0.clientY };
+  const gone = () => onRuler || pos < -0.1 || pos > span + 0.1;
+  const move = e => {
+    if (!started) {
+      if (Math.abs(e.clientX - grab.x) < 3 && Math.abs(e.clientY - grab.y) < 3) return;
+      started = true;
+      pushHistory();
+    }
+    pos = raw(e);
+    if (e.shiftKey) pos = Math.round(pos * 8) / 8;     // ⇧ lands on the ruler's eighths
+    onRuler = overRuler(e);
+    const shown = Math.max(0, Math.min(span, pos));
+    el.style[axis === 'v' ? 'left' : 'top'] = round2(shown) + 'in';
+    el.style.opacity = gone() ? '.3' : '';
+    $('stat').textContent = gone() ? 'release to delete this guide' : `guide at ${round2(shown)}in`;
+  };
+  const up = () => {
+    dragUnlisten(d, move, up);
+    if (!started) {
+      // A click: select this guide, and nothing else.
+      clearSel(d);
+      selGuide = { axis, idx };
+      d.querySelectorAll('.ds-gd.sel').forEach(n => n.classList.remove('sel'));
+      d.querySelectorAll(`.ds-gd.${axis}[data-idx="${idx}"]`).forEach(n => n.classList.add('sel'));
+      $('stat').textContent = `guide at ${(axis === 'v' ? guidesX() : guidesY())[idx]}in selected — Delete removes it`;
+      return;
+    }
+    const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
+    if (gone()) arr.splice(idx, 1);
+    else arr[idx] = round2(Math.max(0, Math.min(span, pos)));
+    selGuide = null;
+    if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
     drawGuideLayer(d);
   };
   dragListen(d, move, up);
 }
 
-/** Move an existing guide; drop it past a page edge to delete it. */
-function startGuideDrag(d, pg, axis, idx, e0) {
-  e0.preventDefault(); e0.stopPropagation();
-  const px = DPI * zoomOf(pg), pr = pg.getBoundingClientRect();
-  const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
-  pushHistory();
-  const el = e0.currentTarget;
-  const raw = e => axis === 'v' ? (e.clientX - pr.left) / px : (e.clientY - pr.top) / px;
-  let pos = raw(e0);
-  const move = e => {
-    pos = raw(e);
-    const shown = Math.max(0, Math.min(span, pos));
-    el.style[axis === 'v' ? 'left' : 'top'] = round2(shown) + 'in';
-    el.style.opacity = (pos < -0.1 || pos > span + 0.1) ? '.3' : '';
-    $('stat').textContent = (pos < -0.1 || pos > span + 0.1)
-      ? 'release to delete this guide' : `guide at ${round2(shown)}in`;
-  };
-  const up = () => {
-    dragUnlisten(d, move, up);
-    const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
-    if (pos < -0.1 || pos > span + 0.1) arr.splice(idx, 1);
-    else arr[idx] = round2(Math.max(0, Math.min(span, pos)));
-    if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
-    drawGuideLayer(d);
-  };
-  dragListen(d, move, up);
+// ---------------------------------------------------------------- spacers
+// A spacer (layout.shapes kind 'spacer') is InDesign's gap marker: an empty
+// frame with an X through it, sized to the distance you want between two
+// things. The engine draws it only in a draft (layout.py leaves it out of a
+// published page, a print and a PDF); here it is a shape like any other —
+// selected, moved, sized and snapped to — plus two things of its own: a
+// label that says the gap it holds, and the push (spacerFollow): when the
+// thing above a spacer grows, shrinks or moves, the spacer and whatever sits
+// under it move with it, so the gap stays what it was set to.
+const SPACER_IN = 0.25;
+const SPACER_TOUCH = 0.04;          // inches: closer than this, two edges touch
+const isSpacer = id => (shapeOf(id) || {}).kind === 'spacer';
+/** Where a spacer goes under an object: its left edge and width, from its
+ *  bottom edge down `h` inches. The one object selected when no id is given;
+ *  null when there is nothing to go under. */
+function spacerUnder(d, id = null, h = null) {
+  const want = id || (selIds.size === 1 ? [...selIds][0] : null);
+  if (!d || !want) return null;
+  const el = d.querySelector(`[data-el="${CSS.escape(want)}"], [data-shape="${CSS.escape(want)}"]`);
+  const page = el && el.closest('section.page');
+  if (!page) return null;
+  const b = el.dataset.shape ? shapeBox(el, page) : inchBox(el, page);
+  const pid = (mountedPages(d).find(p => p.pg === page) || {}).id ?? pageIdOf(page);
+  const gap = +h > 0 ? +h : SPACER_IN;
+  return { kind: 'spacer', page: pid, x: round2(b.x), y: round2(Math.min(b.y + b.h, PAGE_H_IN - gap)),
+           w: round2(Math.max(0.2, b.w)), h: round2(gap) };
+}
+/** The label on a spacer: the gap it holds, in inches — its height, or its
+ *  width when it lies on its side. */
+function labelSpacer(d, sh, node) {
+  const pg = node.closest('section.page');
+  if (!pg) return;
+  let lbl = pg.querySelector(`.ds-spacer-lbl[data-for="${CSS.escape(sh.id)}"]`);
+  if (!lbl) {
+    lbl = d.createElement('div');
+    lbl.className = 'ds-spacer-lbl';
+    lbl.dataset.for = sh.id;
+    pg.appendChild(lbl);
+  }
+  const gap = sh.w >= sh.h ? sh.h : sh.w;
+  lbl.textContent = `${+(+gap).toFixed(3)} in`;
+  lbl.style.left = (sh.x + sh.w / 2) + 'in';
+  lbl.style.top = (sh.y + sh.h / 2) + 'in';
+}
+function labelSpacers(d) {
+  if (!d) return;
+  d.querySelectorAll('.ds-spacer-lbl').forEach(n => n.remove());
+  d.querySelectorAll('[data-gapmark][data-shape]').forEach(node => {
+    const sh = shapeOf(node.dataset.shape);
+    if (sh) labelSpacer(d, sh, node);
+  });
+}
+const placedStore = id => shapeOf(id) || boxOf(id) || ((t => (t && !t.flow ? t : null))(tableOf(id)));
+/** Every placed object's box on a page (inches) before a change, for
+ *  spacerFollow to compare against. Null when the page holds no spacer, so
+ *  a page without one pays nothing. */
+function spacerSnapshot(d, page) {
+  if (!page || !page.querySelector('[data-gapmark]')) return null;
+  const m = new Map();
+  page.querySelectorAll('[data-shape], [data-el]').forEach(el => {
+    const id = idOf(el);
+    if (!id || m.has(id)) return;
+    const st = placedStore(id);
+    if (!st) return;
+    try {
+      const b = el.dataset.shape ? shapeBox(el, page) : inchBox(el, page);
+      m.set(id, { x: b.x, y: b.y, w: b.w, h: b.h, sh: st.h, spacer: st.kind === 'spacer' });
+    } catch (err) { swallowed('spacerSnapshot', err); }
+  });
+  return m;
+}
+/** After `moved` objects changed (a drag, a handle, place()), carry what
+ *  hangs off their bottom edges: a spacer touching the bottom of a thing that
+ *  moved goes with it, and so does anything touching the bottom of a spacer
+ *  that moved, and so on down. Returns a line for the status bar when
+ *  something followed, else ''. Writes the stores; the caller renders. */
+function spacerFollow(pre, moved) {
+  if (!pre) return '';
+  const done = new Set(moved);
+  const queue = [];
+  const over = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.02;
+  moved.forEach(id => {
+    const old = pre.get(id), st = placedStore(id);
+    if (!old || !st) return;
+    const h = st.h != null && st.h !== old.sh ? old.h + (+st.h - (+old.sh || old.h)) : old.h;
+    const now = { x: +st.x, y: +st.y, w: st.w != null ? +st.w : old.w, h };
+    const delta = (now.y + now.h) - (old.y + old.h);
+    if (Math.abs(delta) >= 0.005) queue.push({ id, old, now, delta, spacer: old.spacer });
+  });
+  let n = 0;
+  while (queue.length) {
+    const q = queue.shift();
+    const bottom = q.old.y + q.old.h;
+    pre.forEach((b, id) => {
+      if (done.has(id)) return;
+      // Off a spacer hang the things under it; off anything else, only spacers.
+      if (b.spacer === q.spacer) return;
+      if (Math.abs(b.y - bottom) > SPACER_TOUCH) return;
+      if (!over(b, q.old) || !over(b, q.now)) return;
+      const st = placedStore(id);
+      if (!st || isLocked(id)) return;
+      done.add(id);
+      st.y = round2(Math.max(0, +st.y + q.delta));
+      n++;
+      queue.push({ id, old: b, now: { ...b, y: b.y + q.delta }, delta: q.delta, spacer: b.spacer });
+    });
+  }
+  if (!n) return '';
+  markDirty();
+  return `${n} object${n === 1 ? '' : 's'} kept ${n === 1 ? 'its' : 'their'} spacing`;
 }
 
 // ------------------------------------------------- margins and columns
@@ -17211,6 +17631,7 @@ function showGuidesNow() {
   guidesOn = true;
   try { localStorage.setItem('ds-guides', '1'); } catch (e) { /* file: */ }
   $('guides').classList.add('on');
+  startRulers();
 }
 async function marginsDialog(pid) {
   const name = masterNameOf(pid);
@@ -17303,14 +17724,42 @@ $('reload').addEventListener('click', async () => {
   location.reload();
 });
 
-$('guides').addEventListener('click', () => {
+function toggleGuides() {
   guidesOn = !guidesOn;
   try { localStorage.setItem('ds-guides', guidesOn ? '1' : '0'); } catch (e) { /* file: */ }
   $('guides').classList.toggle('on', guidesOn);
   const d = $('out').contentDocument;
+  if (!guidesOn) unselectGuide(d);
   if (d) drawGuideLayer(d);
+  startRulers();
   $('stat').textContent = guidesOn
-    ? 'guides on — drag from a ruler to add one' : 'guides off';
+    ? 'rulers and guides on — drag out of a ruler to add a guide' : 'rulers and guides off';
+}
+$('guides').addEventListener('click', toggleGuides);
+$('guidelock').addEventListener('click', () => {
+  guidesLocked = !guidesLocked;
+  try { localStorage.setItem('ds-guides-lock', guidesLocked ? '1' : '0'); } catch (e) { /* file: */ }
+  $('guidelock').classList.toggle('on', guidesLocked);
+  const d = $('out').contentDocument;
+  if (guidesLocked) unselectGuide(d);
+  if (d) drawGuideLayer(d);
+  $('stat').textContent = guidesLocked ? 'guides locked — they stay put, and still snap'
+    : 'guides unlocked — drag one to move it';
+});
+// Frame edges (InDesign's ⌘H): a hairline round every object on the page, so
+// an empty text box, a spacer or a transparent shape can be seen and lined
+// up. The editor's alone — a class on the draft's root, never in the page.
+let frameEdges = false;
+try { frameEdges = localStorage.getItem('ds-frames') === '1'; } catch (e) { /* file: */ }
+function paintFrameEdges(d) {
+  if (d && d.documentElement) d.documentElement.classList.toggle('ds-frame-edges', frameEdges);
+}
+$('frameedges').addEventListener('click', () => {
+  frameEdges = !frameEdges;
+  try { localStorage.setItem('ds-frames', frameEdges ? '1' : '0'); } catch (e) { /* file: */ }
+  $('frameedges').classList.toggle('on', frameEdges);
+  paintFrameEdges($('out').contentDocument);
+  $('stat').textContent = frameEdges ? 'frame edges shown' : 'frame edges hidden';
 });
 
 // ----------------------------------------------------------------- layers
@@ -21645,7 +22094,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
   // than inches. Below it, the click stays a click; the logo neither scales
   // nor jumps.
   const DEAD_PX = 4;
-  let started = false, cloned = false;
+  let started = false, cloned = false, spPre = null;
   let Ps, starts, group, glines, gheld, at, priorPlace = null;
   let lastPt = { x: e0.clientX, y: e0.clientY };   // where the drop landed
 
@@ -21662,6 +22111,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     // What this move will change, so ⌘Z with the words open can put back
     // exactly that and leave the words alone (undoMoveFromWords).
     priorPlace = placementOf(members.map(idOf));
+    spPre = spacerSnapshot(d, page);       // what hangs off a spacer, before it moves
     if (e0.altKey) {
       const copies = altClone(d, members, page);
       if (copies) { members = copies; cloned = true; setSel(d, copies.map(idOf)); }
@@ -21796,8 +22246,10 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
       return;
     }
     Ps.forEach((P, i) => P.commit(at[i]));
-    if (cloned) await render();            // clones need real, wired nodes
+    const kept = cloned ? '' : spacerFollow(spPre, members.map(idOf));
+    if (cloned || kept) await render();    // clones need real, wired nodes; a push redraws
     else paintSel(d);
+    if (kept) $('stat').textContent = kept;
   };
   dragListen(d, move, up);
 }
@@ -22151,7 +22603,7 @@ function paintShape(d, id) {
   const sh = shapeOf(id);
   const node = d.querySelector(`[data-shape="${id}"]`);
   if (!sh || !node) return;
-  if (sh.kind === 'rect' || sh.kind === 'icon' || sh.kind === 'qr') {
+  if (sh.kind === 'rect' || sh.kind === 'icon' || sh.kind === 'qr' || sh.kind === 'spacer') {
     // An icon is a nested <svg> and reads the same box attributes a rect
     // does. It used to fall through to the line branch below, which set
     // x1/y1/x2/y2 — attributes a nested svg ignores — so a dragged icon
@@ -22159,6 +22611,7 @@ function paintShape(d, id) {
     // render: the "I can't move icons" bug.
     node.setAttribute('x', sh.x); node.setAttribute('y', sh.y);
     node.setAttribute('width', sh.w); node.setAttribute('height', sh.h);
+    if (sh.kind === 'spacer') labelSpacer(d, sh, node);
   } else if (sh.kind === 'ellipse') {
     node.setAttribute('cx', sh.x + sh.w / 2); node.setAttribute('cy', sh.y + sh.h / 2);
     node.setAttribute('rx', sh.w / 2); node.setAttribute('ry', sh.h / 2);
@@ -22494,6 +22947,15 @@ $('shapepop').querySelector('[data-qr]').addEventListener('click', async () => {
   const r = _pilotApplyAddShape({ kind: 'qr', data: got.data.trim(), w: 1.2, h: 1.2 });
   markDirty(); await render();
   setSel($('out').contentDocument, [r.id]);
+});
+$('shapepop').querySelector('[data-spacer]').addEventListener('click', async () => {
+  const d = $('out').contentDocument;
+  pushHistory();
+  const r = _pilotApplyAddShape(spacerUnder(d) || { kind: 'spacer' });
+  markDirty(); await render();
+  setSel($('out').contentDocument, [r.id]);
+  const sh = shapeOf(r.id);
+  $('stat').textContent = `spacer holding ${sh.h}in — size it to the gap you want; things it touches keep it when one moves`;
 });
 $('shapepop').querySelector('[data-pen]').addEventListener('click', () => {
   $('shapepop').hidden = true;
@@ -22877,6 +23339,9 @@ async function boot() {
   document.querySelectorAll('#zoom button').forEach(x =>
     x.classList.toggle('on', x.dataset.z === zoomChoice));
   $('guides').classList.toggle('on', guidesOn);
+  $('guidelock').classList.toggle('on', guidesLocked);
+  $('frameedges').classList.toggle('on', frameEdges);
+  startRulers();
   await restoreCachedDraft();   // adopt this browser's unsaved edits before the first paint
   await render();
   pycKeepSoon();                // what Python just compiled, for the next open
@@ -26277,6 +26742,9 @@ function wire(roots) {
   // scroll position is restored, so read the page in view after that lands.
   setTimeout(railSyncActive, 0);
   drawGuideLayer(d);           // guides are editor-drawn, so redraw each render
+  paintFrameEdges(d);
+  labelSpacers(d);
+  rulerSig = '';                // a fresh document: the rulers measure it again
   // Deferred a tick: wire() runs before the scroll restore, and the panel
   // keys on the page in VIEW — rebuilt too early it shows the cover's stack.
   if (!$('layerspop').hidden) setTimeout(layersRender, 0);
@@ -26606,12 +27074,21 @@ function wire(roots) {
     /* Ruler guides: persistent teal lines you place, distinct from the hot
        snap flashes above. The rulers themselves sit inside the page's own
        padding gutter so they never cover content. */
-    .ds-rule { position:absolute; z-index:9990; background:rgba(47,62,70,.06);
-               cursor:crosshair; }
-    .ds-rule.t { left:0; top:0; width:100%; height:.18in; }
-    .ds-rule.l { left:0; top:0; width:.18in; height:100%; }
-    .ds-rule:hover { background:rgba(107,158,120,.22); }
     .ds-gd { position:absolute; z-index:9991; }
+    .ds-gd-lock { pointer-events:none; }
+    .ds-gd-ghost { pointer-events:none; opacity:.85; }
+    /* A selected guide (a click on it): Delete removes it. */
+    .ds-gd.v.sel { background:linear-gradient(#0B6E64,#0B6E64) 3px 0/3px 100% no-repeat; }
+    .ds-gd.h.sel { background:linear-gradient(#0B6E64,#0B6E64) 0 3px/100% 3px no-repeat; }
+    /* Frame edges (View): a hairline round every object, editor only. */
+    .ds-frame-edges [data-el] { outline:1px solid rgba(47,128,237,.45); outline-offset:0; }
+    /* Spacers: InDesign's gap markers. The engine draws them only in a
+       draft; this is the belt to that braces, should one ever be printed
+       from here. The label says the gap they hold. */
+    .ds-spacer-lbl { position:absolute; z-index:9989; pointer-events:none;
+       font:600 9.5px/1 system-ui, sans-serif; color:#fff; background:#7C4DFF;
+       padding:2px 4px; border-radius:3px; white-space:nowrap; transform:translate(-50%, -50%); }
+    @media print { [data-gapmark], .ds-spacer-lbl, .ds-gd, .ds-mg, .ds-mgc { display:none !important; } }
     .ds-linked { box-shadow:inset 0 -2px 0 rgba(18,181,165,.55); }
     .ds-notemark { position:absolute; z-index:9989; width:16px; height:16px; margin:-6px 0 0 -10px;
                    border-radius:3px 3px 3px 0; background:#8E6BBF; color:#fff; cursor:pointer;
@@ -33365,6 +33842,7 @@ function _pilotApplyPlace(id, { x, y, w, h } = {}) {
     return { id };
   }
   const page = el.closest('section.page') || d.querySelector('section.page');
+  const spPre = spacerSnapshot(d, page);
   if (x != null || y != null) {
     const P = placer(d, el, page);
     P.commit(P.put(x != null ? +x : P.box.x, y != null ? +y : P.box.y, false));
@@ -33372,7 +33850,8 @@ function _pilotApplyPlace(id, { x, y, w, h } = {}) {
   // Explicit size lands exactly where a handle drag puts it (commitSize):
   // a box's height with the same floor, a paragraph's as its hmin.
   if (w != null || h != null) commitSize(d, el, { w, h });
-  return { id };
+  const kept = spacerFollow(spPre, [id]);
+  return kept ? { id, kept } : { id };
 }
 // Measured AFTER render, from the fresh DOM — the truth of where the element
 // really painted (placer's clamp may have moved it from what was asked).
@@ -33616,7 +34095,7 @@ function _pilotObjData(base, el) {
 }
 
 // The kinds the Shapes panel offers — a pilot gets the same menu, no more.
-const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'qr'];
+const PILOT_SHAPE_KINDS = ['rect', 'ellipse', 'line', 'triangle', 'arrow', 'polygon', 'star', 'qr', 'spacer'];
 
 // ---- the look verbs (CONNECTOR_PARITY.md step 5): what the right-click menu
 // writes, by name, into the same stores — so an object a pilot styled is the
@@ -33794,6 +34273,14 @@ function _pilotApplyAddShape({ page, kind = 'rect', x, y, w = 2, h, fill,
   // A rectangle's corner radius, in inches — the engine reads `r` (rx is not a rect key).
   if (r != null && kind === 'rect' && +r > 0) sh.r = +r;
   if (kind === 'qr') { sh.data = String(data || 'https://www.hiappleseed.org'); sh.fill = fill || '#000000'; sh.stroke = 'none'; if (h == null) sh.h = sh.w; }
+  if (kind === 'spacer') {
+    // A gap marker has no look: drop what the defaults above gave it, and
+    // keep it on top so it can always be picked up. Never printed.
+    delete sh.fill; delete sh.stroke; delete sh.sw;
+    if (h == null) sh.h = SPACER_IN;
+    layout.shapes.push(sh);
+    return { id, page: pid };
+  }
   if (kind === 'polygon') sh.sides = Number.isInteger(sides) && sides >= 3 && sides <= 12 ? sides : 6;
   if (kind === 'star') { sh.points = Number.isInteger(points) && points >= 3 && points <= 24 ? points : 5;
                          sh.inner = typeof inner === 'number' && inner >= 0.2 && inner <= 0.9 ? inner : 0.5; }
@@ -34350,6 +34837,33 @@ const PILOT_BATCH_VERBS = {
     },
     apply: o => _pilotApplyAddTextBox(o) },
   addShape: { validate: o => _pilotValidateAddShape(o), apply: o => _pilotApplyAddShape(o) },
+  // A spacer: addShape's kind 'spacer', said by name. {below: id} puts it
+  // under that object at its width (h is the gap, default 0.25in).
+  addSpacer: { validate: (o = {}) => {
+      if (o && o.below != null) {
+        const v = _pilotValidateExists(o.below);
+        if (!v.ok) return v;
+        if (o.h != null && !(+o.h > 0 && +o.h <= 5)) return { ok: false, error: 'addSpacer: h is the gap in inches, above 0 and up to 5' };
+        return { ok: true };
+      }
+      return _pilotValidateAddShape({ ...(o || {}), kind: 'spacer' });
+    },
+    apply: (o = {}) => {
+      const at = o && o.below != null ? spacerUnder($('out').contentDocument, o.below, o.h) : null;
+      return _pilotApplyAddShape(at || { ...(o || {}), kind: 'spacer' });
+    } },
+  // A ruler guide, as one dragged out of a ruler: axis 'x' (a vertical line
+  // at x inches) or 'y' (a horizontal one). removeGuide takes one away.
+  addGuide: { validate: (axis, at) => (['x', 'y'].includes(axis) && typeof at === 'number' && at >= 0
+        && at <= (axis === 'x' ? PAGE_W_IN : PAGE_H_IN)) ? { ok: true }
+      : { ok: false, error: `addGuide(axis, at) — axis 'x' (a vertical guide) or 'y' (horizontal), at in inches from the page's left or top edge, inside the page (${PAGE_W_IN} x ${PAGE_H_IN}in)` },
+    apply: (axis, at) => { const v = addGuide(axis, at); showGuidesNow(); return { axis, at: v, guides: clone(layout.guides || {}) }; } },
+  removeGuide: { validate: (axis, at) => {
+      if (!['x', 'y'].includes(axis) || typeof at !== 'number') return { ok: false, error: "removeGuide(axis, at) — axis 'x' or 'y', at in inches" };
+      const has = (axis === 'x' ? guidesX() : guidesY()).some(g => Math.abs(g - at) <= 0.005);
+      return has ? { ok: true } : { ok: false, error: `no ${axis} guide at ${at}in — guides are ${JSON.stringify(layout.guides || {})}` };
+    },
+    apply: (axis, at) => { removeGuide(axis, at); return { guides: clone(layout.guides || {}) }; } },
   addChart: { validate: o => _pilotValidateAddChart(o), apply: o => _pilotApplyAddChart(o) },
   addTable: { validate: o => _pilotValidateAddTable(o), apply: o => _pilotApplyAddTable(o) },
   setMargins: { validate: (mg, master) => {
@@ -35059,6 +35573,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
    *  colw, colAlign, band, headerFill, cells…). Returns 'table.<id>'. */
   async addTable(opts = {}) { return _pilotOne('addTable', [opts]); },
   async addShape(opts = {}) { return _pilotOne('addShape', [opts]); },
+  async addSpacer(opts = {}) { return _pilotOne('addSpacer', [opts]); },
+  async addGuide(axis, at) { return _pilotOne('addGuide', [axis, at]); },
+  async removeGuide(axis, at) { return _pilotOne('removeGuide', [axis, at]); },
 
   /** Retint the report to another colour scheme — every use of the current
    *  topic colour becomes the named one. Takes a scheme id ('slate') or a
