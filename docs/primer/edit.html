@@ -20794,6 +20794,13 @@ function wearDefaults(kind, obj, keep = []) {
   // preset, or a pilot's explicit style, already said what its words are.
   if (kind === 'box' && ds.text && textStyles()[ds.text] && !Object.keys(obj.style || {}).length)
     obj.style = { use: ds.text };
+  // On the staff hub, where the licensed Glober files are served, a new text box
+  // starts in Glober (the brand's display face) unless it already names a font
+  // or wears a named style. Elsewhere the family would only fall back to Barlow,
+  // so a local or static editor keeps the report's own face.
+  if (kind === 'box' && !obj.act && hubFonts.Glober && onHub()
+      && !(obj.style && (obj.style.font || obj.style.use)))
+    obj.style = { ...(obj.style || {}), font: 'Glober' };
   return obj;
 }
 

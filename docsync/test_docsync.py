@@ -5746,7 +5746,7 @@ check_eq("figure: stacked top to bottom on one page",
 check_eq("figure: the picture spans the column, as tall as its file draws",
          (_pic["w"], _pic["h"]), (_fpat["w"], round(_fpat["w"] * 900 / 1600, 2)))
 check_eq("figure: the caption wears the template's figure caption",
-         (_cap["style"]["font"], _cap["style"]["size"]), ("Barlow", 15))
+         (_cap["style"]["font"], _cap["style"]["size"]), ("Glober", 15))
 check_eq("figure: the source is small italic", (_src["style"]["size"], _src["style"]["italic"]),
          (11, True))
 _nos = next(b for b in _flay["boxes"] if "no-size.png" in b.get("md", ""))
@@ -5770,7 +5770,7 @@ check_eq("callout: ONE box, its title a run in the callout head style",
          _co["md"], "[The estate tax]{.Callout head}\n\nIt is assessed once.\n\nAnd it is easy to avoid.[^c]")
 check_eq("callout: the panel and head styles are defined once",
          (_flay["objectStyles"]["Callout panel"]["border"]["sides"],
-          _flay["textStyles"]["Callout head"]["font"]), ("left", "Barlow"))
+          _flay["textStyles"]["Callout head"]["font"]), ("left", "Glober"))
 _en = [b for b in _flay["boxes"] if b.get("act") == "endnotes"]
 check_eq("endnotes: one section, on its own last page, headed like a section",
          [(b["page"], b["md"]) for b in _en], [(_fres["pages"], "## [Endnotes]{.Section head}")])
