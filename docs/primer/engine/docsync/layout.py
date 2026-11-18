@@ -114,7 +114,13 @@ def _check_page(v, where: str):
                           f"{PAGE_MIN_IN}–{PAGE_MAX_IN}in")
     return (float(w), float(h))
 KINDS = ("rect", "ellipse", "line", "triangle", "arrow", "icon", "chart",
-         "path", "compound", "polygon", "star", "qr")
+         "path", "compound", "polygon", "star", "qr", "spacer")
+# A `spacer` shape is InDesign's gap marker: an empty frame with an X through
+# it that holds a fixed distance between the things either side. It is the
+# editor's alone, like ruler guides: drawn in a draft (DOCSYNC_EDIT) so it can
+# be selected, sized and snapped to, and never drawn in a published page, a
+# print or a PDF — layer() leaves it out, so a page whose only shapes are
+# spacers publishes byte for byte as one with none.
 # A `qr` shape (INDESIGN_PARITY.md 42) draws `data` — a link, usually — as a
 # QR code (docsync/qr.py: byte mode, level M, versions 1–10), dark modules in
 # its fill on a white quiet zone, square in its box.
@@ -7898,9 +7904,11 @@ class Layout:
         # markup first — the designed content the renderer never knew to
         # emit for it — then its own shapes over it, like any other sheet.
         head += self.copy_html(page)
+        edit = bool(os.environ.get("DOCSYNC_EDIT"))
         mine = [s for s in ([s for s in self.shapes if s.get("page") == page]
                             + self.master_items(page, "shapes"))
-                if not self.layer_hidden(s)]
+                if not self.layer_hidden(s)
+                and (edit or s.get("kind") != "spacer")]
         if not mine:
             return head
         by_z: dict[int, list] = {}
@@ -8060,6 +8068,19 @@ class Layout:
                     f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{bg}"'
                     f' pointer-events="fill"/>'
                     f'{chart_svg(s.get("chart") or {}, x, y, w, h, s.get("anim"), self.page_w)}</g>')
+        if s["kind"] == "spacer":
+            # One nested <svg> with its own 0..1 box, so the editor moves and
+            # sizes it by x/y/width/height exactly as it does a rect, and the
+            # hairlines stay one pixel whatever the box (non-scaling-stroke).
+            # Only ever reached in a draft: layer() leaves spacers out of a
+            # published page.
+            return (f'<svg x="{x}" y="{y}" width="{w}" height="{h}" viewBox="0 0 1 1" '
+                    f'preserveAspectRatio="none" overflow="visible" data-shape="{s["id"]}" '
+                    f'data-gapmark="1" class="ds-gapmark">'
+                    f'<rect width="1" height="1" fill="#7C4DFF" fill-opacity=".08" stroke="#7C4DFF" '
+                    f'stroke-width="1" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>'
+                    f'<path d="M0,0L1,1M1,0L0,1" fill="none" stroke="#7C4DFF" stroke-opacity=".7" '
+                    f'stroke-width="1" vector-effect="non-scaling-stroke"/></svg>')
         if s["kind"] == "qr":
             from .qr import svg_path
             dpath, side = svg_path(s["data"])

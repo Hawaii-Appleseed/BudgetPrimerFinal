@@ -4649,6 +4649,19 @@ check("42: a qr shape is a crisp nested svg with its link as its name",
       _layout({"shapes": [{"id": "q", "page": 1, "kind": "qr", "x": 1, "y": 1, "w": 1, "h": 1,
                            "data": "https://hiappleseed.org"}]}).layer(1),
       'aria-label="QR code: https://hiappleseed.org"')
+# A spacer (InDesign's gap marker) is drawn in a draft only: a page whose only
+# shape is a spacer publishes exactly as a page with no shapes at all.
+_sp = {"shapes": [{"id": "sp", "page": 1, "kind": "spacer", "x": 1, "y": 2, "w": 3, "h": 0.25}]}
+_was_edit = os.environ.pop("DOCSYNC_EDIT", None)
+check_eq("spacer: never in a published page", _layout(_sp).layer(1), _layout({}).layer(1))
+os.environ["DOCSYNC_EDIT"] = "1"
+check("spacer: drawn in a draft as an X'd box the editor sizes like a rect",
+      _layout(_sp).layer(1), 'width="3.0" height="0.25" viewBox="0 0 1 1" preserveAspectRatio="none"')
+check("spacer: marked as a gap marker", _layout(_sp).layer(1), 'data-gapmark="1"')
+if _was_edit is None:
+    os.environ.pop("DOCSYNC_EDIT", None)
+else:
+    os.environ["DOCSYNC_EDIT"] = _was_edit
 _cap = _layout({"boxes": [_tf(id="im", md="![A chart of rents](assets/r.png)"),
                           _tf(id="c", md="{caption:text.im}")]})
 check_eq("43: a caption is the picture's description", _cap.caption_of("text.im"), "A chart of rents")
