@@ -1513,10 +1513,10 @@ Legend: **Missing** = not in Cider. **Hidden** = exists, not on a bar.
 | InDesign control | Cider | Note |
 |---|---|---|
 | Font family, style | Yes | |
-| Size in pt | **Bar** (pt) | whole box/slot only (phase 5) |
-| Leading, "(auto)" | **Bar** (pt, auto in brackets) | whole box/slot only |
-| Tracking (1/1000 em) | **Bar** (1/1000 em) | whole box/slot only |
-| Kerning: Metrics / Optical / manual | Missing | |
+| Size in pt | **Bar** (pt) | on the selected words as a run (90); the box with none selected |
+| Leading, "(auto)" | **Bar** (pt, auto in brackets) | on the selected words as a run (90) |
+| Tracking (1/1000 em) | **Bar** (1/1000 em) | on the selected words as a run (90) |
+| Kerning: Metrics / Optical / manual | **Bar** (manual) | at the caret or across a selection (90); Metrics is the font's own, always on; no Optical |
 | All Caps, Small Caps | **Bar** | case picker; small caps / all small caps |
 | Superscript / Subscript | Missing | the engine has OpenType `sups`/`subs`; no button |
 | Underline, Strikethrough + options (weight, offset, colour) | Partial | on/off, both on the bar |
@@ -1530,9 +1530,8 @@ Legend: **Missing** = not in Cider. **Hidden** = exists, not on a bar.
 | Change case incl. Sentence case | Partial | upper / lower / title |
 | OpenType menu | Partial | super/sub, titling, contextual, all small caps, numerator/denominator missing |
 
-**The biggest structural gap:** size, leading and tracking apply to a whole box,
-not to the selected characters. InDesign treats every character setting as
-per-character. The bar cannot offer these honestly until the engine's
+**The biggest structural gap**, size, leading and tracking applying to a whole
+box rather than the selected characters, is closed by item 90: the engine's
 inline-run model carries them.
 
 ### C. Paragraph mode (phase 2)
@@ -1593,8 +1592,8 @@ points for type, typed units accepted.
 2. Character and paragraph modes — **item 87, done**.
 3. Reference point, proportion link / scale X·Y, flip indicator, fitting options — **item 88, done**.
 4. The right-hand panel dock, rehoming the existing popovers — **item 89, done**.
-5. Per-character size / leading / tracking / kerning in the engine, then the
-   remaining missing settings.
+5. Per-character size / leading / tracking / kerning in the engine — **item 90,
+   done**; then the remaining missing settings.
 
 ### Worth building
 
@@ -1705,3 +1704,35 @@ points for type, typed units accepted.
     40px strip took the last 5px by which a chart's first label cleared the
     Chart panel (claude-creates now renames the second).
     `tests/editor/panel-dock.spec.js`.
+90. **Size, leading, tracking and kerning on the selected words. — CLOSED
+    2026-11-18.** A new inline run, `[words]{size=14 lead=18 track=50
+    kern=-20}` (content.py's `CHAR_RUN_RE` / `char_run_css`; the editor's
+    `CHAR_RUN_RE_G` / `charRunCss` twin): size and leading in points,
+    tracking and kerning in thousandths of an em, drawn as a span with
+    `font-size` and `line-height` in px and the two added into one
+    `letter-spacing`, as InDesign adds them. A kern on one character is the
+    space after it, so `[A]{kern=-80}V` is the pair kern InDesign makes at a
+    caret. A size under the floor is refused at the build (ContentError), not
+    clamped, and `docsync.check` reads the span's px like any other size.
+    Runs never nest and are read BEFORE named character styles with no `[`
+    inside, so a named style may hold one — `[[words]{size=14}]{.Pull}` — and
+    the editor only ever writes them that way round. On the Control bar, in
+    A mode with words selected in an open text, Size, Leading and Tracking
+    (and the new **Kerning** field) write a run (`applyCharRun()`: merges
+    into the runs the selection touches, wraps the rest, splits a run the
+    selection is inside, puts a run inside a named style it crosses, rejoins
+    neighbours that say the same); with a caret only, Size, Leading and
+    Tracking still set the box and Kerning kerns the pair at the caret
+    (`kernAtCaret()`). Pressing into one of those fields holds the words open
+    (`ctlRunHold()`, from the type card's commit-on-press, which used to end
+    the edit) and gives the selection back when the field lets go, as Glyphs
+    does; with the caret in a run, the four fields show its values
+    (`ctlRunShow()`). No new build moved: build_parity 0 of 30.
+    Left: InDesign's leading belongs to the characters and the line takes the
+    largest; in CSS a run's line-height can raise a line but not lower it
+    below the paragraph's. No Optical kerning (CSS has the font's metrics or
+    none). The type card's px stepper still sets the box. A run cannot hold a
+    footnote reference or a `[`: such a run keeps its words and loses its
+    settings, as a named style does. Found doing it: `fill()` in a spec
+    focuses a field without a press, which is not what a person does, and
+    the press is what holds the words. `tests/editor/char-runs.spec.js`.

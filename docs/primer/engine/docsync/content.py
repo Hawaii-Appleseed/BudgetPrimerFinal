@@ -216,6 +216,43 @@ CHAR_STYLE_RE = re.compile(r"\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}")
 
 
 COND_RE = re.compile(r"\[([^\]^][^\]]*)\]\{\?([A-Za-z0-9_-]{1,20})\}")
+# Local character formatting (INDESIGN_PARITY.md 90): `[words]{size=14 lead=18
+# track=50 kern=-20}` — what InDesign's Character panel does to SELECTED
+# characters, without a named style. size and lead in points; track and kern
+# in thousandths of an em, added together the way InDesign adds them (a kern
+# on one character is the space after it, so `[A]{kern=-60}V` closes that
+# pair). Read BEFORE character styles, and with no `[` inside, so a named
+# style may hold one — `[[words]{size=14}]{.Pull}` — and never the other way
+# round (the editor writes runs so).
+CHAR_RUN_KEYS = ("size", "lead", "track", "kern")
+CHAR_RUN_RE = re.compile(
+    r"\[([^\]^\[][^\]\[]*)\]\{((?:size|lead|track|kern)=-?\d+(?:\.\d+)?"
+    r"(?: (?:size|lead|track|kern)=-?\d+(?:\.\d+)?)*)\}")
+
+
+def char_run_css(spec: str) -> str:
+    """`size=14 track=50` -> the span's CSS. A size under the legibility
+    floor is refused, not clamped (layout._check_text's rule)."""
+    from .layout import MIN_TEXT_PX, PX_PER_PT    # layout imports this module
+    v = {}
+    for part in spec.split():
+        k, _, n = part.partition("=")
+        v[k] = float(n)
+    css = []
+    if "size" in v:
+        px = v["size"] * PX_PER_PT
+        if px < MIN_TEXT_PX - 1e-6:
+            raise ContentError(f"[…]{{{spec}}}: {v['size']:g}pt is under the "
+                             f"{MIN_TEXT_PX / PX_PER_PT:g}pt floor")
+        css.append(f"font-size:{px:.2f}px")
+    if "lead" in v:
+        if v["lead"] <= 0:
+            raise ContentError(f"[…]{{{spec}}}: leading must be more than 0pt")
+        css.append(f"line-height:{v['lead'] * PX_PER_PT:.2f}px")
+    em = (v.get("track", 0) + v.get("kern", 0)) / 1000
+    if "track" in v or "kern" in v:
+        css.append(f"letter-spacing:{em:g}em")
+    return ";".join(css)
 CAPTION_RE = re.compile(r"\{caption:([A-Za-z0-9._@-]+)\}")
 
 
@@ -265,6 +302,14 @@ def md_inline(s: str) -> str:
 
     if "]{?" in s:
         s = COND_RE.sub(stash_cond, s)
+    runs: list[str] = []
+
+    def stash_run(m):
+        runs.append(" ".join(m.group(2).split()))
+        return f"\x11CR{len(runs) - 1}\x11{m.group(1)}\x12"
+
+    if "]{" in s:
+        s = CHAR_RUN_RE.sub(stash_run, s)
     cnames: list[str] = []
 
     def stash_cs(m):
@@ -298,6 +343,11 @@ def md_inline(s: str) -> str:
                    lambda m: '<span class="ds-cs" data-cs="{}">{}</span>'.format(
                        cnames[int(m.group(1))].replace("&", "&amp;").replace('"', "&quot;"),
                        m.group(2)), s, flags=re.S)
+    if runs:
+        s = re.sub(r"\x11CR(\d+)\x11(.*?)\x12",
+                   lambda m: '<span class="ds-cr" data-cr="{}" style="{}">{}</span>'.format(
+                       runs[int(m.group(1))], char_run_css(runs[int(m.group(1))]), m.group(2)),
+                   s, flags=re.S)
     if "{" in s:
         s = VAR_RE.sub(var_span, s)
     if "\x0e" in s:            # linked text, marked in edit mode only (layout._linked)
