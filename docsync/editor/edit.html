@@ -54,7 +54,7 @@
           --rail-w:48px;
           /* the Control bar's height: two rows, the same in every mode. Everything that
              hangs under the bar reads this (or --ctl-bottom, which ctlMetrics measures). */
-          --ctl-h:80px;
+          --ctl-h:58px;
           /* The right-hand panel dock's width (dockLayout keeps it): 0 with
              the dock off, its icon strip folded, strip + panel pinned open.
              What floats against the right edge stands this far in. */
@@ -161,7 +161,7 @@
          z-index:11;   /* above the rulers (7-8) and the rail and tray (9, 10): a pop-up hung from the bar is never cut by them */
          background:#fff; color:var(--ink); border-bottom:1px solid #E1E8E3; overflow:hidden; }
   #ctl-cols { display:flex; justify-content:space-between; align-items:stretch; height:100%; box-sizing:border-box;
-         padding:4px 6px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none; }
+         padding:3px 6px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none; }
   #ctl-cols::-webkit-scrollbar { display:none; }
   /* a bar with more to the left or right says so (a soft edge, not a mask: a mask would clip the
      pop-ups its controls open, which are fixed descendants of the cells) */
@@ -255,7 +255,7 @@
   #ctl[data-mode=frame] .cu-type:not(#ty-key):not(#ty-box):not(#ty-anchor):not(#ty-comment)
         { display:none !important; }
   #ctl #ty-size { display:none !important; }
-  #ctl .ty-step #cb-size { width:54px; height:29px; box-sizing:border-box; margin:0 -1px;
+  #ctl .ty-step #cb-size { width:54px; height:24px; box-sizing:border-box; margin:0 -1px;
           font:12.5px system-ui; text-align:center; color:#2F3E46; background:#fff;
           border:1px solid #D9E1DB; border-radius:0; position:relative; z-index:1; }
   #ctl .ty-step #cb-size.bad { border-color:#C0603F; }
@@ -263,14 +263,14 @@
   #ctl #cb-smcp { width:62px; }
   #ctl .ty-sep { flex:none; }
   #ctl #cb-mode button { display:inline-flex; align-items:center; justify-content:center;
-          min-width:31px; height:29px; padding:0 7px; cursor:pointer; color:#2F3E46;
+          min-width:26px; height:24px; padding:0 5px; cursor:pointer; color:#2F3E46;
           border:1px solid #D9E1DB; background:#fff; margin-left:-1px; border-radius:0; }
-  #ctl #cb-mode button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
-  #ctl #cb-mode button:last-child { border-radius:0 7px 7px 0; }
+  #ctl #cb-mode button:first-child { border-radius:6px 0 0 6px; margin-left:0; }
+  #ctl #cb-mode button:last-child { border-radius:0 6px 6px 0; }
   #ctl #cb-mode button:hover { border-color:var(--sage); background:#EDF4EE; }
   #ctl #cb-mode button.on { background:var(--ink); border-color:var(--ink); color:#fff; position:relative; z-index:1; }
   #ctl #cb-mode button svg { display:block; pointer-events:none; }
-  #ctl .ctl-cell select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
+  #ctl .ctl-cell select { font:12.5px system-ui; height:24px; padding:0 4px 0 6px; box-sizing:border-box;
           border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46; }
   #ctl .cu-type.cb-f input { width:52px; }
   #ctl .cu-type.cb-f input.cb-narrowin { width:44px; }
@@ -287,6 +287,7 @@
           border:1.3px solid #7A8E85; border-radius:1px; cursor:pointer; background:#fff; }
   #ctl .cb-refgrid button:hover { border-color:var(--sage); }
   #ctl .cb-refgrid button.on { background:var(--ink); border-color:var(--ink); }
+  #ctl .cb-refgrid { grid-template-columns:repeat(3, 7px); grid-auto-rows:7px; gap:1px; padding:0; }
   #ctl .cb-refgrid button:focus-visible { outline:2px solid rgba(107,158,120,.55); outline-offset:1px; }
   #cb-pflag { display:inline-block; width:16px; text-align:center; font:700 13px Georgia,serif;
           color:#5B6E66; transition:transform .15s; }
@@ -294,47 +295,47 @@
   #ctl #type, #ctl #arrange { background:transparent; box-shadow:none; border-radius:0; }
 
   /* ---- the docked bar, one quiet surface ---------------------------------
-     Two white rows, and every control wears the same shape: 30px tall, 8px
+     Two white rows, and every control wears the same shape: 24px tall, 7px
      corners, a pale fill instead of an outline, no rule or shadow of its own.
      A number box is ONE pill with its icon or letter inside it, so there are no
      stray glyphs and no boxes-with-labels. */
-  #ctl #cb-obj, #ctl #type, #ctl #arrange { gap:6px; row-gap:6px; }
-  #ctl .cb-f { height:30px; box-sizing:border-box; padding:0 2px 0 10px; gap:5px;
-         background:#F2F5F3; border-radius:8px; color:#72857C; font:600 12px system-ui;
+  #ctl #cb-obj, #ctl #type, #ctl #arrange { gap:5px; row-gap:5px; }
+  #ctl .cb-f { height:24px; box-sizing:border-box; padding:0 2px 0 8px; gap:4px;
+         background:#F2F5F3; border-radius:7px; color:#72857C; font:600 12px system-ui;
          letter-spacing:.02em; transition:background .12s, box-shadow .12s; }
   #ctl .cb-f:hover { background:#E8EEEA; }
   #ctl .cb-f:focus-within { background:#fff; box-shadow:0 0 0 2px rgba(107,158,120,.6); }
   #ctl .cb-f:has(input.bad) { box-shadow:0 0 0 1.5px #C0603F; }
-  #ctl .cb-f input { height:28px; width:46px; padding:0 8px 0 0; border:0; border-radius:0;
+  #ctl .cb-f input { height:22px; width:46px; padding:0 6px 0 0; border:0; border-radius:0;
          background:transparent; box-shadow:none; font:500 12.5px system-ui; color:#2F3E46; }
   #ctl .cb-f input:hover { border:0; }
   #ctl .cb-f input:focus { outline:none; }
   #ctl .cb-f .cb-ic { color:#72857C; }
   #ctl .cb-f select:not(:where(.pop) *), #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) select:not(:where(.pop) *) {
-         height:30px; border:0; border-radius:8px; background-color:#F2F5F3; box-shadow:none;
+         height:24px; border:0; border-radius:7px; background-color:#F2F5F3; box-shadow:none;
          color:#2F3E46; font:500 12.5px system-ui; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) select:not(:where(.pop) *):hover { background-color:#E8EEEA; border:0; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *) {
-         height:30px; min-width:30px; border:0; border-radius:8px; background:#F2F5F3;
+         height:24px; min-width:24px; padding:0 5px; border:0; border-radius:7px; background:#F2F5F3;
          box-shadow:none; color:#2F3E46; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *):hover { background:#E8EEEA; border:0; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *).on { background:#2F3E46; color:#fff; border:0; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *):disabled { background:transparent; color:#B4C0B9; opacity:1; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *):focus-visible { outline:2px solid rgba(107,158,120,.6); outline-offset:1px; }
   /* a segmented group is one pale pill; its pressed button is the dark chip */
-  #ctl .ty-seg { background:#F2F5F3; border-radius:8px; gap:0; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *) { background:transparent; border-radius:8px; margin:0; }
+  #ctl .ty-seg { background:#F2F5F3; border-radius:7px; gap:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *) { background:transparent; border-radius:7px; margin:0; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *):hover { background:#E1E9E4; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *).on { background:#2F3E46; }
-  #ctl .ty-step { background:#F2F5F3; border-radius:8px; }
+  #ctl .ty-step { background:#F2F5F3; border-radius:7px; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-step button:not(:where(.pop) *) { background:transparent; }
   #ctl .ty-step #cb-size { background:transparent; border:0; box-shadow:none; border-radius:0; }
   /* in the floating card Reset sits at the strip's far end; in the bar it is one more pill, not a
      control pushed to the row's right edge with a gap before it */
   #ctl #ty-reset { margin-left:0; }
-  #ctl .ty-sep, #ctl .bar-sep { width:1px; height:18px; margin:0 3px; background:#E3E9E5; }
-  #ctl .ty-key, #ctl .ar-count { background:#EEF3EF; color:#6B7C74; border-radius:8px;
-         padding:6px 10px; font:500 12px ui-monospace, monospace; }
+  #ctl .ty-sep, #ctl .bar-sep { width:1px; height:16px; margin:0 3px; background:#E3E9E5; }
+  #ctl .ty-key, #ctl .ar-count { background:#EEF3EF; color:#6B7C74; border-radius:7px;
+         padding:3px 8px; font:500 12px ui-monospace, monospace; }
   #ctl #ar-del { color:#C0603F; }
   #ctl #ar-del:hover { background:#F8E7E2; }
   /* Pop-ups that hang out of the bar (text styles, box options …): the bar's own button
@@ -19498,10 +19499,10 @@ const CTL_COLS = {
   // ¶: how the paragraph sits
   para: [
     [['#cb-mode'], ['#cb-ref']],
-    [['#ty-alseg'], ['#cb-lmark'], 1, 230],
-    [['label:has(#cb-il)'], ['label:has(#cb-ti)'], 1, 160],
-    [['label:has(#cb-ir)'], ['label:has(#cb-dcap)'], 1, 160],
-    [['label:has(#cb-sb)'], ['label:has(#cb-sa)'], 1, 160],
+    [['#ty-alseg'], ['#cb-lmark'], 1, 260],
+    [['label:has(#cb-il)'], ['label:has(#cb-ti)'], 1, 190],
+    [['label:has(#cb-ir)'], ['label:has(#cb-dcap)'], 1, 190],
+    [['label:has(#cb-sb)'], ['label:has(#cb-sa)'], 1, 190],
     [['#cb-grid', '#cb-hyph'], ['#ty-parabtn', '#ty-reset']],
     [['#ty-style', '#ty-style-more'], ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key'], 1, 300],
     [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
