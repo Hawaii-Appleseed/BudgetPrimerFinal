@@ -1512,18 +1512,18 @@ Legend: **Missing** = not in Cider. **Hidden** = exists, not on a bar.
 
 | InDesign control | Cider | Note |
 |---|---|---|
-| Font family, style | Yes | |
+| Font family, style | Yes | family and weight on the selected words as a run (91) |
 | Size in pt | **Bar** (pt) | on the selected words as a run (90); the box with none selected |
 | Leading, "(auto)" | **Bar** (pt, auto in brackets) | on the selected words as a run (90) |
 | Tracking (1/1000 em) | **Bar** (1/1000 em) | on the selected words as a run (90) |
 | Kerning: Metrics / Optical / manual | **Bar** (manual) | at the caret or across a selection (90); Metrics is the font's own, always on; no Optical |
-| All Caps, Small Caps | **Bar** | case picker; small caps / all small caps |
+| All Caps, Small Caps | **Bar** | case picker; small caps / all small caps; on the selected words as a run (91) |
 | Superscript / Subscript | Missing | the engine has OpenType `sups`/`subs`; no button |
-| Underline, Strikethrough + options (weight, offset, colour) | Partial | on/off, both on the bar |
+| Underline, Strikethrough + options (weight, offset, colour) | Partial | on/off, both on the bar; strikethrough on the selected words (91); no options |
 | Vertical / horizontal scale % | Missing | |
-| Baseline shift | **Bar** | pt |
+| Baseline shift | **Bar** | pt; on the selected words as a run (91) |
 | Skew (false italic) | Missing | |
-| Text fill colour | Yes | |
+| Text fill colour | Yes | on the selected words as a run (91) |
 | Text stroke colour / weight | Missing | effects only (hollow) |
 | Character style | Yes | |
 | Language, No Break | Missing | |
@@ -1736,3 +1736,38 @@ points for type, typed units accepted.
     settings, as a named style does. Found doing it: `fill()` in a spec
     focuses a field without a press, which is not what a person does, and
     the press is what holds the words. `tests/editor/char-runs.spec.js`.
+91. **The rest of the Character controls on the selected words. — CLOSED
+    2026-11-18.** The run from (90) takes seven more keys, the ones the
+    Control bar already had for the whole box: `[words]{font="Lora"
+    weight=700 color=#C0392B case=upper smcp=small strike=1 shift=2}`
+    (content.py's `CHAR_RUN_RE` / `char_run_values`; the editor's
+    `CHAR_RUN_RE_G` / `charRunParse` / `charRunSpec` twin). Each means what
+    the text-style key of the same name means (`smcp` is `smallCaps`), and
+    its CSS is `layout.text_css`'s, asked of the engine in the editor too
+    (`charRunCss` -> `cssFor`), so there is one spelling. The family is
+    quoted because names have spaces. The grammar stays strict, so
+    `[t]{color=1}` is still words; the values are checked when drawn: a
+    family the report cannot load, a weight the run's family has not got,
+    a weight outside 100–950 and a shift past ±24pt are refused at the
+    build (ContentError), not dropped. `font_link()` now reads the words
+    too (`Layout._run_specs()`: slots once Content binds, text boxes,
+    master boxes, table cells), so a family or weight used only on some
+    words is fetched in the published page; a weight with no family is
+    asked of every wanted family that has it. A report with no such run
+    keeps its link byte for byte (build_parity 0 of 30).
+    On the bar, with words selected in an open text: Font, Weight, Case,
+    Small caps and Strikethrough (`CB_RUN_PICK`, capture handlers ahead of
+    the box's own), Baseline shift (joins `CB_RUN`) and a colour picked from
+    the text-colour pop (`ctlRunColour`; the press on the colour button holds
+    the words until a colour is picked or the pop closes) write the run
+    (`ctlRunApply` -> `applyCharRun`). Changing the family drops a run
+    weight the new family has not got, as the box's own picker does. With
+    the caret in a run the pickers show its values (`ctlRunShow`; the box's
+    are kept in `runShown` and put back when the caret leaves it). With a
+    caret only, every picker still sets the box. Pilot: `setRun` takes the
+    same keys (`charRunBad` is the one check, for the bar and the verb).
+    Left: italic and underline on words are still the markdown marks
+    (`*`, `__`) the B / I / U buttons write; superscript / subscript are not
+    run keys yet; the type card's px stepper and the Spacing panel still set
+    the box. `tests/editor/char-runs.spec.js`,
+    `tests/editor/pilot-control-bar.spec.js`.
