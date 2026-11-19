@@ -51,7 +51,7 @@
           --txt:#EDF2EF; --dim:#A9BCB4;
           /* One number for the tool rail's width: #leftrail is that wide, and
              the floating panel starts exactly where it ends. */
-          --rail-w:64px;
+          --rail-w:48px;
           /* the Control bar's height: two rows, the same in every mode. Everything that
              hangs under the bar reads this (or --ctl-bottom, which ctlMetrics measures). */
           --ctl-h:80px;
@@ -119,7 +119,9 @@
         pointer-events:none; white-space:nowrap; box-shadow:0 2px 10px rgba(0,0,0,.3); }
   #tt::after { content:""; position:absolute; left:50%; margin-left:-4px;
                border:4px solid transparent; }
-  #tt:not(.above)::after { bottom:100%; border-bottom-color:var(--ink); }
+  #tt:not(.above):not(.side)::after { bottom:100%; border-bottom-color:var(--ink); }
+  /* beside a rail button: to its right, the arrow pointing back at it */
+  #tt.side::after { left:-8px; margin-left:0; top:50%; margin-top:-4px; border-right-color:var(--ink); }
   #tt.above::after { top:100%; border-top-color:var(--ink); }
 
   /* -- top bar ----------------------------------------------------------- */
@@ -452,7 +454,7 @@
   #leftrail .rail-end, #dock-icons .dk-end { display:flex; align-items:center; justify-content:center; flex:none;
               padding:0; border:0; background:none; color:var(--dim); cursor:pointer; opacity:.7;
               transition:background .14s, color .14s, opacity .14s; }
-  #leftrail .rail-end { width:44px; height:26px; border-radius:10px; margin-top:2px; }
+  #leftrail .rail-end { width:34px; height:24px; border-radius:9px; margin-top:2px; }
   #dock-icons .dk-end { width:32px; height:26px; border-radius:var(--r-ctl); margin-top:auto; }
   #leftrail .rail-end:hover, #dock-icons .dk-end:hover, #leftrail .rail-end:focus-visible, #dock-icons .dk-end:focus-visible
     { background:rgba(255,255,255,.14); color:var(--txt); opacity:1; }
@@ -535,7 +537,7 @@
               width:var(--rail-w); box-sizing:border-box;
               background:linear-gradient(180deg, #44545F, var(--chrome2) 55%);
               display:flex; flex-direction:column;
-              align-items:center; gap:4px; padding:10px 0 12px;
+              align-items:center; gap:3px; padding:8px 0 10px;
               /* never taller than the room above the page strip: a short window
                  compacts it (below) and, past that, it scrolls rather than run
                  under the strip. Its pop-ups are position:fixed, so not cut. */
@@ -544,8 +546,8 @@
               box-shadow:var(--shadow-edge), inset -1px 0 0 rgba(255,255,255,.05),
                          inset 0 1px 0 rgba(255,255,255,.07); }
   #leftrail::-webkit-scrollbar { display:none; }
-  #leftrail .rsep { width:26px; height:1px; margin:4px 0; background:rgba(255,255,255,.12); flex:none; }
-  #rail-pins { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  #leftrail .rsep { width:22px; height:1px; margin:4px 0; background:rgba(255,255,255,.12); flex:none; }
+  #rail-pins { display:flex; flex-direction:column; align-items:center; gap:3px; }
   #rail-pins > .fit-off { display:none !important; }   /* a pin that does not fit the window's height (railFit); the + reaches it */
   #rail-cmds { display:none; }
   /* While one of the rail's own popovers is open it must outrank EVERYTHING —
@@ -560,32 +562,32 @@
      the tools and stops there; the canvas owns the rest of that column, which
      is what frees the bottom-left corner for the page strip's own control. */
   :is(#leftrail > button, #rail-pins > button) { display:flex; align-items:center; justify-content:center; flex:none;
-                     width:44px; height:44px; padding:0;
+                     width:34px; height:34px; padding:0;
                      background:none; border:0; color:var(--txt); cursor:pointer;
-                     border-radius:13px; transition:background .14s, color .14s, box-shadow .14s; }
+                     border-radius:10px; transition:background .14s, color .14s, box-shadow .14s; }
   :is(#leftrail > button, #rail-pins > button)[hidden] { display:none; }
   :is(#leftrail > button, #rail-pins > button):hover { background:rgba(255,255,255,.14); }
   :is(#leftrail > button, #rail-pins > button):focus-visible { outline:2px solid #BFE0C7; outline-offset:1px; }
   :is(#leftrail > button, #rail-pins > button).on { background:linear-gradient(180deg,#7DB08A,#5E906E); color:#fff;
                      box-shadow:0 3px 12px rgba(107,158,120,.5), inset 0 1px 0 rgba(255,255,255,.28); }
-  :is(#leftrail > button, #rail-pins > button) svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.5;
+  :is(#leftrail > button, #rail-pins > button) svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.5;
                      stroke-linecap:round; stroke-linejoin:round; }
   :is(#leftrail > button, #rail-pins > button) svg .fl { fill:currentColor; stroke:none; }
   /* + : the way into everything else. Filled, so it reads as the one action. */
-  #leftrail #insert { width:46px; height:46px; border-radius:15px; color:#fff;
+  #leftrail #insert { width:38px; height:38px; border-radius:12px; color:#fff;
                      background:linear-gradient(180deg,#7DB08A,#5E906E);
                      box-shadow:0 3px 12px rgba(107,158,120,.45), inset 0 1px 0 rgba(255,255,255,.28); }
   #leftrail #insert:hover { background:linear-gradient(180deg,#86B993,#639574); }
-  #leftrail #insert svg { width:24px; height:24px; stroke-width:1.9; }
+  #leftrail #insert svg { width:21px; height:21px; stroke-width:1.9; }
   #leftrail #insert.on { box-shadow:0 0 0 3px rgba(107,158,120,.35), 0 3px 12px rgba(107,158,120,.5), inset 0 1px 0 rgba(255,255,255,.28); }
   /* a short window: the rail tightens so the tools, +, six pins and Colors fit above the page strip */
   @media (max-height:780px) {
-    #leftrail { gap:1px; padding:6px 0 6px; }
-    :is(#leftrail > button, #rail-pins > button) { width:38px; height:38px; border-radius:11px; }
-    :is(#leftrail > button, #rail-pins > button) svg { width:19px; height:19px; }
-    #leftrail #insert { width:40px; height:40px; border-radius:13px; }
+    #leftrail { gap:1px; padding:5px 0 5px; }
+    :is(#leftrail > button, #rail-pins > button) { width:30px; height:30px; border-radius:9px; }
+    :is(#leftrail > button, #rail-pins > button) svg { width:17px; height:17px; }
+    #leftrail #insert { width:34px; height:34px; border-radius:11px; }
     #leftrail .rsep { margin:2px 0; }
-    #leftrail .rail-end { height:22px; margin-top:0; }
+    #leftrail .rail-end { height:20px; margin-top:0; }
     #rail-pins { gap:1px; }
   }
 
@@ -26165,6 +26167,15 @@ function wireTooltips(doc) {
   function place() {
     const r = target.getBoundingClientRect();
     const cr = chip.getBoundingClientRect();
+    // a button of the left tool rail: the chip stands to its right, centred on it (below it would
+    // sit on the next button of a rail this narrow)
+    if (target.closest && target.closest('#leftrail') && r.right + 8 + cr.width < win.innerWidth) {
+      chip.style.left = Math.round(r.right + 9) + 'px';
+      chip.style.top = Math.round(Math.max(4, r.top + r.height / 2 - cr.height / 2)) + 'px';
+      chip.classList.remove('above'); chip.classList.add('side');
+      return;
+    }
+    chip.classList.remove('side');
     let x = r.left + r.width / 2 - cr.width / 2;
     x = Math.max(4, Math.min(x, win.innerWidth - cr.width - 4));
     let y = r.bottom + 7, above = false;
