@@ -3555,13 +3555,14 @@
     <!-- Tools (InDesign's toolbox): which thing a press on the page does.
          Select is how the editor has always worked; Type makes a click on empty
          page start a text box (and opens the words of any text it lands on);
-         Hand pans. V, T and H pick them (CHORDS); Space is the hand held down.
-         setTool() is the one place that changes the tool. -->
+         Hand moves items and pans on empty space. V, T and H pick them (CHORDS);
+         Space is the hand held down (a pure pan). setTool() is the one place
+         that changes the tool. -->
     <button id="tool-select" class="tool on" data-tool="select" aria-pressed="true" aria-label="Select (V)">
       <svg viewBox="0 0 14 14"><path class="fl" d="M3 1.8l8.4 5-3.6 1 2.1 3.7-1.7 1-2.1-3.7L3 11.4z"/></svg></button>
     <button id="tool-type" class="tool" data-tool="type" aria-pressed="false" aria-label="Type (T): click the page to start a text box">
       <svg viewBox="0 0 14 14"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg></button>
-    <button id="tool-hand" class="tool" data-tool="hand" aria-pressed="false" aria-label="Hand (H, or hold Space): drag to move around">
+    <button id="tool-hand" class="tool" data-tool="hand" aria-pressed="false" aria-label="Hand (H, or hold Space)" data-tip="Hand: drag items to move them; drag empty space to pan (H, or hold Space)">
       <svg viewBox="0 0 14 14"><path d="M4.3 7.3V3.4a.9.9 0 0 1 1.8 0V6M6.1 5.6V2.5a.9.9 0 0 1 1.8 0V6M7.9 5.8V3.3a.9.9 0 0 1 1.8 0v3.7M9.7 6.6a.9.9 0 0 1 1.8 0V9c0 2.2-1.5 3.8-3.7 3.8-1.6 0-2.5-.7-3.3-1.8L2.3 8.6a.9.9 0 0 1 1.4-1.1l.6.8"/></svg></button>
     <div class="rsep"></div>
     <button id="insert" aria-label="Insert anything (⌘K)" aria-haspopup="dialog" aria-expanded="false">
@@ -16543,10 +16544,27 @@ function spaceUp() {
   // The Hand TOOL keeps its cursor after the bar comes up.
   if (d && d.body) { d.body.classList.remove('ds-panning'); if (tool !== 'hand') d.body.classList.remove('ds-hand'); }
 }
+/** Whether a press on `t` is the Hand tool's to MOVE rather than pan: an
+ *  object that can be dragged (not locked, not in a locked layer), or one of the
+ *  editor's own surfaces (resize handles, grips, menus) which must keep working. */
+function handGrabs(t) {
+  if (!t || !t.closest) return false;
+  if (t.closest('.ds-handles, .ds-mini, .ds-menu, .ds-movegrip, .ds-xtools')) return true;
+  let el = t.closest('[data-el], [data-shape]');
+  // A glued piece belongs to the object around it, which is what a press takes.
+  while (el && el.classList.contains('ds-part'))
+    el = el.parentElement && el.parentElement.closest('[data-el], [data-shape]');
+  if (!el || el.classList.contains('ds-tgl-svg')) return false;
+  return !isLocked(idOf(el));
+}
 function wirePan(d) {
   d.addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
   d.addEventListener('mousedown', e => {
     if (!(spaceHeld || tool === 'hand') || e.button !== 0) return;
+    // The Hand tool (not Space, which is a pure pan) moves an item it presses
+    // on: let the press through to the object's own handler, which is the
+    // Select tool's drag (snapping, guides, lock check, undo, collab).
+    if (!spaceHeld && handGrabs(e.target)) return;
     e.preventDefault(); e.stopPropagation();
     const w = (d.defaultView || window);
     const x0 = e.clientX, y0 = e.clientY, sx = w.scrollX, sy = w.scrollY;
@@ -16574,7 +16592,8 @@ onEachDocument(wireDrop);
 // Which thing a press on the page does. Select is how the editor has always
 // worked. Type: a click on empty page starts a text box there (a drag sizes
 // it) with its words open and selected, and a click on text opens that text
-// at once instead of selecting it first. Hand: a drag pans, nothing selects.
+// at once instead of selecting it first. Hand: a drag on an unlocked item moves
+// it (the Select tool's own drag, see handGrabs), a drag on empty page pans.
 // V, T and H pick them (CHORDS); Space is the hand held down. After Type
 // places a box the tool goes back to Select (Canva's way, not InDesign's
 // sticky one): typing is what you do next, then you are back to moving things.
@@ -16585,7 +16604,7 @@ let tool = 'select';
 const TOOL_HINT = {
   select: 'select tool: click to select, drag to move',
   type: 'type tool: click the page to start a text box, or drag to size one',
-  hand: 'hand tool: drag to move around the page',
+  hand: 'hand tool: drag items to move them; drag empty space to pan',
 };
 function setTool(t, quiet = false) {
   if (!TOOL_HINT[t]) return;
@@ -25092,6 +25111,7 @@ function dragRefusal(d, el, page) {
  *  the words (the object stays selected) or shift-click it. Returns whether
  *  an editor opened. */
 function typeOnClick(d, el, e0) {
+  if (tool === 'hand') return false;       // the Hand tool selects and moves; it does not type
   if (editing || e0.shiftKey || e0.altKey || e0.metaKey || e0.ctrlKey) return false;
   const id = idOf(el);
   if (!id || !(selIds.size === 1 && selIds.has(id))) return false;
