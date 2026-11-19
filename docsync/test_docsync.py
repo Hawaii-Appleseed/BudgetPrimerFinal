@@ -4330,6 +4330,39 @@ check_eq("braces that are not a run's keys are words",
 check_raises("a run under the legibility floor is refused, not clamped",
              lambda: _mdi("[t]{size=6}"), "under the")
 check_raises("leading of nothing is refused", lambda: _mdi("[t]{lead=0}"), "more than 0pt")
+# The rest of the Character panel on a run (the control-bar gap list): the
+# CSS is text_css's for the style keys of the same names, never a second one.
+check_eq("a run's font, weight, colour, case, small caps, strike and shift draw as the style keys do",
+         _mdi('[w]{font="Source Sans 3" weight=700 color=#C0392B case=upper smcp=all strike=1 shift=-2}'),
+         '<span class="ds-cr" data-cr="font=&quot;Source Sans 3&quot; weight=700 color=#C0392B '
+         'case=upper smcp=all strike=1 shift=-2" style="'
+         + text_css({"font": "Source Sans 3", "weight": 700, "color": "#C0392B", "case": "upper",
+                     "smallCaps": "all", "strike": True, "shift": -2.0}) + '">w</span>')
+check_eq("size and a family on one run: both",
+         _mdi('[w]{size=14 font="Lora"}'),
+         '<span class="ds-cr" data-cr="size=14 font=&quot;Lora&quot;" '
+         "style=\"font-size:18.67px;font-family:'Lora'\">w</span>")
+check_eq("values a key cannot take are words, as before",
+         _mdi('[a]{case=shout} [b]{smcp=1} [c]{strike=yes} [d]{font=Lora}'),
+         '[a]{case=shout} [b]{smcp=1} [c]{strike=yes} [d]{font=Lora}')
+check_raises("a family the report cannot load is refused",
+             lambda: _mdi('[t]{font="Comic Sans"}'), "not a font this report can load")
+check_raises("a weight the family has not got is refused, as a style's is",
+             lambda: _mdi('[t]{font="Lora" weight=300}'), "has no weight 300")
+check_raises("a weight that is not one is refused", lambda: _mdi("[t]{weight=1200}"), "weight is")
+check_raises("a shift past the Paragraph panel's 24pt is refused",
+             lambda: _mdi("[t]{shift=30}"), "-24 to 24")
+check_eq("a run's family and weight are fetched with the report's own",
+         ("family=Lora:wght@700" in _layout({"boxes": [{"id": "b", "page": 1, "x": 1, "y": 1, "w": 2,
+                                                       "md": 'x [y]{font="Lora" weight=700}'}]}).font_link()),
+         True)
+check_eq("a run's weight alone is fetched for the families that have it",
+         _layout({"boxes": [{"id": "b", "page": 1, "x": 1, "y": 1, "w": 2,
+                             "md": "x [y]{weight=600}"}]}).font_link().count("600") >= 1, True)
+check_eq("a run with neither leaves the link as it was",
+         _layout({"boxes": [{"id": "b", "page": 1, "x": 1, "y": 1, "w": 2,
+                             "md": "x [y]{size=14 color=#123456}"}]}).font_link(),
+         _layout({}).font_link())
 
 # --- paragraph spacing and column alignment (INDESIGN_PARITY 14-15) ---------
 from docsync.layout import SPACE_CSS, decimal_tail, decimal_cell             # noqa: E402

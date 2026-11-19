@@ -224,20 +224,49 @@ COND_RE = re.compile(r"\[([^\]^][^\]]*)\]\{\?([A-Za-z0-9_-]{1,20})\}")
 # pair). Read BEFORE character styles, and with no `[` inside, so a named
 # style may hold one — `[[words]{size=14}]{.Pull}` — and never the other way
 # round (the editor writes runs so).
-CHAR_RUN_KEYS = ("size", "lead", "track", "kern")
+#
+# The rest of the Character panel rides the same run (the control-bar gap
+# list, 2026-11-18): `font="Source Sans 3"` (quoted: family names have
+# spaces), `weight=700`, `color=#C0392B`, `case=upper|lower|title`,
+# `smcp=small|all`, `strike=1` and `shift=3` (baseline shift, points). Those
+# mean exactly what the text-style keys of the same names mean, so their CSS
+# is layout.text_css's, never a second spelling. The grammar is strict — a
+# key with a value it cannot take (`color=1`, `size=big`) is words, as it
+# always was — and the values are checked when drawn.
+CHAR_RUN_KEYS = ("size", "lead", "track", "kern", "font", "weight", "color",
+                 "case", "smcp", "strike", "shift")
+_RUN_PAIR = (r'(?:(?:size|lead|track|kern|weight|shift)=-?\d+(?:\.\d+)?'
+             r'|font="[^"\n\[\]{}]+"|color=#[0-9A-Fa-f]{3,8}'
+             r'|case=(?:upper|lower|title)|smcp=(?:small|all)|strike=1)')
 CHAR_RUN_RE = re.compile(
-    r"\[([^\]^\[][^\]\[]*)\]\{((?:size|lead|track|kern)=-?\d+(?:\.\d+)?"
-    r"(?: (?:size|lead|track|kern)=-?\d+(?:\.\d+)?)*)\}")
+    r"\[([^\]^\[][^\]\[]*)\]\{(" + _RUN_PAIR + r"(?: " + _RUN_PAIR + r")*)\}")
+_RUN_TOKEN_RE = re.compile(r'(\w+)=("[^"]*"|\S+)')
+
+
+def char_run_values(spec: str) -> dict:
+    """`size=14 font="Lora"` -> {"size": 14.0, "font": "Lora"}: numbers as
+    floats, the words and the colour as written, a quoted family unquoted."""
+    v: dict = {}
+    for k, n in _RUN_TOKEN_RE.findall(spec or ""):
+        if k not in CHAR_RUN_KEYS:
+            continue
+        if n.startswith('"'):
+            v[k] = n[1:-1]
+        elif k in ("color", "case", "smcp"):
+            v[k] = n
+        else:
+            v[k] = float(n)
+    return v
 
 
 def char_run_css(spec: str) -> str:
     """`size=14 track=50` -> the span's CSS. A size under the legibility
-    floor is refused, not clamped (layout._check_text's rule)."""
-    from .layout import MIN_TEXT_PX, PX_PER_PT    # layout imports this module
-    v = {}
-    for part in spec.split():
-        k, _, n = part.partition("=")
-        v[k] = float(n)
+    floor is refused, not clamped (layout._check_text's rule), and so is a
+    family the report cannot load, a weight it does not have, and a shift past
+    the Paragraph panel's ±24pt."""
+    # layout imports this module
+    from .layout import MIN_TEXT_PX, PX_PER_PT, FONTS, text_css
+    v = char_run_values(spec)
     css = []
     if "size" in v:
         px = v["size"] * PX_PER_PT
@@ -252,6 +281,36 @@ def char_run_css(spec: str) -> str:
     em = (v.get("track", 0) + v.get("kern", 0)) / 1000
     if "track" in v or "kern" in v:
         css.append(f"letter-spacing:{em:g}em")
+    st: dict = {}
+    fam = v.get("font")
+    if fam is not None:
+        if fam not in FONTS:
+            raise ContentError(f"[…]{{{spec}}}: {fam!r} is not a font this report "
+                               f"can load. One of: {', '.join(sorted(FONTS))}")
+        st["font"] = fam
+    if "weight" in v:
+        w = v["weight"]
+        if w != int(w) or not 100 <= w <= 950:
+            raise ContentError(f"[…]{{{spec}}}: weight is 100 to 950, a whole number")
+        if fam is not None and int(w) not in FONTS[fam]:
+            raise ContentError(f"[…]{{{spec}}}: {fam} has no weight {int(w)} — it "
+                               f"would be faked by the browser. One of: {FONTS[fam]}")
+        st["weight"] = int(w)
+    if "color" in v:
+        st["color"] = v["color"]
+    if "case" in v:
+        st["case"] = v["case"]
+    if "smcp" in v:
+        st["smallCaps"] = v["smcp"]
+    if v.get("strike"):
+        st["strike"] = True
+    if "shift" in v:
+        if not -24 <= v["shift"] <= 24:
+            raise ContentError(f"[…]{{{spec}}}: shift is points, -24 to 24")
+        if v["shift"]:
+            st["shift"] = v["shift"]
+    if st:
+        css.append(text_css(st))
     return ";".join(css)
 CAPTION_RE = re.compile(r"\{caption:([A-Za-z0-9._@-]+)\}")
 
@@ -346,7 +405,8 @@ def md_inline(s: str) -> str:
     if runs:
         s = re.sub(r"\x11CR(\d+)\x11(.*?)\x12",
                    lambda m: '<span class="ds-cr" data-cr="{}" style="{}">{}</span>'.format(
-                       runs[int(m.group(1))], char_run_css(runs[int(m.group(1))]), m.group(2)),
+                       runs[int(m.group(1))].replace('"', "&quot;"),
+                       char_run_css(runs[int(m.group(1))]), m.group(2)),
                    s, flags=re.S)
     if "{" in s:
         s = VAR_RE.sub(var_span, s)

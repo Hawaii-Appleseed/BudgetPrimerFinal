@@ -34,8 +34,8 @@ from pathlib import Path
 # styler duck-typed), so there is no cycle. A text box is a markdown block that
 # happens to be positioned — block_html already renders exactly that for the
 # overflow slots, and a second renderer for the same thing would drift.
-from .content import (CAPTION_RE, COND_RE, Footnotes, block_html, char_styles_used,
-                      link_refs, md_inline, page_refs, paragraph, split_states,
+from .content import (CAPTION_RE, CHAR_RUN_RE, COND_RE, Footnotes, block_html,
+                      char_run_values, char_styles_used, link_refs, md_inline, page_refs, paragraph, split_states,
                       uses_breaks, uses_vars)
 
 # Letter portrait, because that is what the Budget Primer is. Any report with a
@@ -6827,6 +6827,22 @@ class Layout:
         """
         return sorted(k for k in self.text if k not in styleable)
 
+    def _run_specs(self) -> list:
+        """Every `[words]{…}` run's settings in the document's words: the
+        slots (once Content has bound itself), text boxes, master boxes and
+        table cells. Only font_link asks, and only for faces to fetch."""
+        texts = []
+        c = getattr(self, "_content", None)
+        if c is not None:
+            texts += [t for t in getattr(c, "_raw", {}).values() if isinstance(t, str)]
+        texts += [b.get("md") for b in self.boxes]
+        texts += [b.get("md") for m in self.masters.values() for b in (m.get("boxes") or [])]
+        for t in self.tables:
+            texts += [cell for row in (t.get("rows") or []) if isinstance(row, list)
+                      for cell in row]
+        return [m.group(2) for t in texts if isinstance(t, str) and "]{" in t
+                for m in CHAR_RUN_RE.finditer(t)]
+
     def font_link(self) -> str:
         """The Google Fonts <link>, covering the brand's fonts plus anything a
         style asks for.
@@ -6856,6 +6872,17 @@ class Layout:
                      if isinstance(st.get("style"), dict)]
                   + [self.styled_as(self.dressed(b).get("style"))
                      for m in self.masters.values() for b in (m.get("boxes") or [])])
+        # And the words: a run that sets a family or a weight on some words
+        # (`[words]{font="Lora" weight=700}`) needs that face fetched too. A
+        # weight with no family is the family around it, which only the page
+        # knows, so it is asked of every family already wanted that has it.
+        loose = set()
+        for spec in self._run_specs():
+            v = char_run_values(spec)
+            if v.get("font"):
+                styles.append({"font": v["font"], "weight": v.get("weight")})
+            elif v.get("weight"):
+                loose.add(int(v["weight"]))
         for st in styles:
             fam = st.get("font")
             if not fam:
@@ -6867,6 +6894,10 @@ class Layout:
                 fam, w = HUB_FONTS[fam]["fallback"], min(w, 900)
             (ital if st.get("italic") else want).setdefault(fam, set()).add(w)
             want.setdefault(fam, set())
+        for w in loose:
+            for fam in want:
+                if w in FONTS.get(fam, ()):
+                    want[fam].add(w)
         parts = []
         for fam in list(BRAND_FONTS) + [f for f in want if f not in BRAND_FONTS]:
             roman, italic = sorted(want.get(fam, set())), sorted(ital.get(fam, set()))

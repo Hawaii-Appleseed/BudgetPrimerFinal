@@ -4101,27 +4101,86 @@ const CHAR_STYLE_RE_G = /\[([^\]^][^\]]*)\]\{\.([^}\n]+)\}/g;
 // track=50 kern=-20}`, InDesign's character settings on selected words — size
 // and leading in points, tracking and kerning in thousandths of an em. Read
 // before character styles, so a named run may hold one and not the reverse.
-const CHAR_RUN_RE_G = /\[([^\]^\[][^\]\[]*)\]\{((?:size|lead|track|kern)=-?\d+(?:\.\d+)?(?: (?:size|lead|track|kern)=-?\d+(?:\.\d+)?)*)\}/g;
-const CHAR_RUN_KEYS = ['size', 'lead', 'track', 'kern'];
-/** `size=14 kern=-20` -> {size: 14, kern: -20}. */
+// The rest of the Character panel rides the same run (the control-bar gap
+// list): font="Source Sans 3" (quoted), weight=700, color=#C0392B,
+// case=upper|lower|title, smcp=small|all, strike=1, shift=3 (points) — the
+// text-style keys of the same names, so their CSS is the engine's text_css.
+const CHAR_RUN_PAIR = '(?:(?:size|lead|track|kern|weight|shift)=-?\\d+(?:\\.\\d+)?'
+  + '|font="[^"\\n\\[\\]{}]+"|color=#[0-9A-Fa-f]{3,8}'
+  + '|case=(?:upper|lower|title)|smcp=(?:small|all)|strike=1)';
+const CHAR_RUN_RE_G = new RegExp(`\\[([^\\]^\\[][^\\]\\[]*)\\]\\{(${CHAR_RUN_PAIR}(?: ${CHAR_RUN_PAIR})*)\\}`, 'g');
+const CHAR_RUN_KEYS = ['size', 'lead', 'track', 'kern', 'font', 'weight', 'color', 'case', 'smcp', 'strike', 'shift'];
+const CHAR_RUN_WORDS = ['font', 'color', 'case', 'smcp'];      // not numbers
+/** `size=14 font="Lora" kern=-20` -> {size: 14, font: 'Lora', kern: -20}. */
 function charRunParse(spec) {
   const o = {};
-  String(spec || '').split(/\s+/).forEach(p => {
-    const [k, v] = p.split('=');
-    if (CHAR_RUN_KEYS.includes(k) && v !== undefined && v !== '' && isFinite(+v)) o[k] = +v;
-  });
+  for (const m of String(spec || '').matchAll(/(\w+)=("[^"]*"|\S+)/g)) {
+    const k = m[1], v = m[2];
+    if (!CHAR_RUN_KEYS.includes(k) || v === '') continue;
+    if (CHAR_RUN_WORDS.includes(k)) o[k] = v.startsWith('"') ? v.slice(1, -1) : v;
+    else if (isFinite(+v)) o[k] = +v;
+  }
   return o;
 }
-/** The other way, keys in one order, nulls dropped: '' when nothing is set. */
-const charRunSpec = o => CHAR_RUN_KEYS.filter(k => o[k] != null && isFinite(o[k]))
-  .map(k => `${k}=${+(+o[k]).toFixed(2)}`).join(' ');
-/** content.py's char_run_css: what the span draws with. */
+/** The other way, keys in one order, nulls (and a strike that is off)
+ *  dropped: '' when nothing is set. */
+const charRunSpec = o => CHAR_RUN_KEYS.filter(k => o[k] != null && o[k] !== ''
+    && (k === 'strike' ? !!o[k] : CHAR_RUN_WORDS.includes(k) || isFinite(o[k])))
+  .map(k => k === 'font' ? `font="${o[k]}"` : k === 'strike' ? 'strike=1'
+    : CHAR_RUN_WORDS.includes(k) ? `${k}=${o[k]}` : `${k}=${+(+o[k]).toFixed(2)}`).join(' ');
+/** Why a run value will not do, or null — the engine's char_run_css rules,
+ *  said before anything is written (the bar and setRun both ask). */
+function charRunBad(k, v) {
+  if (v == null) return null;
+  if (k === 'font') return typeof v === 'string' && fonts[v] ? null
+    : `${v} is not a font this report can load`;
+  if (k === 'color') return typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v) ? null : 'color is a hex colour, #RRGGBB';
+  if (k === 'case') return ['upper', 'lower', 'title'].includes(v) ? null : 'case is upper, lower or title (null for as typed)';
+  if (k === 'smcp') return ['small', 'all'].includes(v) ? null : 'smcp is small or all (null for off)';
+  if (k === 'strike') return typeof v === 'boolean' || v === 1 || v === 0 ? null : 'strike is true or false';
+  if (!_num(v)) return `${k} is a number`;
+  if (k === 'size' && v < 10.5 * 0.75 - 1e-6) return `size is points — ${v}pt is under the 7.875pt floor`;
+  if (k === 'size' && v > 150) return 'size is points, up to 150';
+  if (k === 'lead' && !(v > 0 && v <= 300)) return 'lead is points, above 0 and up to 300 (a multiple like 1.4 is NOT points — multiply by the size)';
+  if ((k === 'track' || k === 'kern') && !(Number.isInteger(v) && v >= -1000 && v <= 10000)) return `${k} is whole thousandths of an em, -1000 to 10000 (50 is a little loose, -50 a little tight)`;
+  if (k === 'weight' && !(Number.isInteger(v) && v >= 100 && v <= 950)) return 'weight is 100 to 900, a whole number';
+  if (k === 'shift' && !(v >= -24 && v <= 24)) return 'shift is points, -24 to 24';
+  return null;
+}
+/** A weight the run's family has not got (the engine refuses it): checked
+ *  against the run's own family, or the one it would merge with. */
+const charRunWeightBad = o => o.font && o.weight != null && fonts[o.font] && !fonts[o.font].includes(+o.weight)
+  ? `${o.font} has no weight ${o.weight} — one of ${fonts[o.font].join(', ')}` : null;
+/** content.py's char_run_css: what the span draws with. The style keys are
+ *  asked of the engine's text_css (cssFor), as every text style is. */
 function charRunCss(spec) {
   const v = charRunParse(spec), css = [];
   if ('size' in v) css.push(`font-size:${(v.size * 4 / 3).toFixed(2)}px`);
   if ('lead' in v) css.push(`line-height:${(v.lead * 4 / 3).toFixed(2)}px`);
   if ('track' in v || 'kern' in v)
     css.push(`letter-spacing:${String(+(((v.track || 0) + (v.kern || 0)) / 1000).toFixed(6))}em`);
+  const st = {};
+  if (v.font) st.font = v.font;
+  if (v.weight != null) st.weight = v.weight;
+  if (v.color) st.color = v.color;
+  if (v.case) st.case = v.case;
+  if (v.smcp) st.smallCaps = v.smcp;
+  if (v.strike) st.strike = true;
+  if (v.shift) st.shift = v.shift;
+  if (Object.keys(st).length) {
+    try { css.push(cssFor(st)); }
+    catch (e) {
+      // no engine yet (a page still booting): near enough until it renders
+      swallowed('charRunCss', e);
+      if (st.font) css.push(`font-family:'${st.font}'`);
+      if (st.weight) css.push(`font-weight:${st.weight}`);
+      if (st.strike) css.push('text-decoration:line-through');
+      if (st.color) css.push(`color:${st.color}`);
+      if (st.case) css.push(`text-transform:${{ upper: 'uppercase', lower: 'lowercase', title: 'capitalize' }[st.case]}`);
+      if (st.smallCaps) css.push(`font-variant-caps:${st.smallCaps === 'all' ? 'all-small-caps' : 'small-caps'}`);
+      if (st.shift) css.push(`vertical-align:${st.shift}pt`);
+    }
+  }
   return css.join(';');
 }
 /** Character settings on words, in the MARKDOWN: the pilot's version of what
@@ -12204,6 +12263,7 @@ function showFxParams(key) {
 // in-page strip does.
 let selected = null;                   // the slot key the type row is editing
 let fonts = {};                        // family -> weights, from the engine
+let runShown = null;                   // the type pickers as the box set them, while a run shows (ctlRunShow)
 let hubFonts = {};                     // licensed families whose files only the staff hub serves
 
 // A text BOX carries its type style on the box object itself (b.style —
@@ -13027,6 +13087,7 @@ function showType(key) {
     s.classList.toggle('on', s.dataset.c === cur));
   $('ty-Abar').style.background =
     eff.color || 'linear-gradient(90deg,#e66,#6b9e78,#66e)';
+  runShown = null;                      // the pickers show the box again (ctlRunShow)
   $('ty-fx').value = (eff.effect && eff.effect.kind) || '';
   showFxParams(key);
   $('ty-i').classList.toggle('on', !!eff.italic);
@@ -14307,6 +14368,7 @@ function wireType() {
     const host = $('ty-color-extras');
     host.innerHTML = '';
     colorExtras(document, host, (styleOf(selected).color || ''), async c => {
+      if (ctlRunColour(c)) return;          // the selected words, not the box
       $('ty-colorpop').hidden = true;
       setStyle(selected, { color: c });
       markDirty(); await render(); showType(selected);
@@ -14489,6 +14551,7 @@ function wireType() {
     togglePop($('ty-stylepop'), $('ty-style-more'));
   });
   $('ty-colordefault').addEventListener('click', async () => {
+    if (ctlRunColour(null)) return;         // the words' own colour off
     $('ty-colorpop').hidden = true;
     setStyle(selected, { color: null });
     markDirty(); await render(); showType(selected);
@@ -19673,7 +19736,17 @@ function ctlTextWrite(src, value) {
 // one of these fields keeps the words open — focus going to the bar would
 // otherwise end the edit (its blur commits) — and the selection is put back
 // when the field lets go, as the Glyphs panel does.
-const CB_RUN = { 'cb-size': 'size', 'cb-lead': 'lead', 'cb-track': 'track', 'cb-kern': 'kern' };
+const CB_RUN = { 'cb-size': 'size', 'cb-lead': 'lead', 'cb-track': 'track', 'cb-kern': 'kern',
+                 'cb-shift': 'shift' };
+// The rest of the Character controls do the same with words selected (the
+// control-bar gap list): a pick from a list or a press of a button writes
+// the run's font, weight, case, small caps or strikethrough, and a colour
+// from the text-colour pop its colour. With a caret only they set the box,
+// as they always did.
+const CB_RUN_PICK = { 'ty-font': 'font', 'ty-weight': 'weight', 'ty-case': 'case',
+                      'cb-smcp': 'smcp', 'cb-strike': 'strike' };
+const CB_RUN_SEL = [...Object.keys(CB_RUN), ...Object.keys(CB_RUN_PICK), 'ty-colorbtn']
+  .map(id => '#' + id).join(', ');
 let runCtx = null;
 function ctlRunHold(inp) {
   if (runCtx || !richHost) return;
@@ -19697,6 +19770,11 @@ function ctlRunLetGo() {
 function ctlRunRead(inp) {
   const t = String(inp.value).trim().toLowerCase(), k = CB_RUN[inp.id];
   if (t === '' || t === 'auto' || /^\(.*\)$/.test(t)) return k === 'size' ? undefined : null;
+  if (k === 'shift') {
+    const m = t.match(/^(-?\d*\.?\d+)\s*(pt)?$/);
+    if (!m || Math.abs(+m[1]) > 24) return undefined;
+    return +m[1] ? +(+m[1]).toFixed(2) : null;
+  }
   if (k === 'size' || k === 'lead') {
     const m = t.match(/^(\d*\.?\d+)\s*(pt|px|x|×)?$/);
     if (!m) return undefined;
@@ -19726,6 +19804,7 @@ function ctlRunChange(inp) {
     inp.classList.add('bad');
     $('stat').textContent = k === 'size' && /\d/.test(inp.value)
       ? `${inp.value} is under the 7.875pt floor — nothing on the page goes smaller`
+      : k === 'shift' && /\d/.test(inp.value) ? 'baseline shift is points, -24 to 24'
       : `“${inp.value}” is not a value here`;
     return true;
   }
@@ -19773,7 +19852,142 @@ function ctlRunShow(d) {
     else if (k === 'kern') inp.value = '0';
     else ctlTextShow(inp);
   });
+  // The pickers: what the run says, over the box's own (kept, and put back
+  // when the caret leaves the run; showType repaints them anyway).
+  const more = ['font', 'weight', 'color', 'case', 'smcp', 'strike'].some(k => k in v);
+  if (runShown) { runShowPut(runShown); if (!more) runShown = null; }
+  if (!more) return;
+  if (!runShown) runShown = runShowSnap();
+  const busy = id => document.activeElement === $(id);
+  if (v.font && !busy('ty-font')) {
+    $('ty-font').value = v.font;
+    if (!busy('ty-weight')) fillWeights(v.font, v.weight != null ? v.weight : +$('ty-weight').value || null);
+  } else if (v.weight != null && !busy('ty-weight')) {
+    const w = $('ty-weight');
+    if (![...w.options].some(o => o.value === String(v.weight)))
+      w.insertAdjacentHTML('beforeend', `<option value="${v.weight}">${v.weight}</option>`);
+    w.value = String(v.weight);
+  }
+  if (v.case && !busy('ty-case')) $('ty-case').value = v.case;
+  if (v.smcp && !busy('cb-smcp')) $('cb-smcp').value = v.smcp;
+  if (v.strike) $('cb-strike').classList.add('on');
+  if (v.color) $('ty-Abar').style.background = v.color;
 }
+/** The pickers as the box set them, to put back when the caret leaves a run. */
+function runShowSnap() {
+  return { font: $('ty-font').value, wHtml: $('ty-weight').innerHTML, w: $('ty-weight').value,
+    cas: $('ty-case').value, smcp: $('cb-smcp').value,
+    strike: $('cb-strike').classList.contains('on'), abar: $('ty-Abar').style.background };
+}
+function runShowPut(s) {
+  $('ty-font').value = s.font;
+  $('ty-weight').innerHTML = s.wHtml; $('ty-weight').value = s.w;
+  $('ty-case').value = s.cas; $('cb-smcp').value = s.smcp;
+  $('cb-strike').classList.toggle('on', s.strike);
+  $('ty-Abar').style.background = s.abar;
+}
+/** Write `patch` onto the held words as a run. False when no words are held
+ *  (the control then sets the box, as before). */
+function ctlRunApply(patch, what) {
+  const c = runCtx;
+  if (!c || c.range.collapsed || !c.host.isConnected) return false;
+  c.host.focus();
+  const s2 = c.d.getSelection(); s2.removeAllRanges(); s2.addRange(c.range);
+  const ok = !!applyCharRun(c.d, c.host, patch);
+  if (s2.rangeCount) c.range = s2.getRangeAt(0).cloneRange();
+  $('stat').textContent = ok ? `${what} set on the selected words` : 'select the words first';
+  return true;
+}
+/** The run the held words start in, as {key: value}. */
+function ctlRunAt() {
+  const c = runCtx;
+  if (!c) return {};
+  const r = c.range;
+  let el = r.startContainer;
+  // A selection that starts at the very end of one text node starts, as far
+  // as the words go, at the first character of the next (as ctlRunShow reads).
+  if (!r.collapsed && (el.nodeType !== Node.TEXT_NODE || r.startOffset >= el.length)) {
+    const w = c.d.createTreeWalker(c.host, NodeFilter.SHOW_TEXT);
+    let t = null;
+    while (w.nextNode()) {
+      const n = w.currentNode;
+      if (n.length && r.intersectsNode(n) && !(n === el && r.startOffset >= n.length)) { t = n; break; }
+    }
+    if (t) el = t;
+  }
+  if (el.nodeType === Node.TEXT_NODE) el = el.parentElement;
+  const cr = el && el.closest ? el.closest('span.ds-cr') : null;
+  return cr && c.host.contains(cr) ? charRunParse(cr.dataset.cr) : {};
+}
+/** A pick from one of the CB_RUN_PICK lists or buttons, as a run patch, or a
+ *  reason it will not do. */
+function ctlRunPick(el) {
+  const k = CB_RUN_PICK[el.id], at = ctlRunAt();
+  if (k === 'strike') return { patch: { strike: at.strike ? null : 1 }, what: 'strikethrough' };
+  const raw = el.value;
+  if (k === 'font') {
+    const fam = raw || null;
+    if (fam && !fonts[fam]) return { error: `${fam} is not a font this report can load` };
+    // A weight the new family has not got would be refused by the engine:
+    // drop it, as the box's own font picker does.
+    const patch = { font: fam };
+    if (fam && at.weight != null && !fonts[fam].includes(+at.weight)) patch.weight = null;
+    return { patch, what: 'font' };
+  }
+  if (k === 'weight') {
+    const w = raw === '' ? null : +raw;
+    const fam = at.font || styleOf(selected).font;
+    if (w != null && fam && fonts[fam] && !fonts[fam].includes(w))
+      return { error: `${fam} has no weight ${w}` };
+    return { patch: { weight: w }, what: 'weight' };
+  }
+  if (k === 'case') return { patch: { case: raw === 'none' || !raw ? null : raw }, what: 'case' };
+  if (k === 'smcp') return { patch: { smcp: raw || null }, what: 'small caps' };
+  return { error: 'not a run setting' };
+}
+Object.keys(CB_RUN_PICK).forEach(id => {
+  const el = $(id), ev = el.tagName === 'BUTTON' ? 'click' : 'change';
+  el.addEventListener('mousedown', () => ctlRunHold(el), true);
+  el.addEventListener('focus', () => ctlRunHold(el));
+  el.addEventListener('blur', () => setTimeout(ctlRunLetGo, 0));
+  // Capture, so the box's own handler (bubble, on the same element) does not
+  // also run when the words took the change.
+  el.addEventListener(ev, e => {
+    if (!runCtx || runCtx.range.collapsed) return;
+    e.stopImmediatePropagation();
+    const p = ctlRunPick(el);
+    if (p.error) $('stat').textContent = p.error;
+    else ctlRunApply(p.patch, p.what);
+    // A pick is one act: let go now rather than wait for the control's blur,
+    // which never comes when the pick arrived without focus (a script, an
+    // assistive tool), and modalOpen would stay on.
+    ctlRunLetGo();
+  }, true);
+});
+// Colour: the button opens the pop, and the words stay held until a colour is
+// picked from it or it closes.
+$('ty-colorbtn').addEventListener('mousedown', () => {
+  ctlRunHold($('ty-colorbtn'));
+  if (runCtx) runCtx.colour = true;
+}, true);
+/** A colour picked in the text-colour pop: the held words' run, if any. */
+function ctlRunColour(c) {
+  if (!runCtx || !runCtx.colour || runCtx.range.collapsed) return false;
+  $('ty-colorpop').hidden = true;
+  ctlRunApply({ color: c ? String(c).toUpperCase() : null }, 'colour');
+  ctlRunLetGo();
+  return true;
+}
+new MutationObserver(() => {
+  // Only reads: writing `hidden` from here would answer itself (see the dock).
+  if ($('ty-colorpop').hidden && runCtx && runCtx.colour) ctlRunLetGo();
+}).observe($('ty-colorpop'), { attributes: true, attributeFilter: ['hidden'] });
+$('ty-color').addEventListener('input', e => {
+  if (runCtx && runCtx.colour && !runCtx.range.collapsed) e.stopImmediatePropagation();
+}, true);
+$('ty-color').addEventListener('change', e => {
+  if (ctlRunColour($('ty-color').value)) e.stopImmediatePropagation();
+}, true);
 Object.keys(CB_RUN).forEach(id => {
   const inp = $(id);
   inp.addEventListener('mousedown', () => ctlRunHold(inp), true);
@@ -22704,10 +22918,12 @@ $('ty-marks').addEventListener('mousedown', e => e.preventDefault());
 // type control is touched.
 $('type').addEventListener('pointerdown', e => {
   if (!richHost || e.target.closest('#ty-marks')) return;
-  // Size, leading, tracking and kerning with words selected act on those
-  // words (ctlRunHold): the words stay open, nothing renders under them.
-  const runInp = e.target.closest('#cb-size, #cb-lead, #cb-track, #cb-kern');
-  if (runInp) { ctlRunHold(runInp); if (runCtx) return; }
+  // The Character controls with words selected act on those words
+  // (ctlRunHold): the words stay open, nothing renders under them. The
+  // text-colour pop a held press opened is part of the same press.
+  const runInp = e.target.closest(CB_RUN_SEL);
+  if (runInp) { ctlRunHold(runInp); if (runCtx) { if (runInp.id === 'ty-colorbtn') runCtx.colour = true; return; } }
+  if (runCtx && runCtx.colour && e.target.closest('#ty-colorpop')) return;
   richHost.blur();     // finish(true): commit + re-render (single-flight)
 }, true);
 const richDo = fn => {
@@ -25466,6 +25682,7 @@ async function boot() {
     b.style.background = c;
     b.title = c;
     b.addEventListener('click', async () => {
+      if (ctlRunColour(c)) return;          // the selected words, not the box
       setStyle(selected, { color: c });
       markDirty(); await render(); showType(selected);
     });
@@ -36923,26 +37140,27 @@ function _pilotRunTarget(target) {
   return null;
 }
 function _pilotValidateSetRun(target, sel, patch) {
-  const USAGE = 'setRun(target, {find, nth?, caretAfter?}, {size, lead, track, kern}) — target: a slot key or a text box id; find: the words as they read; size and lead in POINTS (size 7.9 or more), track and kern in thousandths of an em; null takes one off; caretAfter: n kerns the pair after the n-th character of find (patch {kern} only)';
+  const USAGE = 'setRun(target, {find, nth?, caretAfter?}, {size, lead, track, kern, font, weight, color, case, smcp, strike, shift}) — target: a slot key or a text box id; find: the words as they read; size and lead in POINTS (size 7.9 or more), track and kern in thousandths of an em; font a family from the font list, weight 100–900, color #RRGGBB, case upper|lower|title, smcp small|all, strike true|false, shift points (-24 to 24); null takes one off; caretAfter: n kerns the pair after the n-th character of find (patch {kern} only)';
   const t = _pilotRunTarget(target);
   if (!t) return { ok: false, error: `no slot or text box '${target}' — check inventory()` };
   if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !Object.keys(patch).length) return { ok: false, error: USAGE };
   const bad = Object.keys(patch).filter(k => !CHAR_RUN_KEYS.includes(k));
   if (bad.length) return { ok: false, error: `setRun: ${bad.join(', ')} not a run key — ${USAGE}` };
   for (const [k, v] of Object.entries(patch)) {
-    if (v == null) continue;
-    if (!_num(v)) return { ok: false, error: `setRun: ${k} is a number` };
-    if (k === 'size' && v < 10.5 * _PT - 1e-6) return { ok: false, error: `setRun: size is points — ${v}pt is under the 7.875pt floor` };
-    if (k === 'size' && v > 150) return { ok: false, error: 'setRun: size is points, up to 150' };
-    if (k === 'lead' && !(v > 0 && v <= 300)) return { ok: false, error: 'setRun: lead is points, above 0 and up to 300 (a multiple like 1.4 is NOT points — multiply by the size)' };
-    if ((k === 'track' || k === 'kern') && !(Number.isInteger(v) && v >= -1000 && v <= 10000)) return { ok: false, error: `setRun: ${k} is whole thousandths of an em, -1000 to 10000 (50 is a little loose, -50 a little tight)` };
+    const why = charRunBad(k, v);
+    if (why) return { ok: false, error: `setRun: ${why}` };
   }
-  const r = charRunEditMd(t.md, sel, patch);
+  const w = charRunWeightBad(patch);
+  if (w) return { ok: false, error: `setRun: ${w}` };
+  const r = charRunEditMd(t.md, sel, _runPatch(patch));
   return r.ok ? { ok: true } : { ok: false, error: `setRun: ${r.error}` };
 }
+/** A run patch as the markdown keeps it: a strike that is off is no key. */
+const _runPatch = p => Object.fromEntries(Object.entries(p).map(([k, v]) =>
+  [k, k === 'strike' ? (v ? 1 : null) : v]));
 function _pilotApplySetRun(target, sel, patch) {
   const t = _pilotRunTarget(target);
-  const r = charRunEditMd(t.md, sel, patch);
+  const r = charRunEditMd(t.md, sel, _runPatch(patch));
   if (!r.ok) throw new Error(r.error);
   if (t.kind === 'box') _pilotApplySetBoxText(target, r.md); else _pilotApplySetSlot(target, r.md);
   return { id: target, md: r.md };
