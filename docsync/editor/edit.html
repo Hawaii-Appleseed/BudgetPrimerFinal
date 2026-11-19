@@ -463,7 +463,7 @@
      the Insert palette, whatever the person has pinned from it, and Colors —
      where it used to be seven equal buttons with 9px labels. It stays flush
      with the window's edge (rulerLeftX and #side both read that edge). */
-  #leftrail { position:absolute; left:0; top:0; z-index:2;
+  #leftrail { position:absolute; left:0; top:0; z-index:9;   /* above the rulers (7-8): the top ruler runs under the rail's first buttons */
               width:var(--rail-w); box-sizing:border-box;
               background:linear-gradient(180deg, #44545F, var(--chrome2) 55%);
               display:flex; flex-direction:column;
