@@ -51,7 +51,7 @@
           --txt:#EDF2EF; --dim:#A9BCB4;
           /* One number for the tool rail's width: #leftrail is that wide, and
              the floating panel starts exactly where it ends. */
-          --rail-w:67px;
+          --rail-w:64px;
           /* The right-hand panel dock's width (dockLayout keeps it): 0 with
              the dock off, its icon strip folded, strip + panel pinned open.
              What floats against the right edge stands this far in. */
@@ -154,7 +154,7 @@
             double-click. The extra row hangs over the top of the canvas instead,
             on the white of #cb-obj / #type / #arrange below. */
          flex-wrap:wrap; align-content:flex-start;
-         box-sizing:border-box; padding:7px calc(var(--dock-w, 40px) + 12px) 7px 12px; position:relative; z-index:3;
+         box-sizing:border-box; padding:7px calc(var(--dock-w, 40px) + 12px) 7px 12px; position:relative; z-index:9;  /* over the rulers (7-8): its wrapped rows hang onto the canvas top */
          background:#fff; color:var(--ink);
          overflow:visible; white-space:nowrap; }
   #ctl::-webkit-scrollbar { display:none; }
@@ -298,8 +298,12 @@
   #ctl .ty-step button { background:transparent; }
   #ctl #type .ty-step #cb-size { background:transparent; border:0; box-shadow:none; border-radius:0; }
   /* the text/arrange controls fill the line beside the mode switch and wrap among
-     themselves, instead of dropping to a row of their own */
-  #ctl > #type, #ctl > #arrange { flex:1 1 0; min-width:0; }
+     themselves, instead of dropping to a row of their own — unless less than 260px
+     is left on that line. With a 12in-wide box selected there was 121px, and six
+     buttons stacked into a 138px column that hung over the canvas and covered the
+     box's own resize handle (every-field-opens, rxkids "tabs"); below the floor
+     they take a row of their own, which hangs 30px instead. */
+  #ctl > #type, #ctl > #arrange { flex:1 1 0; min-width:260px; }
   #ctl .ty-sep, #ctl .bar-sep { width:1px; height:18px; margin:0 3px; background:#E3E9E5; }
   #ctl .ty-key, #ctl .ar-count { background:#EEF3EF; color:#6B7C74; border-radius:8px;
          padding:6px 10px; font:500 11.5px ui-monospace, monospace; }
@@ -439,12 +443,21 @@
      side of the document. Now it is only as tall as the tools it carries, and
      it floats over the canvas rather than taking a slice out of it, so the
      report runs underneath. */
+  /* 2026-11-18: the rail is the TOOLS (Select, Type, Hand), the + that opens
+     the Insert palette, whatever the person has pinned from it, and Colors —
+     where it used to be seven equal buttons with 9px labels. It stays flush
+     with the window's edge (rulerLeftX and #side both read that edge). */
   #leftrail { position:absolute; left:0; top:0; z-index:2;
-              width:var(--rail-w); box-sizing:border-box; background:var(--chrome2);
+              width:var(--rail-w); box-sizing:border-box;
+              background:linear-gradient(180deg, #44545F, var(--chrome2) 55%);
               display:flex; flex-direction:column;
-              align-items:stretch; gap:4px; padding:9px 5px; overflow:visible;
+              align-items:center; gap:4px; padding:10px 0 12px; overflow:visible;
               border-radius:0 var(--r-edge) var(--r-edge) 0;
-              box-shadow:var(--shadow-edge); }
+              box-shadow:var(--shadow-edge), inset -1px 0 0 rgba(255,255,255,.05),
+                         inset 0 1px 0 rgba(255,255,255,.07); }
+  #leftrail .rsep { width:26px; height:1px; margin:4px 0; background:rgba(255,255,255,.12); flex:none; }
+  #rail-pins { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  #rail-cmds { display:none; }
   /* While one of the rail's own popovers is open it must outrank EVERYTHING —
      the rail's z-index:2 is a stacking context, so the .pop's z-index:1000
      only counts inside it, and the page strip (#rail, z-index:10) was eating
@@ -456,15 +469,73 @@
   /* Below the buttons there is NOTHING — not a veil, not a tint. The rail is
      the tools and stops there; the canvas owns the rest of that column, which
      is what frees the bottom-left corner for the page strip's own control. */
-  #leftrail button { display:flex; flex-direction:column; align-items:center; gap:5px;
+  :is(#leftrail > button, #rail-pins > button) { display:flex; align-items:center; justify-content:center; flex:none;
+                     width:44px; height:44px; padding:0;
                      background:none; border:0; color:var(--txt); cursor:pointer;
-                     padding:9px 2px 8px; border-radius:var(--r-card);
-                     font:600 9px system-ui; letter-spacing:.1px;
-                     transition:background .14s, color .14s; }
-  #leftrail button:hover { background:rgba(255,255,255,.10); }
-  #leftrail button.on { background:var(--sage); color:#fff;
-                     box-shadow:0 1px 6px rgba(107,158,120,.42); }
-  #leftrail button svg { width:19px; height:19px; }
+                     border-radius:13px; transition:background .14s, color .14s, box-shadow .14s; }
+  :is(#leftrail > button, #rail-pins > button)[hidden] { display:none; }
+  :is(#leftrail > button, #rail-pins > button):hover { background:rgba(255,255,255,.14); }
+  :is(#leftrail > button, #rail-pins > button):focus-visible { outline:2px solid #BFE0C7; outline-offset:1px; }
+  :is(#leftrail > button, #rail-pins > button).on { background:linear-gradient(180deg,#7DB08A,#5E906E); color:#fff;
+                     box-shadow:0 3px 12px rgba(107,158,120,.5), inset 0 1px 0 rgba(255,255,255,.28); }
+  :is(#leftrail > button, #rail-pins > button) svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.5;
+                     stroke-linecap:round; stroke-linejoin:round; }
+  :is(#leftrail > button, #rail-pins > button) svg .fl { fill:currentColor; stroke:none; }
+  /* + : the way into everything else. Filled, so it reads as the one action. */
+  #leftrail #insert { width:46px; height:46px; border-radius:15px; color:#fff;
+                     background:linear-gradient(180deg,#7DB08A,#5E906E);
+                     box-shadow:0 3px 12px rgba(107,158,120,.45), inset 0 1px 0 rgba(255,255,255,.28); }
+  #leftrail #insert:hover { background:linear-gradient(180deg,#86B993,#639574); }
+  #leftrail #insert svg { width:24px; height:24px; stroke-width:1.9; }
+  #leftrail #insert.on { box-shadow:0 0 0 3px rgba(107,158,120,.35), 0 3px 12px rgba(107,158,120,.5), inset 0 1px 0 rgba(255,255,255,.28); }
+
+  /* The Insert palette (⌘K, or the + on the rail): a search-first list of
+     everything that can be placed. Floats beside the rail over a faint veil. */
+  #palette { position:absolute; inset:0; z-index:30; }
+  #palette[hidden] { display:none; }
+  #pal-scrim { position:absolute; inset:0; background:rgba(33,46,52,.16); }
+  #pal-card { position:absolute; left:calc(var(--rail-w) + 10px); top:12px; width:min(500px, calc(100% - var(--rail-w) - 24px));
+              max-height:calc(100% - 24px); display:flex; flex-direction:column; background:#fff; color:var(--ink);
+              border-radius:18px; overflow:hidden;
+              box-shadow:0 24px 60px rgba(16,26,32,.38), 0 0 0 1px rgba(16,26,32,.1); }
+  #pal-search { flex:none; display:flex; align-items:center; gap:12px; height:60px; padding:0 18px;
+                border-bottom:1px solid #E1E8E3; }
+  #pal-search svg { width:20px; height:20px; fill:none; stroke:var(--deep); stroke-width:1.7; stroke-linecap:round; flex:none; }
+  #pal-q { flex:1; min-width:0; border:0; outline:0; background:none; font:17px system-ui; color:var(--ink); }
+  #pal-q::placeholder { color:#8A9CA1; }
+  #pal-search kbd, #pal-foot kbd { font:600 12px system-ui; color:#5B6E66; border:1px solid #C9D6CD;
+                border-radius:6px; padding:3px 7px; background:#F6F8F7; }
+  #pal-chips { flex:none; display:flex; gap:6px; padding:12px 18px 10px; overflow-x:auto; scrollbar-width:none; }
+  #pal-chips button { border:0; background:#F1F5F2; color:#3E5159; height:30px; padding:0 12px; border-radius:8px;
+                font:600 13.5px system-ui; cursor:pointer; white-space:nowrap; }
+  #pal-chips button:hover { background:#E3EEE6; }
+  #pal-chips button[aria-pressed="true"] { background:var(--deep); color:#fff; }
+  #pal-list { flex:1; min-height:0; overflow-y:auto; padding:0 10px 10px; scrollbar-width:thin; scrollbar-color:#C9D6CD transparent; }
+  .pal-h { font:700 12px/1 system-ui; letter-spacing:.09em; text-transform:uppercase; color:#6B7F86; padding:14px 10px 8px; }
+  .pal-row { display:flex; align-items:center; gap:13px; padding:7px 10px; border-radius:11px; cursor:pointer; }
+  .pal-row:hover { background:#F1F5F2; }
+  .pal-row.sel { background:#E3EEE6; }
+  .pal-ic { flex:none; width:38px; height:38px; border-radius:10px; background:#F1F5F2; display:grid; place-items:center; }
+  .pal-row.sel .pal-ic, .pal-row:hover .pal-ic { background:#fff; box-shadow:0 1px 3px rgba(20,30,35,.12); }
+  .pal-ic svg { width:22px; height:22px; fill:none; stroke:var(--deep); stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+  .pal-ic svg.art { fill:#CAD2C5; stroke:var(--deep); stroke-width:1.2; }
+  .pal-tx { flex:1; min-width:0; }
+  .pal-tx b { display:block; font:600 15px system-ui; color:var(--ink); }
+  .pal-tx span { font:13px system-ui; color:#6B7F86; }
+  .pal-grp { font:600 12.5px system-ui; color:#8A9CA1; }
+  .pal-star { width:28px; height:28px; border-radius:8px; border:0; background:none; display:grid; place-items:center;
+              cursor:pointer; color:#9AAAAE; opacity:0; transition:opacity .12s; padding:0; }
+  .pal-row:hover .pal-star, .pal-row.sel .pal-star, .pal-star[aria-pressed="true"] { opacity:1; }
+  .pal-star svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linejoin:round; }
+  .pal-star[aria-pressed="true"] { color:var(--sage); }
+  .pal-star[aria-pressed="true"] svg { fill:currentColor; }
+  .pal-ret { font:600 12px system-ui; color:var(--deep); background:#fff; border:1px solid #BFD6C5; border-radius:6px;
+             padding:3px 7px; display:none; }
+  .pal-row.sel .pal-ret { display:block; }
+  #pal-empty { padding:36px 16px; text-align:center; color:#6B7F86; font:14.5px system-ui; }
+  #pal-foot { flex:none; display:flex; gap:18px; align-items:center; height:44px; padding:0 18px; background:#F6F8F7;
+              border-top:1px solid #E1E8E3; font:13px system-ui; color:#5B6E66; }
+  #pal-foot kbd { padding:2px 6px; margin-right:4px; color:#3E5159; background:#fff; }
   /* A boot failure is the one status the row must not quietly ellipsis away:
      it is the only thing on screen telling you why nothing works. */
   #stat.err { opacity:1; color:#FFD9D4; font-weight:600; cursor:help; }
@@ -3350,26 +3421,29 @@
   <!-- Left tool rail (Canva-style): the "add an object" tools live here, out of
        the top bar so it fits one line. Same button ids, so every handler and the
        popovers (positioned from the button's own rect) keep working. -->
-  <nav id="leftrail">
-    <button id="text" aria-label="Add a text box to the page in view">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.6" stroke-linecap="round"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg>
-      Text</button>
-    <button id="shape" aria-label="Add a shape to the page in view">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.5"><rect x="1.2" y="3.4" width="8" height="8" rx="1.4"/>
-        <circle cx="10" cy="4.4" r="2.9"/></svg>
-      Shape</button>
-    <button id="icon" aria-label="Search thousands of open-source icons and place one">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.4" stroke-linejoin="round"><path d="M7 1.6l1.7 3.4 3.8.55-2.75 2.68.65 3.77L7 10.22 3.6 12l.65-3.77L1.5 5.55l3.8-.55z"/></svg>
-      Icon</button>
-    <button id="ar-img" aria-label="Insert image — uploads into the project's assets and places it on this page">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="2" width="11" height="10"
-        rx="1.5"/><circle cx="5" cy="5.6" r="1.1" fill="currentColor" stroke="none"/>
-        <path d="M2.5 10.5l3-3 2.2 2.2 2-2 1.8 1.8"/></svg>
-      Image</button>
+  <nav id="leftrail" aria-label="Tools">
+    <!-- Tools (InDesign's toolbox): which thing a press on the page does.
+         Select is how the editor has always worked; Type makes a click on empty
+         page start a text box (and opens the words of any text it lands on);
+         Hand pans. V, T and H pick them (CHORDS); Space is the hand held down.
+         setTool() is the one place that changes the tool. -->
+    <button id="tool-select" class="tool on" data-tool="select" aria-pressed="true" aria-label="Select (V)">
+      <svg viewBox="0 0 14 14"><path class="fl" d="M3 1.8l8.4 5-3.6 1 2.1 3.7-1.7 1-2.1-3.7L3 11.4z"/></svg></button>
+    <button id="tool-type" class="tool" data-tool="type" aria-pressed="false" aria-label="Type (T): click the page to start a text box">
+      <svg viewBox="0 0 14 14"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg></button>
+    <button id="tool-hand" class="tool" data-tool="hand" aria-pressed="false" aria-label="Hand (H, or hold Space): drag to move around">
+      <svg viewBox="0 0 14 14"><path d="M4.3 7.3V3.4a.9.9 0 0 1 1.8 0V6M6.1 5.6V2.5a.9.9 0 0 1 1.8 0V6M7.9 5.8V3.3a.9.9 0 0 1 1.8 0v3.7M9.7 6.6a.9.9 0 0 1 1.8 0V9c0 2.2-1.5 3.8-3.7 3.8-1.6 0-2.5-.7-3.3-1.8L2.3 8.6a.9.9 0 0 1 1.4-1.1l.6.8"/></svg></button>
+    <div class="rsep"></div>
+    <button id="insert" aria-label="Insert anything (⌘K)" aria-haspopup="dialog" aria-expanded="false">
+      <svg viewBox="0 0 14 14"><path d="M7 2.5v9M2.5 7h9"/></svg></button>
+    <!-- What the person has pinned from the palette (railPins). -->
+    <div id="rail-pins"></div>
+    <div class="rsep"></div>
+    <button id="colors" aria-label="The report's palette and the published colour schemes">
+      <svg viewBox="0 0 14 14"><path
+        d="M7 1.8a5.2 5.2 0 1 0 0 10.4c.9 0 1.2-.6.9-1.2-.4-.8-.1-1.7.9-1.7h1.4c1.1 0 2-.9 2-2A5.6 5.6 0 0 0 7 1.8z"/>
+        <circle class="fl" cx="4.6" cy="5" r=".9"/><circle class="fl" cx="8.4" cy="4.2" r=".9"/>
+        <circle class="fl" cx="4.2" cy="8.4" r=".9"/></svg></button>
     <!-- Insert image's picker, shown only when the project already carries
          images (a template's Appleseed logos, past uploads — manifest
          "images"). Rows are filled in by openImageMenu(); with nothing
@@ -3382,26 +3456,41 @@
           d="M2.9 4.9V3.6a1 1 0 0 1 1-1h8.2a1 1 0 0 1 1 1v1.3"
         /></svg><span class="shp-t">Upload from computer…</span></button>
     </div>
-    <button id="table" aria-label="Add a table to the page in view">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.4"><rect x="1.5" y="2" width="11" height="10" rx="1"/>
-        <path d="M1.5 5.5h11M1.5 9h11M5.5 2v10"/></svg>
-      Table</button>
-    <button id="chart" aria-label="Add a bar, column, pie or donut chart">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.4" stroke-linecap="round"><path d="M1.6 12.4h10.8"/>
-        <rect x="2.6" y="7" width="2.4" height="4.2"/><rect x="6" y="4.2" width="2.4" height="7"/>
-        <rect x="9.4" y="1.8" width="2.4" height="9.4"/></svg>
-      Chart</button>
-    <button id="colors" aria-label="The report's palette and the published colour schemes">
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-        stroke-width="1.4" stroke-linecap="round"><path
-        d="M7 1.8a5.2 5.2 0 1 0 0 10.4c.9 0 1.2-.6.9-1.2-.4-.8-.1-1.7.9-1.7h1.4c1.1 0 2-.9 2-2A5.6 5.6 0 0 0 7 1.8z"/>
-        <circle cx="4.6" cy="5" r=".9" fill="currentColor" stroke="none"/>
-        <circle cx="8.4" cy="4.2" r=".9" fill="currentColor" stroke="none"/>
-        <circle cx="4.2" cy="8.4" r=".9" fill="currentColor" stroke="none"/></svg>
-      Colors</button>
+    <!-- The six original buttons, kept with their ids: every handler and test
+         binds to them. railPins() moves a pinned one up into #rail-pins and
+         back here when it is unpinned, so an unpinned one is simply hidden. -->
+    <div id="rail-cmds">
+      <button id="text" aria-label="Text styles: heading, subheading, body">
+        <svg viewBox="0 0 14 14"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg></button>
+      <button id="shape" aria-label="Shapes: pick one to place on the page in view">
+        <svg viewBox="0 0 14 14"><rect x="1.2" y="3.4" width="8" height="8" rx="1.4"/><circle cx="10" cy="4.4" r="2.9"/></svg></button>
+      <button id="icon" aria-label="Icons: search thousands of open-source icons">
+        <svg viewBox="0 0 14 14"><path d="M7 1.6l1.7 3.4 3.8.55-2.75 2.68.65 3.77L7 10.22 3.6 12l.65-3.77L1.5 5.55l3.8-.55z"/></svg></button>
+      <button id="ar-img" aria-label="Insert image — uploads into the project's assets and places it on this page">
+        <svg viewBox="0 0 14 14"><rect x="1.5" y="2" width="11" height="10" rx="1.5"/><circle class="fl" cx="5" cy="5.6" r="1.1"/>
+          <path d="M2.5 10.5l3-3 2.2 2.2 2-2 1.8 1.8"/></svg></button>
+      <button id="table" aria-label="Table: add one to the page in view">
+        <svg viewBox="0 0 14 14"><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5.5h11M1.5 9h11M5.5 2v10"/></svg></button>
+      <button id="chart" aria-label="Chart: add a bar chart to the page in view">
+        <svg viewBox="0 0 14 14"><path d="M1.6 12.4h10.8"/><rect x="2.6" y="7" width="2.4" height="4.2"/><rect x="6" y="4.2" width="2.4" height="7"/><rect x="9.4" y="1.8" width="2.4" height="9.4"/></svg></button>
+    </div>
   </nav>
+  <!-- The Insert palette: opened by the rail's + and by ⌘K (openPalette). It is
+       a sibling of the rail, in #work, so it floats over the stage. -->
+  <div id="palette" hidden>
+    <div id="pal-scrim"></div>
+    <div id="pal-card" role="dialog" aria-label="Insert">
+      <div id="pal-search">
+        <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg>
+        <input id="pal-q" type="search" role="combobox" aria-controls="pal-list" aria-expanded="true"
+          placeholder="Add anything: text, shape, chart, image…" autocomplete="off" spellcheck="false">
+        <kbd>esc</kbd>
+      </div>
+      <div id="pal-chips" role="group" aria-label="Show"></div>
+      <div id="pal-list" role="listbox"></div>
+      <div id="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd>move</span><span><kbd>↵</kbd>add to page</span><span><kbd>⇧↵</kbd>pin or unpin</span></div>
+    </div>
+  </div>
   <!-- The left column is a PANEL host now: whatever the current tool needs a
        lot of room for (colour, today) opens here instead of in a popover that
        a 46px row would clip. Pages moved to the bottom strip. -->
@@ -8897,6 +8986,15 @@ function togglePop(pop, anchor) {
   pop.style.maxHeight = Math.max(120,
     document.documentElement.clientHeight - r.bottom - 18) + 'px';
   pop.style.overflowY = 'auto';
+  // …and when the anchor itself is near the bottom (a button pinned low on
+  // the rail, on a short window) there is no room BELOW it at all: slide the
+  // panel up until it fits rather than leave it hanging off the screen.
+  const vh = document.documentElement.clientHeight, h = pop.offsetHeight;
+  if (vh - r.bottom - 18 < 120 && r.bottom + 6 + h > vh - 8) {
+    const top = Math.max(8, vh - h - 12);
+    pop.style.top = top + 'px';
+    pop.style.maxHeight = Math.max(120, vh - top - 12) + 'px';
+  }
 }
 // Anything whose own handler already toggles: clicking one of these must not
 // be treated as "outside", or the close would race the open and the menu would
@@ -11669,14 +11767,16 @@ function dressNewChart(ch) {
   return ch;
 }
 
-$('chart').onclick = async () => {
+// One new chart of the given type, on the page in view. The rail's Chart button
+// is the bar chart; the Insert palette offers the others by name.
+async function addChartOfType(type = 'bar') {
   const page = visiblePageId();
   pushHistory();
   const id = freeShapeId('chart');
   layout.shapes.push({
     id, page, kind: 'chart', x: placeX(4), y: 1.6, w: 4, h: 2.8, z: nextZ(2, page), fill: 'none',
     chart: dressNewChart({
-      type: 'bar',
+      type,
       labels: ['First', 'Second', 'Third'],
       series: [{ name: 'Series 1', data: [12, 19, 8] }],
       legend: false, values: true, grid: true,
@@ -11687,7 +11787,8 @@ $('chart').onclick = async () => {
   await render();
   openChartPanel(id);
   $('stat').textContent = `${id} added to page ${page} — edit its data in the Chart panel`;
-};
+}
+$('chart').onclick = () => addChartOfType('bar');
 $('ar-chart').addEventListener('click', () => openChartPanel(selectedChartId()));
 
 /** Choose a column count that leaves EVEN rows rather than an orphan. Packing
@@ -15802,6 +15903,14 @@ let lastNudge = 0, nudgeSeq = -1;
  *  Returns whether the key was taken (and, if so, its default prevented). */
 const CHORDS = [
   // name, test, act — `mod` is ⌘ on a Mac and Ctrl elsewhere
+  // The toolbox's letters, InDesign's own: V Select, T Type, H Hand. Bare keys,
+  // so every listener's guards (a field, open words, a cell) already keep them
+  // out of anything being typed; the palette's search box is a field too.
+  ['tool: select (V)', (e, k) => bareTool(e, k, 'v'), () => setTool('select')],
+  ['tool: type (T)', (e, k) => bareTool(e, k, 't'), () => setTool('type')],
+  ['tool: hand (H)', (e, k) => bareTool(e, k, 'h'), () => setTool('hand')],
+  ['back to the select tool', (e, k) => e.key === 'Escape' && tool !== 'select' && !paletteOpen(), () => setTool('select'), { noPrevent: true }],
+  ['insert palette', (e, k) => k.mod && !k.alt && !k.shift && e.code === 'KeyK', () => togglePalette()],
   ['undo / redo', (e, k) => k.mod && !k.alt && k.key === 'z', (d, e) => e.shiftKey ? redo() : undo()],
   // ⌘; is InDesign's Show Guides; ⌘R, its Show Rulers, is this window's
   // Reload (View ▸ Reload editor), so rulers and guides share the one switch.
@@ -15844,6 +15953,8 @@ const CHORDS = [
       if (d4) nudgeSel(d, d4);
     }],
 ];
+const bareTool = (e, k, key) => !k.mod && !k.alt && !k.shift && !e.repeat && k.key === key
+  && !document.querySelector('dialog[open]') && !paletteOpen();
 function objectChord(d, e) {
   const k = { mod: e.metaKey || e.ctrlKey, alt: e.altKey, shift: e.shiftKey, key: (e.key || '').toLowerCase() };
   for (const [name, test, act, opts = {}] of CHORDS) {
@@ -16112,12 +16223,13 @@ function spaceKey(e) {
 function spaceUp() {
   spaceHeld = false;
   const d = $('out').contentDocument;
-  if (d && d.body) d.body.classList.remove('ds-hand', 'ds-panning');
+  // The Hand TOOL keeps its cursor after the bar comes up.
+  if (d && d.body) { d.body.classList.remove('ds-panning'); if (tool !== 'hand') d.body.classList.remove('ds-hand'); }
 }
 function wirePan(d) {
   d.addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
   d.addEventListener('mousedown', e => {
-    if (!spaceHeld || e.button !== 0) return;
+    if (!(spaceHeld || tool === 'hand') || e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
     const w = (d.defaultView || window);
     const x0 = e.clientX, y0 = e.clientY, sx = w.scrollX, sy = w.scrollY;
@@ -16140,6 +16252,312 @@ window.__dsDocumentWires = () => DOCUMENT_WIRES.length;
 onEachDocument(wirePan);
 onEachDocument(d => d.addEventListener('paste', pasteLoose));
 onEachDocument(wireDrop);
+
+// --- the tools: Select, Type, Hand -------------------------------------------
+// Which thing a press on the page does. Select is how the editor has always
+// worked. Type: a click on empty page starts a text box there (a drag sizes
+// it) with its words open and selected, and a click on text opens that text
+// at once instead of selecting it first. Hand: a drag pans, nothing selects.
+// V, T and H pick them (CHORDS); Space is the hand held down. After Type
+// places a box the tool goes back to Select (Canva's way, not InDesign's
+// sticky one): typing is what you do next, then you are back to moving things.
+// setTool() is the ONLY place the tool changes. The page is replaced by most
+// renders, so what the tool puts on it (a cursor class) is put back by
+// applyTool, registered with onEachDocument.
+let tool = 'select';
+const TOOL_HINT = {
+  select: 'select tool: click to select, drag to move',
+  type: 'type tool: click the page to start a text box, or drag to size one',
+  hand: 'hand tool: drag to move around the page',
+};
+function setTool(t, quiet = false) {
+  if (!TOOL_HINT[t]) return;
+  tool = t;
+  document.querySelectorAll('#leftrail .tool').forEach(b => {
+    const on = b.dataset.tool === t;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  document.body.dataset.tool = t;
+  applyTool($('out').contentDocument);
+  if (!quiet) $('stat').textContent = TOOL_HINT[t];
+}
+function applyTool(d) {
+  if (!d || !d.documentElement) return;
+  d.documentElement.classList.toggle('ds-tool-type', tool === 'type');
+  if (d.body) d.body.classList.toggle('ds-hand', tool === 'hand' || spaceHeld);
+}
+onEachDocument(applyTool);
+window.__dsTool = () => tool;
+document.querySelectorAll('#leftrail .tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+
+/** The Type tool's press. Capture phase and swallowed, like the hand's: this
+ *  press is the tool's, not the page's own handlers'. */
+function wireTypeTool(d) {
+  d.addEventListener('mousedown', e => {
+    if (tool !== 'type' || e.button !== 0 || editing || spaceHeld || threadArm || pen) return;
+    if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (!t || !t.closest) return;
+    // Handles, grips, menus and open fields are the editor's own surfaces.
+    if (t.closest('.ds-handles, .ds-mini, .ds-menu, .ds-movegrip, .ds-xtools, input, textarea, select, [contenteditable="true"]')) return;
+    const pg = t.closest('section.page');
+    if (!pg) return;
+    e.preventDefault(); e.stopPropagation();
+    // Text that is already there: open it, on the first click.
+    const textEl = t.closest('[data-el^="text."]');
+    const slotEl = textEl ? null : t.closest('[data-slot]');
+    const host = textEl || (slotEl && slotEl.closest('[data-el]'));
+    if (host && !isLocked(idOf(host))) {
+      setSel(d, [idOf(host)]);
+      if (!typeOnClick(d, host, e)) $('stat').textContent = 'that text cannot be opened from here — double-click it';
+      return;
+    }
+    // Empty page, or an object that is not text: a new box where you pressed.
+    const px = DPI * zoomOf(pg), pr = pg.getBoundingClientRect();
+    const at = ev => ({ x: (ev.clientX - pr.left) / px, y: (ev.clientY - pr.top) / px });
+    const a = at(e);
+    const band = d.createElement('div');
+    band.className = 'ds-marquee';
+    pg.appendChild(band);
+    let b = a;
+    const move = ev => {
+      b = at(ev);
+      band.style.cssText = `left:${Math.min(a.x, b.x)}in;top:${Math.min(a.y, b.y)}in;`
+        + `width:${Math.abs(a.x - b.x)}in;height:${Math.abs(a.y - b.y)}in`;
+    };
+    const up = () => { dragUnlisten(d, move, up); band.remove(); placeTypedBox(pg, a, b); };
+    dragListen(d, move, up);
+  }, true);
+}
+onEachDocument(wireTypeTool);
+
+/** A text box where the Type tool was pressed (a, b: corners in page inches),
+ *  3in wide unless the press was dragged out, with its words open and selected
+ *  so the first key typed replaces the stand-in. */
+async function placeTypedBox(pg, a, b) {
+  const dragged = Math.abs(b.x - a.x) > 0.3;
+  let w = dragged ? Math.abs(b.x - a.x) : 3;
+  w = Math.max(0.8, Math.min(w, PAGE_W_IN - 0.2));
+  const x = Math.max(0, Math.min(Math.min(a.x, b.x), PAGE_W_IN - w));
+  const y = Math.max(0, Math.min(a.y, b.y));
+  const r = await docsync.api.addTextBox({ page: pageIdOf(pg), x: +x.toFixed(2), y: +y.toFixed(2), w: +w.toFixed(2), md: 'Your text here' });
+  if (!r.ok) { $('stat').textContent = r.error; return; }
+  setTool('select', true);
+  const d = $('out').contentDocument;
+  setSel(d, [r.id]);
+  const el = d.querySelector(`[data-el="${CSS.escape(r.id)}"]`);
+  if (el) editBox(d, el);
+  $('stat').textContent = `${r.id} placed — type to replace the stand-in words, Esc to finish`;
+}
+
+// --- the Insert palette and the rail's pins -----------------------------------
+// ⌘K (or the rail's +) opens one search over everything that can be placed.
+// A row can be PINNED (its star, or ⇧↵): it then lives on the rail as a button
+// that does the same thing in one click. The pins are the person's own, kept
+// in this browser (like the folded page strip). Every row runs the code the
+// old rail buttons ran — the palette adds no second way of placing anything.
+const RAIL_LEGACY = ['text', 'shape', 'icon', 'ar-img', 'table', 'chart'];   // the original buttons, same ids
+const PIN_KEY = 'cider-rail-pins';
+const PIN_DEFAULT = ['shape', 'chart', 'ar-img'];
+const loadPins = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(PIN_KEY));
+    if (Array.isArray(v)) return v.filter(x => typeof x === 'string');
+  } catch (e) { /* a wiped store */ }
+  return PIN_DEFAULT.slice();
+};
+const savePins = a => { try { localStorage.setItem(PIN_KEY, JSON.stringify(a)); } catch (e) { /* file: URL */ } };
+const P_TEXT = '<path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/>';
+const P_CHART = '<path d="M1.6 12.4h10.8"/><rect x="2.6" y="7" width="2.4" height="4.2"/><rect x="6" y="4.2" width="2.4" height="7"/><rect x="9.4" y="1.8" width="2.4" height="9.4"/>';
+const ART = (p) => ({ vb: '0 0 15 15', art: true, p });
+const palRows = () => {
+  const shp = sel => () => document.querySelector('#shapepop ' + sel).click();
+  const rows = [
+    // Text
+    { id: 'text-plain', cat: 'Text', name: 'Text box', desc: 'A plain box to type in', icon: { p: P_TEXT }, run: () => addTextBox('plain') },
+    { id: 'text-heading', cat: 'Text', name: 'Heading', desc: 'Bold and large', icon: { p: P_TEXT }, run: () => addTextBox('heading') },
+    { id: 'text-subheading', cat: 'Text', name: 'Subheading', desc: 'Semi-bold, medium', icon: { p: P_TEXT }, run: () => addTextBox('subheading') },
+    { id: 'text-body', cat: 'Text', name: 'Body text', desc: 'A paragraph with bold, italic and links', icon: { p: P_TEXT }, run: () => addTextBox('body') },
+    { id: 'text-expand', cat: 'Text', name: 'Expandable section', desc: 'A button that reveals hidden content', icon: { p: P_TEXT }, run: () => addExpandable() },
+    { id: 'text-pdf', cat: 'Text', name: 'Download PDF button', desc: 'A button that downloads the report', icon: { p: P_TEXT }, run: () => addTextBox('pdfbtn'), kw: 'link' },
+    { id: 'text', cat: 'Text', name: 'Text styles…', desc: 'Open the tray of text styles', icon: { p: P_TEXT }, run: () => $('text').onclick() },
+    // Shapes
+    { id: 'shape-rect', cat: 'Shape', name: 'Rectangle', desc: 'Fill and outline', icon: ART('<rect x="1.5" y="3" width="12" height="9" rx="1.5"/>'), run: shp('[data-k="rect"]'), kw: 'box square' },
+    { id: 'shape-ellipse', cat: 'Shape', name: 'Ellipse', desc: 'Fill and outline', icon: ART('<ellipse cx="7.5" cy="7.5" rx="6" ry="4.6"/>'), run: shp('[data-k="ellipse"]'), kw: 'circle oval' },
+    { id: 'shape-line', cat: 'Shape', name: 'Line', desc: 'A straight line', icon: ART('<path d="M2.5 12L12.5 3" style="fill:none;stroke-width:2.2"/>'), run: shp('[data-k="line"]'), kw: 'rule divider' },
+    { id: 'shape-arrow', cat: 'Shape', name: 'Arrow', desc: 'A block arrow', icon: ART('<path d="M1.5 5.8h6.5V3.2l5.5 4.3-5.5 4.3V9.2H1.5z"/>'), run: shp('[data-k="arrow"]') },
+    { id: 'shape-triangle', cat: 'Shape', name: 'Triangle', desc: 'Fill and outline', icon: ART('<path d="M7.5 2.5L13 12.5H2z"/>'), run: shp('[data-k="triangle"]') },
+    { id: 'shape-polygon', cat: 'Shape', name: 'Polygon', desc: 'Six sides to start', icon: ART('<path d="M7.5 1.8L12.9 5.4V10.6L7.5 13.2L2.1 10.6V5.4z"/>'), run: shp('[data-k="polygon"]'), kw: 'hexagon' },
+    { id: 'shape-star', cat: 'Shape', name: 'Star', desc: 'Five points to start', icon: ART('<path d="M7.5 1.5l1.7 3.9 4.2.4-3.2 2.8 1 4.1-3.7-2.2-3.7 2.2 1-4.1-3.2-2.8 4.2-.4z"/>'), run: shp('[data-k="star"]') },
+    { id: 'shape-qr', cat: 'Shape', name: 'QR code', desc: 'From a link, for printed pages', icon: { vb: '0 0 15 15', p: '<path class="fl" d="M2 2h4v4H2zM9 2h4v4H9zM2 9h4v4H2zM8 8h2v2H8zM11 11h2v2h-2zM10 9h1v1h-1z"/>' }, run: shp('[data-qr]') },
+    { id: 'shape-pen', cat: 'Shape', name: 'Pen', desc: 'Click points, drag for curves', icon: { vb: '0 0 15 15', p: '<path d="M2 12C4 3 9 13 13 3"/><circle class="fl" cx="2" cy="12" r="1.2"/><circle class="fl" cx="13" cy="3" r="1.2"/>' }, run: shp('[data-pen]'), kw: 'draw path curve' },
+    { id: 'shape-spacer', cat: 'Shape', name: 'Spacer', desc: 'Holds a gap, never printed', icon: { vb: '0 0 15 15', p: '<g style="fill:none;stroke:#7C4DFF;stroke-width:1.1"><rect x="1.5" y="4.5" width="12" height="6" stroke-dasharray="2 1.2"/><path d="M1.5 4.5l12 6M13.5 4.5l-12 6"/></g>' }, run: shp('[data-spacer]'), kw: 'gap' },
+    { id: 'shape', cat: 'Shape', name: 'Shapes…', desc: 'Open the tray of every shape', icon: { p: '<rect x="1.2" y="3.4" width="8" height="8" rx="1.4"/><circle cx="10" cy="4.4" r="2.9"/>' }, run: () => $('shape').onclick() },
+    // Icons
+    { id: 'icon', cat: 'Icon', name: 'Icons…', desc: 'Search thousands of open-source icons', icon: { p: '<path d="M7 1.6l1.7 3.4 3.8.55-2.75 2.68.65 3.77L7 10.22 3.6 12l.65-3.77L1.5 5.55l3.8-.55z"/>' }, run: () => $('icon').onclick() },
+    // Charts and tables
+    { id: 'chart', cat: 'Data', name: 'Bar chart', desc: 'Vertical bars, three values to start', icon: { p: P_CHART }, run: () => addChartOfType('bar'), kw: 'graph column' },
+    { id: 'chart-row', cat: 'Data', name: 'Row chart', desc: 'Horizontal bars', icon: { p: P_CHART }, run: () => addChartOfType('row'), kw: 'graph bar' },
+    { id: 'chart-pie', cat: 'Data', name: 'Pie chart', desc: 'Parts of a whole', icon: { p: P_CHART }, run: () => addChartOfType('pie'), kw: 'graph' },
+    { id: 'chart-donut', cat: 'Data', name: 'Donut chart', desc: 'Parts of a whole, with a centre', icon: { p: P_CHART }, run: () => addChartOfType('donut'), kw: 'graph' },
+    { id: 'chart-line', cat: 'Data', name: 'Line chart', desc: 'A trend over time', icon: { p: P_CHART }, run: () => addChartOfType('line'), kw: 'graph' },
+    { id: 'table', cat: 'Data', name: 'Table', desc: 'Three by three, add rows after', icon: { p: '<rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5.5h11M1.5 9h11M5.5 2v10"/>' }, run: () => $('table').onclick(), kw: 'grid' },
+    // Images
+    { id: 'ar-img', cat: 'Image', name: 'Upload image', desc: 'From your computer', icon: { p: '<path d="M7 9.5V3M4.5 5.2L7 2.7l2.5 2.5M2.5 10.5V12h9v-1.5"/>' }, run: () => startImageUpload(), kw: 'picture photo logo' },
+  ];
+  // What this report already carries: a template's logos, earlier uploads.
+  (M ? projectImages() : []).forEach(n => rows.push({ id: 'img:' + n, cat: 'Image', name: n, desc: 'In this report',
+    icon: { p: '<rect x="1.5" y="2" width="11" height="10" rx="1.5"/><circle class="fl" cx="5" cy="5.6" r="1.1"/><path d="M2.5 10.5l3-3 2.2 2.2 2-2 1.8 1.8"/>' },
+    run: () => placeImageBox('assets/' + n, n), kw: 'picture photo logo' }));
+  return rows;
+};
+const PAL_SUGGESTED = ['text-plain', 'shape-rect', 'chart', 'table', 'ar-img'];
+const PAL_CATS = [['', 'All'], ['Text', 'Text'], ['Shape', 'Shapes'], ['Icon', 'Icons'], ['Data', 'Charts and tables'], ['Image', 'Images']];
+const PAL_HEADS = { Text: 'Text', Shape: 'Shapes', Icon: 'Icons', Data: 'Charts and tables', Image: 'Images' };
+const palSvg = ic => `<svg viewBox="${ic.vb || '0 0 14 14'}"${ic.art ? ' class="art"' : ''}>${ic.p}</svg>`;
+const palEsc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const STAR_SVG = '<svg viewBox="0 0 14 14"><path d="M7 1.6l1.7 3.4 3.8.55-2.75 2.68.65 3.77L7 10.22 3.6 12l.65-3.77L1.5 5.55l3.8-.55z"/></svg>';
+
+let palAll = [], palShown = [], palSel = 0, palCat = '';
+const paletteOpen = () => !$('palette').hidden;
+
+/** The pinned rows, on the rail. A pinned legacy button is lifted into
+ *  #rail-pins in pin order; the rest go home to the hidden #rail-cmds. */
+function railPins() {
+  const host = $('rail-pins'), home = $('rail-cmds');
+  RAIL_LEGACY.forEach(id => home.appendChild($(id)));
+  host.querySelectorAll('.pin').forEach(b => b.remove());
+  const rows = palRows();
+  loadPins().forEach(id => {
+    if (RAIL_LEGACY.includes(id)) { host.appendChild($(id)); return; }
+    const r = rows.find(x => x.id === id);
+    if (!r) return;
+    const b = document.createElement('button');
+    b.className = 'pin';
+    b.id = 'pin-' + id;
+    b.setAttribute('aria-label', `${r.name}: ${r.desc.charAt(0).toLowerCase()}${r.desc.slice(1)}`);
+    b.innerHTML = palSvg(r.icon);
+    b.addEventListener('click', () => r.run());
+    host.appendChild(b);
+  });
+}
+function togglePin(id) {
+  const pins = loadPins();
+  const i = pins.indexOf(id);
+  if (i >= 0) pins.splice(i, 1); else pins.push(id);
+  savePins(pins);
+  railPins();
+  return i < 0;
+}
+
+function palFilter() {
+  const q = $('pal-q').value.trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  const hay = r => `${r.name} ${r.desc} ${r.kw || ''} ${r.cat}`.toLowerCase();
+  if (!words.length && !palCat) {
+    palShown = PAL_SUGGESTED.map(id => ({ ...palAll.find(r => r.id === id), sug: true }))
+      .concat(palAll);
+  } else {
+    palShown = palAll.filter(r => (!palCat || r.cat === palCat) && words.every(w => hay(r).includes(w)));
+    // Nothing named it: icons are searched by their own tray.
+    if (q && (!palCat || palCat === 'Icon') && !palShown.some(r => r.cat === 'Icon')) {
+      palShown.push({ id: 'icon-q', cat: 'Icon', name: `Search icons for “${q}”`, desc: 'Open the icon search with this word',
+        icon: palAll.find(r => r.id === 'icon').icon, noPin: true,
+        run: () => { if (sidePanelTool !== 'icon') $('icon').onclick(); $('icon-q').value = q; iconSearch(q); } });
+    }
+  }
+  palSel = Math.min(palSel, Math.max(0, palShown.length - 1));
+  palPaint();
+}
+function palPaint() {
+  const pinned = new Set(loadPins());
+  let html = '', last = null;
+  palShown.forEach((r, i) => {
+    const head = r.sug ? 'Suggested' : PAL_HEADS[r.cat];
+    if (head !== last) { html += `<div class="pal-h" role="presentation">${head}</div>`; last = head; }
+    const on = pinned.has(r.id);
+    html += `<div class="pal-row${i === palSel ? ' sel' : ''}" role="option" id="pal-${i}" data-i="${i}" aria-selected="${i === palSel}">`
+      + `<span class="pal-ic">${palSvg(r.icon)}</span>`
+      + `<span class="pal-tx"><b>${palEsc(r.name)}</b><span>${palEsc(r.desc)}</span></span>`
+      + `<span class="pal-grp">${PAL_HEADS[r.cat]}</span>`
+      + (r.noPin ? '' : `<button class="pal-star" tabindex="-1" aria-pressed="${on}" aria-label="${on ? 'Unpin from' : 'Pin to'} the rail" title="${on ? 'Unpin from the rail' : 'Pin to the rail'}">${STAR_SVG}</button>`)
+      + `<span class="pal-ret">↵</span></div>`;
+  });
+  if (!palShown.length) html = '<div id="pal-empty">Nothing matches that. Try “bar”, “arrow” or “logo”.</div>';
+  $('pal-list').innerHTML = html;
+  const cur = $('pal-list').querySelector('.pal-row.sel');
+  if (cur) { $('pal-q').setAttribute('aria-activedescendant', cur.id); cur.scrollIntoView({ block: 'nearest' }); }
+}
+function openPalette() {
+  if (paletteOpen()) return;
+  palAll = palRows();
+  palSel = 0; palCat = '';
+  $('pal-q').value = '';
+  $('pal-chips').innerHTML = PAL_CATS.map(([c, l]) => `<button type="button" data-c="${c}" aria-pressed="${c === ''}">${l}</button>`).join('');
+  $('palette').hidden = false;
+  $('insert').classList.add('on');
+  $('insert').setAttribute('aria-expanded', 'true');
+  palFilter();
+  $('pal-q').focus();
+}
+function closePalette() {
+  if (!paletteOpen()) return;
+  $('palette').hidden = true;
+  $('insert').classList.remove('on');
+  $('insert').setAttribute('aria-expanded', 'false');
+}
+const togglePalette = () => (paletteOpen() ? closePalette() : openPalette());
+/** Run a row. The palette closes first, so a tray the row opens is not under
+ *  it and the keyboard goes back to where it was. */
+function palRun(r) { closePalette(); r.run(); }
+$('insert').addEventListener('click', togglePalette);
+$('pal-scrim').addEventListener('mousedown', closePalette);
+$('pal-q').addEventListener('input', () => { palSel = 0; palFilter(); });
+$('pal-chips').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  palCat = b.dataset.c;
+  $('pal-chips').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  palSel = 0; palFilter();
+  $('pal-q').focus();
+});
+$('pal-list').addEventListener('click', e => {
+  const row = e.target.closest('.pal-row');
+  if (!row) return;
+  const r = palShown[+row.dataset.i];
+  if (!r) return;
+  if (e.target.closest('.pal-star')) { togglePin(r.id); palPaint(); return; }
+  palRun(r);
+});
+$('pal-list').addEventListener('mousemove', e => {
+  const row = e.target.closest('.pal-row');
+  if (!row || +row.dataset.i === palSel) return;
+  palSel = +row.dataset.i;
+  $('pal-list').querySelectorAll('.pal-row').forEach(x => {
+    const on = +x.dataset.i === palSel;
+    x.classList.toggle('sel', on); x.setAttribute('aria-selected', on);
+  });
+});
+$('pal-q').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); closePalette(); return; }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!palShown.length) return;
+    palSel = (palSel + (e.key === 'ArrowDown' ? 1 : -1) + palShown.length) % palShown.length;
+    palPaint();
+    return;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const r = palShown[palSel];
+    if (!r) return;
+    if (e.shiftKey) { if (!r.noPin) { togglePin(r.id); palPaint(); } return; }
+    palRun(r);
+  }
+});
+railPins();
+
 
 function keysFor(d) {
   wireFindKey(d);
@@ -28611,6 +29029,9 @@ function wire(roots) {
        against the rendered marker's 5.6px (Wealth Tax Report, 2026-11-10), so
        the ring is drawn with box-shadow (takes no space) and padding is 0. */
     .ds-chip.ds-fnchip { color:#2F3E46; padding:0; outline:0; box-shadow:0 0 0 1px #B9C9BE; }
+    .ds-tool-type section.page, .ds-tool-type section.page * { cursor:text !important; }
+    .ds-hand, .ds-hand * { cursor:grab !important; }
+    .ds-panning, .ds-panning * { cursor:grabbing !important; }
     .ds-thread-arm [data-el^="text."] { cursor:copy !important; }
     .ds-pen-arm section.page, .ds-pen-arm section.page * { cursor:crosshair !important; }
     .ds-fitgrid { display:grid; grid-template-columns:repeat(3,18px); gap:3px; padding:4px 10px 8px; }
@@ -33453,6 +33874,7 @@ window.__dsTestReset = async () => {
   // the toggles kept in storage (zoom, guides, hidden characters, overrides).
   // Each of these sent a reset to a full boot in CI (2026-11-12).
   closeSources(); closeStoryEditor();
+  closePalette(); palCat = ''; palSel = 0; setTool('select', true);
   clip = null; styleClip = null; presentIdx = 0; linkStatus.clear();
   agentLive = null; agentPaint();
   try { dockReset(); } catch (e) { swallowed('test reset: dock', e); }
