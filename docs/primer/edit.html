@@ -52,6 +52,9 @@
           /* One number for the tool rail's width: #leftrail is that wide, and
              the floating panel starts exactly where it ends. */
           --rail-w:64px;
+          /* the Control bar's height: two rows, the same in every mode. Everything that
+             hangs under the bar reads this (or --ctl-bottom, which ctlMetrics measures). */
+          --ctl-h:80px;
           /* The right-hand panel dock's width (dockLayout keeps it): 0 with
              the dock off, its icon strip folded, strip + panel pinned open.
              What floats against the right edge stands this far in. */
@@ -141,29 +144,46 @@
             this. */
          overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
   #bar::-webkit-scrollbar { display:none; }
-  /* The Control bar (#ctl): docked under the menu bar, in the column's flow,
-     so the canvas starts below it and the rulers (placed from the stage's
-     rect every frame) follow it down. ONE row, always 44px: it never wraps
-     and never hangs over the canvas, the rulers or the rail.
-     What does not fit the window's width moves, a whole control at a time and
-     least important first, into the pop-up under "More" at the row's right end
-     (ctlFit; the priorities are CTL_KEEP). A fixed height also means a change
-     of selection never moves the canvas under the pointer. */
-  #ctl { flex:none; display:flex; align-items:center; gap:6px; height:44px; flex-wrap:nowrap;
-         box-sizing:border-box; padding:0 12px; position:relative;
-         z-index:9;   /* above the rulers (7-8), so a pop-up hung from the bar is not cut by them */
-         background:#fff; color:var(--ink); border-bottom:1px solid #E1E8E3;
-         /* the last resort, when even the controls that never move (the mode switch, the
-            reference grid) do not fit: a thin sideways scroll rather than a clipped row */
-         overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; white-space:nowrap; }
+  /* The Control bar (#ctl): docked under the menu bar, in the column's flow, so the
+     canvas starts below it and the rulers, rail, dock and panels (all placed from
+     it) follow it down. TWO rows, always --ctl-h tall: the same in every mode and
+     with nothing selected, so a change of selection never moves the canvas under
+     the pointer. Row 1 holds the primary fields, row 2 the secondary ones (CTL_ROWS
+     says which, per mode). Each row is its own box that scrolls sideways when the
+     window is narrower than its fields: it never wraps, never grows, never hangs
+     over the canvas, the rulers or the rail. Nothing is hidden behind a menu. */
+  #ctl { flex:none; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:repeat(2, minmax(0,1fr));
+         grid-auto-rows:0; height:var(--ctl-h); box-sizing:border-box; padding:4px 0; position:relative;
+         z-index:11;   /* above the rulers (7-8) and the rail and tray (9, 10): a pop-up hung from the bar is never cut by them */
+         background:#fff; color:var(--ink); border-bottom:1px solid #E1E8E3; overflow:hidden; }
+  #ctl-r1 { grid-row:1; } #ctl-r2 { grid-row:2; }
+  .ctl-row { display:flex; align-items:center; gap:6px; min-width:0; padding:0 12px; box-sizing:border-box;
+         overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none;
+         position:static; }
+  .ctl-row::-webkit-scrollbar { display:none; }
+  /* a row with more to the left or right says so: its edge fades */
+  /* (a soft edge, not a mask: a mask would clip the pop-ups its controls open, which are fixed
+     descendants of the row) */
+  .ctl-row.ctl-fade-l { box-shadow:inset 14px 0 12px -12px rgba(47,62,70,.28); }
+  .ctl-row.ctl-fade-r { box-shadow:inset -14px 0 12px -12px rgba(47,62,70,.28); }
+  .ctl-row.ctl-fade-l.ctl-fade-r { box-shadow:inset 14px 0 12px -12px rgba(47,62,70,.28), inset -14px 0 12px -12px rgba(47,62,70,.28); }
+  .ctl-row > * { flex:none; }
+  .ctl-gsep { width:1px; height:18px; margin:0 3px; background:#E3E9E5; }
   #ctl[hidden], #ctl [hidden] { display:none !important; }
   #ctl > *, #cb-obj > *, .cb-grp > * { flex:none; }
   #cb-obj, .cb-grp { display:inline-flex; align-items:center; gap:5px; }
   #cb-obj { flex-wrap:wrap; max-width:100%; row-gap:4px; }
-  /* Docked, the bar is one flat run of pills: the groups inside the three strips
-     draw no box of their own, so ctlFit can lift any one pill into More. */
+  /* Docked, the bar is two rows of pills: the three strips and the groups inside them
+     draw no box of their own (they only keep the pop-ups and the controls' home), and
+     ctlFit lays each pill in its row. */
   #ctl :is(#cb-geo, #cb-turn, #cb-corner, #cb-fitx, #cb-frame, #cb-paraf) { display:contents; }
-  #ctl .ctl-void, #ctl .ctl-sep-off { display:none !important; }
+  /* The three strips keep a 1px box of their own (so "the strip is up" still reads as visible,
+     and a hidden one as hidden) in the bar's corner: only the pop-ups they hold are ever drawn
+     from there, and a control that has not been laid in a row yet is clipped, not painted. */
+  #ctl :is(#type, #arrange, #cb-obj) { display:block; position:absolute; left:0; top:0; width:1px; height:1px;
+         overflow:hidden; pointer-events:none; padding:0; margin:0; }
+  #ctl :is(#type, #arrange, #cb-obj) .pop { pointer-events:auto; }
+  #ctl :is(#type, #arrange, #cb-obj) .ty-sep:not(.pop .ty-sep) { display:none !important; }
   .cb-grp.ty-seg { gap:0; }
   .cb-lab { font:600 12px system-ui; color:#2F3E46; background:#E7EEE8;
             padding:3px 10px; border-radius:99px; }
@@ -197,8 +217,6 @@
   .cb-ic { display:block; color:#5B6E66; }
   /* Docked, the strip leads with what you change most — fill, stroke,
      transparency, effects — where the floating card ended with fill. */
-  #ctl #ar-fill { order:-2; }
-  #ctl #ar-border, #ctl #ar-alpha, #ctl #ar-fxbtn { order:-1; }
   #ctl #arrange select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
           border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46; }
   /* Text in the bar (phase 2). #type docks here too; the mode on #ctl
@@ -207,7 +225,7 @@
   body:not(.ds-ctlbar) .cb-only { display:none !important; }
   #ctl[data-mode=char] .cb-para, #ctl[data-mode=para] .cb-char { display:none !important; }
   #ctl[data-mode=frame] #type > :not(#ty-key):not(#ty-box):not(#ty-anchor):not(#ty-comment):not(.pop),
-  #ctl[data-mode=frame] #ctl-more-body > .cu-type:not(#ty-key):not(#ty-box):not(#ty-anchor):not(#ty-comment)
+  #ctl[data-mode=frame] .cu-type:not(#ty-key):not(#ty-box):not(#ty-anchor):not(#ty-comment)
         { display:none !important; }
   #ctl #ty-size { display:none !important; }
   #ctl .ty-step #cb-size { width:54px; height:29px; box-sizing:border-box; margin:0 -1px;
@@ -225,10 +243,10 @@
   #ctl #cb-mode button:hover { border-color:var(--sage); background:#EDF4EE; }
   #ctl #cb-mode button.on { background:var(--ink); border-color:var(--ink); color:#fff; position:relative; z-index:1; }
   #ctl #cb-mode button svg { display:block; pointer-events:none; }
-  #ctl #type select, #ctl #ctl-more-body select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
+  #ctl .ctl-row select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
           border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46; }
-  #ctl #type .cb-f input, #ctl #ctl-more-body > .cu-type.cb-f input { width:52px; }
-  #ctl #type .cb-f input.cb-narrowin { width:44px; }
+  #ctl .cu-type.cb-f input { width:52px; }
+  #ctl .cu-type.cb-f input.cb-narrowin { width:44px; }
   #ctl .cb-f select { width:auto; }
   #cb-paraf { gap:5px; }
   #ctl #cb-lmark { width:112px; }
@@ -246,18 +264,14 @@
   #cb-pflag { display:inline-block; width:16px; text-align:center; font:700 13px Georgia,serif;
           color:#5B6E66; transition:transform .15s; }
   /* The arrange strip, docked: no card of its own — it is a run of the bar. */
-  #ctl #type, #ctl #arrange { background:transparent; box-shadow:none; border-radius:0; padding:0;
-          margin:0; width:auto; max-width:none; height:auto; min-height:0; overflow:visible;
-          flex-wrap:nowrap; justify-content:flex-start; pointer-events:auto; }
-  #ctl #cb-obj { flex-wrap:nowrap; max-width:none; }
+  #ctl #type, #ctl #arrange { background:transparent; box-shadow:none; border-radius:0; }
 
   /* ---- the docked bar, one quiet surface ---------------------------------
-     One white row, and every control wears the same shape: 30px tall, 8px
+     Two white rows, and every control wears the same shape: 30px tall, 8px
      corners, a pale fill instead of an outline, no rule or shadow of its own.
      A number box is ONE pill with its icon or letter inside it, so there are no
-     stray glyphs and no boxes-with-labels. The same shapes apply inside the
-     More pop-up (#ctl-more-body), where the controls that did not fit sit. */
-  #ctl #cb-obj, #ctl #type, #ctl #arrange, #ctl-more-body { gap:6px; row-gap:6px; }
+     stray glyphs and no boxes-with-labels. */
+  #ctl #cb-obj, #ctl #type, #ctl #arrange { gap:6px; row-gap:6px; }
   #ctl .cb-f { height:30px; box-sizing:border-box; padding:0 2px 0 10px; gap:5px;
          background:#F2F5F3; border-radius:8px; color:#72857C; font:600 12px system-ui;
          letter-spacing:.02em; transition:background .12s, box-shadow .12s; }
@@ -269,24 +283,24 @@
   #ctl .cb-f input:hover { border:0; }
   #ctl .cb-f input:focus { outline:none; }
   #ctl .cb-f .cb-ic { color:#72857C; }
-  #ctl .cb-f select:not(:where(.pop:not(#ctl-more-pop)) *), #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) select:not(:where(.pop:not(#ctl-more-pop)) *) {
+  #ctl .cb-f select:not(:where(.pop) *), #ctl :is(#type, #arrange, #cb-obj, .ctl-row) select:not(:where(.pop) *) {
          height:30px; border:0; border-radius:8px; background-color:#F2F5F3; box-shadow:none;
          color:#2F3E46; font:500 12.5px system-ui; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) select:not(:where(.pop:not(#ctl-more-pop)) *):hover { background-color:#E8EEEA; border:0; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) button:not(:where(.pop:not(#ctl-more-pop)) *) {
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) select:not(:where(.pop) *):hover { background-color:#E8EEEA; border:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *) {
          height:30px; min-width:30px; border:0; border-radius:8px; background:#F2F5F3;
          box-shadow:none; color:#2F3E46; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) button:not(:where(.pop:not(#ctl-more-pop)) *):hover { background:#E8EEEA; border:0; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) button:not(:where(.pop:not(#ctl-more-pop)) *).on { background:#2F3E46; color:#fff; border:0; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) button:not(:where(.pop:not(#ctl-more-pop)) *):disabled { background:transparent; color:#B4C0B9; opacity:1; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) button:not(:where(.pop:not(#ctl-more-pop)) *):focus-visible { outline:2px solid rgba(107,158,120,.6); outline-offset:1px; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *):hover { background:#E8EEEA; border:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *).on { background:#2F3E46; color:#fff; border:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *):disabled { background:transparent; color:#B4C0B9; opacity:1; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *):focus-visible { outline:2px solid rgba(107,158,120,.6); outline-offset:1px; }
   /* a segmented group is one pale pill; its pressed button is the dark chip */
   #ctl .ty-seg { background:#F2F5F3; border-radius:8px; gap:0; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .ty-seg button:not(:where(.pop:not(#ctl-more-pop)) *) { background:transparent; border-radius:8px; margin:0; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .ty-seg button:not(:where(.pop:not(#ctl-more-pop)) *):hover { background:#E1E9E4; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .ty-seg button:not(:where(.pop:not(#ctl-more-pop)) *).on { background:#2F3E46; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-seg button:not(:where(.pop) *) { background:transparent; border-radius:8px; margin:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-seg button:not(:where(.pop) *):hover { background:#E1E9E4; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-seg button:not(:where(.pop) *).on { background:#2F3E46; }
   #ctl .ty-step { background:#F2F5F3; border-radius:8px; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .ty-step button:not(:where(.pop:not(#ctl-more-pop)) *) { background:transparent; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-step button:not(:where(.pop) *) { background:transparent; }
   #ctl .ty-step #cb-size { background:transparent; border:0; box-shadow:none; border-radius:0; }
   #ctl .ty-sep, #ctl .bar-sep { width:1px; height:18px; margin:0 3px; background:#E3E9E5; }
   #ctl .ty-key, #ctl .ar-count { background:#EEF3EF; color:#6B7C74; border-radius:8px;
@@ -303,34 +317,12 @@
          font:12px system-ui; }
   #type .pop .side-note, #arrange .pop .side-note { white-space:normal; overflow:visible; width:auto; }
   /* the nine-dot reference and anchor grids keep their own 7px cells */
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .cb-refgrid button, #ctl #cb-ref button {
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .cb-refgrid button, #ctl #cb-ref button {
          all:unset; box-sizing:border-box; width:7px; height:7px; min-width:0; cursor:pointer;
          border:1.3px solid #7A8E85; border-radius:1px; background:#fff; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .cb-refgrid button:hover { border-color:var(--sage); background:#fff; }
-  #ctl :is(#type, #arrange, #cb-obj, #ctl-more-body) .cb-refgrid button.on { background:#2F3E46; border-color:#2F3E46; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .cb-refgrid button:hover { border-color:var(--sage); background:#fff; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .cb-refgrid button.on { background:#2F3E46; border-color:#2F3E46; }
 
-  /* ---- More: the controls that did not fit the row ----------------------
-     A button at the row's right end, shown only while something is in it, and
-     a pop-up (a .pop, so Escape and a click away close it like the others)
-     laying them out as a wrapped run of the same pills. */
-  #ctl-more-btn { margin-left:auto; display:inline-flex; align-items:center; gap:6px; flex:none;
-         height:30px; padding:0 10px 0 12px; border:0; border-radius:8px; background:#F2F5F3;
-         color:#2F3E46; font:600 12.5px system-ui; cursor:pointer; }
-  #ctl-more-btn:hover { background:#E8EEEA; }
-  #ctl-more-btn[aria-expanded=true] { background:#2F3E46; color:#fff; }
-  #ctl-more-btn:focus-visible { outline:2px solid rgba(107,158,120,.6); outline-offset:1px; }
-  #ctl-more-btn .cb-morecount { min-width:18px; height:18px; box-sizing:border-box; padding:0 5px;
-         border-radius:9px; background:#DCE6DF; color:#2F3E46; font:600 12px/18px system-ui; text-align:center; }
-  #ctl-more-btn[aria-expanded=true] .cb-morecount { background:rgba(255,255,255,.22); color:#fff; }
-  #ctl-more-btn svg { display:block; }
-  /* a phone: the count and the chevron say it, and the row keeps the room */
-  @media (max-width: 600px) { #ctl-more-btn .cb-morelab { display:none; } #ctl-more-btn { padding:0 8px; } }
-  #ctl-more-pop { width:max-content; max-width:min(560px, calc(100vw - 32px)); box-sizing:border-box;
-         padding:12px; white-space:normal; }
-  #ctl-more-body { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-  #ctl #ctl-more-body > * { flex:none; margin-left:0; margin-right:0; }   /* none pushed to a line's end */
-  #ctl-more-pop label { margin:0; }
-  #ctl-more-pop label span { width:auto; }
   /* A thin rule between the history/commit group and the rest. */
   .bar-sep { flex:none; width:1px; height:18px; background:var(--line); margin:0 1px; }
   #stat { flex:1 1 40px; min-width:40px; opacity:.9; overflow:hidden;
@@ -2100,7 +2092,7 @@
   /* Version history, the side panel: the comments panel's frame (same
      radii, same head), rows grouped by day, the chosen one open on what it
      changed. Under 1100px it floats over the page as the comments list does. */
-  #hpanel { position:fixed; right:12px; top:104px; bottom:calc(var(--strip-h, 0px) + 10px); width:min(360px, 90vw); z-index:45;
+  #hpanel { position:fixed; right:12px; top:var(--ctl-bottom, 104px); bottom:calc(var(--strip-h, 0px) + 10px); width:min(360px, 90vw); z-index:45;
     display:flex; flex-direction:column; background:#F8FAF8; border:1px solid #C9D6CD; border-radius:var(--r-card, 10px);
     box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
   #hpanel[hidden] { display:none; }
@@ -2138,7 +2130,7 @@
      Shaped like Google Docs' comments: cards with an avatar, name and
      time, the quoted words above, replies threaded under, a checkmark and
      a ⋮ on hover, a one-line reply box that opens into a real one. */
-  #cpanel { position:fixed; right:12px; top:104px; bottom:calc(var(--strip-h, 0px) + 10px); width:min(360px, 90vw); z-index:45;
+  #cpanel { position:fixed; right:12px; top:var(--ctl-bottom, 104px); bottom:calc(var(--strip-h, 0px) + 10px); width:min(360px, 90vw); z-index:45;
     display:flex; flex-direction:column; background:var(--cmt-ground); border:1px solid var(--cmt-edge); border-radius:var(--r-card);
     box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
   #cpanel[hidden] { display:none; }
@@ -2984,6 +2976,9 @@
      #cb-ref (the nine-point reference grid, phase 3) are the reserved slots,
      and ctlPaint() is the one function that decides what the bar shows. -->
 <div id="ctl" role="toolbar" aria-label="Control bar">
+  <!-- Two rows. The fixed pieces (mode switch, reference grid, the empty-state hint) lead row 1;
+       ctlFit lays every other control, in the order CTL_ROWS names, into row 1 or row 2 of the mode. -->
+  <div class="ctl-row" id="ctl-r1">
   <!-- Text selected: InDesign's three modes. ▭ the frame (#cb-obj), A the
        character controls, ¶ the paragraph ones (.cb-char / .cb-para inside
        #type, which docks here like #arrange). ctlPaint() picks. -->
@@ -3003,6 +2998,8 @@
     <span class="cb-lab" id="cb-page"></span>
     <span class="cb-hint">Select an object to set its position, size and look here</span>
   </div>
+  </div>
+  <div class="ctl-row" id="ctl-r2"></div>
   <div id="cb-obj" hidden>
     <span class="cb-grp" id="cb-geo">
       <label class="cb-f" title="Left edge — inches; type 36pt, 3p or 1cm too">X<input id="cb-x" data-ar="ar-x" data-unit="len" inputmode="decimal" autocomplete="off"></label>
@@ -3075,18 +3072,6 @@
       <button class="ar-al" data-al="bottom" aria-label="Align bottom"><svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 12h11M4.5 2.5v7M9.5 5v4.5"/></svg></button>
     </span>
     <span class="ty-sep" id="cb-arsep"></span>
-  </div>
-  <!-- More: whatever of the bar's controls did not fit the window's width, one
-       whole control at a time, least important first (ctlFit). The nodes are
-       MOVED here, never copied, so every id and handler works as it did in the
-       row. Shown only while something is in it. -->
-  <button id="ctl-more-btn" hidden aria-haspopup="true" aria-expanded="false"
-    aria-label="More controls — the ones that do not fit this window's width"><span class="cb-morelab">More</span><span
-    class="cb-morecount" id="ctl-more-n"></span><svg width="10" height="10" viewBox="0 0 10 10" fill="none"
-    stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
-    aria-hidden="true"><path d="M2 3.6l3 3 3-3"/></svg></button>
-  <div class="pop" id="ctl-more-pop" data-owner="ctl-more-btn" hidden role="group" aria-label="More controls">
-    <div id="ctl-more-body"></div>
   </div>
 </div>
 <!-- What a conversion had to decide for you (L.notices() in the renderer, and
@@ -9236,7 +9221,7 @@ function togglePop(pop, anchor) {
   // its panel where the menu was: the row is about to be hidden along with
   // the menu, and a hidden anchor measures 0,0 — the panel landed over the
   // bar's top-left corner. data-owner names the bar button a menu hangs from.
-  const menu = anchor && anchor.closest && anchor.closest('.pop.menu, #ctl-more-pop');
+  const menu = anchor && anchor.closest && anchor.closest('.pop.menu');
   if (menu && menu !== pop) anchor = menu.__opener || $(menu.dataset.owner || '') || anchor;
   // A panel showing in the right-hand dock: its opener refilling it (the
   // dock's own refresh) leaves it there, and so does its button while the
@@ -9286,7 +9271,7 @@ function togglePop(pop, anchor) {
 // Only the controls that OPEN one of these surfaces. The File menu's
 // own entries are inside .pop already, and #guides is a plain toggle, not an
 // anchor — listing either would just stop a click there from closing anything.
-const POP_ANCHORS = '#ctl-more-btn, #ty-colorbtn, #ty-spacebtn, #ty-parabtn, #text, #shape, #icon, #layers,'
+const POP_ANCHORS = '#ty-colorbtn, #ty-spacebtn, #ty-parabtn, #text, #shape, #icon, #layers,'
   + ' #download, #file, #view, #check, #zoombtn, #ar-img';
 
 // The rail's PICKERS — the panels that exist to put a new object on the page.
@@ -14820,7 +14805,7 @@ function pageBar(d) {
     const el = $(id); if (el) el.hidden = true;
   });
   document.querySelectorAll('.ar-pos, #ar-possep').forEach(x => { x.hidden = true; });
-  document.querySelectorAll('#arrange > .ty-seg, #arrange > .ty-sep, #ctl-more-body > .ty-seg.cu-arrange')
+  document.querySelectorAll('#arrange > .ty-seg, #arrange > .ty-sep, .ctl-row > .ty-seg.cu-arrange')
     .forEach(x => { x.hidden = true; });
   document.querySelectorAll('.ds-pageonly').forEach(x => { x.hidden = false; });
   $('ar-pagelabel').textContent = 'Page ' + pageLabel(selPage);
@@ -19364,8 +19349,8 @@ function ctlDock() {
   if (ctlOn) {
     // The type controls lead (after the mode switch), the frame's follow,
     // then the arrange strip — the order InDesign's bar reads in.
-    if (ty.parentNode !== ctl) ctl.insertBefore(ty, $('cb-empty'));
-    if (ar.parentNode !== ctl) ctl.insertBefore(ar, $('ctl-more-btn'));   // the arrange strip, then More at the row's end
+    if (ty.parentNode !== ctl) ctl.insertBefore(ty, $('ctl-r1'));
+    if (ar.parentNode !== ctl) ctl.appendChild(ar);   // the arrange strip (its controls are laid in the rows by ctlFit)
   } else {
     if (ty.parentNode !== ctx) ctx.insertBefore(ty, ctx.firstChild);
     if (ar.parentNode !== ctx) ctx.appendChild(ar);
@@ -19389,65 +19374,100 @@ function setCtlMode(m) {
 }
 document.querySelectorAll('#cb-mode [data-m]').forEach(b =>
   b.addEventListener('click', () => setCtlMode(b.dataset.m)));
-// ------------------------------------------------------- one row, and More
-// The bar is ONE row, 44px, whatever the window's width and whatever is
-// selected. What does not fit moves into the pop-up under "More" at the row's
-// right end, one whole control at a time, least important first. The nodes
-// themselves move (a placeholder comment keeps each one's place), so every id,
-// listener, ctlPaint, scrub-drag and pilot verb works on a control in More
-// exactly as in the row. Nothing about the bar's HEIGHT depends on any of it.
+// ------------------------------------------------------- two rows, one height
+// The bar is TWO rows, --ctl-h tall, whatever the window's width and whatever is
+// selected. ctlFit lays every control that the mode shows into row 1 (the primary
+// fields) or row 2 (the secondary ones), in the order CTL_ROWS names; a control the
+// mode does not show goes back to its own strip, where the mode's CSS hides it. A row
+// narrower than its fields scrolls sideways inside itself (its edge fades to say so):
+// nothing wraps, nothing is hidden behind a menu, and the bar's HEIGHT depends on none
+// of it, so a change of selection never moves the canvas.
+// The nodes themselves move (a placeholder comment keeps each one's home), so every id,
+// listener, ctlPaint, scrub-drag and pilot verb works on a control in a row exactly as
+// it did in its strip.
 //
-// CTL_KEEP: per mode, the controls most worth keeping in the row first (a
-// selector for the control's own element; the first match gives its rank).
-// A control no list names ranks last, so it goes to More first rather than
-// crowding out the ones that are named: add new bar controls here.
-const CTL_KEEP = {
-  // a shape, picture, table, chart, page or group: where it is, how big, how it looks
-  obj: ['label:has(#cb-x)', 'label:has(#cb-y)', '#cb-wwrap', '#cb-hwrap', '#cb-link', '#cb-swrap',
-    '#ar-fill', '#ar-border', '#cb-align', 'label:has(#cb-rot)', '.ty-seg:has(#cb-rotccw)', '#cb-fit',
-    '#ar-alpha', '#ar-pos', '#ar-table', '#ar-chart', '#ar-fxbtn', '#ar-pagelabel', '#ar-master', '#ar-pagedup',
-    '#arrange > .ty-seg', '#ar-lock', '#ar-dup', '#ar-del', '#ar-more', '#cb-fitref', '#cb-fitopts',
-    'label:has(#cb-r)', '#ar-style', '#ar-style-more', '#ar-comment', '#ar-anchor',
-    'label:has(#cb-cols)', 'label:has(#cb-pad)', '#cb-gapwrap', '.ty-seg:has([data-va])',
-    '#cb-sxwrap', '#cb-sywrap', 'label:has(#cb-skew)', '#cb-pflag', '#ar-count'],
+// CTL_ROWS: per mode, row 1 then row 2; each row is a list of GROUPS (a divider is drawn
+// between two groups that both show something), each group a list of selectors for the
+// control's own element, matched while the control is still at home (the first match
+// gives its place). A control no list names goes to the end of row 2: add new bar
+// controls here (control-bar-two-rows.spec.js fails on any that is not named).
+const CTL_ROWS = {
+  // a shape, picture, table, chart or group: where it is and how big; then its look
+  obj: [
+    [['label:has(#cb-x)', 'label:has(#cb-y)', '#cb-wwrap', '#cb-link', '#cb-hwrap', '#cb-swrap', '#cb-sxwrap', '#cb-sywrap'],
+     ['label:has(#cb-rot)', 'label:has(#cb-skew)', '.ty-seg:has(#cb-rotccw)', '#cb-pflag'],
+     ['#ar-style', '#ar-style-more']],
+    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#cb-align'],
+     ['label:has(#cb-r)', '#cb-fit', '#cb-fitref', '#cb-fitopts'],
+     ['label:has(#cb-cols)', '#cb-gapwrap', 'label:has(#cb-pad)', '.ty-seg:has([data-va])'],
+     ['#ar-pos', '#ar-table', '#ar-chart', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more',
+      '#ar-comment', '#ar-anchor', '#ar-count']],
+  ],
   // a text box taken as an object (the ▭ mode)
-  frame: ['label:has(#cb-x)', 'label:has(#cb-y)', '#cb-wwrap', '#cb-hwrap', '#cb-link',
-    '#ar-fill', '#ar-border', '#cb-align', 'label:has(#cb-rot)', '.ty-seg:has(#cb-rotccw)',
-    'label:has(#cb-cols)', 'label:has(#cb-pad)', '.ty-seg:has([data-va])', '#ty-box', '#ar-alpha', '#ar-pos',
-    '#ar-fxbtn', '#arrange > .ty-seg', '#ar-lock', '#ar-dup', '#ar-del', '#ar-more', '#ty-comment', '#ty-anchor',
-    '#cb-gapwrap', '#ar-style', '#ar-style-more', '#ar-comment', '#ar-anchor',
-    '#cb-sxwrap', '#cb-sywrap', 'label:has(#cb-skew)', '#cb-pflag', '#ty-key', '#ar-count'],
-  // A: the words themselves
-  // (B / I / U and the lists show only with words selected, and then they lead)
-  char: ['#ty-marks', '#ty-font', '#ty-weight', '.ty-step', 'label:has(#cb-lead)', 'label:has(#cb-track)', 'label:has(#cb-kern)',
-    '#ty-i', '#ty-u', '#ty-colorbtn', '#ty-style', '#ty-style-more', '#ty-case',
-    'label:has(#cb-shift)', '#cb-strike', '#cb-smcp', '#ty-fx', '#ty-fxp', '#ty-spacebtn', '#ty-parabtn',
-    '#ty-reset', '#ty-box', '#ty-comment', '#ar-fill', '#ar-pos', '#ar-more', '#ar-del', '#ar-lock', '#ar-dup',
-    '#ar-border', '#ar-alpha', '#ar-fxbtn', '#arrange > .ty-seg', '#ar-comment', '#ty-anchor', '#ar-anchor', '#ty-key', '#ar-count'],
+  frame: [
+    [['label:has(#cb-x)', 'label:has(#cb-y)', '#cb-wwrap', '#cb-hwrap', '#cb-link', '#cb-sxwrap', '#cb-sywrap'],
+     ['label:has(#cb-rot)', 'label:has(#cb-skew)', '.ty-seg:has(#cb-rotccw)', '#cb-pflag'],
+     ['#ar-style', '#ar-style-more']],
+    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#cb-align'],
+     ['label:has(#cb-cols)', '#cb-gapwrap', 'label:has(#cb-pad)', '.ty-seg:has([data-va])'],
+     ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key', '#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock',
+      '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
+  ],
+  // A: the words themselves (B / I / U show only with words selected, and then they lead)
+  char: [
+    [['#ty-marks'],
+     ['#ty-style', '#ty-style-more'],
+     ['#ty-font', '#ty-weight', '.ty-step'],
+     ['label:has(#cb-lead)', 'label:has(#cb-track)', 'label:has(#cb-kern)'],
+     ['#ty-i', '#ty-u', '#ty-colorbtn']],
+    [['label:has(#cb-shift)', '#cb-strike', '#cb-smcp', '#ty-case'],
+     ['#ty-fx', '#ty-fxp', '#ty-spacebtn', '#ty-parabtn', '#ty-reset'],
+     ['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key', '#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock',
+      '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
+  ],
   // ¶: how the paragraph sits
-  para: ['#ty-alseg', '#ty-style', '#ty-style-more', 'label:has(#cb-il)', 'label:has(#cb-ti)', 'label:has(#cb-sb)',
-    'label:has(#cb-sa)', 'label:has(#cb-ir)', '#cb-lmark', '#cb-grid', '#cb-hyph', 'label:has(#cb-dcap)', '#ty-parabtn',
-    '#ty-reset', '#ty-box', '#ty-comment', '#ar-fill', '#ar-pos', '#ar-more', '#ar-del', '#ar-lock', '#ar-dup',
-    '#ar-border', '#ar-alpha', '#ar-fxbtn', '#arrange > .ty-seg', '#ar-comment', '#ty-anchor', '#ar-anchor', '#ty-key', '#ar-count'],
+  para: [
+    [['#ty-style', '#ty-style-more'],
+     ['#ty-alseg'],
+     ['label:has(#cb-il)', 'label:has(#cb-ti)', 'label:has(#cb-ir)'],
+     ['label:has(#cb-sb)', 'label:has(#cb-sa)']],
+    [['label:has(#cb-dcap)', '#cb-lmark', '#cb-grid', '#cb-hyph'],
+     ['#ty-parabtn', '#ty-reset'],
+     ['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key', '#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock',
+      '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
+  ],
+  // nothing selected, or a page: the page's own controls
+  empty: [
+    [['#ar-pagelabel', '#ar-master', '#ar-pagedup']],
+    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn', '#ar-pos', '#ar-count']],
+  ],
 };
 const CTL_TOPS = ['type', 'cb-obj', 'arrange'];
 const CTL_TRANSP = '#type, #arrange, #cb-obj, #cb-geo, #cb-turn, #cb-corner, #cb-fitx, #cb-frame, #cb-paraf';
-let ctlU = null, ctlSeps = [], ctlFitting = false, ctlMoreW = 86, ctlMO = null;
+let ctlU = null, ctlFitting = false;
 let ctlPress = 0, ctlFitLater = false;   // a press is down on the editor's chrome: refit after it
-/** Every control that can move: the pills inside the three strips, in the row's order.
- *  Found once, while each is still at home. */
+const ctlGseps = [[], []];               // the dividers each row has drawn so far, reused
+/** Every control that can move: the pills inside the three strips, in the strips' order.
+ *  Found once, while each is still at home. u.at[mode] = [row, group, index in the group]. */
 function ctlUnitsInit() {
-  ctlU = []; ctlSeps = [];
+  ctlU = [];
   CTL_TOPS.forEach(id => {
     const top = $(id);
     const walk = c => [...c.children].forEach(k => {
       if (k.matches(CTL_TRANSP)) return walk(k);
       if (k.matches('.pop, script, style')) return;
-      if (k.classList.contains('ty-sep')) { ctlSeps.push(k); return; }
-      const u = { el: k, top, w: 0, vi: ctlU.length, rk: {}, ph: document.createComment('') };
-      for (const m in CTL_KEEP) {
-        const i = CTL_KEEP[m].findIndex(sel => k.matches(sel));
-        u.rk[m] = i < 0 ? 999 : i;
+      if (k.classList.contains('ty-sep')) return;       // the rows draw their own dividers
+      const u = { el: k, top, vi: ctlU.length, at: {}, ph: document.createComment('') };
+      for (const m in CTL_ROWS) {
+        u.at[m] = [1, 99, 0];                           // unnamed: the end of row 2
+        CTL_ROWS[m].forEach((groups, r) => groups.forEach((sels, g) => {
+          const i = sels.findIndex(sel => k.matches(sel));
+          if (i >= 0 && u.at[m][1] === 99) u.at[m] = [r, g, i];
+        }));
       }
       // where it lives, for the code that finds it by its strip (#arrange > .ty-seg, #cb-turn button …)
       k.classList.add('cu-' + id); k.dataset.cuIn = c.id;
@@ -19458,6 +19478,8 @@ function ctlUnitsInit() {
     walk(top);
   });
 }
+const ctlRowOf = u => u.el.parentNode && u.el.parentNode.classList && u.el.parentNode.classList.contains('ctl-row')
+  ? u.el.parentNode : null;
 function ctlFit() {
   if (ctlFitting) return;
   // Never under a press: a control that moved between mousedown and mouseup would lose
@@ -19465,14 +19487,8 @@ function ctlFit() {
   if (ctlPress && Date.now() - ctlPress < 10000) { ctlFitLater = true; return; }   // (a lost pointerup cannot freeze it)
   if (!ctlU) ctlUnitsInit();
   ctlFitting = true;
-  const ctl = $('ctl'), btn = $('ctl-more-btn'), pop = $('ctl-more-pop'), body = $('ctl-more-body');
-  const inMore = u => u.el.parentNode === body;
-  const toRow = u => { if (inMore(u)) u.ph.after(u.el); };
-  const toMore = u => {
-    if (inMore(u)) return;
-    const next = [...body.children].find(c => c.__cu && c.__cu.vi > u.vi);
-    body.insertBefore(u.el, next || null);
-  };
+  const ctl = $('ctl'), rows = [$('ctl-r1'), $('ctl-r2')];
+  const toHome = u => { if (u.el.previousSibling !== u.ph) u.ph.after(u.el); };
   // Drawn if the control itself is, and so is every strip it sits in at home (a hidden
   // #type has controls whose own display is still "inline-flex").
   const shown = u => {
@@ -19483,95 +19499,69 @@ function ctlFit() {
   };
   try {
     if (!(ctlOn && !ctl.hidden)) {        // the bar is off: the strips are back in the floating card
-      ctlU.forEach(toRow);
-      btn.hidden = true; pop.hidden = true;
+      ctlU.forEach(toHome);
       return;
     }
-    // While More is open nothing moves: the control a person is using in it must not jump
-    // into the row (or out of it) under the pointer. Closing it refits.
-    if (!pop.hidden && !btn.hidden) { btn.setAttribute('aria-expanded', 'true'); return; }
     // (words of the report's own, not a box, can be open with the bar still saying "empty":
-    // the type controls are up, so they rank as A or ¶ does)
-    const mode = CTL_KEEP[ctl.dataset.mode] ? ctl.dataset.mode : !$('type').hidden ? ctlTextMode : 'obj';
-    CTL_TOPS.forEach(id => $(id).classList.remove('ctl-void'));
-    ctlSeps.forEach(s => s.classList.remove('ctl-sep-off'));
-    // A control whose strip is hidden, or that the mode hides, goes back to its strip: in
-    // More it would show, with nothing left to hide it.
-    ctlU.forEach(u => { if (inMore(u) && !shown(u)) toRow(u); });
-    const vis = ctlU.filter(shown);
-    // widths: as the row draws them (More may draw a control a little wider or narrower)
-    vis.forEach(u => { if (!inMore(u)) { const w = u.el.getBoundingClientRect().width; if (w) u.w = w; } });
-    const cand = vis.slice().sort((a, b) => a.rk[mode] - b.rk[mode] || a.vi - b.vi);
-    const cs = getComputedStyle(ctl), box = ctl.getBoundingClientRect();
-    const left = box.left + parseFloat(cs.paddingLeft), right = box.right - parseFloat(cs.paddingRight);
-    // the fixed things: the mode switch, the reference grid, the hint
-    let fixed = 0;
-    [...ctl.children].forEach(c => {
-      if (CTL_TOPS.includes(c.id) || c === btn || c === pop || c.nodeType !== 1) return;
-      if (c.offsetParent !== null) fixed += c.getBoundingClientRect().width + 6;
+    // the type controls are up, so they sit as A or ¶ does)
+    const mode = CTL_ROWS[ctl.dataset.mode] ? ctl.dataset.mode : !$('type').hidden ? ctlTextMode : 'obj';
+    // A control the mode (or its strip) does not show goes back to its strip, where that hides it.
+    const want = [[], []];
+    ctlU.forEach(u => {
+      if (!shown(u)) { if (ctlRowOf(u)) toHome(u); return; }
+      want[u.at[mode][0]].push(u);
     });
-    if (btn.offsetParent !== null) ctlMoreW = btn.getBoundingClientRect().width || ctlMoreW;
-    const room = right - left - fixed;
-    const cost = u => (u.w || 80) + 6;
-    let k = cand.length;
-    if (cand.reduce((n, u) => n + cost(u), 0) > room) {
-      let acc = 0; k = 0;
-      while (k < cand.length && acc + cost(cand[k]) <= room - ctlMoreW - 6) { acc += cost(cand[k]); k++; }
-    }
-    // The state the estimate asks for; only a control that is somewhere else moves.
-    const place = () => {
-      cand.forEach((u, i) => (i < k ? toRow(u) : toMore(u)));
-      btn.hidden = k >= cand.length;
-      $('ctl-more-n').textContent = String(cand.length - k);
-    };
-    // Separators show only between two controls of the row; a void strip draws nothing.
-    const settle = () => {
-      CTL_TOPS.forEach(id => $(id).classList.remove('ctl-void'));
-      CTL_TOPS.forEach(id => {
-        const top = $(id);
-        top.classList.toggle('ctl-void', !ctlU.some(u => u.top === top && !inMore(u) && shown(u)));
+    rows.forEach((row, r) => {
+      const us = want[r].sort((a, b) => a.at[mode][1] - b.at[mode][1] || a.at[mode][2] - b.at[mode][2] || a.vi - b.vi);
+      // the nodes the row keeps no matter what: the mode switch, the reference grid, the hint
+      const fixed = [...row.children].filter(c => !c.__cu && !c.classList.contains('ctl-gsep')).length;
+      const seq = [];
+      let prev = null, used = 0;
+      us.forEach(u => {
+        const g = u.at[mode][1];
+        if (prev !== null && g !== prev) {
+          const sep = ctlGseps[r][used] || (ctlGseps[r][used] = Object.assign(document.createElement('span'), { className: 'ctl-gsep' }));
+          used++; seq.push(sep);
+        }
+        prev = g; seq.push(u.el);
       });
-      let seen = false, pending = null;
-      ctlSeps.forEach(s => s.classList.add('ctl-sep-off'));
-      // walk the row in the order it is DRAWN, strips in turn (the arrange strip leads with
-      // fill, stroke, transparency and effects by CSS order, not by where they are in it)
-      const ord = el => +getComputedStyle(el).order || 0;
-      const walk = c => [...c.children].map((el, i) => [el, i, ord(el)])
-        .sort((a, b) => a[2] - b[2] || a[1] - b[1]).map(x => x[0]).forEach(el => {
-        if (el.matches(CTL_TRANSP)) return walk(el);
-        if (el.classList.contains('ty-sep')) { if (seen) pending = el; return; }
-        const u = el.__cu;
-        if (u && !inMore(u) && shown(u)) { if (pending) pending.classList.remove('ctl-sep-off'); pending = null; seen = true; }
+      // Reconcile in place: a node already where it belongs is not touched (moving a focused
+      // field would blur it), a missing one is inserted, a stale divider is dropped.
+      seq.forEach((n, k) => {
+        const at = row.children[fixed + k] || null;
+        if (at !== n) row.insertBefore(n, at);
       });
-      CTL_TOPS.forEach(id => walk($(id)));
-    };
-    const overflows = () => {
-      let r = 0;
-      [...ctl.children].forEach(c => { if (c !== pop && c.nodeType === 1 && c.offsetParent !== null) r = Math.max(r, c.getBoundingClientRect().right); });
-      return r > right + 0.5;
-    };
-    place(); settle();
-    let guard = 80;
-    while (k > 0 && overflows() && guard--) { k--; place(); settle(); }
-    // More emptied: nothing to show or to keep open
-    if (btn.hidden) pop.hidden = true;
-    btn.setAttribute('aria-expanded', String(!pop.hidden));
+      [...row.children].slice(fixed + seq.length).forEach(n => { if (n.classList.contains('ctl-gsep')) n.remove(); });
+    });
   } finally {
     ctlFitting = false;
     if (ctlMO) ctlMO.takeRecords();
   }
+  ctlMetrics();
+}
+let ctlMO = null;
+/** The bar's own geometry, published for what hangs under it. --ctl-bottom is where the bar
+ *  ends (the menu bar's foot while the bar is off), so a fixed panel starts exactly there;
+ *  each row's edge fades toward the side that has more of it. */
+function ctlMetrics() {
+  const ctl = $('ctl'), on = ctlOn && !ctl.hidden && ctl.offsetParent !== null;
+  const b = Math.round((on ? ctl : $('bar')).getBoundingClientRect().bottom);
+  const root = document.documentElement;
+  if (b > 0 && root.style.getPropertyValue('--ctl-bottom') !== b + 'px') root.style.setProperty('--ctl-bottom', b + 'px');
+  ['ctl-r1', 'ctl-r2'].forEach(id => {
+    const row = $(id);
+    row.classList.toggle('ctl-fade-l', row.scrollLeft > 2);
+    row.classList.toggle('ctl-fade-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 2);
+  });
 }
 try {
   ctlMO = new MutationObserver(recs => {
-    // a click away, or Escape, hides the pop: the button says so, and words held open for
-    // it let go; any change of what is shown (ctlPaint toggles `hidden`, the mode is
-    // data-mode) refits the row. Only a CHANGE: closing pop-ups rewrites `hidden` on
-    // every one of them, already hidden or not.
+    // any change of what is shown (ctlPaint toggles `hidden`, the mode is data-mode) refits.
+    // Only a CHANGE: closing pop-ups rewrites `hidden` on every one of them, already hidden or not.
     const changed = recs.some(r => r.attributeName === 'hidden'
       ? (r.oldValue !== null) !== r.target.hasAttribute('hidden')
       : r.oldValue !== r.target.getAttribute(r.attributeName));
     if (!changed) return;
-    if ($('ctl-more-pop').hidden && runCtx && runCtx.more) ctlRunLetGo();
     ctlFit();
   });
   ctlMO.observe($('ctl'), { subtree: true, attributes: true, attributeOldValue: true,
@@ -19586,32 +19576,12 @@ try {
   addEventListener('pointercancel', ctlPressEnd, true);
   addEventListener('blur', ctlPressEnd);
   onEachDocument(d => d.addEventListener('pointerup', ctlPressEnd, true));   // let go over the page
-  new ResizeObserver(() => ctlFit()).observe($('ctl'));
-  $('ctl').addEventListener('change', () => ctlFit());      // a font's name is a different width
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => ctlFit());
-  $('ctl-more-btn').addEventListener('click', () => {
-    togglePop($('ctl-more-pop'), $('ctl-more-btn'));
-    $('ctl-more-btn').setAttribute('aria-expanded', String(!$('ctl-more-pop').hidden));
-  });
-  // A button in More is a menu item: once its own handlers have run, More closes (a
-  // field stays open for typing). Anchor then arms on the page with nothing over it,
-  // and Escape disarms it as it would from the row.
-  $('ctl-more-body').addEventListener('click', e => {
-    if (e.target.closest('button') && !$('ctl-more-pop').hidden) $('ctl-more-pop').hidden = true;
-  });
-  // Words being typed: pressing More must not end the edit, or a character setting
-  // picked in it (case, small caps, strike, shift…) would dress the whole box instead
-  // of the selected words. The press holds them as a press on a field in the row
-  // does (ctlRunHold), the caret too (kerning works at a caret); a pick in More lets go
-  // as it would in the row, and so does More closing or a press on the page.
-  $('ctl-more-btn').addEventListener('mousedown', () => {
-    if (!$('ctl-more-pop').hidden) return;
-    ctlRunHold({ id: 'cb-kern' });
-    if (runCtx) runCtx.more = true;
-  }, true);
-  onEachDocument(d => d.addEventListener('mousedown', () => {
-    if (runCtx && runCtx.more) ctlRunLetGo();
-  }, true));
+  const ro = new ResizeObserver(() => ctlMetrics());
+  [$('ctl'), $('bar'), $('ctl-r1'), $('ctl-r2')].forEach(el => ro.observe(el));
+  ['ctl-r1', 'ctl-r2'].forEach(id => $(id).addEventListener('scroll', ctlMetrics, { passive: true }));
+  addEventListener('resize', ctlMetrics);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { ctlFit(); ctlMetrics(); });
+  $('ctl').addEventListener('change', () => ctlMetrics());      // a font's name is a different width
 } catch (e) { swallowed('ctlFit', e); }
 function toggleCtlBar(on = !ctlOn) {
   ctlOn = !!on;
@@ -20247,7 +20217,7 @@ function ctlPaint(d) {
     const pad = Array.isArray(eff.pad) ? eff.pad[0] : eff.pad;
     ctlShow($('cb-pad'), pad ?? (eff.fill ? 0.1 : 0));
     const va = eff.vAlign && eff.vAlign !== 'top' ? eff.vAlign : '';
-    document.querySelectorAll('#cb-frame [data-va], #ctl-more-body [data-va]').forEach(b =>
+    document.querySelectorAll('#cb-frame [data-va], .ctl-row [data-va]').forEach(b =>
       b.classList.toggle('on', b.dataset.va === va));
   }
 }
@@ -20707,7 +20677,7 @@ function ctlPaintText() {
   // The list marker picker copies the panel's options once.
   const lm = $('cb-lmark');
   if (lm.options.length !== $('ty-lmark').options.length) lm.innerHTML = $('ty-lmark').innerHTML;
-  document.querySelectorAll('#type [data-proxy], #ctl-more-body [data-proxy]').forEach(ctlTextShow);   // More too
+  document.querySelectorAll('#type [data-proxy], .ctl-row [data-proxy]').forEach(ctlTextShow);   // wherever ctlFit laid them
 }
 document.querySelectorAll('#type input[data-proxy]').forEach(inp => {
   inp.addEventListener('change', () => {
@@ -23655,9 +23625,9 @@ function typeControlPress(e) {
   richHost.blur();     // finish(true): commit + re-render (single-flight)
 }
 $('type').addEventListener('pointerdown', typeControlPress, true);
-// …and the same for a type control lent to the Control bar's More (ctlFit moves it out of #type)
-$('ctl-more-body').addEventListener('pointerdown', e => {
-  if (e.target.closest('#ctl-more-body > .cu-type')) typeControlPress(e);
+// …and the same for a type control ctlFit has laid in a row of the bar (it leaves #type)
+$('ctl').addEventListener('pointerdown', e => {
+  if (e.target.closest('.ctl-row > .cu-type')) typeControlPress(e);
 }, true);
 const richDo = fn => {
   if (!richHost) return;
