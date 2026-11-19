@@ -148,27 +148,52 @@
      canvas starts below it and the rulers, rail, dock and panels (all placed from
      it) follow it down. TWO rows, always --ctl-h tall: the same in every mode and
      with nothing selected, so a change of selection never moves the canvas under
-     the pointer. Row 1 holds the primary fields, row 2 the secondary ones (CTL_ROWS
-     says which, per mode). Each row is its own box that scrolls sideways when the
-     window is narrower than its fields: it never wraps, never grows, never hangs
-     over the canvas, the rulers or the rail. Nothing is hidden behind a menu. */
-  #ctl { flex:none; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:repeat(2, minmax(0,1fr));
-         grid-auto-rows:0; height:var(--ctl-h); box-sizing:border-box; padding:4px 0; position:relative;
+     the pointer. The rows are ALIGNED COLUMNS, as InDesign's Control panel is: each
+     column is a vertical pair, a primary field over a secondary one, the same width
+     and left edge (font over style, size over leading, X over Y …), and the columns
+     are spread across the whole bar, a thin divider between them (CTL_COLS says what
+     pairs with what, per mode). A window narrower than the columns scrolls the bar
+     sideways as one piece; nothing wraps, grows or hangs over the canvas, the rulers
+     or the rail, and nothing is hidden behind a menu. */
+  #ctl { flex:none; display:block; height:var(--ctl-h); box-sizing:border-box; position:relative;
          z-index:11;   /* above the rulers (7-8) and the rail and tray (9, 10): a pop-up hung from the bar is never cut by them */
          background:#fff; color:var(--ink); border-bottom:1px solid #E1E8E3; overflow:hidden; }
-  #ctl-r1 { grid-row:1; } #ctl-r2 { grid-row:2; }
-  .ctl-row { display:flex; align-items:center; gap:6px; min-width:0; padding:0 12px; box-sizing:border-box;
-         overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none;
-         position:static; }
-  .ctl-row::-webkit-scrollbar { display:none; }
-  /* a row with more to the left or right says so: its edge fades */
-  /* (a soft edge, not a mask: a mask would clip the pop-ups its controls open, which are fixed
-     descendants of the row) */
-  .ctl-row.ctl-fade-l { box-shadow:inset 14px 0 12px -12px rgba(47,62,70,.28); }
-  .ctl-row.ctl-fade-r { box-shadow:inset -14px 0 12px -12px rgba(47,62,70,.28); }
-  .ctl-row.ctl-fade-l.ctl-fade-r { box-shadow:inset 14px 0 12px -12px rgba(47,62,70,.28), inset -14px 0 12px -12px rgba(47,62,70,.28); }
-  .ctl-row > * { flex:none; }
-  .ctl-gsep { width:1px; height:18px; margin:0 3px; background:#E3E9E5; }
+  #ctl-cols { display:flex; justify-content:space-between; align-items:stretch; height:100%; box-sizing:border-box;
+         padding:4px 6px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none; }
+  #ctl-cols::-webkit-scrollbar { display:none; }
+  /* a bar with more to the left or right says so (a soft edge, not a mask: a mask would clip the
+     pop-ups its controls open, which are fixed descendants of the cells) */
+  #ctl-cols.ctl-fade-l { box-shadow:inset 14px 0 12px -12px rgba(47,62,70,.28); }
+  #ctl-cols.ctl-fade-r { box-shadow:inset -14px 0 12px -12px rgba(47,62,70,.28); }
+  #ctl-cols.ctl-fade-l.ctl-fade-r { box-shadow:inset 14px 0 12px -12px rgba(47,62,70,.28), inset -14px 0 12px -12px rgba(47,62,70,.28); }
+  /* a column: two cells, one over the other (or one cell across both); it grows with the bar up to
+     its own ceiling (--cmax), and the room left over becomes the gaps between columns */
+  .ctl-col { display:grid; grid-template-rows:minmax(0,1fr) minmax(0,1fr); grid-template-columns:minmax(min-content,1fr);
+         flex:var(--cg, 0) 1 auto; max-width:var(--cmax, none); min-width:min-content; padding:0 5px; align-items:center;
+         border-left:1px solid #E3E9E5; }
+  /* nothing selected, or a page: a few columns, centred in the bar rather than left in a clump */
+  #ctl-cols[data-mode=empty] { justify-content:center; gap:28px; }
+  #ctl-cols[data-mode=empty] .ctl-col:last-child .ctl-cell { justify-content:flex-start; }
+  /* a phone scrolls the bar: B / I / U, which show with words selected, lead it rather than sit
+     four swipes along (audit3.spec.js) */
+  @media (max-width:600px) { .ctl-col:has(#ty-marks) { order:-1; } }
+  .ctl-col:first-child { border-left:0; padding-left:4px; }
+  .ctl-col:last-child { padding-right:4px; }
+  .ctl-cell { display:flex; align-items:center; gap:5px; min-width:min-content; }
+  .ctl-cell.ctl-span { grid-row:1 / 3; }
+  .ctl-cell > * { flex:none; }
+  /* the last column ends at the bar's right edge: its clusters sit against it */
+  .ctl-col:last-child .ctl-cell { justify-content:flex-end; }
+  /* a field fills its cell, so the two of a pair are one width */
+  #ctl .ctl-cell > .cb-f, #ctl .ctl-cell > .ty-step, #ctl .ctl-cell > select { flex:1 1 auto; }
+  #ctl .ctl-cell > .cb-f { min-width:70px; }
+  #ctl .ctl-cell > .cb-f input { flex:1 1 0; width:0; min-width:34px; }
+  #ctl .ctl-cell > .ty-step { min-width:118px; }
+  #ctl .ctl-cell > .ty-step #cb-size { flex:1 1 0; width:0; min-width:40px; }
+  #ctl .ctl-cell > select { min-width:96px; }
+  #ctl .ctl-cell > #ty-font { min-width:150px; }
+  #ctl .ctl-cell > #cb-empty { flex:1 1 auto; justify-content:center; }
+  #ctl-home { display:block; position:absolute; left:0; top:0; width:1px; height:1px; overflow:hidden; pointer-events:none; padding:0; margin:0; }
   #ctl[hidden], #ctl [hidden] { display:none !important; }
   #ctl > *, #cb-obj > *, .cb-grp > * { flex:none; }
   #cb-obj, .cb-grp { display:inline-flex; align-items:center; gap:5px; }
@@ -243,7 +268,7 @@
   #ctl #cb-mode button:hover { border-color:var(--sage); background:#EDF4EE; }
   #ctl #cb-mode button.on { background:var(--ink); border-color:var(--ink); color:#fff; position:relative; z-index:1; }
   #ctl #cb-mode button svg { display:block; pointer-events:none; }
-  #ctl .ctl-row select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
+  #ctl .ctl-cell select { font:12.5px system-ui; height:29px; padding:0 6px; box-sizing:border-box;
           border:1px solid #D9E1DB; border-radius:7px; background:#fff; color:#2F3E46; }
   #ctl .cu-type.cb-f input { width:52px; }
   #ctl .cu-type.cb-f input.cb-narrowin { width:44px; }
@@ -283,24 +308,24 @@
   #ctl .cb-f input:hover { border:0; }
   #ctl .cb-f input:focus { outline:none; }
   #ctl .cb-f .cb-ic { color:#72857C; }
-  #ctl .cb-f select:not(:where(.pop) *), #ctl :is(#type, #arrange, #cb-obj, .ctl-row) select:not(:where(.pop) *) {
+  #ctl .cb-f select:not(:where(.pop) *), #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) select:not(:where(.pop) *) {
          height:30px; border:0; border-radius:8px; background-color:#F2F5F3; box-shadow:none;
          color:#2F3E46; font:500 12.5px system-ui; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) select:not(:where(.pop) *):hover { background-color:#E8EEEA; border:0; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *) {
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) select:not(:where(.pop) *):hover { background-color:#E8EEEA; border:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *) {
          height:30px; min-width:30px; border:0; border-radius:8px; background:#F2F5F3;
          box-shadow:none; color:#2F3E46; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *):hover { background:#E8EEEA; border:0; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *).on { background:#2F3E46; color:#fff; border:0; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *):disabled { background:transparent; color:#B4C0B9; opacity:1; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) button:not(:where(.pop) *):focus-visible { outline:2px solid rgba(107,158,120,.6); outline-offset:1px; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *):hover { background:#E8EEEA; border:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *).on { background:#2F3E46; color:#fff; border:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *):disabled { background:transparent; color:#B4C0B9; opacity:1; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *):focus-visible { outline:2px solid rgba(107,158,120,.6); outline-offset:1px; }
   /* a segmented group is one pale pill; its pressed button is the dark chip */
   #ctl .ty-seg { background:#F2F5F3; border-radius:8px; gap:0; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-seg button:not(:where(.pop) *) { background:transparent; border-radius:8px; margin:0; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-seg button:not(:where(.pop) *):hover { background:#E1E9E4; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-seg button:not(:where(.pop) *).on { background:#2F3E46; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *) { background:transparent; border-radius:8px; margin:0; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *):hover { background:#E1E9E4; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-seg button:not(:where(.pop) *).on { background:#2F3E46; }
   #ctl .ty-step { background:#F2F5F3; border-radius:8px; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-step button:not(:where(.pop) *) { background:transparent; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .ty-step button:not(:where(.pop) *) { background:transparent; }
   #ctl .ty-step #cb-size { background:transparent; border:0; box-shadow:none; border-radius:0; }
   /* in the floating card Reset sits at the strip's far end; in the bar it is one more pill, not a
      control pushed to the row's right edge with a gap before it */
@@ -320,11 +345,11 @@
          font:12px system-ui; }
   #type .pop .side-note, #arrange .pop .side-note { white-space:normal; overflow:visible; width:auto; }
   /* the nine-dot reference and anchor grids keep their own 7px cells */
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .cb-refgrid button, #ctl #cb-ref button {
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .cb-refgrid button, #ctl #cb-ref button {
          all:unset; box-sizing:border-box; width:7px; height:7px; min-width:0; cursor:pointer;
          border:1.3px solid #7A8E85; border-radius:1px; background:#fff; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .cb-refgrid button:hover { border-color:var(--sage); background:#fff; }
-  #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .cb-refgrid button.on { background:#2F3E46; border-color:#2F3E46; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .cb-refgrid button:hover { border-color:var(--sage); background:#fff; }
+  #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) .cb-refgrid button.on { background:#2F3E46; border-color:#2F3E46; }
 
   /* A thin rule between the history/commit group and the rest. */
   .bar-sep { flex:none; width:1px; height:18px; background:var(--line); margin:0 1px; }
@@ -2979,9 +3004,11 @@
      #cb-ref (the nine-point reference grid, phase 3) are the reserved slots,
      and ctlPaint() is the one function that decides what the bar shows. -->
 <div id="ctl" role="toolbar" aria-label="Control bar">
-  <!-- Two rows. The fixed pieces (mode switch, reference grid, the empty-state hint) lead row 1;
-       ctlFit lays every other control, in the order CTL_ROWS names, into row 1 or row 2 of the mode. -->
-  <div class="ctl-row" id="ctl-r1">
+  <!-- The columns (#ctl-cols) are built by ctlFit: it lays every control the mode shows into a
+       column, in the pairs CTL_COLS names. The fixed pieces (the mode switch, the reference grid,
+       the empty-state hint) live here, in #ctl-home, until it does. -->
+  <div id="ctl-cols"></div>
+  <div id="ctl-home">
   <!-- Text selected: InDesign's three modes. ▭ the frame (#cb-obj), A the
        character controls, ¶ the paragraph ones (.cb-char / .cb-para inside
        #type, which docks here like #arrange). ctlPaint() picks. -->
@@ -3002,7 +3029,6 @@
     <span class="cb-hint">Select an object to set its position, size and look here</span>
   </div>
   </div>
-  <div class="ctl-row" id="ctl-r2"></div>
   <div id="cb-obj" hidden>
     <span class="cb-grp" id="cb-geo">
       <label class="cb-f" title="Left edge — inches; type 36pt, 3p or 1cm too">X<input id="cb-x" data-ar="ar-x" data-unit="len" inputmode="decimal" autocomplete="off"></label>
@@ -14808,7 +14834,7 @@ function pageBar(d) {
     const el = $(id); if (el) el.hidden = true;
   });
   document.querySelectorAll('.ar-pos, #ar-possep').forEach(x => { x.hidden = true; });
-  document.querySelectorAll('#arrange > .ty-seg, #arrange > .ty-sep, .ctl-row > .ty-seg.cu-arrange')
+  document.querySelectorAll('#arrange > .ty-seg, #arrange > .ty-sep, .ctl-cell > .ty-seg.cu-arrange')
     .forEach(x => { x.hidden = true; });
   document.querySelectorAll('.ds-pageonly').forEach(x => { x.hidden = false; });
   $('ar-pagelabel').textContent = 'Page ' + pageLabel(selPage);
@@ -19352,7 +19378,7 @@ function ctlDock() {
   if (ctlOn) {
     // The type controls lead (after the mode switch), the frame's follow,
     // then the arrange strip — the order InDesign's bar reads in.
-    if (ty.parentNode !== ctl) ctl.insertBefore(ty, $('ctl-r1'));
+    if (ty.parentNode !== ctl) ctl.insertBefore(ty, $('ctl-home'));
     if (ar.parentNode !== ctl) ctl.appendChild(ar);   // the arrange strip (its controls are laid in the rows by ctlFit)
   } else {
     if (ty.parentNode !== ctx) ctx.insertBefore(ty, ctx.firstChild);
@@ -19377,85 +19403,105 @@ function setCtlMode(m) {
 }
 document.querySelectorAll('#cb-mode [data-m]').forEach(b =>
   b.addEventListener('click', () => setCtlMode(b.dataset.m)));
-// ------------------------------------------------------- two rows, one height
-// The bar is TWO rows, --ctl-h tall, whatever the window's width and whatever is
-// selected. ctlFit lays every control that the mode shows into row 1 (the primary
-// fields) or row 2 (the secondary ones), in the order CTL_ROWS names; a control the
-// mode does not show goes back to its own strip, where the mode's CSS hides it. A row
-// narrower than its fields scrolls sideways inside itself (its edge fades to say so):
-// nothing wraps, nothing is hidden behind a menu, and the bar's HEIGHT depends on none
-// of it, so a change of selection never moves the canvas.
+// ------------------------------------------------------- two rows, aligned columns
+// The bar is TWO rows, --ctl-h tall, whatever the window's width and whatever is selected,
+// laid out as InDesign's Control panel is: ALIGNED COLUMNS. Each column is a vertical pair
+// (a primary field over a secondary one, the same width and left edge: font over style,
+// size over leading, X over Y …), the columns are spread across the whole bar with a thin
+// divider between them, and a window narrower than the columns scrolls the bar sideways as
+// one piece. ctlFit lays every control the mode shows into its column, in the pairs CTL_COLS
+// names; a control the mode does not show goes back to its own strip, where the mode's CSS
+// hides it. The bar's HEIGHT depends on none of it, so a change of selection never moves
+// the canvas.
 // The nodes themselves move (a placeholder comment keeps each one's home), so every id,
-// listener, ctlPaint, scrub-drag and pilot verb works on a control in a row exactly as
+// listener, ctlPaint, scrub-drag and pilot verb works on a control in a column exactly as
 // it did in its strip.
 //
-// CTL_ROWS: per mode, row 1 then row 2; each row is a list of GROUPS (a divider is drawn
-// between two groups that both show something), each group a list of selectors for the
-// control's own element, matched while the control is still at home (the first match
-// gives its place). A control no list names goes to the end of row 2: add new bar
-// controls here (control-bar-two-rows.spec.js fails on any that is not named).
-const CTL_ROWS = {
+// CTL_COLS: per mode, a list of columns, left to right. A column is
+//   [top, bottom, grow, max]
+// top and bottom are lists of selectors for the controls' own elements (matched while the
+// control is still at home; the first match gives its place; several in one cell sit side by
+// side, as a cluster of icon buttons does); bottom null makes the top cell span both rows (the
+// reference grid, the chain link). grow is how much the column takes of the bar's spare width
+// (0: it stays as wide as its content), max the widest it gets, in px; what is left over
+// becomes the gaps between columns. A column none of whose controls is shown is not drawn.
+// A control no list names goes to a last column of its own: add new bar controls here
+// (control-bar-two-rows.spec.js fails on any that is not named).
+const CTL_COLS = {
   // a shape, picture, table, chart or group: where it is and how big; then its look
   obj: [
-    [['label:has(#cb-x)', 'label:has(#cb-y)', '#cb-wwrap', '#cb-link', '#cb-hwrap', '#cb-swrap', '#cb-sxwrap', '#cb-sywrap'],
-     ['label:has(#cb-rot)', 'label:has(#cb-skew)', '.ty-seg:has(#cb-rotccw)', '#cb-pflag'],
-     ['#ar-style', '#ar-style-more']],
-    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
-     ['#cb-align'],
-     ['label:has(#cb-r)', '#cb-fit', '#cb-fitref', '#cb-fitopts'],
-     ['label:has(#cb-cols)', '#cb-gapwrap', 'label:has(#cb-pad)', '.ty-seg:has([data-va])'],
-     ['#ar-pos', '#ar-table', '#ar-chart', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more',
-      '#ar-comment', '#ar-anchor', '#ar-count']],
+    [['#cb-ref'], null],
+    [['label:has(#cb-x)'], ['label:has(#cb-y)'], 1, 120],
+    [['#cb-wwrap'], ['#cb-hwrap'], 1, 120],
+    [['#cb-link'], ['#cb-pflag']],
+    [['#cb-swrap'], null, 1, 120],
+    [['#cb-sxwrap'], ['#cb-sywrap'], 1, 110],
+    [['label:has(#cb-rot)'], ['label:has(#cb-skew)'], 1, 110],
+    [['.ty-seg:has(#cb-rotccw)'], null],
+    [['#ar-style', '#ar-style-more'], ['#ar-pos', '#ar-table', '#ar-chart'], 1, 190],
+    [['#ar-fill'], ['#ar-border']],
+    [['#ar-alpha'], ['#ar-fxbtn']],
+    [['label:has(#cb-cols)', '#cb-gapwrap'], ['label:has(#cb-pad)'], 1, 150],
+    [['label:has(#cb-r)'], ['#cb-fit', '#cb-fitref', '#cb-fitopts'], 1, 160],
+    [['#cb-align'], ['.ty-seg:has([data-va])']],
+    [['#arrange > .ty-seg', '#ar-dup', '#ar-lock'], ['#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
   // a text box taken as an object (the ▭ mode)
   frame: [
-    [['label:has(#cb-x)', 'label:has(#cb-y)', '#cb-wwrap', '#cb-hwrap', '#cb-link', '#cb-sxwrap', '#cb-sywrap'],
-     ['label:has(#cb-rot)', 'label:has(#cb-skew)', '.ty-seg:has(#cb-rotccw)', '#cb-pflag'],
-     ['#ar-style', '#ar-style-more']],
-    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
-     ['#cb-align'],
-     ['label:has(#cb-cols)', '#cb-gapwrap', 'label:has(#cb-pad)', '.ty-seg:has([data-va])'],
-     ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key', '#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock',
-      '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
+    [['#cb-mode'], ['#cb-ref']],
+    [['label:has(#cb-x)'], ['label:has(#cb-y)'], 1, 160],
+    [['#cb-wwrap'], ['#cb-hwrap'], 1, 160],
+    [['#cb-link'], ['#cb-pflag']],
+    [['#cb-sxwrap'], ['#cb-sywrap'], 1, 150],
+    [['label:has(#cb-rot)'], ['label:has(#cb-skew)'], 1, 150],
+    [['.ty-seg:has(#cb-rotccw)'], null],
+    [['label:has(#cb-cols)', '#cb-gapwrap'], ['label:has(#cb-pad)'], 1, 190],
+    [['.ty-seg:has([data-va])'], ['#cb-align']],
+    [['#ty-box', '#ty-anchor', '#ty-comment'], ['#ty-key']],
+    [['#ar-style', '#ar-style-more', '#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
-  // A: the words themselves (B / I / U show only with words selected, and then they lead)
+  // A: the words themselves (B / I / U show only with words selected)
   char: [
-    [['#ty-marks'],
-     ['#ty-style', '#ty-style-more'],
-     ['#ty-font', '#ty-weight', '.ty-step'],
-     ['label:has(#cb-lead)', 'label:has(#cb-track)', 'label:has(#cb-kern)'],
-     ['#ty-i', '#ty-u', '#ty-colorbtn']],
-    [['label:has(#cb-shift)', '#cb-strike', '#cb-smcp', '#ty-case'],
-     ['#ty-fx', '#ty-fxp', '#ty-spacebtn', '#ty-parabtn', '#ty-reset'],
-     ['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
-     ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key', '#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock',
-      '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
+    [['#cb-mode'], ['#cb-ref']],
+    [['#ty-font'], ['#ty-weight'], 1, 290],
+    [['.ty-step'], ['label:has(#cb-lead)'], 1, 170],
+    [['label:has(#cb-kern)'], ['label:has(#cb-track)'], 1, 150],
+    [['label:has(#cb-shift)'], ['#cb-smcp'], 1, 150],
+    [['#ty-marks', '#ty-i', '#ty-u'], ['#cb-strike', '#ty-case']],
+    [['#ty-colorbtn', '#ty-fx', '#ty-fxp'], ['#ty-spacebtn', '#ty-parabtn']],
+    [['#ty-style', '#ty-style-more'], ['#ty-reset', '#ty-box', '#ty-anchor', '#ty-comment', '#ty-key'], 1, 300],
+    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
   // ¶: how the paragraph sits
   para: [
-    [['#ty-style', '#ty-style-more'],
-     ['#ty-alseg'],
-     ['label:has(#cb-il)', 'label:has(#cb-ti)', 'label:has(#cb-ir)'],
-     ['label:has(#cb-sb)', 'label:has(#cb-sa)']],
-    [['label:has(#cb-dcap)', '#cb-lmark', '#cb-grid', '#cb-hyph'],
-     ['#ty-parabtn', '#ty-reset'],
-     ['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
-     ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key', '#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock',
-      '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
+    [['#cb-mode'], ['#cb-ref']],
+    [['#ty-alseg'], ['#cb-lmark'], 1, 230],
+    [['label:has(#cb-il)'], ['label:has(#cb-ti)'], 1, 160],
+    [['label:has(#cb-ir)'], ['label:has(#cb-dcap)'], 1, 160],
+    [['label:has(#cb-sb)'], ['label:has(#cb-sa)'], 1, 160],
+    [['#cb-grid', '#cb-hyph'], ['#ty-parabtn', '#ty-reset']],
+    [['#ty-style', '#ty-style-more'], ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key'], 1, 300],
+    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
+     ['#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
-  // nothing selected, or a page: the page's own controls
+  // nothing selected, or a page: the document's own hint, or the page's controls
   empty: [
-    [['#ar-pagelabel', '#ar-master', '#ar-pagedup']],
-    [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn', '#ar-pos', '#ar-count']],
+    [['#cb-empty'], null, 1],
+    [['#ar-pagelabel'], ['#ar-fill'], 1, 220],
+    [['#ar-master'], ['#ar-pagedup'], 1, 280],
+    [['#ar-border', '#ar-alpha', '#ar-fxbtn'], ['#ar-pos', '#ar-count']],
   ],
 };
-const CTL_TOPS = ['type', 'cb-obj', 'arrange'];
+const CTL_TOPS = ['type', 'cb-obj', 'arrange', 'ctl-home'];
 const CTL_TRANSP = '#type, #arrange, #cb-obj, #cb-geo, #cb-turn, #cb-corner, #cb-fitx, #cb-frame, #cb-paraf';
 let ctlU = null, ctlFitting = false;
 let ctlPress = 0, ctlFitLater = false;   // a press is down on the editor's chrome: refit after it
-const ctlGseps = [[], []];               // the dividers each row has drawn so far, reused
-/** Every control that can move: the pills inside the three strips, in the strips' order.
- *  Found once, while each is still at home. u.at[mode] = [row, group, index in the group]. */
+const ctlColPool = [];                    // the column boxes ctlFit has made, reused from mode to mode
+/** Every control that can move: the pills inside the strips (and the bar's own fixed pieces), in
+ *  their strips' order. Found once, while each is still at home.
+ *  u.at[mode] = [column, cell (0 top, 1 bottom), index in the cell]. */
 function ctlUnitsInit() {
   ctlU = [];
   CTL_TOPS.forEach(id => {
@@ -19463,13 +19509,13 @@ function ctlUnitsInit() {
     const walk = c => [...c.children].forEach(k => {
       if (k.matches(CTL_TRANSP)) return walk(k);
       if (k.matches('.pop, script, style')) return;
-      if (k.classList.contains('ty-sep')) return;       // the rows draw their own dividers
+      if (k.classList.contains('ty-sep')) return;       // the columns draw their own dividers
       const u = { el: k, top, vi: ctlU.length, at: {}, ph: document.createComment('') };
-      for (const m in CTL_ROWS) {
-        u.at[m] = [1, 99, 0];                           // unnamed: the end of row 2
-        CTL_ROWS[m].forEach((groups, r) => groups.forEach((sels, g) => {
-          const i = sels.findIndex(sel => k.matches(sel));
-          if (i >= 0 && u.at[m][1] === 99) u.at[m] = [r, g, i];
+      for (const m in CTL_COLS) {
+        u.at[m] = [999, 1, 0];                          // unnamed: a last column of its own
+        CTL_COLS[m].forEach((col, c) => [0, 1].forEach(cell => {
+          const i = (col[cell] || []).findIndex(sel => k.matches(sel));
+          if (i >= 0 && u.at[m][0] === 999) u.at[m] = [c, cell, i];
         }));
       }
       // where it lives, for the code that finds it by its strip (#arrange > .ty-seg, #cb-turn button …)
@@ -19481,8 +19527,22 @@ function ctlUnitsInit() {
     walk(top);
   });
 }
-const ctlRowOf = u => u.el.parentNode && u.el.parentNode.classList && u.el.parentNode.classList.contains('ctl-row')
-  ? u.el.parentNode : null;
+const ctlPlaced = u => !!(u.el.parentNode && u.el.parentNode.classList && u.el.parentNode.classList.contains('ctl-cell'));
+/** A column box from the pool: a grid of two cells. */
+function ctlColBox(k) {
+  if (ctlColPool[k]) return ctlColPool[k];
+  const col = document.createElement('div');
+  col.className = 'ctl-col';
+  const t = document.createElement('div'), b = document.createElement('div');
+  t.className = 'ctl-cell ctl-top'; b.className = 'ctl-cell ctl-bot';
+  col.append(t, b);
+  return (ctlColPool[k] = col);
+}
+/** Put exactly these nodes, in this order, at the head of a cell; a node already in place is not
+ *  touched (moving a focused field would blur it). */
+function ctlSetCell(cell, nodes) {
+  nodes.forEach((n, i) => { if (cell.children[i] !== n) cell.insertBefore(n, cell.children[i] || null); });
+}
 function ctlFit() {
   if (ctlFitting) return;
   // Never under a press: a control that moved between mousedown and mouseup would lose
@@ -19490,7 +19550,7 @@ function ctlFit() {
   if (ctlPress && Date.now() - ctlPress < 10000) { ctlFitLater = true; return; }   // (a lost pointerup cannot freeze it)
   if (!ctlU) ctlUnitsInit();
   ctlFitting = true;
-  const ctl = $('ctl'), rows = [$('ctl-r1'), $('ctl-r2')];
+  const ctl = $('ctl'), cols = $('ctl-cols');
   const toHome = u => { if (u.el.previousSibling !== u.ph) u.ph.after(u.el); };
   // Drawn if the control itself is, and so is every strip it sits in at home (a hidden
   // #type has controls whose own display is still "inline-flex").
@@ -19507,35 +19567,36 @@ function ctlFit() {
     }
     // (words of the report's own, not a box, can be open with the bar still saying "empty":
     // the type controls are up, so they sit as A or ¶ does)
-    const mode = CTL_ROWS[ctl.dataset.mode] ? ctl.dataset.mode : !$('type').hidden ? ctlTextMode : 'obj';
-    // A control the mode (or its strip) does not show goes back to its strip, where that hides it.
-    const want = [[], []];
+    const mode = CTL_COLS[ctl.dataset.mode] ? ctl.dataset.mode : !$('type').hidden ? ctlTextMode : 'obj';
+    cols.dataset.mode = mode;
+    const spec = CTL_COLS[mode];
+    const want = spec.map(() => [[], []]), extra = [];
     ctlU.forEach(u => {
-      if (!shown(u)) { if (ctlRowOf(u)) toHome(u); return; }
-      want[u.at[mode][0]].push(u);
+      if (!shown(u)) { if (ctlPlaced(u)) toHome(u); return; }   // back where its strip's CSS hides it
+      const [c, cell] = u.at[mode];
+      (c === 999 ? extra : want[c][cell]).push(u);
     });
-    rows.forEach((row, r) => {
-      const us = want[r].sort((a, b) => a.at[mode][1] - b.at[mode][1] || a.at[mode][2] - b.at[mode][2] || a.vi - b.vi);
-      // the nodes the row keeps no matter what: the mode switch, the reference grid, the hint
-      const fixed = [...row.children].filter(c => !c.__cu && !c.classList.contains('ctl-gsep')).length;
-      const seq = [];
-      let prev = null, used = 0;
-      us.forEach(u => {
-        const g = u.at[mode][1];
-        if (prev !== null && g !== prev) {
-          const sep = ctlGseps[r][used] || (ctlGseps[r][used] = Object.assign(document.createElement('span'), { className: 'ctl-gsep' }));
-          used++; seq.push(sep);
-        }
-        prev = g; seq.push(u.el);
-      });
-      // Reconcile in place: a node already where it belongs is not touched (moving a focused
-      // field would blur it), a missing one is inserted, a stale divider is dropped.
-      seq.forEach((n, k) => {
-        const at = row.children[fixed + k] || null;
-        if (at !== n) row.insertBefore(n, at);
-      });
-      [...row.children].slice(fixed + seq.length).forEach(n => { if (n.classList.contains('ctl-gsep')) n.remove(); });
+    const order = (a, b) => a.at[mode][2] - b.at[mode][2] || a.vi - b.vi;
+    let k = 0;
+    const place = (def, top, bot) => {
+      const col = ctlColBox(k), [t, b] = col.children;
+      const span = def[1] === null;
+      col.style.setProperty('--cg', String(def[2] || 0));
+      if (def[3]) col.style.setProperty('--cmax', def[3] + 'px'); else col.style.removeProperty('--cmax');
+      t.classList.toggle('ctl-span', span);
+      b.hidden = span;
+      ctlSetCell(t, top.sort(order).map(u => u.el));
+      ctlSetCell(b, bot.sort(order).map(u => u.el));
+      if (cols.children[k] !== col) cols.insertBefore(col, cols.children[k] || null);
+      k++;
+    };
+    spec.forEach((def, c) => {
+      const [top, bot] = want[c];
+      if (def[1] === null) bot.forEach(u => top.push(u));
+      if (top.length || bot.length) place(def, top, bot);
     });
+    if (extra.length) place([[], []], [], extra);
+    while (cols.children.length > k) cols.lastChild.remove();
   } finally {
     ctlFitting = false;
     if (ctlMO) ctlMO.takeRecords();
@@ -19551,11 +19612,9 @@ function ctlMetrics() {
   const b = Math.round((on ? ctl : $('bar')).getBoundingClientRect().bottom);
   const root = document.documentElement;
   if (b > 0 && root.style.getPropertyValue('--ctl-bottom') !== b + 'px') root.style.setProperty('--ctl-bottom', b + 'px');
-  ['ctl-r1', 'ctl-r2'].forEach(id => {
-    const row = $(id);
-    row.classList.toggle('ctl-fade-l', row.scrollLeft > 2);
-    row.classList.toggle('ctl-fade-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 2);
-  });
+  const row = $('ctl-cols');
+  row.classList.toggle('ctl-fade-l', row.scrollLeft > 2);
+  row.classList.toggle('ctl-fade-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 2);
 }
 try {
   ctlMO = new MutationObserver(recs => {
@@ -19580,8 +19639,8 @@ try {
   addEventListener('blur', ctlPressEnd);
   onEachDocument(d => d.addEventListener('pointerup', ctlPressEnd, true));   // let go over the page
   const ro = new ResizeObserver(() => ctlMetrics());
-  [$('ctl'), $('bar'), $('ctl-r1'), $('ctl-r2')].forEach(el => ro.observe(el));
-  ['ctl-r1', 'ctl-r2'].forEach(id => $(id).addEventListener('scroll', ctlMetrics, { passive: true }));
+  [$('ctl'), $('bar'), $('ctl-cols')].forEach(el => ro.observe(el));
+  $('ctl-cols').addEventListener('scroll', ctlMetrics, { passive: true });
   addEventListener('resize', ctlMetrics);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { ctlFit(); ctlMetrics(); });
   $('ctl').addEventListener('change', () => ctlMetrics());      // a font's name is a different width
@@ -20144,6 +20203,7 @@ function ctlPaint(d) {
   // Nothing selected: the document, quietly, rather than an empty strip. A
   // selected PAGE has its own strip (#arrange's page mode), so no hint.
   $('cb-empty').hidden = any || text || !$('arrange').hidden;
+  $('cb-ref').hidden = true;         // (the reference grid says which point X and Y measure: only a single object has one)
   if (!any) {
     const pageless = PAGE_H_IN >= PAGELESS_H;
     $('cb-page').textContent = pageless ? `Pageless · ${+PAGE_W_IN.toFixed(3)} in wide`
@@ -20220,7 +20280,7 @@ function ctlPaint(d) {
     const pad = Array.isArray(eff.pad) ? eff.pad[0] : eff.pad;
     ctlShow($('cb-pad'), pad ?? (eff.fill ? 0.1 : 0));
     const va = eff.vAlign && eff.vAlign !== 'top' ? eff.vAlign : '';
-    document.querySelectorAll('#cb-frame [data-va], .ctl-row [data-va]').forEach(b =>
+    document.querySelectorAll('#cb-frame [data-va], .ctl-cell [data-va]').forEach(b =>
       b.classList.toggle('on', b.dataset.va === va));
   }
 }
@@ -20680,7 +20740,7 @@ function ctlPaintText() {
   // The list marker picker copies the panel's options once.
   const lm = $('cb-lmark');
   if (lm.options.length !== $('ty-lmark').options.length) lm.innerHTML = $('ty-lmark').innerHTML;
-  document.querySelectorAll('#type [data-proxy], .ctl-row [data-proxy]').forEach(ctlTextShow);   // wherever ctlFit laid them
+  document.querySelectorAll('#type [data-proxy], .ctl-cell [data-proxy]').forEach(ctlTextShow);   // wherever ctlFit laid them
 }
 document.querySelectorAll('#type input[data-proxy]').forEach(inp => {
   inp.addEventListener('change', () => {
@@ -23630,7 +23690,7 @@ function typeControlPress(e) {
 $('type').addEventListener('pointerdown', typeControlPress, true);
 // …and the same for a type control ctlFit has laid in a row of the bar (it leaves #type)
 $('ctl').addEventListener('pointerdown', e => {
-  if (e.target.closest('.ctl-row > .cu-type')) typeControlPress(e);
+  if (e.target.closest('.ctl-cell > .cu-type')) typeControlPress(e);
 }, true);
 const richDo = fn => {
   if (!richHost) return;
