@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-13T19:33:45+00:00",
+  "checked_at": "2026-11-19T23:24:58+00:00",
   "documents": {
     "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-01-15-TRC_Presentation-DOTAX-TRP.pdf": {
       "doc_type": "presentation",
@@ -90,6 +90,13 @@
       "pdf": "data/raw/trc/pdfs/2026-10-08_UHERO_draft_report.pdf",
       "text": "data/raw/trc/extracted/2026-10-08_UHERO_draft_report.txt",
       "title": "UHERO Draft Report-2026-10-06"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-11-24-Jessica-Enos-Proposed-Recommendation-1031-Clawback.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026-11-24-Jessica-Enos-Proposed-Recommendation-1031-Clawback.pdf",
+      "text": "data/raw/trc/extracted/2026-11-24-Jessica-Enos-Proposed-Recommendation-1031-Clawback.txt",
+      "title": "Jessica Enos-Proposed Recommendation-1031 Clawback"
     },
     "https://files.hawaii.gov/tax/stats/trc/docs2025/HCR _82.pdf": {
       "doc_type": "presentation",
@@ -305,17 +312,29 @@
       "meeting_date": "2026-11-09",
       "title": "November 9, 2026 at 2:00 P.M."
     },
-    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-09_min_draft.pdf": {
-      "doc_type": "minutes_draft",
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-09_min.pdf": {
+      "doc_type": "minutes_final",
       "meeting_date": "2026-11-09",
-      "pdf": "data/raw/trc/pdfs/2026trc11-09_min_draft.pdf",
-      "text": "data/raw/trc/extracted/2026trc11-09_min_draft.txt",
-      "title": "November 9, 2026 \u2013 Draft"
+      "pdf": "data/raw/trc/pdfs/2026trc11-09_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc11-09_min.txt",
+      "title": "November 9, 2026"
     },
     "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-18.pdf": {
       "doc_type": "notice",
       "meeting_date": "2026-11-18",
       "title": "November 18, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-18_min_draft.pdf": {
+      "doc_type": "minutes_draft",
+      "meeting_date": "2026-11-18",
+      "pdf": "data/raw/trc/pdfs/2026trc11-18_min_draft.pdf",
+      "text": "data/raw/trc/extracted/2026trc11-18_min_draft.txt",
+      "title": "November 18, 2026 \u2013 DRAFT"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-24.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-11-24",
+      "title": "November 24, 2026 at 2:00 P.M."
     },
     "https://www.youtube.com/watch?v=-YIVfkYDMSE": {
       "doc_type": "video",
@@ -377,6 +396,11 @@
       "meeting_date": "2026-09-29",
       "title": "September 29, 2026 VIDEO"
     },
+    "https://youtu.be/QCFnGrP3QYY": {
+      "doc_type": "video",
+      "meeting_date": "2026-11-18",
+      "title": "November 18, 2026 VIDEO"
+    },
     "https://youtu.be/a3IqfjcJDP0": {
       "doc_type": "video",
       "meeting_date": "2026-11-09",
@@ -398,5 +422,5 @@
       "title": "September 1, 2026 VIDEO"
     }
   },
-  "page_last_updated": "November 10, 2026"
+  "page_last_updated": "November 19, 2026"
 }

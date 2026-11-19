@@ -1,0 +1,695 @@
+
+===== page 1 =====
+State 1031 Clawback: How It Works
+The problem states are solving
+IRC §1031 lets a taxpayer defer federal gain by exchanging real property for like-kind
+property, and most states follow that deferral. But a state generally taxes nonresidents only
+on income sourced to that state. If an investor exchanges property in State A for property in
+State B and later sells the State B property in a taxable sale, State A could lose its chance to
+tax the gain that built up while the investor owned property there. A clawback rule closes
+that gap. The relinquished-property state treats the deferred gain as still belonging to it and
+taxes it when the deferral ends.
+How it works
+1. The taxpayer does a §1031 exchange out of State A into replacement property in
+another state.
+2. The state tracks the deferred gain from the original exchange, often through an
+annual information return.
+3. If the replacement property is later sold in a taxable transaction, State A taxes the
+deferred gain as State A-source income, even if the taxpayer no longer lives or owns
+property there.
+4. If the taxpayer exchanges again under §1031, the deferral generally continues and
+no tax is due yet.
+Illustration (hypothetical numbers) – if Hawaii adopted a 1031 Clawback
+An investor owns a Hawaii rental with a $400,000 basis and a $1.5 million value, so $1.1
+million of gain is deferred. They exchange into a Texas property, then later sell it outright for
+$1.8 million. The federal gain is $1.4 million. Hawaii would tax the $1.1 million of deferred
+gain, not the $300,000 of later appreciation, which arose in Texas.
+Similarly, if the original property was not in Hawaii, the gain recognized in Hawaii would be
+limited to the appreciation of the Hawaii property only. Keeping the same facts as in the
+above example but adding in the investor originally had a California property with a
+$400,000 basis and $900,000 value, so $500,000 gain is deferred. They exchanged into a
+Hawaii rental worth the same $900,000 value and later exchanged the Hawaii property into
+a Texas property when the value of the Hawaii property was $1.5 million. The Texas
+property was later sold outright for $1.8 million. The federal gain is $1.4 million. Of the
+$1.4 million, $600,000 of gain would be sourced to Hawaii ($1.5 million - $900,000).
+
+===== page 2 =====
+Which states have clawbacks
+California, Oregon, Massachusetts, and Montana are the four consistently named.
+California uses Form FTB 3840, authorized by R&TC §18032 for individuals and §24953 for
+corporations. I couldn’t find annual required filings for the other states but I would suggest
+an annual filing for Hawaii because it is easier to track and reminds the taxpayer of the
+clawback. If a taxpayer changes CPAs, this could get lost without an annual filing
+requirement.
+California form specifics that I would propose Hawaii follow:
+• The annual filing duty continues until the deferred California gain is recognized,
+even if the taxpayer otherwise has no California filing requirement.
+• It also continues when the out-of-state replacement property is itself exchanged
+again.
+Planning considerations
+• Keep deferring. Another like-kind exchange preserves the deferral, and exchanging
+back into property in the original state resets the issue.
+• Watch for double tax. A taxpayer resident in the replacement state may be taxed on
+the full gain there and on the deferred gain by the relinquished-property state. A
+credit for taxes paid to other states may help.
+• Compliance. I think any 1031 exchange done with Hawaii property should trigger a
+letter to the taxpayer informing them of the clawback provisions. California
+currently does this for enforcement purposes.
+• Death and other triggers. Similar to federal step up at date of death provisions, I
+would propose that Hawaii adopt the same step up provisions if the taxpayer owner
+dies.
+California, Montana, and Oregon laws
+See attached laws for California, Montana, and Oregon. I could only find California law
+that requires the form to be filed that tracks the 1031 gain deferral so it seems that their
+rules are laid out in their Form 3840 so those instructions are attached for reference.
+Between Oregon and Montana, I think the Montana laws would be ideal to follow since they
+are much more detailed and easier to follow with the examples.
+
+===== page 3 =====
+Oregon Revised Statutes, ORS 317.327, Modification of taxable income when deferred gain is recognized as resul
+Oregon Revised Statutes
+Title 29. REVENUE AND TAXATION
+Chapter 317. CORPORATION EXCISE TAX (§§ 317.NEW to 317.991)
+MODIFICATIONS TO TAXABLE INCOME (§§ 317.259 to 317.491)
+Section 317.327. Modification of taxable income when deferred gain is recognized
+as result of out-of-state disposition of property; rules
+(1) If gain is deferred upon the voluntary or involuntary disposition of property in an exchange that qualifies for deferral
+under section 1031 or 1033 of the Internal Revenue Code, and the property acquired in the exchange has a situs
+outside of this state, upon the sale or other disposition of the acquired property in a transaction in which gain or loss is
+recognized for federal tax purposes but is not taken into account in computing taxable income for Oregon tax purposes,
+there shall be added to taxable income the difference between:
+(a) The adjusted basis of the acquired property on the date the exchange under section 1031 or 1033 of the
+Internal Revenue Code was completed; and
+(b) The lesser of:
+(A) The fair market value of the acquired property on the date the exchange under section 1031 or 1033 of the
+Internal Revenue Code was completed; or
+(B) The fair market value of the acquired property on the date gain or loss from the sale or other disposition of
+the acquired property is recognized for federal tax purposes.
+(2) If the adjusted basis described in subsection (1)(a) of this section is larger than either value described in subsection
+(1)(b) of this section, the difference computed under subsection (1) of this section shall be subtracted from taxable
+income instead of being added to taxable income.
+(3) The Department of Revenue may require taxpayers owning property acquired in an exchange under section 1031 or
+1033 of the Internal Revenue Code that has a situs outside of this state to file an annual report on the acquired property,
+and may adopt rules to implement reporting requirements under this section.
+2001 c. 509, § 17
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 1
+
+===== page 4 =====
+Oregon Revised Statutes, ORS 317.327, Modification of taxable income when deferred gain is recognized as resul
+General Information
+Date Filed Mon Apr 30 00:00:00 EDT 2012
+Citation ORS 317.327; Or. Rev. Stat. Ann. § 317.327; Or. Rev. Stat. § 317.327
+Currency Current through 2026 Regular Session Act Chapter 142
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 2
+
+===== page 5 =====
+California Code, Cal. Rev. & Tax. Code § 24953, Information return if gain or loss from exchange of property n
+California Code
+CALIFORNIA REVENUE AND TAXATION CODE
+Division 2. OTHER TAXES (§§ 6001 to 61050)
+Part 11. CORPORATION TAX LAW (§§ 23001 to 25141)
+Chapter 15. GAIN OR LOSS ON DISPOSITION OF PROPERTY (§§ 24901 to 24998)
+Article 3. NONTAXABLE EXCHANGES (§§ 24941 to 24956)
+Section 24953. Information return if gain or loss from exchange of property not
+recognized because of IRC Section 1031
+(a) If gain or loss from the exchange of property in this state of a taxpayer is not recognized under this part because of
+Section 1031 of the Internal Revenue Code, relating to exchange of property held for productive use or investment, for a
+taxable year and the property acquired in that exchange is located outside of this state, the taxpayer shall file an
+information return with the Franchise Tax Board for the taxable year of the exchange and for each subsequent taxable
+year in which the gain or loss from that exchange has not been recognized, in the form and manner prescribed by the
+Franchise Tax Board.
+(b) If a taxpayer fails to file an information return required pursuant to subdivision (a), and fails to file a return required
+under Part 10.2 (commencing with Section 18401), the Franchise Tax Board may make an estimate of the net income,
+from any available information, including the amount of gain described in subdivision (a), and may propose to assess
+the amount of tax, interest, and penalties due in the same manner as Section 19087.
+(c) Chapter 3.5 (commencing with Section 11340) of Part 1 of Division 3 of Title 2 of the Government Code shall not
+apply to any standard, criterion, procedure, determination, rule, notice, or guideline established or issued by the
+Franchise Tax Board pursuant to this section.
+(d) This section shall apply to exchanges of property that occur in taxable years beginning on or after January 1, 2014.
+Added by Stats 2013 ch 26 (AB 92),s 5, eff. 6/27/2013.
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 1
+
+===== page 6 =====
+California Code, Cal. Rev. & Tax. Code § 24953, Information return if gain or loss from exchange of property n
+General Information
+Date Filed Thu Jun 27 00:00:00 EDT 2013
+Citation Cal. Rev. & Tax. Code § 24953; Cal. Revenue and Taxation Code §
+24953; Rev. & Tax. Code § 24953; Revenue and Taxation Code §
+24953
+Currency Current through the 2026 Legislative Session.
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 2
+
+===== page 7 =====
+California Code, Cal. Rev. & Tax. Code § 18032, Information return
+California Code
+CALIFORNIA REVENUE AND TAXATION CODE
+Division 2. OTHER TAXES (§§ 6001 to 61050)
+Part 10. PERSONAL INCOME TAX (§§ 17001 to 18181)
+Chapter 13. GAIN OR LOSS ON DISPOSITION OF PROPERTY (§§ 18031 to 18045)
+Section 18032. Information return
+(a) If gain or loss from the exchange of property in this state of a taxpayer is not recognized under this part because of
+Section 1031 of the Internal Revenue Code, relating to exchange of property held for productive use or investment, for a
+taxable year and the property acquired in that exchange is located outside of this state, the taxpayer shall file an
+information return with the Franchise Tax Board for the taxable year of the exchange and for each subsequent taxable
+year in which the gain or loss from that exchange has not been recognized, in the form and manner prescribed by the
+Franchise Tax Board.
+(b) If a taxpayer fails to file an information return required pursuant to subdivision (a), and fails to file a return required
+under Part 10.2 (commencing with Section 18401), the Franchise Tax Board may make an estimate of the net income,
+from any available information, including the amount of gain described in subdivision (a), and may propose to assess
+the amount of tax, interest, and penalties due in the same manner as Section 19087.
+(c) Chapter 3.5 (commencing with Section 11340) of Part 1 of Division 3 of Title 2 of the Government Code shall not
+apply to any standard, criterion, procedure, determination, rule, notice, or guideline established or issued by the
+Franchise Tax Board pursuant to this section.
+(d) This section shall apply to exchanges of property that occur in taxable years beginning on or after January 1, 2014.
+Added by Stats 2013 ch 26 (AB 92),s 4, eff. 6/27/2013.
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 1
+
+===== page 8 =====
+California Code, Cal. Rev. & Tax. Code § 18032, Information return
+General Information
+Date Filed Thu Jun 27 00:00:00 EDT 2013
+Citation Cal. Rev. & Tax. Code § 18032; Cal. Revenue and Taxation Code §
+18032; Rev. & Tax. Code § 18032; Revenue and Taxation Code §
+18032
+Currency Current through the 2026 Legislative Session.
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 2
+
+===== page 9 =====
+Administrative Rules of Montana, ARM 42.2.308, NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND R
+Administrative Rules of Montana
+Department 42. REVENUE
+Chapter 42.2. GENERAL DEPARTMENT RULES
+Subchapter 42.2.3. Public Participation and Penalty and Interest
+Rule 42.2.308. NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND RECOGNIZED WHEN MONTANA PROPERTY IS RELINQUISHED AS
+PART OF A SECTION 1031 EXCHANGE
+(1) Gain realized on the transfer of Montana real or tangible personal property retains its Montana source income
+character and must be reported if and when the gain is recognized for federal income tax purposes.
+(2) When the Montana property is relinquished in a section 1031 exchange for like-kind property, the gain realized as
+shown on the taxpayer's U.S. Treasury Form 8824 is generally the amount of Montana source income. If, however, the
+Montana property was itself acquired in a prior like-kind exchange as replacement property for property located outside
+the state, Montana source income does not include the gain attributable to the out-of-state property that has been
+deferred from the prior exchange as shown on the taxpayer's U.S. Treasury Form 8824 for that exchange. The following
+examples illustrate how the Montana source income may be calculated in different situations:
+(a) Example 1 - A nonresident relinquishes unimproved Montana land with a fair market value of $100,000 and an
+adjusted tax basis of $10,000 in exchange for Wyoming property with a fair market value of $90,000 and $10,000
+cash, and incurs exchange expenses of $2,000. The $88,000 realized gain reported on the taxpayer's Form 8824 is
+Montana source income, of which $8,000 is recognized and reportable in the year of sale and $80,000 is deferred
+and must be reported if and when the gain is recognized for federal income tax purposes:
+Form 8824 filed with respect to Montana property relinquished
+Cash received, FMV of other property received, plus net
+8,
+15 liabilities assumed by other party, reduced (but not below zero)
+000
+by any exchange expenses
+90,
+16 FMV of like-kind property you received
+000
+98,
+17 Add lines 15 and 16
+000
+Adjusted basis of like-kind property you gave up, net amounts
+10,
+18 paid to other party, plus any exchange expenses not used on
+000
+line 15
+19 Realized gain (or loss). Subtract line 18 from line 17 88,
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 1
+
+--- page 9 table 1 ---
+Form 8824 filed with respect to Montana property relinquished |  | 
+15 | Cash received, FMV of other property received, plus net liabilities assumed by other party, reduced (but not below zero) by any exchange expenses | 8, 000
+16 | FMV of like-kind property you received | 90, 000
+17 | Add lines 15 and 16 | 98, 000
+18 | Adjusted basis of like-kind property you gave up, net amounts paid to other party, plus any exchange expenses not used on line 15 | 10, 000
+19 | Realized gain (or loss). Subtract line 18 from line 17 | 88,
+
+===== page 10 =====
+Administrative Rules of Montana, ARM 42.2.308, NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND R
+000
+8,
+20 Enter the smaller of line 15 or line 19, but not less than zero
+000
+21 Ordinary income under recapture rules 0
+Subtract line 21 from line 20. If zero or less, enter -0-. If more
+8,
+22 than zero, enter here and on Schedule D or Form 4797, unless
+000
+the installment method applies
+8,
+23 Recognized gain. Add lines 21 and 22
+000
+80,
+24 Deferred gain (or loss). Subtract line 23 from line 19
+000
+Basis of like-kind property received. Subtract line 15 from the 10,
+25
+sum of lines 18 and 23 000
+(b) Example 2 - Same facts as in (2) (a) except the Montana property included improvements with a fair market
+value of $12,000 and $1,000 is reportable as ordinary income under the recapture rules because of depreciation
+deductions taken with respect to those improvements. The result is the same as the result in (2) (a), except that $1,
+000 of the $8,000 Montana source income recognized and reportable in the year of sale is ordinary income.
+Form 8824 filed with respect to Montana property relinquished
+Cash received, FMV of other property received, plus net
+8,
+15 liabilities assumed by other party, reduced (but not below zero)
+000
+by any exchange expenses
+90,
+16 FMV of like-kind property you received
+000
+98,
+17 Add lines 15 and 16
+000
+18 Adjusted basis of like-kind property you gave up, net amounts 10,
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 2
+
+--- page 10 table 1 ---
+ |  | 000
+20 | Enter the smaller of line 15 or line 19, but not less than zero | 8, 000
+21 | Ordinary income under recapture rules | 0
+22 | Subtract line 21 from line 20. If zero or less, enter -0-. If more than zero, enter here and on Schedule D or Form 4797, unless the installment method applies | 8, 000
+23 | Recognized gain. Add lines 21 and 22 | 8, 000
+24 | Deferred gain (or loss). Subtract line 23 from line 19 | 80, 000
+25 | Basis of like-kind property received. Subtract line 15 from the sum of lines 18 and 23 | 10, 000
+
+--- page 10 table 2 ---
+Form 8824 filed with respect to Montana property relinquished |  | 
+15 | Cash received, FMV of other property received, plus net liabilities assumed by other party, reduced (but not below zero) by any exchange expenses | 8, 000
+16 | FMV of like-kind property you received | 90, 000
+17 | Add lines 15 and 16 | 98, 000
+18 | Adjusted basis of like-kind property you gave up, net amounts | 10,
+
+===== page 11 =====
+Administrative Rules of Montana, ARM 42.2.308, NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND R
+paid to other party, plus any exchange expenses not used on 000
+line 15
+88,
+19 Realized gain (or loss). Subtract line 18 from line 17
+000
+8,
+20 Enter the smaller of line 15 or line 19, but not less than zero
+000
+1,
+21 Ordinary income under recapture rules
+000
+Subtract line 21 from line 20. If zero or less, enter -0-. If more
+7,
+22 than zero, enter here and on Schedule D or Form 4797, unless
+000
+the installment method applies
+8,
+23 Recognized gain. Add lines 21 and 22
+000
+80,
+24 Deferred gain (or loss). Subtract line 23 from line 19
+000
+Basis of like-kind property received. Subtract line 15 from the 10,
+25
+sum of lines 18 and 23 000
+(c) Example 3 - Same facts as in (2) (a) except the Montana property relinquished was replacement property
+exchanged for Oregon property in a prior like-kind exchange. In the prior like-kind exchange, the deferred gain or
+loss, as shown on the nonresident's Form 8824 was $50,000. The nonresident's Montana source income is $38,
+000, the $88,000 gain realized shown on the Form 8824 filed with respect to relinquishment of the Montana
+property, less the $50,000 deferred gain as reported on the Form 8824 filed with respect to relinquishment of the
+Oregon property. Of the $38,000 Montana source income realized, the $8,000 recognized for federal income tax
+purposes in the year of sale is currently reportable and $30,000 is deferred and must be reported if and when the
+gain is recognized for federal income tax purposes.
+Form 8824 filed with respect to Oregon property relinquished
+24 Deferred gain (or loss). Subtract line 23 from line 19 50,000
+Form 8824 filed with respect to Montana property relinquished
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 3
+
+--- page 11 table 1 ---
+ | paid to other party, plus any exchange expenses not used on line 15 | 000
+19 | Realized gain (or loss). Subtract line 18 from line 17 | 88, 000
+20 | Enter the smaller of line 15 or line 19, but not less than zero | 8, 000
+21 | Ordinary income under recapture rules | 1, 000
+22 | Subtract line 21 from line 20. If zero or less, enter -0-. If more than zero, enter here and on Schedule D or Form 4797, unless the installment method applies | 7, 000
+23 | Recognized gain. Add lines 21 and 22 | 8, 000
+24 | Deferred gain (or loss). Subtract line 23 from line 19 | 80, 000
+25 | Basis of like-kind property received. Subtract line 15 from the sum of lines 18 and 23 | 10, 000
+
+--- page 11 table 2 ---
+Form 8824 filed with respect to Oregon property relinquished |  | 
+24 | Deferred gain (or loss). Subtract line 23 from line 19 | 50,000
+
+===== page 12 =====
+Administrative Rules of Montana, ARM 42.2.308, NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND R
+Cash received, FMV of other property received, plus net
+8,
+15 liabilities assumed by other party, reduced (but not below zero)
+000
+by any exchange expenses
+90,
+16 FMV of like-kind property you received
+000
+98,
+17 Add lines 15 and 16
+000
+Adjusted basis of like-kind property you gave up, net amounts
+10,
+18 paid to other party, plus any exchange expenses not used on
+000
+line 15
+88,
+19 Realized gain (or loss). Subtract line 18 from line 17
+000
+8,
+20 Enter the smaller of line 15 or line 19, but not less than zero
+000
+21 Ordinary income under recapture rules 0
+Subtract line 21 from line 20. If zero or less, enter -0-. If more
+8,
+22 than zero, enter here and on Schedule D or Form 4797, unless
+000
+the installment method applies
+8,
+23 Recognized gain. Add lines 21 and 22
+000
+80,
+24 Deferred gain (or loss). Subtract line 23 from line 19
+000
+Basis of like-kind property received. Subtract line 15 from the 10,
+25
+sum of lines 18 and 23 000
+(3) The nonresident must report the deferred Montana source income realized on the relinquishment of the Montana
+property if and when the gain is recognized for federal income tax purposes. The amount of Montana source income
+recognized will never exceed the gain recognized for federal income tax purposes. The following examples illustrate
+how the Montana source income may be calculated in different situations:
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 4
+
+--- page 12 table 1 ---
+15 | Cash received, FMV of other property received, plus net liabilities assumed by other party, reduced (but not below zero) by any exchange expenses | 8, 000
+16 | FMV of like-kind property you received | 90, 000
+17 | Add lines 15 and 16 | 98, 000
+18 | Adjusted basis of like-kind property you gave up, net amounts paid to other party, plus any exchange expenses not used on line 15 | 10, 000
+19 | Realized gain (or loss). Subtract line 18 from line 17 | 88, 000
+20 | Enter the smaller of line 15 or line 19, but not less than zero | 8, 000
+21 | Ordinary income under recapture rules | 0
+22 | Subtract line 21 from line 20. If zero or less, enter -0-. If more than zero, enter here and on Schedule D or Form 4797, unless the installment method applies | 8, 000
+23 | Recognized gain. Add lines 21 and 22 | 8, 000
+24 | Deferred gain (or loss). Subtract line 23 from line 19 | 80, 000
+25 | Basis of like-kind property received. Subtract line 15 from the sum of lines 18 and 23 | 10, 000
+
+===== page 13 =====
+Administrative Rules of Montana, ARM 42.2.308, NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND R
+(a) Example 1 - Same facts as in (2)(a). In a later tax year, the Wyoming replacement property is sold for $150,000,
+the taxpayer reporting taxable gain of $140,000 on their federal income tax return. The nonresident's $80,000 of
+Montana source income realized on the Montana property exchange that was deferred has been recognized for
+federal income tax purposes and must be reported as Montana source income when the nonresident files the
+Montana individual income tax return required in 15-30-2104, MCA.
+(b) Example 2 - Same facts as in (3)(a), except the Wyoming replacement property is sold for $60,000 and $50,000
+of taxable gain is reported on the taxpayer's federal income tax return. While $80,000 of Montana source income
+was realized but deferred on relinquishment of the Montana property, only $50,000 was recognized for federal
+income tax purposes. The nonresident must report the $50,000 of Montana source income recognized when the
+nonresident files the Montana individual income tax return required in 15-30-2104, MCA.
+(c) Example 3 - Same facts as in (3)(a), except improvements with a cost of $75,000 are erected on the Wyoming
+property and depreciation deductions of $15,000 are claimed with respect to those improvements before the
+improved Wyoming property is sold for $150,000. On the date of sale the fair market value of the improvements,
+which have an adjusted basis of $60,000, is $70,000, and the fair market value of the Wyoming property acquired
+in the exchange, which has an adjusted basis of $10,000, is $80,000. Of the $80,000 of deferred Montana source
+income realized on relinquishment of the Montana property, $70,000 has been recognized for federal income tax
+purposes and must be reported when the nonresident files the Montana individual income tax required in 15-30-
+2104, MCA.
+(d) Example 4 - Same facts as in (2)(c). The Wyoming replacement property is sold for $150,000. The $30,000
+deferred Montana source income realized on relinquishment of the Montana property has been recognized for
+federal income tax purposes and must be reported when the nonresident files the Montana individual income tax
+return required in 15-30-2104, MCA.
+NEW, 2006 MAR p. 921, Eff. 4/7/06; AMD, 2014 MAR p. 1527, Eff. 7/11/14.
+15-1-201, 15-30-2620, MCA; IMP, 15-30-2101, 15-30-2103, 15-30-2104, 15-30-2111, 15-30-2112, 15-30-3302, 15-30-3311,
+15-30-3312, MCA;
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 5
+
+===== page 14 =====
+Administrative Rules of Montana, ARM 42.2.308, NONRESIDENT CALCULATION OF MONTANA SOURCE INCOME
+REALIZED AND R
+General Information
+Date Filed Thu Dec 04 00:00:00 EST 2014
+Citation ARM 42.2.308; Mont. Admin. R. 42.2.308
+Currency Current through Register Vol. 21, November 13, 2026
+© 2026 Bloomberg Industry Group, Inc. All Rights Reserved. Terms of Service
+// PAGE 6
+
+===== page 15 =====
+2025 Instructions for Form FTB 3840
+California Like-Kind Exchanges
+References in these instructions are to the Internal Revenue Code (IRC) as of January 1, 2025, and to the California Revenue and Taxation Code (R&TC).
+What’s New A Purpose
+Use form FTB 3840 to report like-kind exchanges of California property held for
+Like-Kind Exchanges – In general, California law conforms to the Internal
+productive use or investment for out of state like-kind property, and to allocate
+Revenue Code (IRC) as of January 1, 2025. For taxable years beginning on or
+the California sourced deferred gain or loss to the property received in the
+after January 1, 2025, like-kind exchanges are limited to real property.
+exchange.
+Like-kind exchanges of personal property were permitted until January 10, 2019.
+For like-kind exchanges of personal property initiated after January 10, 2019, B Who Must File
+and completed before January 1, 2025, California allowed like-kind exchanges
+• For purposes of the California filing requirement, the term “taxpayer” or
+of personal property for:
+“taxpayers” includes all individuals, estates, trusts, general partnerships,
+• A taxpayer who is a head of household, a surviving spouse, or spouse limited partnerships, limited liability partnerships, limited liability
+filing a joint return with adjusted gross income (AGI) of less than companies (LLCs), and corporations, except for disregarded entities.
+$500,000 for the taxable year in which the exchange begins. • In the case of disregarded entities, form FTB 3840 must be filed by the
+• Any other taxpayer filing an individual return with AGI of less than owner of the disregarded entity.
+$250,000 for the taxable year in which the exchange begins. • All taxpayers who conduct an IRC Section 1031 exchange, regardless of
+See California Revenue and Taxation Code (R&TC) Section 18031.5 for more residence status or commercial domicile, who exchange property located
+details. in California for like-kind property located outside of California, must file
+form FTB 3840.
+• If the taxpayer is not otherwise required to file a California tax return, the
+General Information
+taxpayer must complete the entire form FTB 3840, including the signature
+area at the bottom of Side 1, and file form FTB 3840 at the address shown
+In general, for taxable years beginning on or after January 1, 2025, California
+in General Information D, Where to File.
+law conforms to the IRC as of January 1, 2025. However, there are continuing
+differences between California and federal law. When California conforms
+C When to File
+to federal tax law changes, we do not always adopt all of the changes made
+at the federal level. For more information, go to ftb.ca.gov and search Form FTB 3840 must be filed for the taxable year of the exchange and for
+for conformity. Additional information can be found in FTB Pub. 1001, each subsequent taxable year, generally until the California sourced deferred
+Supplemental Guidelines to California Adjustments, the instructions for gain or loss is recognized. Attach form FTB 3840 to the California tax return,
+California Schedule CA (540), California Adjustments – Residents, or or file separately as a California information return if the taxpayer does not
+Schedule CA (540NR), California Adjustments – Nonresidents or Part-Year otherwise have a California filing requirement. File by the following dates:
+Resident, and the Business Entity Tax booklets. Individuals, Estates, and Trusts
+The instructions provided with California tax forms are a summary of Calendar Year: April 15, 2026
+California tax law and are only intended to aid taxpayers in preparing their Extended Due Date: October 15, 2026
+state income tax returns. We include information that is most useful to the
+C Corporations and LLCs Classified as C Corporations
+greatest number of taxpayers in the limited space available. It is not possible
+to include all requirements of the R&TC in the instructions. Taxpayers should Calendar Year: April 15, 2026
+not consider the instructions as authoritative law. Fiscal Year: 15th day of the 4th month following the close of
+the taxable year
+For taxable years beginning on or after January 1, 2014, California requires
+Extended Due Date: November 16, or the 15th day of the 11th month
+taxpayers who exchange property located in California for like-kind property
+following the close of the taxable year
+located outside of California, under IRC Section 1031, to file an annual
+information return, form FTB 3840, California Like-Kind Exchanges, with S Corporations and LLCs Classified as S Corporations
+the Franchise Tax Board (FTB). For information on filing requirements, see Calendar Year: March 16, 2026
+General Information B, Who Must File. Fiscal Year: 15th day of the 3rd month following the close of
+A valid like-kind exchange has the benefit of deferred taxation, meaning that the taxable year
+the taxpayer does not bear a tax liability at the time of the exchange. The Extended Due Date: September 15, or the 15th day of the 9th month
+taxpayer recognizes the realized gain or loss when the like-kind property following the close of the taxable year
+received is sold or disposed of in a subsequent taxable transaction. Partnerships and LLCs Classified as Partnerships
+To qualify as a like-kind exchange, the property received in the exchange must Calendar Year: March 16, 2026
+be both qualifying property and like-kind property. For more information, refer Fiscal Year: 15th day of the 3rd month following the close of
+to IRC Section 1031 and the applicable regulations. the taxable year
+The source of a gain or loss from the sale or exchange of property located in Extended Due Date: October 15 or the 15th day of the 10th month
+California is determined at the time the gain or loss is realized. The source of following the close of the taxable year
+such gain or loss is preserved without regard to when such gain or loss may be Exempt Organizations
+recognized.
+Calendar Year: May 15, 2026
+Form FTB 3840 must be filed for the taxable year of the exchange and for each Fiscal Year: 15th day of the 5th month following the close of
+subsequent taxable year, generally until the California sourced deferred gain the taxable year
+or loss is recognized on a California tax return. See R&TC Sections 18032 Extended Due Date: November 16 or the 15th day of the 11th month
+and 24953 for more information. following the close of the taxable year
+If the taxpayer fails to file form FTB 3840 as required and fails to file a tax return, When the due date falls on a weekend or holiday, the deadline to file is
+the FTB may estimate net income and assess tax plus any applicable penalties extended to the next business day.
+and interest. See R&TC Sections 18032 and 24953 for more information.
+FTB 3840 Instructions 2025 Page 1
+
+===== page 16 =====
+D Where to File General Question A through Question C
+For taxpayers who are required to file a California tax return, attach form Question A – Check the box indicating whether the taxpayer is, for tax reporting
+FTB 3840 to the tax return and file using the address for that tax return. purposes, an individual, estate, trust, C corporation, S corporation, partnership,
+limited liability company, or an exempt organization.
+For taxpayers with no other California filing requirement, sign and mail form
+FTB 3840 to: Question B – Check the box to indicate whether this form FTB 3840 is:
+FRANCHISE TAX BOARD Initial FTB 3840 – Check this box if the like-kind exchange occurred in the
+PO BOX 1998 current taxable year. Complete both sides of form FTB 3840.
+RANCHO CORDOVA, CA 95741-1998 Amended FTB 3840 – Check this box if correcting a previously filed form
+FTB 3840. Complete both sides of form FTB 3840. Attach a statement to the
+E Signature
+back of the amended FTB 3840 that explains the changes made.
+If form FTB 3840 is attached to a California tax return, no signature is needed. Annual FTB 3840 – Check this box only if you previously filed form FTB 3840
+If form FTB 3840 is filed separately, sign and complete the signature area on reporting the like-kind exchange of property located in California for property
+Side 1 of this form. located out of state, and the California sourced deferred gain or loss from the
+property received in the exchange has not been recognized. Enter the taxable
+F Failure to File year that the like-kind exchange occurred.
+For taxpayers who fail to file form FTB 3840 for any year in which the gain or For example, a taxpayer exchanged like-kind California property for property
+loss is deferred from the exchange and who do not file an income tax return, located outside of California in July 2024. The taxpayer filed its initial
+the FTB may issue a Notice of Proposed Assessment to adjust the income FTB 3840 with its 2024 income tax return. In the 2025 taxable year, the
+for the California sourced deferred gain and assess tax plus any applicable taxpayer does not sell or dispose of the property received. Under California
+penalties and interest. law, the taxpayer has an annual reporting requirement. The taxpayer files a
+form FTB 3840 for the 2025 taxable year. The taxpayer checks the “Annual
+G Multiple Exchanges FTB 3840” box and enters 2024 as the taxable year the exchange occurred.
+If the taxpayer reported more than one like-kind exchange for federal Annual filers complete both sides of form FTB 3840. Enter the same
+purposes in which the taxpayer gave up California property and acquired information as reported on the initial or most recently amended
+out of state like-kind property, file a separate form FTB 3840 for each such form FTB 3840.
+exchange. Final FTB 3840 – Check this box if this is the final form FTB 3840 that will be
+filed because the California sourced deferred gain or loss from the property
+H Multiple Asset Exchanges
+received in the exchange has been recognized. Enter the taxable year that the
+A multi-asset exchange involves the transfer and receipt of more than one like-kind exchange occurred. Complete both sides of form FTB 3840 with the
+group of like-kind properties. The transfer or receipt of multiple properties same information from the previously filed form(s) FTB 3840.
+within one like-kind group is also a multi-asset exchange. However, an Attach a statement to the back of form FTB 3840 that explains how the
+exchange of a single piece of land, a vehicle, and cash for a single piece California sourced deferred gain or loss from the property received in the
+of land and a vehicle isn’t a multi-asset exchange because, of the assets exchanged has been recognized.
+transferred, IRC Section 1031 may apply only to the exchange of the land for
+Question C – Check each box as applicable to indicate the type of property
+other land. Special rules apply when figuring the amount of gain recognized
+that was involved in the exchange. If the exchange involved both real and
+and the basis in properties received in a multi-asset exchange. For details, see
+personal property, check both boxes. The personal property box can only be
+Treas. Reg. section 1.1031(j)-1. For more information, see instructions for
+checked if the taxpayer is an individual and the exchange occurred prior to
+federal Form 8824, Like-Kind Exchanges.
+January 1, 2025.
+If the exchange occurred in a taxable year before January 1, 2025, taxpayers
+If the exchange involved a related party, also check the “related party” box.
+must continue to file form FTB 3840 if a multiple asset exchange contained
+Enter the name of the related party and the related party’s social security
+both real and personal property located in California exchanged for like-kind
+number (SSN), individual taxpayer identification number (ITIN), or federal
+property located outside of California.
+employer identification number (FEIN) in the space provided.
+A related party includes your spouse, child, grandchild, parent, grandparent,
+Specific Instructions
+brother, sister, or a related corporation, S corporation, partnership, trust,
+or estate. For special rules for exchanges between related parties, see
+Using black or blue ink, print the taxpayer’s name, taxpayer identification
+IRC Section 1031(f) for more information.
+number, and street address in the spaces provided at the top of the form.
+Part I – Information on Like-Kind Exchange
+Additional Information
+When completing Part I and Part II, see the instructions below and refer to
+Use the additional information field for “In-Care-Of” name,
+federal Form 8824 instructions.
+“Owner/Representative/Attention” name, and other supplemental address
+information only. If the “Annual FTB 3840” or “Final FTB 3840” box is checked on Question B,
+enter the information reported on the initial or most recently amended form
+Foreign Address
+FTB 3840 on Parts I and II, line 1 through line 20. See the instructions under
+If the taxpayer has a foreign address, follow the country’s practice for entering
+Question B for more information.
+the city, county, province, state, country, and postal code, as applicable, in the
+Line 1 through Line 6 – Enter the like-kind property descriptions and dates as
+appropriate boxes. Do not abbreviate the country name.
+shown on federal Form 8824, Part I, line 1 through line 6.
+Page 2 FTB 3840 Instructions 2025
+
+===== page 17 =====
+Part II – Realized Gain or (Loss), Recognized Gain, Part III – Allocation of California Sourced Deferred Gain
+and Basis of Like-Kind Property Received Line 10 – Allocation of California sourced deferred gain to properties
+received
+Line 7 through Line 20 – Enter the federal amounts from federal Form 8824,
+If only one property was received in the exchange, enter the amount from
+Part III, line 12 through line 25, on form FTB 3840, Part II, line 7 through
+Schedule A, Part I, line 8, on Part III, line 10, column D.
+line 20, respectively. For more information, see Specific Instructions for
+federal Form 8824. If more than one property was received, allocate the entire California sourced
+deferred gain amount from Schedule A, Part I, line 8 to each property received
+Schedule A – Properties Given Up and Received
+in the exchange, regardless of its location. Enter the allocated California
+If the “Annual FTB 3840” or “Final FTB 3840” box is checked on Question B, sourced deferred gain amount for each property received on Schedule A,
+enter the information reported on the initial or amended form FTB 3840 on Part III, line 10. Attach a statement that shows how the California sourced
+Schedule A. See the instructions under Question B for more information. deferred gain was allocated to each property received.
+Part I – Properties Given Up Line 11 – Apportionment percentage for the taxable year of the exchange
+For taxpayers required to apportion income to California using Schedule R,
+Line 1 – List each property given up in the exchange. Indicate if the property Apportionment and Allocation of Income, enter the apportionment percentage
+was located in California and the taxpayer’s percentage of ownership. for the taxable year of the exchange from Schedule R, line 18a. If more than
+Under property description, enter the full address where the property given one Schedule A is attached, enter this percentage only on the first Schedule A.
+up was located. If the property given up does not have a street address, then
+Where to Get More Information
+provide the assessor’s parcel number, the county, and the state in which the
+property is located. If the property given up is a Delaware statutory trust, General Phone Service
+enter the Delaware statutory trust name in the space provided for property
+Telephone assistance is available year-round from 8 a.m. until 5 p.m. Monday
+address and leave the entry spaces for city, state, and ZIP code blank.
+through Friday, except holidays. Hours subject to change.
+If more than three properties were given up, enter those properties on
+Telephone: 800.852.5711 from within the United States
+another Schedule A (Side 2 of form FTB 3840). Attach each Schedule A to
+916.845.6500 from outside the United States
+form FTB 3840.
+California
+Line 3 – Consideration/Sales price
+Relay
+For each property given up, enter the consideration or total sales price
+Service: 711 or 800.735.2929 for persons with hearing or
+the taxpayer received for the property. This includes all money and notes
+speaking limitations.
+received, plus any mortgages or other debts assumed by the buyer or paid
+from the proceeds of the sale, plus the fair market value of any other property IRS: 800.829.4933 for federal tax questions
+or any services received. Asistencia En Español:
+Line 4 – Selling expenses paid/incurred Asistencia telefónica está disponible durante todo el año desde las 8 a.m.
+Enter selling expenses paid or incurred pertaining to the sale of each property hasta las 5 p.m. de lunes a viernes, excepto días feriados. Las horas están
+given up and for which the taxpayer is liable. Selling expenses include sujetas a cambios.
+commissions, advertising, legal fees, escrow fees, title certification and Teléfono: 800.852.5711 dentro de los Estados Unidos
+insurance, termite inspection fees, and loan charges paid by the seller, such 916.845.6500 fuera de los Estados Unidos
+as loan placement fees or “points.”
+Servicio
+Line 6 – California adjusted basis de Retransmisión
+Enter the adjusted basis for each property given up as determined using de California: 711 o 800.735.2929 para personas con limitaciones
+California tax law. auditivas o del habla.
+The California adjusted basis of the property given up may be different from IRS: 800.829.4933 para preguntas sobre impuestos federales
+the federal basis due to depreciation methods, special credits, and accelerated
+Where to Get Tax Forms and Publications
+write-offs. For more information, get FTB Pub. 1001, and refer to the R&TC.
+Line 8 – California sourced deferred gain By Internet – You can download, view and print California tax forms,
+If all the property given up in the exchange was property located in California, instructions, publications, FTB Notices, and FTB Legal Rulings at ftb.ca.gov.
+enter the amount from Side 1, Part II, line 19, Deferred gain, adjusted for By Phone – You can order California tax forms and publications by
+differences between federal and California law. Attach a statement that shows calling 800.338.0505 and follow the recorded instructions.
+the adjusted deferred gain calculation.
+Allow two weeks to receive your order. If you live outside California, allow
+If multiple properties were given up, and those properties were located both three weeks to receive your order. For more information, go to ftb.ca.gov.
+in and outside of California, first calculate the deferred gain amount for
+By Mail – Write to:
+each property without regard to location. Then add the deferred gain or loss
+amounts for only the properties that were located in California and enter that TAX FORMS REQUEST UNIT MS D120
+amount on line 8. Attach a statement that shows how the deferred gain was FRANCHISE TAX BOARD
+calculated for each property given up. PO BOX 307
+RANCHO CORDOVA CA 95741-0307
+If more than one Schedule A is attached, enter the aggregated amount of
+California sourced deferred gain on line 8, on the first Schedule A.
+Part II – Properties Received
+Line 9 – List each property received in the exchange. Indicate if the property is
+located in California and the taxpayer’s percentage of ownership.
+Under property description, enter the full address where each property received
+is located. If the property received does not have a street address, then provide
+the assessor’s parcel number, the county, and the state in which the property is
+located. If the property received is a Delaware statutory trust, enter the Delaware
+statutory trust name in the space provided for property address and leave the
+entry spaces for city, state, and ZIP code blank.
+If more than three properties were received in the exchange, enter those
+properties on another Schedule A (Side 2 of form FTB 3840). Attach each
+Schedule A to form FTB 3840.
+FTB 3840 Instructions 2025 Page 3

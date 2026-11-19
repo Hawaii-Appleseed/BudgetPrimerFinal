@@ -1,0 +1,229 @@
+
+===== page 1 =====
+TAX REVIEW COMMISSION 2025-2027
+Meeting Minutes,
+Monday, November 9, 2026
+Virtual Meeting
+Meeting was held virtually and video recorded.
+Recorded Video Link: https://youtu.be/a3IqfjcJDP0
+Monday, November 9, 2026
+2:00 p.m.
+PRESENT:
+Commission Members:
+Jonathan White (Chair), Judith Chock (Vice-Chair), Jessica Enos, Mark
+Fukunaga, Stacey Katakura, Jeffrey Ueoka, and Jon Yasuda
+Staff Members:
+Department of Taxation (DOTAX): Director Gary Suganuma, TRC Executive
+Director Dr. Baybars Karacaovali (Tax Research & Planning Officer), and
+Roderick Tuliao (Administrative Assistant)
+Attorney General’s Office:
+Deputy Attorney General Joshua Michaels
+Guest Panelists:
+Dr. John Knox (Former Commission Member and Writer, Observer/Commenter)
+Assistant Professors Dr. Nicholas Lacoste and Dr. Dylan Moore (UHERO &
+Department of Economics, University of Hawai‘i at Manoa)
+1. CALL TO ORDER
+Chair White called the meeting to order at 2:02 p.m. A quorum was present.
+Roll Call:
+Mr. Jonathan White Present
+Ms. Judith Chock Present
+Ms. Jessica Enos Present
+Mr. Mark Fukunaga Present
+
+===== page 2 =====
+Minutes of the Tax Review Commission Meeting
+Monday, November 9, 2026
+Page 2 of 7
+Ms. Stacey Katakura Present
+Mr. Jeffrey Ueoka Present
+Mr. Jon Yasuda Present
+2. COMMUNICATIONS TO THE COMMISSION AND PUBLIC COMMENT
+The Commission was advised that no written communications had been received since the
+previous meeting.
+The Chair provided an opportunity for public testimony. No testimony was offered.
+3. MINUTES OF THE MEETING OF OCTOBER 28, 2026
+Chair White asked the Commission if there were any changes to October 28, 2026 minutes and
+indicated that if there were no objections, the minutes would be approved by acclamation.
+There were no objections, so the minutes got approved.
+4. PRESENTATION BY TRC CHAIR JONATHAN WHITE ON “WORLDWIDE
+COMBINED REPORTING (WCR) AND NET CONTROLLED FOREIGN
+CORPORATION TESTED INCOME (NCTI)” AND TRC DISCUSSION
+Chair Jonathan White provided a formal introduction of a potential recommendation concerning
+worldwide combined reporting and the taxation of Net Controlled Foreign Corporation Tested
+Income (NCTI). He explained that the topic is being considered as a potential recommendation
+for further study in the Commission’s final report rather than as a fully developed legislative
+proposal.
+The Chair summarized the difference between Hawaii’s current water’s-edge approach and a
+worldwide combined reporting system. Under worldwide combined reporting, income and
+apportionment factors of foreign affiliates would be included in the calculation of taxable income
+apportioned to Hawai‘i. He discussed historical developments involving transfer pricing
+enforcement, federal tax policy changes, and the evolution of international taxation, including
+GILTI and NCTI provisions.
+The Chair noted that several states either permit or require forms of worldwide combined
+reporting and referenced recent legislative developments in other jurisdictions. He emphasized
+the structural and policy rationale for examining the issue rather than focusing solely on potential
+revenue effects.
+
+===== page 3 =====
+Minutes of the Tax Review Commission Meeting
+Monday, November 9, 2026
+Page 3 of 7
+Dr. Baybars Karacaovali questioned whether a Hawai‘i-only approach could create
+administrative burdens or discourage business activity in the state. The Chair acknowledged this
+concern and identified it as one of the principal arguments against adoption. He suggested that
+conformity with NCTI could represent a more administratively manageable alternative because
+the relevant amounts already appear on federal returns.
+The Chair indicated that he would prepare a more detailed written proposal for future
+Commission review.
+5. PRESENTATION BY TRC CHAIR JONATHAN WHITE ON “COMBINED
+VOLUNTARY DISCLOSURE AGREEMENT (VDA) AND ADMINISTRATIVE
+RECOMMENDATION” AND TRC DISCUSSION
+Chair White introduced a discussion regarding Hawaii’s voluntary disclosure agreement (VDA)
+program and potential measures to improve tax compliance and collections. The discussion
+originated from previous suggestions concerning voluntary disclosure procedures and methods to
+reduce future delinquent accounts.
+The Chair outlined several concepts for consideration, including:
+• Creating a more attractive VDA program to encourage earlier taxpayer participation.
+• Considering shorter look-back periods.
+• Allowing non-anonymous participation and registration at the time of application.
+• Maintaining existing VDA programs as alternative pathways.
+• Providing additional support for departmental collection activities.
+Commissioner Jon Yasuda suggested developing more standardized installment payment
+arrangements similar to the federal system, allowing taxpayers with relatively modest balances to
+enter repayment plans through a streamlined process. He noted that greater simplicity and
+predictability could encourage taxpayer compliance.
+Commissioners discussed broader support for the Department of Taxation (DOTAX), including
+workforce development, training, organizational resources, and operational improvements.
+Commissioner Mark Fukunaga raised the possibility of utilizing artificial intelligence to assist
+with tax administration, compliance reviews, and discrepancy detection.
+Dr. Karacaovali reported that the Department has been examining artificial intelligence
+applications and has thus far focused on administrative uses and experimentation with synthetic
+data because of taxpayer confidentiality concerns. He noted ongoing efforts to evaluate future
+implementation options while preserving data security requirements.
+
+===== page 4 =====
+Minutes of the Tax Review Commission Meeting
+Monday, November 9, 2026
+Page 4 of 7
+No formal action was taken on the VDA or collections topics. The Chair stated that additional
+written recommendations would be developed for future review.
+6. PRESENTATION BY DR. NICHOLAS LACOSTE (CO-INVESTIGATOR OF THE
+UNIVERSITY OF HAWAI‘I ECONOMIC RESEARCH ORGANIZATION [UHERO]
+TRC PROJECT) ON THE IMPACT OF TRANSIENT ACCOMMODATIONS TAX
+AND TRC DISCUSSION
+The Commission received a presentation from Dr. Nicholas Lacoste, who discussed ongoing
+research regarding the Transient Accommodations Tax (TAT), its revenue-generating efficiency,
+and its broader effects on Hawaii’s tax system. Dr. Dylan Moore also participated in portions of
+the discussion.
+Presentation Summary
+Dr. Lacoste explained that the TAT is Hawaii’s third-largest source of tax revenue and reviewed
+research intended to estimate how changes in TAT rates affect tax collections and visitor
+behavior. Using economic modeling and a synthetic-control methodology that compares Hawai‘i
+with tourism-intensive jurisdictions elsewhere in the United States and Guam, the study seeks to
+estimate the revenue effects of TAT increases.
+Key points from the presentation included:
+• Historical TAT increases generally resulted in higher TAT revenue.
+• Tourist behavioral responses appear to reduce, but not eliminate, the revenue gains from
+TAT increases.
+• The analysis suggests Hawai‘i likely remains below the revenue-maximizing TAT rate
+when examining TAT collections alone.
+• When broader impacts on General Excise Tax (GET) collections and economic activity
+are considered, revenue effects become less certain.
+• TAT increases may affect visitor spending patterns and indirectly influence sectors such
+as recreation, attractions, dining, and wages.
+Dr. Lacoste emphasized that policymakers should evaluate TAT changes within the context of
+the entire tax system rather than viewing the tax in isolation.
+Commissioner Discussion
+Commissioners engaged in an extensive discussion regarding the methodology, assumptions, and
+policy implications of the analysis.
+Commissioner Mark Fukunaga asked questions concerning the relationship between TAT
+changes and GET collections, elasticity estimates, exchange-rate influences, and differences in
+
+===== page 5 =====
+Minutes of the Tax Review Commission Meeting
+Monday, November 9, 2026
+Page 5 of 7
+spending behavior among visitors. Dr. Lacoste explained various limitations and noted that some
+industry-specific impacts could not yet be precisely measured.
+Dr. John Knox commented that the overall policy lesson appeared to be one of caution and noted
+that tourism-related industries currently face significant uncertainty. He suggested that future
+policy discussions should consider broader issues involving industry competitiveness, marketing
+expenditures, destination management, infrastructure investments, and stewardship programs.
+Chair Jonathan White posed several questions regarding visitor behavior, lodging fees, and the
+interpretation of estimated revenue leakage effects. Dr. Lacoste clarified aspects of the analysis
+and discussed the role of behavioral responses in the model.
+Dr. Dylan Moore emphasized that although tourism taxes involve significant tax exporting to
+nonresidents, policymakers should remain mindful of uncertainty regarding impacts on wages,
+income taxes, GET collections, and residents affected indirectly by tourism-related taxes. He
+also noted that alternative methods of taxing tourism activity may warrant future evaluation.
+The Commission thanked Dr. Lacoste and Dr. Moore for their work and presentation.
+BREAK:
+Chair White called for a brief break at approximately 3:10 pm and asked each
+Commission member to turn off their microphones, turn off their cameras, and avoid
+discussing any TRC business during the break.
+Commission members returned from their break at 3:21 pm to resume the meeting.
+7. COMPETITIVENESS AND TAX POLICY DISCUSSION
+Upon reconvening, the Commission resumed discussion of tax competitiveness and possible
+recommendations for inclusion in the Commission's final report. The Chair described the effort
+as developing a “competitiveness” framework consisting of multiple complementary policy
+recommendations.
+Commissioner Mark Fukunaga highlighted several recommendations that had been advanced by
+prior Tax Review Commissions, including:
+• Indexing tax brackets or rates to inflation.
+• Examining taxation of pension income.
+• Expanding business investment incentives through accelerated depreciation or related
+provisions.
+
+===== page 6 =====
+Minutes of the Tax Review Commission Meeting
+Monday, November 9, 2026
+Page 6 of 7
+Commissioners discussed the relationship between consumption taxes, income taxes, corporate
+taxes, and incentives for economic growth.
+Topics included:
+• Potential use of General Excise Tax adjustments.
+• Earned Income Tax Credit expansion as a means of offsetting regressive impacts.
+• Corporate income tax competitiveness.
+• Accelerated depreciation provisions.
+• Single-sales-factor apportionment.
+• Tax exporting to nonresidents.
+Dr. Karacaovali noted that previous Tax Review Commissions had generally opposed increased
+reliance on consumption taxes because of concerns regarding regressivity. He also provided
+updated estimates indicating that adoption of single-sales-factor apportionment could generate
+approximately $35 million in additional corporate income tax revenue under current economic
+conditions.
+Dr. Moore discussed the advantages of pairing single-sales-factor apportionment with
+accelerated depreciation provisions and described those policies as potentially improving
+investment incentives while reducing distortions associated with business location decisions. He
+also emphasized that substantial uncertainty remains regarding the optimal level of corporate
+taxation.
+No formal action was taken. Commissioners agreed that additional discussion would occur
+during future meetings as the report is finalized.
+8. REPORT DEVELOPMENT AND FUTURE AGENDA ITEMS
+The Chair provided updates regarding the draft Commission report and encouraged
+Commissioners to continue submitting feedback.
+Future discussion topics may include:
+• The competitiveness section of the report.
+• Single-sales-factor apportionment.
+• Conveyance tax proposals.
+• Estate tax concepts.
+• TAT-related policy issues.
+• Section 1031-clawback related issues.
+• Additional recommendations proposed by Commissioners.
+
+===== page 7 =====
+Minutes of the Tax Review Commission Meeting
+Monday, November 9, 2026
+Page 7 of 7
+The Chair encouraged Commissioners who wished to present specific proposals to coordinate
+agenda requests through Dr. Karacaovali.
+9. SCHEDULING OF UPCOMING MEETINGS
+After discussion, the Commission agreed to schedule the following meetings:
+• November 18, 2026, at 2:00 p.m.
+• November 24, 2026, at 2:00 p.m.
+The Chair also confirmed plans for an anticipated in-person meeting on December 18, 2026,
+which was expected to serve as the Commission’s final meeting before completion of its report.
+Commissioners discussed the possibility of noticing an additional contingency meeting on
+December 21, 2026 if needed to finalize the report.
+10. ADJOURNMENT:
+With no further business, Chair White adjourned the meeting at approximately 4:00 pm.
