@@ -302,6 +302,9 @@
   #ctl .ty-step { background:#F2F5F3; border-radius:8px; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-row) .ty-step button:not(:where(.pop) *) { background:transparent; }
   #ctl .ty-step #cb-size { background:transparent; border:0; box-shadow:none; border-radius:0; }
+  /* in the floating card Reset sits at the strip's far end; in the bar it is one more pill, not a
+     control pushed to the row's right edge with a gap before it */
+  #ctl #ty-reset { margin-left:0; }
   #ctl .ty-sep, #ctl .bar-sep { width:1px; height:18px; margin:0 3px; background:#E3E9E5; }
   #ctl .ty-key, #ctl .ar-count { background:#EEF3EF; color:#6B7C74; border-radius:8px;
          padding:6px 10px; font:500 12px ui-monospace, monospace; }
