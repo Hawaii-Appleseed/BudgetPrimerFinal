@@ -4124,6 +4124,86 @@ function charRunCss(spec) {
     css.push(`letter-spacing:${String(+(((v.track || 0) + (v.kern || 0)) / 1000).toFixed(6))}em`);
   return css.join(';');
 }
+/** Character settings on words, in the MARKDOWN: the pilot's version of what
+ *  applyCharRun does to a selection in an open text. `sel` names the words by
+ *  what they say ({find, nth = 1}, found in the text as a reader sees it, the
+ *  run wrappers unwrapped) and `caretAfter` narrows them to the one character
+ *  that many characters into the match, which is InDesign's pair kern (the
+ *  space after that character). `patch` is {size, lead, track, kern}: points,
+ *  points, and thousandths of an em for the last two; null takes a key off.
+ *  Runs the selection touches are split at its edges and merged with the patch,
+ *  words that wore none get a new run, and neighbours that now say the same
+ *  thing are one run. Returns {ok, md} or {ok: false, error}; never throws. */
+function charRunEditMd(md, sel, patch) {
+  if (typeof md !== 'string') return { ok: false, error: 'no words to set' };
+  if (!sel || typeof sel.find !== 'string' || !sel.find)
+    return { ok: false, error: 'name the words: {find: "the words as they read", nth?: 1, caretAfter?: n}' };
+  const pieces = [];
+  let last = 0;
+  for (const m of md.matchAll(CHAR_RUN_RE_G)) {
+    if (m.index > last) pieces.push({ t: md.slice(last, m.index), run: null });
+    pieces.push({ t: m[1], run: charRunParse(m[2]) });
+    last = m.index + m[0].length;
+  }
+  if (last < md.length) pieces.push({ t: md.slice(last), run: null });
+  const plain = pieces.map(p => p.t).join('');
+  const nth = sel.nth == null ? 1 : sel.nth;
+  if (!Number.isInteger(nth) || nth < 1) return { ok: false, error: 'nth counts matches from 1' };
+  let from = -1, at = 0;
+  for (let n = 0; n < nth; n++) {
+    from = plain.indexOf(sel.find, at);
+    if (from < 0) break;
+    at = from + 1;
+  }
+  if (from < 0)
+    return { ok: false, error: `'${sel.find}' is not in these words${nth > 1 ? ` ${nth} times` : ''} — find matches the text as written, so a phrase split by a **bold** or link marker is not found whole` };
+  let s0 = from, e0 = from + sel.find.length;
+  if (sel.caretAfter != null) {
+    const c = sel.caretAfter;
+    if (!Number.isInteger(c) || c < 1 || c > sel.find.length)
+      return { ok: false, error: `caretAfter is a character count from 1 to ${sel.find.length}: the caret sits after that many characters of '${sel.find}'` };
+    s0 = from + c - 1; e0 = from + c;
+    if (Object.keys(patch || {}).some(k => k !== 'kern'))
+      return { ok: false, error: 'a caret sets kerning only — name the characters to set anything else' };
+  }
+  const slice = plain.slice(s0, e0);
+  if (/[\[\]{}`\n]/.test(slice) || slice.startsWith('^'))
+    return { ok: false, error: 'the words to set may not hold [ ] { } a backtick or a line break — name a plainer stretch' };
+  const stars = slice.replace(/\*\*/g, '');
+  if ((slice.match(/\*\*/g) || []).length % 2 || (stars.match(/\*/g) || []).length % 2)
+    return { ok: false, error: 'the words end inside a bold or italic marker — name the whole marked stretch, or the words inside it' };
+  const balanced = t => (t.match(/\*\*/g) || []).length % 2 === 0 && (t.replace(/\*\*/g, '').match(/\*/g) || []).length % 2 === 0;
+  // Cut the pieces at the selection's edges, remembering what is inside.
+  const segs = [];
+  let pos = 0;
+  for (const p of pieces) {
+    const a = pos, b = pos + p.t.length;
+    pos = b;
+    const cuts = [a, ...[s0, e0].filter(x => x > a && x < b), b];
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const t = p.t.slice(cuts[i] - a, cuts[i + 1] - a);
+      if (!t) continue;
+      segs.push({ t, run: p.run ? { ...p.run } : null, inside: cuts[i] >= s0 && cuts[i + 1] <= e0,
+        split: cuts.length > 2 });
+    }
+  }
+  for (const g of segs) {
+    if (g.inside) {
+      const o = { ...(g.run || {}) };
+      Object.entries(patch || {}).forEach(([k, v]) => { if (v == null) delete o[k]; else o[k] = v; });
+      g.run = Object.keys(o).length ? o : null;
+    } else if (g.run && g.split && !balanced(g.t)) {
+      return { ok: false, error: 'that would cut a run through a bold or italic marker — set the whole run' };
+    }
+  }
+  const out = [];
+  for (const g of segs) {
+    const top = out[out.length - 1];
+    if (top && ((!top.run && !g.run) || (top.run && g.run && charRunSpec(top.run) === charRunSpec(g.run)))) top.t += g.t;
+    else out.push({ t: g.t, run: g.run });
+  }
+  return { ok: true, md: out.map(g => g.run ? `[${g.t}]{${charRunSpec(g.run)}}` : g.t).join('') };
+}
 // content.py's VAR_RE, and the one place the editor spells it.
 const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|state:[^{}\n]{1,40})\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
@@ -13969,10 +14049,11 @@ $('ar-style-more').addEventListener('click', () => {
  *  the Control bar both write through here. A key set to null goes back to
  *  what the box's object style says (or the default); one column on a box
  *  whose style has more says so explicitly, or the style would win. */
-async function setBoxFrame(id, patch) {
-  const bx = boxOf(id);
-  if (!bx) return false;
-  pushHistory();
+/** The text frame's own options written into a box's store: columns (1-4),
+ *  gutter and inset (inches, 0-2), vertical alignment, first baseline. One
+ *  rule for the Control bar, the Box panel and the pilot's setFrame, so the
+ *  three cannot disagree on a clamp. No history, no render: the caller's. */
+function applyBoxFrame(bx, patch) {
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'cols') {
       const n = Math.max(1, Math.min(4, Math.round(+v) || 1));
@@ -13983,6 +14064,12 @@ async function setBoxFrame(id, patch) {
       if (v) bx[k] = v; else delete bx[k];
     }
   }
+}
+async function setBoxFrame(id, patch) {
+  const bx = boxOf(id);
+  if (!bx) return false;
+  pushHistory();
+  applyBoxFrame(bx, patch);
   markDirty();
   await render();
   return true;
@@ -19218,15 +19305,29 @@ async function ctlFrameChange(patch) {
   const d = $('out').contentDocument;
   const els = d && d.body ? selEls(d) : [];
   if (els.length !== 1 || isLocked(idOf(els[0]))) return false;
-  const el = els[0], f = frameOf(d, el);
-  const P = refPointOf(f);
-  let { w, h, s, rot, flip } = f, ref = ctlRef;
+  pushHistory();
+  applyFrameChange(d, els[0], patch, ctlRef, ctlLink);
+  markDirty();
+  await render();
+  paintSel($('out').contentDocument);
+  return true;
+}
+/** The bar's one change, as a pure write: element `el`, about reference point
+ *  `ref` (a REF_PTS key), with `link` (width and height keep their ratio).
+ *  The Control bar's ctlFrameChange and the pilot's transform both call it, so
+ *  a typed 120% and transform(id, {scale: 120}) land the same. No history, no
+ *  render: the caller's. Returns where the reference point, size, scale,
+ *  rotation and flip ended up. */
+function applyFrameChange(d, el, patch, ref = 'tl', link = false) {
+  const f = frameOf(d, el);
+  const P = refPointOf(f, ref);
+  let { w, h, s, rot, flip } = f;
   if (patch.X != null) P.x = patch.X;
   if (patch.Y != null) P.y = patch.Y;
-  if (patch.w != null) { const nw = Math.max(0.1, patch.w); if (ctlLink) h = h * nw / w; w = nw; }
-  if (patch.h != null) { const nh = Math.max(0.1, patch.h); if (ctlLink) w = w * nh / h; h = nh; }
-  if (patch.sx != null) { w *= patch.sx; if (ctlLink) h *= patch.sx; }
-  if (patch.sy != null) { h *= patch.sy; if (ctlLink) w *= patch.sy; }
+  if (patch.w != null) { const nw = Math.max(0.1, patch.w); if (link) h = h * nw / w; w = nw; }
+  if (patch.h != null) { const nh = Math.max(0.1, patch.h); if (link) w = w * nh / h; h = nh; }
+  if (patch.sx != null) { w *= patch.sx; if (link) h *= patch.sx; }
+  if (patch.sy != null) { h *= patch.sy; if (link) w *= patch.sy; }
   if (patch.scale != null) s = Math.max(0.2, Math.min(5, patch.scale));
   if (patch.rot != null || patch.turn != null) {
     let v = patch.rot != null ? +patch.rot : rot + patch.turn;
@@ -19247,7 +19348,6 @@ async function ctlFrameChange(patch) {
   const [ox, oy] = rotVec(rot, (fx - 0.5) * w * s, (fy - 0.5) * h * s);
   const nx = P.x - ox - w / 2, ny = P.y - oy - h / 2;
   const page = el.closest('section.page') || d.querySelector('section.page');
-  pushHistory();
   const st = ensureStore(d, el);
   if (rot !== f.rot) { lastXform = { kind: 'rot', deg: +(rot - f.rot).toFixed(1) }; if (rot) st.rot = rot; else delete st.rot; }
   if (flip !== f.flip) { if (flip) st.flip = flip; else delete st.flip; }
@@ -19260,10 +19360,8 @@ async function ctlFrameChange(patch) {
   if (Math.abs(w - f.w) > 1e-6 || Math.abs(h - f.h) > 1e-6)
     commitSize(d, el, { w: Math.abs(w - f.w) > 1e-6 ? w : undefined, h: Math.abs(h - f.h) > 1e-6 ? h : undefined });
   clearGuides(d);
-  markDirty();
-  await render();
-  paintSel($('out').contentDocument);
-  return true;
+  return { X: +P.x.toFixed(3), Y: +P.y.toFixed(3), w: +w.toFixed(3), h: +h.toFixed(3),
+           scale: f.graphic ? Math.round(s * 100) : null, rot, flip };
 }
 /** InDesign's Frame Fitting Options, as far as this engine goes: how the
  *  picture is fitted and where it is anchored. Auto-Fit is what the page does
@@ -36742,6 +36840,190 @@ function _pilotApplySkew(id, deg) {
   return { id, skew: v };
 }
 
+
+// ---- the Control bar's small adjustments, by name (verb-audit, 2026-11-18)
+// Everything a person can type into #ctl had a verb except these: the bar's
+// X / Y / W / H about a reference point, scale and turn (transform), a text
+// frame's columns, gutter, inset and vertical alignment (setFrame), size /
+// leading / tracking on selected WORDS and a kern at a caret (setRun), and
+// the type fields in the units the bar shows them in (setType). Each runs the
+// bar's own code, so a typed value and a verb land the same.
+const _PT = 0.75;                       // CSS px -> points
+const _num = v => typeof v === 'number' && isFinite(v);
+function _pilotValidateTransform(id, o) {
+  const v = _pilotValidatePlace(id);
+  if (!v.ok) return v;
+  const KEYS = ['ref', 'link', 'X', 'Y', 'w', 'h', 'sx', 'sy', 'scale', 'rot', 'turn', 'flip'];
+  const USAGE = `transform(id, {${KEYS.join(', ')}}) — X, Y: where the reference point goes, page inches; w, h: size, inches; sx, sy: resize by that PERCENT; scale: a drawing's size, percent (20–500); rot: angle in degrees; turn: degrees to ADD (90 turns it a quarter); flip: 'h' | 'v' mirrors it (a toggle, as the bar's buttons are); ref: tl t tr l c r bl b br, the point that stays put (default tl); link: true keeps width and height in proportion`;
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return { ok: false, error: USAGE };
+  const bad = Object.keys(o).filter(k => !KEYS.includes(k));
+  if (bad.length) return { ok: false, error: `transform: ${bad.join(', ')} not a key — ${USAGE}` };
+  for (const k of ['X', 'Y', 'w', 'h', 'sx', 'sy', 'scale', 'rot', 'turn'])
+    if (o[k] != null && !_num(o[k])) return { ok: false, error: `transform: ${k} is a number, not ${JSON.stringify(o[k])}` };
+  for (const k of ['w', 'h', 'sx', 'sy'])
+    if (o[k] != null && !(o[k] > 0)) return { ok: false, error: `transform: ${k} must be more than 0` };
+  if (o.scale != null && !(o.scale >= 20 && o.scale <= 500)) return { ok: false, error: 'transform: scale is a percent, 20 to 500' };
+  if (o.ref != null && !REF_PTS[o.ref]) return { ok: false, error: `transform: ref is one of ${Object.keys(REF_PTS).join(' ')}` };
+  if (o.flip != null && o.flip !== 'h' && o.flip !== 'v') return { ok: false, error: "transform: flip is 'h' or 'v' (it toggles); flip(id, 'hv' | null) sets it outright" };
+  if (o.link != null && typeof o.link !== 'boolean') return { ok: false, error: 'transform: link is true or false' };
+  if (o.rot != null && o.turn != null) return { ok: false, error: 'transform: rot sets the angle, turn adds to it — one or the other' };
+  const el = $('out').contentDocument && _pilotEl(id);
+  if (!el) return { ok: false, error: `'${id}' is not on the page yet — transform measures what is drawn, so add it in one call and transform it in the next` };
+  const graphic = !el.dataset.shape && isGraphic(el);
+  if (graphic && ['w', 'h', 'sx', 'sy'].some(k => o[k] != null)) return { ok: false, error: `'${id}' is a drawing: its size is its scale (transform {scale: 100}), as in the bar` };
+  if (!graphic && o.scale != null) return { ok: false, error: `'${id}' is sized by w and h (or sx, sy) — scale is for drawings` };
+  return { ok: true };
+}
+function _pilotApplyTransform(id, o) {
+  const d = $('out').contentDocument, el = _pilotEl(id);
+  const patch = {};
+  ['X', 'Y', 'w', 'h', 'rot', 'turn', 'flip'].forEach(k => { if (o[k] != null) patch[k] = o[k]; });
+  if (o.sx != null) patch.sx = o.sx / 100;
+  if (o.sy != null) patch.sy = o.sy / 100;
+  if (o.scale != null) patch.scale = o.scale / 100;
+  const ref = o.ref || 'tl';
+  const r = applyFrameChange(d, el, patch, ref, !!o.link);
+  return { id, ref, ...r };
+}
+
+function _pilotValidateSetFrame(id, p) {
+  const bx = boxOf(id);
+  if (!bx) return { ok: false, error: `no text box '${id}' — setFrame is for a text box's own frame` };
+  if (fitKind(id) === 'box') return { ok: false, error: `'${id}' holds one picture — fit(id, …) is its frame; setFrame is for text` };
+  if (isLocked(id)) return { ok: false, error: `'${id}' is locked — unlock it first` };
+  const KEYS = ['cols', 'gap', 'pad', 'vAlign', 'firstBaseline'];
+  const USAGE = 'setFrame(id, {cols, gap, pad, vAlign, firstBaseline}) — cols: 1 to 4; gap: the gutter between columns and pad: the inset, both inches 0 to 2; vAlign: top | middle | bottom | justify; firstBaseline: leading | ascent | cap | x; null takes one back to its default';
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return { ok: false, error: USAGE };
+  const bad = Object.keys(p).filter(k => !KEYS.includes(k));
+  if (bad.length) return { ok: false, error: `setFrame: ${bad.join(', ')} not a key — ${USAGE}` };
+  if (p.cols != null && !(Number.isInteger(p.cols) && p.cols >= 1 && p.cols <= 4)) return { ok: false, error: 'setFrame: cols is a whole number, 1 to 4' };
+  for (const k of ['gap', 'pad'])
+    if (p[k] != null && !(_num(p[k]) && p[k] >= 0 && p[k] <= 2)) return { ok: false, error: `setFrame: ${k} is inches, 0 to 2` };
+  if (p.vAlign != null && !['top', 'middle', 'bottom', 'justify'].includes(p.vAlign)) return { ok: false, error: 'setFrame: vAlign is top, middle, bottom or justify' };
+  if (p.firstBaseline != null && !['leading', 'ascent', 'cap', 'x'].includes(p.firstBaseline)) return { ok: false, error: 'setFrame: firstBaseline is leading, ascent, cap or x' };
+  return { ok: true };
+}
+function _pilotApplySetFrame(id, p) {
+  const bx = boxOf(id);
+  const patch = { ...p };
+  // The bar's top button means "no vertical alignment"; so does top here.
+  if (patch.vAlign === 'top') patch.vAlign = null;
+  if (patch.firstBaseline === 'leading') patch.firstBaseline = null;
+  applyBoxFrame(bx, patch);
+  const eff = dressedObj(bx);
+  return { id, frame: { cols: eff.cols || 1, gap: eff.gap ?? 0.2, pad: Array.isArray(eff.pad) ? eff.pad[0] : (eff.pad ?? null),
+    vAlign: eff.vAlign || 'top', firstBaseline: eff.firstBaseline || 'leading' } };
+}
+
+/** The words a run edit works on: a slot's markdown, or a text box's. */
+function _pilotRunTarget(target) {
+  if (typeof target !== 'string' || !target) return null;
+  if (target.startsWith('text.') && boxOf(target)) return { kind: 'box', md: boxOf(target).md || '' };
+  if (slotRe(target).test(source)) return { kind: 'slot', md: readSlot(target) };
+  return null;
+}
+function _pilotValidateSetRun(target, sel, patch) {
+  const USAGE = 'setRun(target, {find, nth?, caretAfter?}, {size, lead, track, kern}) — target: a slot key or a text box id; find: the words as they read; size and lead in POINTS (size 7.9 or more), track and kern in thousandths of an em; null takes one off; caretAfter: n kerns the pair after the n-th character of find (patch {kern} only)';
+  const t = _pilotRunTarget(target);
+  if (!t) return { ok: false, error: `no slot or text box '${target}' — check inventory()` };
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !Object.keys(patch).length) return { ok: false, error: USAGE };
+  const bad = Object.keys(patch).filter(k => !CHAR_RUN_KEYS.includes(k));
+  if (bad.length) return { ok: false, error: `setRun: ${bad.join(', ')} not a run key — ${USAGE}` };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v == null) continue;
+    if (!_num(v)) return { ok: false, error: `setRun: ${k} is a number` };
+    if (k === 'size' && v < 10.5 * _PT - 1e-6) return { ok: false, error: `setRun: size is points — ${v}pt is under the 7.875pt floor` };
+    if (k === 'size' && v > 150) return { ok: false, error: 'setRun: size is points, up to 150' };
+    if (k === 'lead' && !(v > 0 && v <= 300)) return { ok: false, error: 'setRun: lead is points, above 0 and up to 300 (a multiple like 1.4 is NOT points — multiply by the size)' };
+    if ((k === 'track' || k === 'kern') && !(Number.isInteger(v) && v >= -1000 && v <= 10000)) return { ok: false, error: `setRun: ${k} is whole thousandths of an em, -1000 to 10000 (50 is a little loose, -50 a little tight)` };
+  }
+  const r = charRunEditMd(t.md, sel, patch);
+  return r.ok ? { ok: true } : { ok: false, error: `setRun: ${r.error}` };
+}
+function _pilotApplySetRun(target, sel, patch) {
+  const t = _pilotRunTarget(target);
+  const r = charRunEditMd(t.md, sel, patch);
+  if (!r.ok) throw new Error(r.error);
+  if (t.kind === 'box') _pilotApplySetBoxText(target, r.md); else _pilotApplySetSlot(target, r.md);
+  return { id: target, md: r.md };
+}
+
+/** The type fields in the units the Control bar shows: size in points, leading
+ *  in points (or leadX, a multiple of the size), tracking in thousandths of an
+ *  em. The style itself keeps px, a multiple and px; every other key passes
+ *  through to setStyle unchanged. */
+function _pilotTypePx(key) {
+  const st = styleOf(key);
+  return _num(st.size) ? st.size : computedType(key).size;
+}
+function _pilotValidateSetType(key, p) {
+  const base = _pilotValidateSetStyle(key, {});
+  if (!base.ok) return base;
+  const USAGE = 'setType(key, {size, lead, leadX, track, …any setStyle key}) — size: points (7.9 or more); lead: points, or leadX a multiple of the size, null for auto; track: thousandths of an em (50 loosens, -50 tightens), null for none; the rest (font, weight, color, case, align, shift, spaceBefore, indentLeft, …) as setStyle spells them';
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return { ok: false, error: USAGE };
+  if ('lead' in p && 'leadX' in p) return { ok: false, error: 'setType: lead (points) or leadX (a multiple), not both' };
+  if (p.size != null && !(_num(p.size) && p.size >= 10.5 * _PT - 1e-6 && p.size <= 150)) return { ok: false, error: 'setType: size is points, 7.875 to 150 (nothing on the page goes smaller than 10.5px)' };
+  if (p.lead != null && !(_num(p.lead) && p.lead > 0 && p.lead <= 300)) return { ok: false, error: 'setType: lead is points, above 0 (leadX for a multiple of the size)' };
+  if (p.leadX != null && !(_num(p.leadX) && p.leadX >= 0.6 && p.leadX <= 4)) return { ok: false, error: 'setType: leadX is a multiple of the size, 0.6 to 4' };
+  if (p.track != null && !(_num(p.track) && p.track >= -500 && p.track <= 1000)) return { ok: false, error: 'setType: track is thousandths of an em, -500 to 1000' };
+  return { ok: true };
+}
+function _pilotApplySetType(key, p) {
+  const { size, lead, leadX, track, ...rest } = p;
+  const px = size != null ? size / _PT : _pilotTypePx(key);
+  const patch = { ...rest };
+  if ('size' in p) patch.size = size == null ? null : +(size / _PT).toFixed(2);
+  if ('lead' in p) patch.leading = lead == null ? null : +Math.max(0.6, Math.min(4, lead / (px * _PT))).toFixed(3);
+  if ('leadX' in p) patch.leading = leadX;
+  if ('track' in p) patch.tracking = track == null ? null : +(track / 1000 * px).toFixed(2);
+  const r = _pilotApplySetStyle(key, patch);
+  const st = r.style || {};
+  const sz = _num(st.size) ? st.size : px;
+  return { key, style: st, bar: { size: +(sz * _PT).toFixed(2),
+    lead: _num(st.leading) ? +(st.leading * sz * _PT).toFixed(2) : null,
+    track: _num(st.tracking) ? Math.round(st.tracking / sz * 1000) : 0 } };
+}
+
+/** What the Control bar would show for this object, as plain data — only the
+ *  things that differ from the default, so an inventory stays small. Carried
+ *  on every inventory() element; the staff hub's read_report relays it. */
+function _pilotLook(id, el, store) {
+  const out = {};
+  try {
+    const st = store || {};
+    const xf = {};
+    if (st.rot) xf.rot = st.rot;
+    if (st.skew) xf.skew = st.skew;
+    if (st.flip) xf.flip = st.flip;
+    if (st.scale && st.scale !== 1) xf.scale = Math.round(st.scale * 100);
+    if (Object.keys(xf).length) out.xf = xf;
+    if (st.alpha != null && st.alpha < 0.999) out.alpha = st.alpha;
+    const sh = shapeOf(id);
+    if (sh && sh.kind === 'rect' && sh.r) out.r = sh.r;
+    if (fitKind(id)) { const f = fitNow(id); if (f.fit) out.fit = { mode: f.fit, align: f.align || 'center' }; }
+    const bx = boxOf(id);
+    if (bx && fitKind(id) !== 'box') {
+      const eff = dressedObj(bx), fr = {};
+      if (eff.cols > 1) fr.cols = eff.cols;
+      if (eff.cols > 1 && eff.gap != null) fr.gap = eff.gap;
+      const pad = Array.isArray(eff.pad) ? eff.pad[0] : eff.pad;
+      if (pad) fr.pad = pad;
+      if (eff.vAlign && eff.vAlign !== 'top') fr.vAlign = eff.vAlign;
+      if (eff.firstBaseline) fr.firstBaseline = eff.firstBaseline;
+      if (Object.keys(fr).length) out.frame = fr;
+      if (bx.style && Object.keys(bx.style).length) out.style = clone(bx.style);
+    }
+    if (bx && fitKind(id) !== 'box') out.type = _pilotBarType(id);
+  } catch (e) { swallowed('pilotLook', e); }
+  return out;
+}
+/** The words' type as the bar shows it: points, points, thousandths of an em. */
+function _pilotBarType(key) {
+  const c = computedType(key);
+  return { size: +(c.size * _PT).toFixed(2), lead: +(c.leading * c.size * _PT).toFixed(2),
+    track: Math.round((c.tracking || 0) / c.size * 1000) };
+}
+
 function _pilotValidateAnchor(id, key) {
   const v = _pilotValidateExists(id);
   if (!v.ok) return v;
@@ -37042,8 +37324,10 @@ const PILOT_BATCH_VERBS = {
       if (bad.length) return { ok: false, error: `setShape: ${bad.join(', ')} not settable here — ${KEYS.join(', ')}` };
       if ('r' in p) {
         if (s.kind !== 'rect') return { ok: false, error: `setShape: only rectangles have corners, '${id}' is a ${s.kind}` };
-        if (typeof p.r !== 'number' || !isFinite(p.r) || p.r < 0 || p.r > 0.4)
-          return { ok: false, error: 'setShape: r is a corner radius in inches, 0 to 0.4 (0 for square)' };
+        // 0 to 2in: the Control bar's corner field (cb-r) clamps there, and the
+        // engine takes any radius that is not negative.
+        if (typeof p.r !== 'number' || !isFinite(p.r) || p.r < 0 || p.r > 2)
+          return { ok: false, error: 'setShape: r is a corner radius in inches, 0 to 2 (0 for square)' };
       }
       if ('sw' in p && !(typeof p.sw === 'number' && isFinite(p.sw) && p.sw >= 0))
         return { ok: false, error: 'setShape: sw is a width in inches, 0 or more' };
@@ -37342,6 +37626,15 @@ const PILOT_BATCH_VERBS = {
     }, apply: (names, into) => _mergeLayers(Array.isArray(names) ? names : [names], into) },
   dropUnusedLayers: { validate: () => ({ ok: true }), apply: () => ({ dropped: _dropUnusedLayers() }) },
   skew: { validate: id => _pilotValidatePlace(id), apply: (id, deg) => _pilotApplySkew(id, deg) },
+  // The Control bar's own fields, by name: X/Y/W/H about a reference point,
+  // scale %, X%/Y%, rotate/turn, flip (transform); a text frame's columns,
+  // gutter, inset and vertical alignment (setFrame); size / leading /
+  // tracking on selected WORDS and a kern at a caret (setRun); and the type
+  // fields in the bar's units (setType).
+  transform: { validate: (id, o) => _pilotValidateTransform(id, o), apply: (id, o) => _pilotApplyTransform(id, o) },
+  setFrame: { validate: (id, p) => _pilotValidateSetFrame(id, p), apply: (id, p) => _pilotApplySetFrame(id, p) },
+  setRun: { validate: (t, sel, p) => _pilotValidateSetRun(t, sel, p), apply: (t, sel, p) => _pilotApplySetRun(t, sel, p) },
+  setType: { validate: (k, p) => _pilotValidateSetType(k, p), apply: (k, p) => _pilotApplySetType(k, p) },
   // Existence only — place()'s validate also refuses LOCKED elements, which
   // here would make unlocking impossible.
   lock: { validate: id => _pilotValidateExists(id), apply: (id, on) => _pilotApplyLock(id, on) },
@@ -37572,6 +37865,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
               ? { textStyle: store.style.use } : {}),
           text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
           ...data,
+          ..._pilotLook(id, el, storeOf(id)),
         });
       });
       const slotSeen = new Set();
@@ -37595,7 +37889,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
                      : eid.startsWith('para.') ? 'prose' : 'designed')
                     : (el.tagName || '').toLowerCase(),
           chars: (el.textContent || '').replace(/\s+/g, ' ').trim().length,
-          text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) });
+          text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+          ...(sst && Object.keys(sst).length ? { style: clone(sst) } : {}),
+          type: _pilotBarType(key) });
       });
       return { id: pg.dataset.page != null ? pg.dataset.page : String(i + 1),
                index: i, elements, slots };
@@ -38096,7 +38392,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         + (why ? ` — ${why}` : '') };
     }
     paintSel($('out').contentDocument);   // harmless when nothing needed it
-    const results = applied.map(a => (a.verb === 'place' || a.verb === 'addTextBox')
+    const results = applied.map(a => (a.verb === 'place' || a.verb === 'addTextBox' || a.verb === 'transform')
       ? { ...a, box: _pilotMeasure(a.id) } : a);
     return { ...docsync.api.status(), results };
   },
@@ -38286,6 +38582,14 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async setLayer(id, z) { return _pilotOne('setLayer', [id, z]); },
   /** flip(id, 'h' | 'v' | 'hv' | null) — on shapes, boxes, tables, placed pieces. */
   async flip(id, f) { return _pilotOne('flip', [id, f]); },
+  /** transform(id, {ref, link, X, Y, w, h, sx, sy, scale, rot, turn, flip}) — the Control bar's geometry fields about a reference point (tl t tr l c r bl b br). */
+  async transform(id, o) { return _pilotOne('transform', [id, o]); },
+  /** setFrame(id, {cols, gap, pad, vAlign, firstBaseline}) — a text box's columns, gutter, inset (inches) and vertical alignment. */
+  async setFrame(id, p) { return _pilotOne('setFrame', [id, p]); },
+  /** setRun(target, {find, nth, caretAfter}, {size, lead, track, kern}) — character settings on words ([words]{size=14}); caretAfter kerns a pair. */
+  async setRun(t, sel, p) { return _pilotOne('setRun', [t, sel, p]); },
+  /** setType(key, {size, lead, leadX, track, …}) — type in the bar's units: points, points, thousandths of an em. */
+  async setType(k, p) { return _pilotOne('setType', [k, p]); },
   /** setCell(id, row, col, md) — one table cell's words. */
   async setCell(id, r, c, md) { return _pilotOne('setCell', [id, r, c, md]); },
   /** setShape(id, {r, stroke, sw, z}) — a shape's corner radius (inches, rectangles), outline and stacking order. */
