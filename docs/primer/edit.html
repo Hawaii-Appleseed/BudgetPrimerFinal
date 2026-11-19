@@ -454,6 +454,10 @@
   #focus-pill b { font:600 13px system-ui; padding:5px 12px; border-radius:999px; background:var(--sage); color:#fff; }
   #focus-pill:hover b { background:#7DB08A; }
   body.ds-focus #focus-pill { display:flex; }
+  #guide-tip { position:fixed; z-index:10001; pointer-events:none; white-space:nowrap;
+               font:600 13px/1.2 system-ui, sans-serif; color:#fff; background:#0B6E64;
+               padding:5px 10px; border-radius:8px; box-shadow:0 4px 14px rgba(16,26,32,.3); }
+  #guide-tip[hidden] { display:none; }
   body.ds-present #work, body.ds-present #stage { background:#14181B; }
   body.ds-present #stage { overflow:hidden; }
   #present-ov { position:fixed; inset:0; z-index:99990; background:transparent;
@@ -2601,9 +2605,18 @@
       ><rect x="1.5" y="1.5" width="11" height="11" rx="1"/><path
         d="M1.5 4.5h2M1.5 7h3M1.5 9.5h2M4.5 1.5v2M7 1.5v3M9.5 1.5v2"/></svg
       ><span class="shp-t">Rulers &amp; guides</span><span class="shp-k">⌘;</span></button>
+    <button class="shp" id="guideshow"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M1.5 4.5h11M1.5 9.5h11M4.5 1.5v11M9.5 1.5v11" stroke-dasharray="2 1.4"/></svg
+      ><span class="shp-t">Show guides</span></button>
     <button class="shp" id="guidelock"><svg class="shp-i" viewBox="0 0 14 14"
       ><rect x="3" y="6.5" width="8" height="6" rx="1"/><path d="M4.8 6.5V4.6a2.2 2.2 0 0 1 4.4 0v1.9"/></svg
       ><span class="shp-t">Lock guides</span></button>
+    <button class="shp" id="guideadd"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M1.5 7h11M7 1.5v11"/><circle cx="10.6" cy="3.4" r="2.4" fill="#fff"/><path d="M10.6 2.2v2.4M9.4 3.4h2.4"/></svg
+      ><span class="shp-t">Add a guide…</span></button>
+    <button class="shp" id="guideclear"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M1.5 4.5h11M1.5 9.5h11M4.5 1.5v11M9.5 1.5v11" opacity=".4"/><path d="M3 3l8 8M11 3l-8 8"/></svg
+      ><span class="shp-t">Clear all guides</span></button>
     <button class="shp" id="frameedges"><svg class="shp-i" viewBox="0 0 14 14"
       ><rect x="2" y="2" width="10" height="10" stroke-dasharray="2 1.5"/></svg
       ><span class="shp-t">Frame edges</span></button>
@@ -3652,6 +3665,9 @@
       stroke-width="1.5" stroke-linecap="round"><path d="M6 2v8M2 6h8"/></svg>Page</button>
 </div>
 
+<!-- The readout that follows a guide as it is placed or hovered: where it is, and
+     what it has snapped to. -->
+<div id="guide-tip" hidden role="status"></div>
 <!-- Focus mode: every side toolbar, the Control bar and the page strip put away at
      once (View ▸ Focus mode, ⌘\). The pill is the way back, always on screen. -->
 <button id="focus-pill" hidden aria-label="Bring the tools back (⌘\)">
@@ -7120,6 +7136,13 @@ function pageMenu(d, pg, e) {
   item('Duplicate page', () => duplicatePage(pid));
   item('Margins and columns…', () => marginsDialog(pid));
   item('Create guides…', () => createGuidesDialog(pid));
+  // Where the right-click landed, in inches on this page: a guide or a spacer goes there.
+  const hpx = DPI * zoomOf(pg), hr = pg.getBoundingClientRect();
+  const hx = round2(Math.max(0, Math.min(PAGE_W_IN, (e.clientX - hr.left) / hpx)));
+  const hy = round2(Math.max(0, Math.min(PAGE_H_IN, (e.clientY - hr.top) / hpx)));
+  item(`Add a vertical guide here (${hx} in)`, () => addGuideHere('x', hx));
+  item(`Add a horizontal guide here (${hy} in)`, () => addGuideHere('y', hy));
+  item('Add a spacer here', () => addSpacerHere(pid, hx, hy));
   item('Reading order…', () => readingOrderDialog(pid));
   item('Numbering and section…', () => pageSectionDialog(pid));
   if (masterNameOf(pid)) {
@@ -9240,8 +9263,12 @@ function togglePop(pop, anchor) {
   // picker's bottom rows (the image popover's "Upload from computer…" above
   // all) below the fold with no way to reach them. The floor keeps a pop
   // opened NEAR the bottom usable rather than one row tall.
+  // max-height is the CONTENT box's (.pop is content-box): its padding and border
+  // come on top, and a clamped menu used to hang that much (14px) past the window.
+  const pcs = getComputedStyle(pop), edge = pcs.boxSizing === 'border-box' ? 0
+    : ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((a, k) => a + (parseFloat(pcs[k]) || 0), 0);
   pop.style.maxHeight = Math.max(120,
-    document.documentElement.clientHeight - r.bottom - 18) + 'px';
+    document.documentElement.clientHeight - r.bottom - 18 - edge) + 'px';
   pop.style.overflowY = 'auto';
   // …and when the anchor itself is near the bottom (a button pinned low on
   // the rail, on a short window) there is no room BELOW it at all: slide the
@@ -9250,7 +9277,7 @@ function togglePop(pop, anchor) {
   if (vh - r.bottom - 18 < 120 && r.bottom + 6 + h > vh - 8) {
     const top = Math.max(8, vh - h - 12);
     pop.style.top = top + 'px';
-    pop.style.maxHeight = Math.max(120, vh - top - 12) + 'px';
+    pop.style.maxHeight = Math.max(120, vh - top - 12 - edge) + 'px';
   }
 }
 // Anything whose own handler already toggles: clicking one of these must not
@@ -18423,7 +18450,7 @@ function setGuides(x, y) {
 
 function drawGuideLayer(d) {
   d.querySelectorAll('.ds-rule, .ds-gd, .ds-mg, .ds-mgc').forEach(n => n.remove());
-  if (!guidesOn) return;
+  if (!guidesOn || !guidesShown) return;
   const ids = new Map(docSheets().map(s => [s.pg, s.id]));
   d.querySelectorAll('section.page').forEach(pg => {
     // Margins (magenta) and columns (violet), as InDesign draws them. Not
@@ -18458,8 +18485,116 @@ function guideLine(d, pg, axis, idx, pos) {
   el.style[axis === 'v' ? 'left' : 'top'] = pos + 'in';
   el.title = guidesLocked ? `guide at ${pos}in (guides are locked — View ▸ Lock guides)`
     : `guide at ${pos}in — drag to move; click and Delete, or drag onto a ruler, to remove`;
-  el.addEventListener('mousedown', e => startGuideDrag(d, pg, axis, idx, e));
+  el.addEventListener('mousedown', e => { guideTip(null); startGuideDrag(d, pg, axis, idx, e); });
+  // Hovering says where it is and how to use it; right-click is its menu; a
+  // double-click types a new place for it.
+  el.addEventListener('mouseenter', e => {
+    if (e.buttons || guideBusy) return;
+    const w = frameToWindow(e);
+    guideTip(guidesLocked ? `${pos} in · locked` : `${pos} in · drag to move · right-click for more`, w.x, w.y);
+  });
+  el.addEventListener('mousemove', e => { if (!guideBusy && !$('guide-tip').hidden && !e.buttons) { const w = frameToWindow(e); guideTip($('guide-tip').textContent, w.x, w.y); } });
+  el.addEventListener('mouseleave', e => { if (!guideBusy && !e.buttons) guideTip(null); });
+  el.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); guideTip(null); guideMenu(d, pg, axis, idx, e); });
+  el.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); guideTip(null); moveGuideDialog(axis, idx); });
   return el;
+}
+
+/** Right-click ▸ Add a guide here. Brings the rulers and guides up if they were away. */
+function addGuideHere(axis, at) {
+  if (!guidesOn) toggleGuides();
+  if (!guidesShown) { guidesShown = true; try { localStorage.setItem('ds-guides-vis', '1'); } catch (e) { /* file: */ } }
+  pushHistory();
+  const v = addGuide(axis, at);
+  drawGuideLayer($('out').contentDocument);
+  chromeSync();
+  $('stat').textContent = `${axis === 'x' ? 'vertical' : 'horizontal'} guide at ${v}in — drag it to move, drag it onto a ruler to remove it`;
+}
+/** Right-click ▸ Add a spacer here: a gap marker with its top-left corner where you clicked. */
+async function addSpacerHere(pid, x, y) {
+  const w = 3, h = SPACER_IN;
+  pushHistory();
+  const r = _pilotApplyAddShape({ kind: 'spacer', page: pid, x: round2(Math.max(0, Math.min(PAGE_W_IN - w, x))),
+                                  y: round2(Math.max(0, Math.min(PAGE_H_IN - h, y))), w, h });
+  markDirty(); await render();
+  setSel($('out').contentDocument, [r.id]);
+  $('stat').textContent = `spacer holding ${h}in — drag its edge to size the gap; things it touches keep it when one moves`;
+}
+
+/** A guide's right-click menu. */
+function guideMenu(d, pg, axis, idx, e) {
+  closeMenu(d);
+  const arr = axis === 'v' ? guidesX() : guidesY();
+  const at = arr[idx];
+  const m = d.createElement('div');
+  m.className = 'ds-menu';
+  const win = d.defaultView || window;
+  m.style.left = (e.clientX + win.scrollX) + 'px';
+  m.style.top = (e.clientY + win.scrollY) + 'px';
+  const item = (label, fn) => {
+    const b = d.createElement('button');
+    b.textContent = label;
+    b.addEventListener('click', async () => { closeMenu(d); await fn(); });
+    m.appendChild(b);
+  };
+  const head = d.createElement('div');
+  head.className = 'ds-menu-head';
+  head.textContent = `${axis === 'v' ? 'Vertical' : 'Horizontal'} guide · ${at} in`;
+  m.appendChild(head);
+  item('Delete guide', () => { selGuide = { axis, idx }; deleteSelGuide(); });
+  item('Move to…', () => moveGuideDialog(axis, idx));
+  const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
+  item(guidesLocked ? 'Unlock guides' : 'Lock guides', () => $('guidelock').click());
+  item('Hide guides', () => $('guideshow').click());
+  item('Clear all guides', () => clearAllGuides());
+  d.body.appendChild(m); menuUp(true);
+  const r = m.getBoundingClientRect();
+  if (r.right > win.innerWidth) m.style.left = (e.clientX + win.scrollX - r.width) + 'px';
+  if (r.bottom > win.innerHeight) m.style.top = (e.clientY + win.scrollY - r.height) + 'px';
+}
+async function moveGuideDialog(axis, idx) {
+  const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
+  if (idx >= arr.length) return;
+  const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
+  const got = await dsForm(`Move this ${axis === 'v' ? 'vertical' : 'horizontal'} guide`, [{
+    name: 'at', label: `Position, from the page's ${axis === 'v' ? 'left' : 'top'} edge (inches; 18pt and 1p6 work too)`,
+    value: String(arr[idx]) }], {
+    okLabel: 'Move',
+    validate: v => { const n = parseLen(v.at); return isFinite(n) && n >= 0 && n <= span ? '' : `a position from 0 to ${span} inches`; },
+  });
+  if (got == null) return;
+  pushHistory();
+  arr[idx] = round2(parseLen(got.at));
+  if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+  drawGuideLayer($('out').contentDocument);
+}
+/** View ▸ Add a guide…: type the line's place instead of dragging it. */
+async function addGuideDialog() {
+  const got = await dsForm('Add a guide', [
+    { name: 'axis', type: 'select', label: 'Direction', value: 'v', options: [
+      { value: 'v', label: 'Vertical (a line down the page)' }, { value: 'h', label: 'Horizontal (a line across the page)' }] },
+    { name: 'at', label: 'Position, from the page’s left or top edge (inches; 18pt and 1p6 work too)', value: '1' }], {
+    okLabel: 'Add guide',
+    validate: v => { const n = parseLen(v.at), span = v.axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
+      return isFinite(n) && n >= 0 && n <= span ? '' : `a position from 0 to ${span} inches`; },
+  });
+  if (got == null) return;
+  if (!guidesOn) toggleGuides();
+  if (!guidesShown) { guidesShown = true; try { localStorage.setItem('ds-guides-vis', '1'); } catch (e) { /* file: */ } }
+  pushHistory();
+  const v = addGuide(got.axis === 'v' ? 'x' : 'y', parseLen(got.at));
+  drawGuideLayer($('out').contentDocument);
+  chromeSync();
+  $('stat').textContent = `${got.axis === 'v' ? 'vertical' : 'horizontal'} guide at ${v}in`;
+}
+function clearAllGuides() {
+  const n = guidesX().length + guidesY().length;
+  if (!n) { $('stat').textContent = 'no guides to clear'; return; }
+  pushHistory();
+  selGuide = null;
+  setGuides([], []);
+  drawGuideLayer($('out').contentDocument);
+  $('stat').textContent = `${n} guide${n === 1 ? '' : 's'} cleared — ⌘Z brings ${n === 1 ? 'it' : 'them'} back`;
 }
 
 // One guide can be selected (a click on it), and Delete removes it — the
@@ -18500,6 +18635,50 @@ function removeGuide(axis, at) {
 }
 let guidesLocked = false;
 try { guidesLocked = localStorage.getItem('ds-guides-lock') === '1'; } catch (e) { /* file: */ }
+// Guides can be hidden without taking the rulers away (View ▸ Show guides).
+let guideBusy = 0;               // a guide is being pulled or moved: its readout is the drag's
+let guidesShown = true;
+try { guidesShown = localStorage.getItem('ds-guides-vis') !== '0'; } catch (e) { /* file: */ }
+
+/** The lines a guide is pulled toward as it is placed or moved: the page's
+ *  edges and its centre, its margins and columns, and the other guides. Held
+ *  Alt (or Shift, which lands on the ruler's eighths) it goes where the pointer
+ *  is. Within 6 screen pixels the guide jumps to the line and the readout names it. */
+function guideTargets(pg, axis, skip) {
+  const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN, out = [];
+  out.push({ v: 0, why: 'page edge' }, { v: round2(span / 2), why: 'centre' }, { v: span, why: 'page edge' });
+  const sh = docSheets().find(x => x.pg === pg);
+  const mg = marginGuides(sh ? sh.id : pageIdOf(pg));
+  if (mg) {
+    const ends = axis === 'v' ? [mg.l, mg.r] : [mg.t, mg.b];
+    ends.forEach(v => out.push({ v: round2(v), why: 'margin' }));
+    if (axis === 'v') mg.cols.forEach(v => out.push({ v: round2(v), why: 'column' }));
+  }
+  (axis === 'v' ? guidesX() : guidesY()).forEach((g, i) => { if (i !== skip) out.push({ v: g, why: 'guide' }); });
+  return out;
+}
+function guideSnap(pg, axis, v, e, skip, scale) {
+  if (e.altKey || e.shiftKey) return { v, why: '' };
+  const px = DPI * zoomOf(pg) * (scale || 1), tol = 6 / px;
+  let best = null;
+  guideTargets(pg, axis, skip).forEach(t => { if (Math.abs(t.v - v) <= tol && (!best || Math.abs(t.v - v) < Math.abs(best.v - v))) best = t; });
+  return best ? { v: best.v, why: best.why } : { v, why: '' };
+}
+/** The readout that follows a guide: where it is, and what it has landed on.
+ *  x, y are WINDOW pixels; null hides it. */
+function guideTip(text, x, y) {
+  const t = $('guide-tip');
+  if (!t) return;
+  if (text == null) { t.hidden = true; return; }
+  t.textContent = text; t.hidden = false;
+  t.style.left = Math.min(innerWidth - 20 - t.offsetWidth, x + 16) + 'px';
+  t.style.top = Math.max(8, y - 34) + 'px';
+}
+/** A pointer event of the report's document, as window pixels. */
+function frameToWindow(e) {
+  const out = $('out'), or = out.getBoundingClientRect(), sc = or.width / (out.offsetWidth || 1) || 1;
+  return { x: or.left + e.clientX * sc, y: or.top + e.clientY * sc, sc };
+}
 
 // ----------------------------------------------------------------- rulers
 // InDesign's rulers: inches along the canvas's top and left edges, 0 at the
@@ -18723,7 +18902,11 @@ function startRulerGuide(axis, e0) {
     if (e.shiftKey) v = Math.round(v * 8) / 8;
     const inside = v >= 0 && v <= span && !overRuler(e)
       && (axis === 'v' ? (e.clientY >= pr.top && e.clientY <= pr.bottom) : true);
+    const snap = inside ? guideSnap(pg, axis, v, e, -1, sc) : { v, why: '' };
+    v = snap.v;
     pos = inside ? round2(v) : null;
+    const w = { x: or0.left + e.clientX * sc, y: or0.top + e.clientY * sc };
+    guideTip(pos == null ? 'drop it on the page · release here to cancel' : `${pos} in${snap.why ? ' · ' + snap.why : ''}`, w.x, w.y);
     if (!ghost || ghost.parentNode !== pg) {
       if (ghost) ghost.remove();
       ghost = d.createElement('div');
@@ -18736,6 +18919,8 @@ function startRulerGuide(axis, e0) {
   };
   const up = () => {
     dragUnlisten(d, move, up);
+    guideBusy = Math.max(0, guideBusy - 1);
+    guideTip(null);
     if (ghost) ghost.remove();
     if (pos == null) { $('stat').textContent = 'no guide placed'; return; }
     pushHistory();
@@ -18743,11 +18928,31 @@ function startRulerGuide(axis, e0) {
     drawGuideLayer(d);
     $('stat').textContent = `guide at ${pos}in — objects snap to it; drag it onto a ruler to remove`;
   };
+  guideBusy++;
   dragListen(d, move, up);
   move(frameOf(e0));
 }
 ['ruler-t', 'ruler-l'].forEach(id => $(id).addEventListener('mousedown',
   e => startRulerGuide(id === 'ruler-t' ? 'h' : 'v', e)));
+// Double-click a ruler: a guide at the tick you clicked, as InDesign's does
+// (the top ruler gives a vertical guide at that distance across the page, the
+// left one a horizontal guide at that distance down it).
+['ruler-t', 'ruler-l'].forEach(id => $(id).addEventListener('dblclick', e => {
+  const F = rulerFrame();
+  if (!F || !F.pages.length) return;
+  const horiz = id === 'ruler-t';
+  const pgInfo = horiz ? rulerRefPage(F) : F.pages.find(p => e.clientY >= p.top && e.clientY <= p.top + p.h);
+  if (!pgInfo) return;
+  const along = horiz ? (e.clientX - pgInfo.left) / pgInfo.pxIn : (e.clientY - pgInfo.top) / pgInfo.pxIn;
+  const span = horiz ? PAGE_W_IN : PAGE_H_IN;
+  if (along < 0 || along > span) { $('stat').textContent = 'double-click on the page’s own stretch of the ruler to add a guide'; return; }
+  const d = F.d;
+  const snap = guideSnap(pgInfo.pg, horiz ? 'v' : 'h', along, e, -1, pgInfo.pxIn / (DPI * zoomOf(pgInfo.pg)));
+  pushHistory();
+  const v = addGuide(horiz ? 'x' : 'y', snap.v);
+  drawGuideLayer(d);
+  $('stat').textContent = `${horiz ? 'vertical' : 'horizontal'} guide at ${v}in — double-click it to retype, right-click for more`;
+}));
 // The corner square is the rulers' own switch: one click puts them away
 // (⌘; or View ▸ Rulers & guides brings them back).
 $('ruler-c').addEventListener('click', () => toggleGuides());
@@ -18775,13 +18980,20 @@ function startGuideDrag(d, pg, axis, idx, e0) {
     pos = raw(e);
     if (e.shiftKey) pos = Math.round(pos * 8) / 8;     // ⇧ lands on the ruler's eighths
     onRuler = overRuler(e);
+    const snap = gone() ? { v: pos, why: '' } : guideSnap(pg, axis, pos, e, idx, frameToWindow(e).sc);
+    pos = snap.v;
     const shown = Math.max(0, Math.min(span, pos));
     el.style[axis === 'v' ? 'left' : 'top'] = round2(shown) + 'in';
     el.style.opacity = gone() ? '.3' : '';
+    const w = frameToWindow(e);
+    guideTip(gone() ? 'release to delete this guide' : `${round2(shown)} in${snap.why ? ' · ' + snap.why : ''}`, w.x, w.y);
     $('stat').textContent = gone() ? 'release to delete this guide' : `guide at ${round2(shown)}in`;
   };
+  guideBusy++;
   const up = () => {
     dragUnlisten(d, move, up);
+    guideBusy = Math.max(0, guideBusy - 1);
+    guideTip(null);
     if (!started) {
       // A click: select this guide, and nothing else.
       clearSel(d);
@@ -18827,6 +19039,21 @@ function spacerUnder(d, id = null, h = null) {
   const gap = +h > 0 ? +h : SPACER_IN;
   return { kind: 'spacer', page: pid, x: round2(b.x), y: round2(Math.min(b.y + b.h, PAGE_H_IN - gap)),
            w: round2(Math.max(0.2, b.w)), h: round2(gap) };
+}
+/** Where a spacer goes with nothing selected: across the text column of the page
+ *  in view, at the middle of what is on screen, so it lands where you are looking
+ *  rather than on the title. Null when no page is mounted. */
+function spacerInView(d) {
+  if (!d) return null;
+  const want = visiblePageId();
+  const mp = mountedPages(d).find(p => p.id === want) || mountedPages(d)[0];
+  if (!mp) return null;
+  const out = $('out'), or = out.getBoundingClientRect(), sc = or.width / (out.offsetWidth || 1) || 1;
+  const S = $('stage').getBoundingClientRect(), pr = mp.pg.getBoundingClientRect(), px = DPI * zoomOf(mp.pg);
+  const mid = ((S.top + S.height / 2) - or.top) / sc;                  // the stage's middle, in the report's own pixels
+  const m = marginsFor(mp.id), L = m && m.left != null ? m.left : 0.75, R = m && m.right != null ? m.right : 0.75;
+  return { kind: 'spacer', page: mp.id, x: round2(L), w: round2(Math.max(1, PAGE_W_IN - L - R)),
+           y: round2(Math.max(0.25, Math.min(PAGE_H_IN - 0.5, (mid - pr.top) / px))), h: SPACER_IN };
 }
 /** The label on a spacer: the gap it holds, in inches — its height, or its
  *  width when it lies on its side. */
@@ -19083,6 +19310,17 @@ function toggleGuides() {
     ? 'rulers and guides on — drag out of a ruler to add a guide' : 'rulers and guides off';
 }
 $('guides').addEventListener('click', toggleGuides);
+$('guideshow').addEventListener('click', () => {
+  guidesShown = !guidesShown;
+  try { localStorage.setItem('ds-guides-vis', guidesShown ? '1' : '0'); } catch (e) { /* file: */ }
+  if (guidesShown && !guidesOn) toggleGuides();          // guides need the rulers they are pulled from
+  if (!guidesShown) unselectGuide($('out').contentDocument);
+  drawGuideLayer($('out').contentDocument);
+  chromeSync();
+  $('stat').textContent = guidesShown ? 'guides shown' : 'guides hidden — View ▸ Show guides brings them back';
+});
+$('guideadd').addEventListener('click', () => addGuideDialog());
+$('guideclear').addEventListener('click', () => clearAllGuides());
 $('guidelock').addEventListener('click', () => {
   guidesLocked = !guidesLocked;
   try { localStorage.setItem('ds-guides-lock', guidesLocked ? '1' : '0'); } catch (e) { /* file: */ }
@@ -19650,6 +19888,8 @@ function chromeSync() {
   $('stripbtn').classList.toggle('on', !folded);
   $('focusbtn').classList.toggle('on', focusOn);
   $('guides').classList.toggle('on', guidesOn);
+  $('guideshow').classList.toggle('on', guidesOn && guidesShown);
+  $('guidelock').classList.toggle('on', guidesLocked);
   $('ctlbar').classList.toggle('on', ctlOn);
 }
 /** The stage changed size: the page is fitted to it again and the rulers follow. */
@@ -25803,7 +26043,7 @@ $('shapepop').querySelector('[data-qr]').addEventListener('click', async () => {
 $('shapepop').querySelector('[data-spacer]').addEventListener('click', async () => {
   const d = $('out').contentDocument;
   pushHistory();
-  const r = _pilotApplyAddShape(spacerUnder(d) || { kind: 'spacer' });
+  const r = _pilotApplyAddShape(spacerUnder(d) || spacerInView(d) || { kind: 'spacer' });
   markDirty(); await render();
   setSel($('out').contentDocument, [r.id]);
   const sh = shapeOf(r.id);
@@ -30034,6 +30274,18 @@ function wire(roots) {
     .ds-gd.v { background:linear-gradient(#12B5A5,#12B5A5) 4px 0/1px 100% no-repeat; }
     .ds-gd.h { background:linear-gradient(#12B5A5,#12B5A5) 0 4px/100% 1px no-repeat; }
     .ds-gd:hover { background-color:rgba(18,181,165,.12); }
+    .ds-gd.v { cursor:col-resize; }
+    .ds-gd.h { cursor:row-resize; }
+    .ds-gd-lock { cursor:default; }
+    /* Hovered, a guide thickens, so it is clear this is the thing a press will take. */
+    .ds-gd.v:not(.ds-gd-ghost):hover { background:linear-gradient(#0B8F82,#0B8F82) 3px 0/3px 100% no-repeat, rgba(18,181,165,.10); }
+    .ds-gd.h:not(.ds-gd-ghost):hover { background:linear-gradient(#0B8F82,#0B8F82) 0 3px/100% 3px no-repeat, rgba(18,181,165,.10); }
+    /* A guide is for the pointer only when the pointer is working on guides: while
+       words are open, with the Type or Hand tool, it is not in the way. */
+    .ds-tool-type .ds-gd, .ds-hand .ds-gd, html:has([contenteditable="true"]:focus) .ds-gd { pointer-events:none; }
+    /* A spacer is furniture, not content: a quiet dashed outline and a faint hatch. */
+    .ds-gapmark rect { fill-opacity:.05; stroke-opacity:.5; stroke-dasharray:5 4; }
+    .ds-gapmark path { stroke-opacity:.22; }
     .ds-mg { position:absolute; z-index:9990; pointer-events:none; box-sizing:border-box;
              border:1px solid rgba(214,51,132,.75); }
     .ds-mgc { position:absolute; z-index:9990; pointer-events:none; width:0;
