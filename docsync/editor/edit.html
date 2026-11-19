@@ -410,6 +410,50 @@
      click so nothing underneath can start an edit mid-presentation. */
   body.ds-present #bar, body.ds-present #ctl, body.ds-present #dock, body.ds-present #context, body.ds-present #leftrail,
   body.ds-present #rail, body.ds-present #side { display:none !important; }
+  body.ds-present .edge-tab, body.ds-present #focus-pill { display:none !important; }
+
+  /* -- showing and hiding the chrome. Each side toolbar has a handle on its own
+     foot that puts it away (a click, or a drag toward its edge), and what it
+     leaves is a tab on the window's edge that brings it back, so a toolbar that
+     is put away is never gone. Focus mode puts the lot away at once and keeps
+     only a pill. The rulers' corner square is the rulers' own switch. */
+  .edge-tab { position:absolute; z-index:9; top:56px; width:18px; height:60px; padding:0; border:0;
+              display:flex; align-items:center; justify-content:center; cursor:pointer;
+              background:var(--chrome2); color:var(--txt); opacity:.82;
+              transition:width .14s ease, opacity .14s ease, background .14s ease; }
+  .edge-tab[hidden] { display:none; }
+  .edge-tab svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8;
+                  stroke-linecap:round; stroke-linejoin:round; }
+  .edge-tab:hover, .edge-tab:focus-visible { width:26px; opacity:1; background:var(--sage); }
+  #rail-tab { left:0; border-radius:0 12px 12px 0; box-shadow:var(--shadow-edge); }
+  #dock-tab { right:0; border-radius:12px 0 0 12px; box-shadow:-2px 0 14px rgba(16,26,32,.13); }
+  body.cmt-margin #dock-tab { right:var(--cmt-gutter, 384px); }
+  body.ds-rulers #rail-tab { left:18px; }   /* the left ruler stands on the edge: the tab stands beside it */
+  #leftrail .rail-end, #dock-icons .dk-end { display:flex; align-items:center; justify-content:center; flex:none;
+              padding:0; border:0; background:none; color:var(--dim); cursor:pointer; opacity:.7;
+              transition:background .14s, color .14s, opacity .14s; }
+  #leftrail .rail-end { width:44px; height:26px; border-radius:10px; margin-top:2px; }
+  #dock-icons .dk-end { width:32px; height:26px; border-radius:var(--r-ctl); margin-top:auto; }
+  #leftrail .rail-end:hover, #dock-icons .dk-end:hover, #leftrail .rail-end:focus-visible, #dock-icons .dk-end:focus-visible
+    { background:rgba(255,255,255,.14); color:var(--txt); opacity:1; }
+  #leftrail .rail-end svg, #dock-icons .dk-end svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8;
+              stroke-linecap:round; stroke-linejoin:round; }
+  #leftrail.dragging, #dock.dragging { transition:none; }
+  body.ds-rail-off #leftrail, body.ds-rail-off #side { display:none !important; }
+  body.ds-rail-off { --rail-w:0px; }
+  body.ds-rail-off:not(.ds-focus) #rail-tab { display:flex; }
+  body.ds-dock-off:not(.ds-focus) #dock-tab { display:flex; }
+  body.ds-focus #ctl, body.ds-focus #dock, body.ds-focus #leftrail, body.ds-focus #side, body.ds-focus #rail,
+  body.ds-focus #context, body.ds-focus .edge-tab { display:none !important; }
+  body.ds-focus { --rail-w:0px; --dock-w:0px; --strip-h:0px; }
+  #focus-pill { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:60; display:none;
+                align-items:center; gap:10px; padding:7px 8px 7px 16px; border:0; border-radius:999px; cursor:pointer;
+                background:rgba(47,62,70,.92); color:var(--txt); font:13px system-ui;
+                box-shadow:0 6px 24px rgba(16,26,32,.3); }
+  #focus-pill kbd { font:12px system-ui; color:var(--dim); }
+  #focus-pill b { font:600 13px system-ui; padding:5px 12px; border-radius:999px; background:var(--sage); color:#fff; }
+  #focus-pill:hover b { background:#7DB08A; }
+  body.ds-focus #focus-pill { display:flex; }
   body.ds-present #work, body.ds-present #stage { background:#14181B; }
   body.ds-present #stage { overflow:hidden; }
   #present-ov { position:fixed; inset:0; z-index:99990; background:transparent;
@@ -467,12 +511,18 @@
               width:var(--rail-w); box-sizing:border-box;
               background:linear-gradient(180deg, #44545F, var(--chrome2) 55%);
               display:flex; flex-direction:column;
-              align-items:center; gap:4px; padding:10px 0 12px; overflow:visible;
+              align-items:center; gap:4px; padding:10px 0 12px;
+              /* never taller than the room above the page strip: a short window
+                 compacts it (below) and, past that, it scrolls rather than run
+                 under the strip. Its pop-ups are position:fixed, so not cut. */
+              max-height:calc(100% - var(--strip-h, 0px)); overflow-y:auto; overflow-x:hidden; scrollbar-width:none;
               border-radius:0 var(--r-edge) var(--r-edge) 0;
               box-shadow:var(--shadow-edge), inset -1px 0 0 rgba(255,255,255,.05),
                          inset 0 1px 0 rgba(255,255,255,.07); }
+  #leftrail::-webkit-scrollbar { display:none; }
   #leftrail .rsep { width:26px; height:1px; margin:4px 0; background:rgba(255,255,255,.12); flex:none; }
   #rail-pins { display:flex; flex-direction:column; align-items:center; gap:4px; }
+  #rail-pins > .fit-off { display:none !important; }   /* a pin that does not fit the window's height (railFit); the + reaches it */
   #rail-cmds { display:none; }
   /* While one of the rail's own popovers is open it must outrank EVERYTHING —
      the rail's z-index:2 is a stacking context, so the .pop's z-index:1000
@@ -504,6 +554,16 @@
   #leftrail #insert:hover { background:linear-gradient(180deg,#86B993,#639574); }
   #leftrail #insert svg { width:24px; height:24px; stroke-width:1.9; }
   #leftrail #insert.on { box-shadow:0 0 0 3px rgba(107,158,120,.35), 0 3px 12px rgba(107,158,120,.5), inset 0 1px 0 rgba(255,255,255,.28); }
+  /* a short window: the rail tightens so the tools, +, six pins and Colors fit above the page strip */
+  @media (max-height:780px) {
+    #leftrail { gap:1px; padding:6px 0 6px; }
+    :is(#leftrail > button, #rail-pins > button) { width:38px; height:38px; border-radius:11px; }
+    :is(#leftrail > button, #rail-pins > button) svg { width:19px; height:19px; }
+    #leftrail #insert { width:40px; height:40px; border-radius:13px; }
+    #leftrail .rsep { margin:2px 0; }
+    #leftrail .rail-end { height:22px; margin-top:0; }
+    #rail-pins { gap:1px; }
+  }
 
   /* The Insert palette (⌘K, or the + on the rail): a search-first list of
      everything that can be placed. Floats beside the rail over a faint veil. */
@@ -935,8 +995,9 @@
            --ruler-page:#FFFFFF; --ruler-sel:rgba(18,181,165,.30); cursor:crosshair; }
   #ruler-t { cursor:row-resize; }
   #ruler-l { cursor:col-resize; }
-  #ruler-c { z-index:8; cursor:default; border:solid rgba(0,0,0,.18); border-width:0 1px 1px 0;
+  #ruler-c { z-index:8; cursor:pointer; border:solid rgba(0,0,0,.18); border-width:0 1px 1px 0;
              box-sizing:border-box; }
+  #ruler-c:hover { background:#DDE6DF; }
   .ruler[hidden] { display:none; }
   /* #ds-warm is the warm-boot preview: the last render, painted into its OWN
      overlay iframe while Pyodide compiles, and removed by the first real
@@ -993,6 +1054,7 @@
              none/auto split #context uses for the contextual card. */
           pointer-events:none; }
   #rail > * { pointer-events:auto; }
+  #rail[hidden] { display:none; }
   /* :focus-within as well as :hover — reaching the strip by keyboard has to
      bring it up too, or Tab lands you on a control you cannot see. */
   #rail:hover, #rail:focus-within, #rail.dragging {
@@ -1150,7 +1212,7 @@
   #dock-panel { width:272px; display:flex; flex-direction:column; min-height:0;
           background:#fff; color:var(--ink); }
   #dock-panel[hidden] { display:none; }
-  #dock:not(.pinned) #dock-panel { position:absolute; right:40px; top:0; bottom:0;
+  #dock:not(.pinned) #dock-panel { position:absolute; right:40px; top:0; bottom:var(--strip-h, 0px);
           border-radius:var(--r-edge) 0 0 var(--r-edge); box-shadow:-6px 0 22px rgba(20,30,35,.20); }
   #dock.pinned #dock-panel { border-right:1px solid var(--line); }
   #dock-head { display:flex; align-items:center; gap:2px; padding:8px 6px 7px 14px;
@@ -1183,7 +1245,7 @@
   /* z-index:9, above the rulers (7, corner 8): they are fixed to the window,
      so they outrank anything inside #work below 7 and used to run across the
      tray's left edge and cut it off whenever rulers were on. */
-  #side { position:absolute; left:var(--rail-w); top:0; bottom:0; z-index:9; width:252px;
+  #side { position:absolute; left:var(--rail-w); top:0; bottom:var(--strip-h, 0px); z-index:9; width:252px;
           display:flex; flex-direction:column; background:#fff; color:var(--ink);
           /* Rounded on the canvas side only, and no border: the same treatment
              as the rail it sits against, so the two read as one assembly
@@ -1235,7 +1297,7 @@
      67px thumbnail, its label, and the band's own padding). Without this the
      bottom section of a long panel is visible and unclickable, which is worse
      than being hidden. */
-  #side-body { flex:1; min-height:0; overflow-y:auto; padding:0 14px 112px; }
+  #side-body { flex:1; min-height:0; overflow-y:auto; padding:0 14px 24px; }
   #side-body h4 { display:flex; align-items:center; gap:7px; font:600 12.5px system-ui;
           margin:16px 0 9px; color:var(--ink); }
   #side-search { width:100%; box-sizing:border-box; font:13px system-ui;
@@ -2034,7 +2096,7 @@
   /* Version history, the side panel: the comments panel's frame (same
      radii, same head), rows grouped by day, the chosen one open on what it
      changed. Under 1100px it floats over the page as the comments list does. */
-  #hpanel { position:fixed; right:12px; top:104px; bottom:60px; width:min(360px, 90vw); z-index:45;
+  #hpanel { position:fixed; right:12px; top:104px; bottom:calc(var(--strip-h, 0px) + 10px); width:min(360px, 90vw); z-index:45;
     display:flex; flex-direction:column; background:#F8FAF8; border:1px solid #C9D6CD; border-radius:var(--r-card, 10px);
     box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
   #hpanel[hidden] { display:none; }
@@ -2072,7 +2134,7 @@
      Shaped like Google Docs' comments: cards with an avatar, name and
      time, the quoted words above, replies threaded under, a checkmark and
      a ⋮ on hover, a one-line reply box that opens into a real one. */
-  #cpanel { position:fixed; right:12px; top:104px; bottom:60px; width:min(360px, 90vw); z-index:45;
+  #cpanel { position:fixed; right:12px; top:104px; bottom:calc(var(--strip-h, 0px) + 10px); width:min(360px, 90vw); z-index:45;
     display:flex; flex-direction:column; background:var(--cmt-ground); border:1px solid var(--cmt-edge); border-radius:var(--r-card);
     box-shadow:0 8px 28px rgba(30,44,50,.18); font:13px system-ui; color:var(--ink); }
   #cpanel[hidden] { display:none; }
@@ -2549,10 +2611,18 @@
       ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5h11"/><path
         d="M3.5 3.5h1.5M6 3.5h1.5M8.5 3.5h2"/></svg
       ><span class="shp-t">Control bar</span><span class="shp-k">⌥⌘6</span></button>
+    <button class="shp" id="railbtn"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M5 2v10"/><path
+        d="M3.2 4.5h0M3.2 7h0M3.2 9.5h0"/></svg
+      ><span class="shp-t">Tools</span><span class="shp-k">⌥⌘1</span></button>
     <button class="shp" id="dockbtn"><svg class="shp-i" viewBox="0 0 14 14"
       ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M9.5 2v10"/><path
         d="M11 4.5h0M11 7h0M11 9.5h0"/></svg
-      ><span class="shp-t">Panel dock</span></button>
+      ><span class="shp-t">Panels</span><span class="shp-k">⌥⌘2</span></button>
+    <button class="shp" id="stripbtn"><svg class="shp-i" viewBox="0 0 14 14"
+      ><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 8.5h11"/><path
+        d="M3.4 9.8h1.6M6.2 9.8h1.6M9 9.8h1.6"/></svg
+      ><span class="shp-t">Page strip</span><span class="shp-k">⌥⌘4</span></button>
     <button class="shp" id="hiddenchars"><span class="shp-i shp-glyph" aria-hidden="true">¶</span
       ><span class="shp-t">Hidden characters</span><span class="shp-k">⌥⌘I</span></button>
     <button class="shp" id="layers"><svg class="shp-i" viewBox="0 0 14 14"
@@ -2565,6 +2635,9 @@
       ><circle cx="7" cy="8" r="4.8"/><path d="M7 8V5.4M5.6 1.6h2.8M11 3.6l.9-.9"/></svg
       ><span class="shp-t">Undo history</span></button>
     <p class="pop-h">This window</p>
+    <button class="shp" id="focusbtn"><svg class="shp-i" viewBox="0 0 14 14"
+      ><path d="M1.8 5V1.8H5M9 1.8h3.2V5M12.2 9v3.2H9M5 12.2H1.8V9"/></svg
+      ><span class="shp-t">Focus mode</span><span class="shp-k">⌘\</span></button>
     <button class="shp" id="present"><svg class="shp-i" viewBox="0 0 14 14"
       ><rect x="1.5" y="2" width="11" height="8" rx="1.2"/><path
         d="M5.8 4.4l3.1 1.6-3.1 1.6z" fill="currentColor" stroke="none"/><path
@@ -3502,6 +3575,11 @@
       <button id="chart" aria-label="Chart: add a bar chart to the page in view">
         <svg viewBox="0 0 14 14"><path d="M1.6 12.4h10.8"/><rect x="2.6" y="7" width="2.4" height="4.2"/><rect x="6" y="4.2" width="2.4" height="7"/><rect x="9.4" y="1.8" width="2.4" height="9.4"/></svg></button>
     </div>
+    <!-- Put the rail away: a click, or drag it toward the window's edge. What
+         is left is a tab on the edge (#rail-tab) that brings it back. -->
+    <button id="rail-hide" class="rail-end" aria-label="Hide the tools (⌥⌘1) — or drag this toward the edge"
+      title="Hide the tools">
+      <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M8.6 3.2L4.8 7l3.8 3.8"/></svg></button>
   </nav>
   <!-- The Insert palette: opened by the rail's + and by ⌘K (openPalette). It is
        a sibling of the rail, in #work, so it floats over the stage. -->
@@ -3551,6 +3629,13 @@
       <div id="dock-body"><p id="dock-empty" hidden></p></div>
     </section>
   </aside>
+  <!-- What stays on the window's edge when a side toolbar is put away: click it,
+       or drag it back out, to bring the toolbar back. Never hidden except in
+       focus mode, which has its own pill. -->
+  <button id="rail-tab" class="edge-tab" aria-label="Show the tools (⌥⌘1)" title="Show the tools" hidden>
+    <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M5.4 3.2L9.2 7l-3.8 3.8"/></svg></button>
+  <button id="dock-tab" class="edge-tab" aria-label="Show the panels (⌥⌘2)" title="Show the panels" hidden>
+    <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M8.6 3.2L4.8 7l3.8 3.8"/></svg></button>
 </div>
 <div id="rail" hidden>
   <!-- Thirteen page thumbnails are worth their room while you are moving
@@ -3566,6 +3651,11 @@
     <svg width="15" height="15" viewBox="0 0 12 12" stroke="currentColor"
       stroke-width="1.5" stroke-linecap="round"><path d="M6 2v8M2 6h8"/></svg>Page</button>
 </div>
+
+<!-- Focus mode: every side toolbar, the Control bar and the page strip put away at
+     once (View ▸ Focus mode, ⌘\). The pill is the way back, always on screen. -->
+<button id="focus-pill" hidden aria-label="Bring the tools back (⌘\)">
+  <span>Focus mode</span><kbd>⌘\</kbd><b>Show tools</b></button>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
@@ -16096,6 +16186,12 @@ const CHORDS = [
   // ⌥⌘6 is InDesign's Window ▸ Control.
   ['control bar', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit6', () => toggleCtlBar()],
   // ⌥⌘7: InDesign's switch between the bar's character and paragraph modes.
+  // Showing and hiding the chrome. ⌥⌘1 tools, ⌥⌘2 panels, ⌥⌘4 page strip
+  // (⌥⌘3 is transform again, ⌥⌘6 the Control bar); ⌘\ puts every toolbar away.
+  ['tool rail', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit1', () => toggleRail()],
+  ['panel dock', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit2', () => toggleDock()],
+  ['page strip', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit4', () => toggleStrip()],
+  ['focus mode', (e, k) => k.mod && !k.alt && !k.shift && e.code === 'Backslash', () => toggleFocus()],
   ['control bar: A / ¶', (e, k) => k.mod && k.alt && !k.shift && e.code === 'Digit7' && !$('type').hidden,
     () => setCtlMode($('ctl').dataset.mode === 'para' ? 'char' : 'para')],
   ['redo (Ctrl+Y)', (e, k) => k.mod && !k.alt && !k.shift && k.key === 'y', () => redo()],
@@ -18446,7 +18542,7 @@ function rulerLeftX(S) {
   const r = rail.getBoundingClientRect();
   return r.left <= S.left + 4 && r.right > S.left && r.right < S.left + S.width / 2 ? Math.round(r.right) : S.left;
 }
-const rulersShown = () => guidesOn && !document.body.classList.contains('ds-present');
+const rulersShown = () => guidesOn && !document.body.classList.contains('ds-present') && !document.body.classList.contains('ds-focus');
 /** The selection's extent on the reference sheet, in inches, for the band
  *  each ruler shades under it — InDesign's way of reading a box off a ruler. */
 function rulerSelBand(F) {
@@ -18480,9 +18576,15 @@ function drawRulers() {
   // The tool rail floats over the canvas's left edge; the left ruler stands
   // just clear of it, as InDesign's stands clear of its Tools panel.
   const lx = rulerLeftX(S);
-  const LS = { top: S.top, bottom: S.bottom, height: S.height, left: lx };
-  place(T, S.left, S.top, S.width, RULER_PX);
-  place(Lr, lx, S.top, RULER_PX, S.height);
+  // The left ruler stops where the page strip starts, so the strip's label is
+  // not drawn over its ticks.
+  const stripH = parseFloat(document.documentElement.style.getPropertyValue('--strip-h')) || 0;
+  const LS = { top: S.top, bottom: S.bottom - stripH, height: Math.max(RULER_PX, S.height - stripH), left: lx };
+  // Both stand clear of the rail: the top ruler used to run on under it and
+  // covered the Select tool's top edge, the left one began at the rail's edge.
+  const TW = Math.max(0, S.width - (lx - S.left));
+  place(T, lx, S.top, TW, RULER_PX);
+  place(Lr, lx, S.top, RULER_PX, LS.height);
   place(C, lx, S.top, RULER_PX, RULER_PX);
   const cs = getComputedStyle(T);
   const ink = cs.color || '#2F3E46', bg = cs.backgroundColor || '#F4F5F3';
@@ -18494,7 +18596,7 @@ function drawRulers() {
   // `span` the sheet's extent in inches, `lim` whether ticks stop at the
   // sheet (the left ruler, which holds several pages) or run on (the top).
   const axis = (ctx, horiz, o, pxIn, span, lim, selFrom, selTo) => {
-    const along = horiz ? S.width : LS.height;
+    const along = horiz ? TW : LS.height;
     const tick = (at, len) => {
       if (horiz) ctx.fillRect(Math.round(at), RULER_PX - len, 1, len);
       else ctx.fillRect(RULER_PX - len, Math.round(at), len, 1);
@@ -18534,23 +18636,23 @@ function drawRulers() {
   };
   const tc = T.getContext('2d');
   tc.setTransform(dpr, 0, 0, dpr, 0, 0);
-  tc.fillStyle = bg; tc.fillRect(0, 0, S.width, RULER_PX);
+  tc.fillStyle = bg; tc.fillRect(0, 0, TW, RULER_PX);
   // Test hook: where each ruler puts 0in, in window px, and how long an inch is.
   window.__dsRuler = ref ? { x0: ref.left, pxIn: ref.pxIn, y0: F.pages.map(p => p.top), left: S.left, lx } : null;
   if (ref) {
     const sb = sel && sel.pg === ref.pg ? sel : null;
-    axis(tc, true, ref.left - S.left, ref.pxIn, ref.w / ref.pxIn, false, sb && sb.x, sb && sb.x + sb.w);
+    axis(tc, true, ref.left - lx, ref.pxIn, ref.w / ref.pxIn, false, sb && sb.x, sb && sb.x + sb.w);
   }
-  tc.fillStyle = 'rgba(0,0,0,.18)'; tc.fillRect(0, RULER_PX - 1, S.width, 1);
+  tc.fillStyle = 'rgba(0,0,0,.18)'; tc.fillRect(0, RULER_PX - 1, TW, 1);
   const lc = Lr.getContext('2d');
   lc.setTransform(dpr, 0, 0, dpr, 0, 0);
-  lc.fillStyle = bg; lc.fillRect(0, 0, RULER_PX, S.height);
+  lc.fillStyle = bg; lc.fillRect(0, 0, RULER_PX, LS.height);
   F.pages.forEach(p => {
     if (p.top > LS.bottom || p.top + p.h < LS.top) return;
     const sb = sel && sel.pg === p.pg ? sel : null;
     axis(lc, false, p.top - S.top, p.pxIn, p.h / p.pxIn, true, sb && sb.y, sb && sb.y + sb.h);
   });
-  lc.fillStyle = 'rgba(0,0,0,.18)'; lc.fillRect(RULER_PX - 1, 0, 1, S.height);
+  lc.fillStyle = 'rgba(0,0,0,.18)'; lc.fillRect(RULER_PX - 1, 0, 1, LS.height);
 }
 /** Redraw when anything a ruler shows has moved: scroll, zoom, a resize, a
  *  render, the selection. Polled each frame (cheap: a handful of rects) and
@@ -18564,7 +18666,7 @@ function rulerTick() {
   let sig = '';
   if (F) {
     const r = F.pages[0];
-    sig = [rulerLeftX(F.S), F.S.left, F.S.top, F.S.width, F.S.height, F.or.left, F.or.top, F.or.width, F.pages.length,
+    sig = [rulerLeftX(F.S), document.documentElement.style.getPropertyValue('--strip-h'), F.S.left, F.S.top, F.S.width, F.S.height, F.or.left, F.or.top, F.or.width, F.pages.length,
            r ? [r.left, r.top, r.w, r.h].join() : '', [...selIds].join(),
            selEls(F.d).filter(Boolean).map(el => { const q = el.getBoundingClientRect(); return [q.left, q.top, q.width, q.height].join(); }).join(';')
           ].join('|');
@@ -18646,11 +18748,10 @@ function startRulerGuide(axis, e0) {
 }
 ['ruler-t', 'ruler-l'].forEach(id => $(id).addEventListener('mousedown',
   e => startRulerGuide(id === 'ruler-t' ? 'h' : 'v', e)));
-$('ruler-c').addEventListener('dblclick', () => {
-  // The corner, as InDesign's: nothing to set (the zero point is the sheet's
-  // corner), so it says what the rulers measure.
-  $('stat').textContent = 'rulers in inches from each page’s top-left corner';
-});
+// The corner square is the rulers' own switch: one click puts them away
+// (⌘; or View ▸ Rulers & guides brings them back).
+$('ruler-c').addEventListener('click', () => toggleGuides());
+$('ruler-c').title = 'Click to hide the rulers (⌘;). Inches, from each page’s top-left corner';
 window.addEventListener('resize', () => { rulerSig = ''; });
 
 /** Move an existing guide; drop it past a page edge, or back onto a ruler,
@@ -18977,6 +19078,7 @@ function toggleGuides() {
   if (!guidesOn) unselectGuide(d);
   if (d) drawGuideLayer(d);
   startRulers();
+  if (typeof chromeSync === 'function') chromeSync();
   $('stat').textContent = guidesOn
     ? 'rulers and guides on — drag out of a ruler to add a guide' : 'rulers and guides off';
 }
@@ -19369,6 +19471,14 @@ const dockStore = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /*
   // says what to select.
   // Only a SHOWN panel going hidden: writing hidden onto a hidden one is a
   // mutation too, and answering that one fed this observer forever.
+  // Last in the strip, at its foot: put the whole dock away (a click, or drag it
+  // toward the edge). A tab on the edge brings it back.
+  const hide = document.createElement('button');
+  hide.id = 'dock-hide'; hide.className = 'dk-end';
+  hide.title = 'Hide the panels';
+  hide.setAttribute('aria-label', 'Hide the panels (⌥⌘2) — or drag this toward the edge');
+  hide.innerHTML = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M5.4 3.2L9.2 7l-3.8 3.8"/></svg>';
+  strip.appendChild(hide);
   const mo = new MutationObserver(recs => {
     if (dockRefreshing || !dockOn || $('dock-panel').hidden) return;
     const act = DOCK_BY[dockTab];
@@ -19481,8 +19591,9 @@ function toggleDock(on = !dockOn) {
   dockOn = !!on;
   dockStore('ds-dock', dockOn ? '1' : '0');
   dockMount();
-  $('stat').textContent = dockOn ? 'panel dock shown'
-    : 'panel dock hidden — its panels open from their buttons again; View ▸ Panel dock brings it back';
+  chromeSync();
+  $('stat').textContent = dockOn ? 'panels shown'
+    : 'panels hidden — the tab on the right edge, ⌥⌘2 or View ▸ Panels brings them back';
 }
 function dockPin(on = !dockPinned) {
   dockPinned = !!on;
@@ -19512,6 +19623,120 @@ $('dock').addEventListener('keydown', e => {
   if (back) back.focus();
 });
 dockMount();
+
+// ------------------------------------------- showing and hiding the chrome
+// Each piece of chrome has one switch, remembered per editor: the rulers
+// (guidesOn, ⌘;, the rulers' corner square), the Control bar (ctlOn, ⌥⌘6),
+// the tool rail (railOn, ⌥⌘1), the panel dock (dockOn, ⌥⌘2) and the page
+// strip (folded, ⌥⌘4); View lists each with a tick. A side toolbar also has a
+// handle on its own foot that puts it away (a click, or a drag toward its
+// edge), and leaves a tab on the edge that brings it back. Focus mode (⌘\)
+// puts all of it away at once without touching the individual switches, and
+// keeps only a pill; it is not remembered, so an editor never opens bare.
+let railOn = true, focusOn = false;
+try { railOn = localStorage.getItem('ds-rail') !== '0'; } catch (e) { /* file: */ }
+/** Ticks in View, the edge tabs and the body classes follow the real state. */
+function chromeSync() {
+  const b = document.body, folded = $('rail').classList.contains('folded');
+  b.classList.toggle('ds-rail-off', !railOn);
+  b.classList.toggle('ds-dock-off', !dockOn);
+  b.classList.toggle('ds-focus', focusOn);
+  b.classList.toggle('ds-rulers', guidesOn);
+  $('rail-tab').hidden = railOn;
+  $('dock-tab').hidden = dockOn;
+  $('focus-pill').hidden = !focusOn;
+  $('railbtn').classList.toggle('on', railOn);
+  $('dockbtn').classList.toggle('on', dockOn);
+  $('stripbtn').classList.toggle('on', !folded);
+  $('focusbtn').classList.toggle('on', focusOn);
+  $('guides').classList.toggle('on', guidesOn);
+  $('ctlbar').classList.toggle('on', ctlOn);
+}
+/** The stage changed size: the page is fitted to it again and the rulers follow. */
+function chromeRefit() {
+  try { dockLayout(); } catch (e) { swallowed('chrome: dock', e); }
+  try { if ($('out').contentDocument && $('out').contentDocument.body) applyZoom(); }
+  catch (e) { swallowed('chrome: zoom', e); }
+  try { startRulers(); } catch (e) { swallowed('chrome: rulers', e); }
+}
+function toggleRail(on = !railOn) {
+  railOn = !!on;
+  try { localStorage.setItem('ds-rail', railOn ? '1' : '0'); } catch (e) { /* file: */ }
+  if (!railOn) {                 // what the rail opened goes with it
+    closePalette();
+    if (!$('side').hidden) closeSide();
+    document.querySelectorAll('#leftrail .pop').forEach(p => { p.hidden = true; });
+  }
+  chromeSync(); chromeRefit();
+  $('stat').textContent = railOn ? 'tools shown'
+    : 'tools hidden — the tab on the left edge, ⌥⌘1 or View ▸ Tools brings them back';
+}
+/** The page strip: folded to its label and chevron, or open. */
+function toggleStrip(on = $('rail').classList.contains('folded')) {
+  if ($('rail').hidden) { $('stat').textContent = 'this report has no pages to show in a strip'; return; }
+  setRailFolded(!on);
+  chromeSync();
+  $('stat').textContent = on ? 'page strip shown' : 'page strip folded — its chevron, ⌥⌘4 or View ▸ Page strip brings it back';
+}
+function toggleFocus(on = !focusOn) {
+  focusOn = !!on;
+  if (focusOn) { closePalette(); if (!$('dock-panel').hidden && !dockPinned) dockClose(); }
+  chromeSync(); chromeRefit();
+  $('stat').textContent = focusOn ? 'focus mode — ⌘\\ or the pill brings the tools back'
+    : 'tools back';
+}
+/** Back to how a fresh editor has it (the test fixture's reset). */
+function chromeReset() {
+  try { localStorage.removeItem('ds-rail'); } catch (e) { /* file: */ }
+  railOn = true; focusOn = false;
+  if ($('rail').classList.contains('folded')) setRailFolded(false);
+  chromeSync(); chromeRefit();
+}
+$('railbtn').addEventListener('click', () => toggleRail());
+$('stripbtn').addEventListener('click', () => toggleStrip());
+$('focusbtn').addEventListener('click', () => toggleFocus());
+$('focus-pill').addEventListener('click', () => toggleFocus(false));
+$('rail-tab').addEventListener('click', () => { if (!tabDrag.moved) toggleRail(true); });
+$('dock-tab').addEventListener('click', () => { if (!tabDrag.moved) toggleDock(true); });
+$('rail-hide').addEventListener('click', () => { if (!tabDrag.moved) toggleRail(false); });
+$('dock-hide').addEventListener('click', () => { if (!tabDrag.moved) toggleDock(false); });
+// Drag a handle toward its edge to put a toolbar away; drag a tab away from the
+// edge to bring it back. Past 36px it snaps; short of that it springs back.
+// A press that does not travel is a plain click (tabDrag.moved is how the click
+// handlers above tell the two apart).
+const tabDrag = { moved: false };
+function edgeDrag(handle, target, edge, commit) {
+  handle.addEventListener('pointerdown', e => {
+    if (e.button) return;
+    const x0 = e.clientX, sign = edge === 'left' ? -1 : 1;   // the way the edge lies
+    tabDrag.moved = false;
+    handle.setPointerCapture(e.pointerId);
+    const move = ev => {
+      const dx = (ev.clientX - x0) * sign;                   // + = toward the edge
+      if (!tabDrag.moved && Math.abs(dx) > 5) { tabDrag.moved = true; target && target.classList.add('dragging'); }
+      if (tabDrag.moved && target) target.style.transform = `translateX(${Math.max(-6, Math.min(dx, 80)) * sign}px)`;
+    };
+    const up = ev => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      const dx = (ev.clientX - x0) * sign;
+      if (target) { target.classList.remove('dragging'); target.style.transform = ''; }
+      if (tabDrag.moved && commit(dx)) { /* snapped */ }
+      setTimeout(() => { tabDrag.moved = false; }, 0);        // after the click this press also fires
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+}
+edgeDrag($('rail-hide'), $('leftrail'), 'left', dx => { if (dx > 36) { toggleRail(false); return true; } return false; });
+edgeDrag($('dock-hide'), $('dock'), 'right', dx => { if (dx > 36) { toggleDock(false); return true; } return false; });
+edgeDrag($('rail-tab'), null, 'left', dx => { if (dx < -30) { toggleRail(true); return true; } return false; });
+edgeDrag($('dock-tab'), null, 'right', dx => { if (dx < -30) { toggleDock(true); return true; } return false; });
+// Every route to a switch re-draws the ticks, whoever flipped it.
+['guides', 'ctlbar', 'dockbtn'].forEach(id => $(id).addEventListener('click', () => queueMicrotask(chromeSync)));
+chromeSync();
 
 /** A length typed into the bar, in inches. A bare number is inches; a unit
  *  says otherwise, as InDesign takes it: in, ", pt, p (picas: 3p, 3p6, p6),
@@ -23134,6 +23359,37 @@ function setRailFolded(folded) {
 $('rail-fold').addEventListener('click', () => {
   setRailFolded(!$('rail').classList.contains('folded'));
 });
+/** --strip-h: how much of the window's foot the page strip takes (0 when it is
+ *  hidden). Everything that floats over the canvas and could run under it (the
+ *  left tray, the dock's fly-out, the comments and history panels, the rail
+ *  itself) stops at it, so a control is never under the strip. */
+try {
+  new ResizeObserver(() => {
+    const r = $('rail'), h = r.hidden ? 0 : Math.round(r.getBoundingClientRect().height);
+    if (document.documentElement.style.getPropertyValue('--strip-h') !== h + 'px')
+      document.documentElement.style.setProperty('--strip-h', h + 'px');
+  }).observe($('rail'));
+  new MutationObserver(() => {
+    const r = $('rail');
+    if (r.hidden) document.documentElement.style.setProperty('--strip-h', '0px');
+  }).observe($('rail'), { attributes: true, attributeFilter: ['hidden'] });
+} catch (e) { swallowed('strip height', e); }
+/** The rail's pins that do not fit above the page strip are left out, last first
+ *  (the + and the palette still reach them). Tools, +, and Colors always stay. */
+function railFit() {
+  const rail = $('leftrail'), pins = [...document.querySelectorAll('#rail-pins > button')];
+  if (!rail || !rail.offsetWidth) return;
+  pins.forEach(b => b.classList.remove('fit-off'));
+  for (let i = pins.length - 1; i >= 0 && rail.scrollHeight > rail.clientHeight + 1; i--) pins[i].classList.add('fit-off');
+}
+try {
+  let fitQ = 0;
+  const queue = () => { if (!fitQ) fitQ = requestAnimationFrame(() => { fitQ = 0; railFit(); }); };
+  new ResizeObserver(queue).observe($('work'));
+  new ResizeObserver(queue).observe($('rail'));
+  new MutationObserver(queue).observe($('rail-pins'), { childList: true });
+  queue();
+} catch (e) { swallowed('rail fit', e); }
 
 
 // The Canva text bar's own B / I / lists, acting on the open editor's live
@@ -34430,6 +34686,7 @@ window.__dsTestReset = async () => {
   clip = null; styleClip = null; presentIdx = 0; linkStatus.clear();
   agentLive = null; agentPaint();
   try { dockReset(); } catch (e) { swallowed('test reset: dock', e); }
+  try { chromeReset(); } catch (e) { swallowed('test reset: chrome', e); }
   for (const k of ['ds-zoom', 'ds-guides', 'ds-hidden', 'ds-overrides']) {
     try { localStorage.removeItem(k); } catch (e) { /* file: */ }
   }
@@ -34655,7 +34912,7 @@ $('file').onclick = () => {
 // Rulers, Hidden characters, a zoom size — is closed here, after its own
 // handler has run, the way a menu closes when you pick from it. The zoom
 // track's − / + are not rows, so a few presses walk the ladder in one visit.
-$('view').onclick = () => togglePop($('viewpop'), $('view'));
+$('view').onclick = () => { chromeSync(); togglePop($('viewpop'), $('view')); };
 $('check').onclick = () => togglePop($('checkpop'), $('check'));
 $('zoombtn').onclick = () => togglePop($('zoompop'), $('zoombtn'));
 ['viewpop', 'checkpop', 'zoompop'].forEach(id => $(id).addEventListener('click', e => {
