@@ -55,6 +55,7 @@
           /* the Control bar's height: two rows, the same in every mode. Everything that
              hangs under the bar reads this (or --ctl-bottom, which ctlMetrics measures). */
           --ctl-h:58px;
+          --ruler-w:0px;   /* the left ruler's width while rulers are on (body.ds-rulers): a tray starts clear of it */
           /* The right-hand panel dock's width (dockLayout keeps it): 0 with
              the dock off, its icon strip folded, strip + panel pinned open.
              What floats against the right edge stands this far in. */
@@ -464,6 +465,7 @@
   #leftrail.dragging, #dock.dragging { transition:none; }
   body.ds-rail-off #leftrail, body.ds-rail-off #side { display:none !important; }
   body.ds-rail-off { --rail-w:0px; }
+  body.ds-rulers { --ruler-w:18px; }
   body.ds-rail-off:not(.ds-focus) #rail-tab { display:flex; }
   body.ds-dock-off:not(.ds-focus) #dock-tab { display:flex; }
   body.ds-focus #ctl, body.ds-focus #dock, body.ds-focus #leftrail, body.ds-focus #side, body.ds-focus #rail,
@@ -534,18 +536,19 @@
      the Insert palette, whatever the person has pinned from it, and Colors —
      where it used to be seven equal buttons with 9px labels. It stays flush
      with the window's edge (rulerLeftX and #side both read that edge). */
-  #leftrail { position:absolute; left:0; top:0; z-index:9;   /* above the rulers (7-8): the top ruler runs under the rail's first buttons */
+  /* 2026-11-19: DOCKED, not floating. The rail is a column of #work, as the right dock is: flush to
+     the window's edge, as tall as the room above the page strip, square, the dock's own colour and
+     hairline, and no shadow. The canvas (#stage) and so the rulers start at its right edge, and nothing
+     of the rail (no corner, no shadow, no pixel) is painted over a ruler. */
+  #leftrail { position:relative; flex:none; align-self:flex-start; z-index:9;
               width:var(--rail-w); box-sizing:border-box;
-              background:linear-gradient(180deg, #44545F, var(--chrome2) 55%);
+              height:calc(100% - var(--strip-h, 0px));
+              background:var(--chrome2); border-right:1px solid var(--line);
               display:flex; flex-direction:column;
               align-items:center; gap:3px; padding:8px 0 10px;
-              /* never taller than the room above the page strip: a short window
-                 compacts it (below) and, past that, it scrolls rather than run
-                 under the strip. Its pop-ups are position:fixed, so not cut. */
-              max-height:calc(100% - var(--strip-h, 0px)); overflow-y:auto; overflow-x:hidden; scrollbar-width:none;
-              border-radius:0 var(--r-edge) var(--r-edge) 0;
-              box-shadow:var(--shadow-edge), inset -1px 0 0 rgba(255,255,255,.05),
-                         inset 0 1px 0 rgba(255,255,255,.07); }
+              /* a window too short for the tools: it scrolls rather than run under the strip.
+                 Its pop-ups are position:fixed, so not cut. */
+              overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
   #leftrail::-webkit-scrollbar { display:none; }
   #leftrail .rsep { width:22px; height:1px; margin:4px 0; background:rgba(255,255,255,.12); flex:none; }
   #rail-pins { display:flex; flex-direction:column; align-items:center; gap:3px; }
@@ -597,7 +600,7 @@
   #palette { position:absolute; inset:0; z-index:30; }
   #palette[hidden] { display:none; }
   #pal-scrim { position:absolute; inset:0; background:rgba(33,46,52,.16); }
-  #pal-card { position:absolute; left:calc(var(--rail-w) + 10px); top:12px; width:min(500px, calc(100% - var(--rail-w) - 24px));
+  #pal-card { position:absolute; left:calc(var(--rail-w) + var(--ruler-w) + 10px); top:calc(var(--ruler-w) + 12px); width:min(500px, calc(100% - var(--rail-w) - var(--ruler-w) - 24px));
               max-height:calc(100% - 24px); display:flex; flex-direction:column; background:#fff; color:var(--ink);
               border-radius:18px; overflow:hidden;
               box-shadow:0 24px 60px rgba(16,26,32,.38), 0 0 0 1px rgba(16,26,32,.1); }
@@ -1272,7 +1275,9 @@
   /* z-index:9, above the rulers (7, corner 8): they are fixed to the window,
      so they outrank anything inside #work below 7 and used to run across the
      tray's left edge and cut it off whenever rulers were on. */
-  #side { position:absolute; left:var(--rail-w); top:0; bottom:var(--strip-h, 0px); z-index:9; width:252px;
+  /* the tray opens from the rail's edge over the CANVAS: clear of the left ruler beside it and of the top
+     ruler above it, never over either */
+  #side { position:absolute; left:calc(var(--rail-w) + var(--ruler-w)); top:var(--ruler-w); bottom:var(--strip-h, 0px); z-index:9; width:252px;
           display:flex; flex-direction:column; background:#fff; color:var(--ink);
           /* Rounded on the canvas side only, and no border: the same treatment
              as the rail it sits against, so the two read as one assembly
