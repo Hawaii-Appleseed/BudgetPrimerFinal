@@ -161,8 +161,11 @@
   #ctl { flex:none; display:block; height:var(--ctl-h); box-sizing:border-box; position:relative;
          z-index:11;   /* above the rulers (7-8) and the rail and tray (9, 10): a pop-up hung from the bar is never cut by them */
          background:#fff; color:var(--ink); border-bottom:1px solid #E1E8E3; overflow:hidden; }
-  #ctl-cols { display:flex; justify-content:space-between; align-items:stretch; height:100%; box-sizing:border-box;
-         padding:3px 6px; overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none; }
+  /* The content is a column of at most --ctl-max (1500px), centred in a bar whose own surface stays
+     full width: the side padding is whatever the window has beyond it (never under 6px). Fields keep
+     their own widths; what is left over goes between the groups, never into a field. */
+  #ctl-cols { --ctl-max:1500px; display:flex; justify-content:space-between; align-items:stretch; gap:4px; height:100%; box-sizing:border-box;
+         padding:3px max(6px, calc((100% - var(--ctl-max)) / 2)); overflow-x:auto; overflow-y:hidden; white-space:nowrap; scrollbar-width:none; }
   #ctl-cols::-webkit-scrollbar { display:none; }
   /* a bar with more to the left or right says so (a soft edge, not a mask: a mask would clip the
      pop-ups its controls open, which are fixed descendants of the cells) */
@@ -172,7 +175,7 @@
   /* a column: two cells, one over the other (or one cell across both); it grows with the bar up to
      its own ceiling (--cmax), and the room left over becomes the gaps between columns */
   .ctl-col { display:grid; grid-template-rows:minmax(0,1fr) minmax(0,1fr); grid-template-columns:minmax(min-content,1fr);
-         flex:var(--cg, 0) 1 auto; max-width:var(--cmax, none); min-width:min-content; padding:0 5px; align-items:center;
+         flex:var(--cg, 0) 1 auto; max-width:var(--cmax, none); min-width:min-content; padding:0 7px; align-items:center;
          border-left:1px solid #E3E9E5; }
   /* nothing selected, or a page: a few columns, centred in the bar rather than left in a clump */
   #ctl-cols[data-mode=empty] { justify-content:center; gap:28px; }
@@ -187,14 +190,28 @@
   .ctl-cell > * { flex:none; }
   /* the last column ends at the bar's right edge: its clusters sit against it */
   .ctl-col:last-child .ctl-cell { justify-content:flex-end; }
-  /* a field fills its cell, so the two of a pair are one width */
-  #ctl .ctl-cell > .cb-f, #ctl .ctl-cell > .ty-step, #ctl .ctl-cell > select { flex:1 1 auto; }
-  #ctl .ctl-cell > .cb-f { min-width:70px; }
-  #ctl .ctl-cell > .cb-f input { flex:1 1 0; width:0; min-width:34px; }
-  #ctl .ctl-cell > .ty-step { min-width:118px; }
+  /* A field has the width of what it holds: a number ~88px, a short list ~120px, a font or style
+     name ~190px, the size stepper ~118px. That width is the COLUMN's (--cb, its content box; the
+     column adds its own 15px of padding and rule); the field fills its cell down to a floor it shrinks
+     to in a narrow window, and is never wider than its ceiling, so the two of a pair are one width and
+     nothing grows into the room the bar has to spare. */
+  .ctl-col:has(> .ctl-cell > select) { --cb:120px; }
+  .ctl-col:has(> .ctl-cell > #ty-font) { --cb:190px; }
+  .ctl-col:has(> .ctl-cell > :is(#ty-style, #ar-style)) { --cb:219px; }
+  .ctl-col:has(> .ctl-cell > .cb-f) { --cb:88px; }
+  .ctl-col:has(> .ctl-cell > .ty-step) { --cb:118px; }
+  .ctl-col { flex-basis:var(--cb, auto); }
+  #ctl .ctl-cell > .cb-f { flex:1 1 0; min-width:70px; max-width:120px; }
+  #ctl .ctl-cell > .ty-step { flex:1 1 0; min-width:104px; max-width:126px; }
+  #ctl .ctl-cell > select { flex:1 1 0; min-width:96px; max-width:220px; }
+  #ctl .ctl-cell > :is(#ty-font, #ty-style, #ar-style) { min-width:150px; }
+  #ctl .ctl-cell > .cb-f input { flex:1 1 0; width:0; min-width:30px; text-align:right; }
   #ctl .ctl-cell > .ty-step #cb-size { flex:1 1 0; width:0; min-width:40px; }
-  #ctl .ctl-cell > select { min-width:96px; }
-  #ctl .ctl-cell > #ty-font { min-width:150px; }
+  /* the unit, quiet, after a right-aligned number */
+  #ctl .cb-f::after { color:#9AA9A2; font:500 12px system-ui; letter-spacing:0; padding-right:6px; }
+  #ctl .cb-f:has(> input[data-unit="len"])::after, #ctl .cb-f:has(> :is(#cb-il, #cb-ti, #cb-ir, #cb-sb, #cb-sa, #cb-r))::after { content:"in"; }
+  #ctl .cb-f:has(> :is(#cb-rot, #cb-skew))::after { content:"°"; }
+  #ctl .cb-f:has(> :is(#cb-lead, #cb-shift))::after { content:"pt"; }
   #ctl .ctl-cell > #cb-empty { flex:1 1 auto; justify-content:center; }
   #ctl-home { display:block; position:absolute; left:0; top:0; width:1px; height:1px; overflow:hidden; pointer-events:none; padding:0; margin:0; }
   #ctl[hidden], #ctl [hidden] { display:none !important; }
@@ -314,7 +331,11 @@
   #ctl .cb-f .cb-ic { color:#72857C; }
   #ctl .cb-f select:not(:where(.pop) *), #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) select:not(:where(.pop) *) {
          height:24px; border:0; border-radius:7px; background-color:#F2F5F3; box-shadow:none;
-         color:#2F3E46; font:500 12.5px system-ui; }
+         color:#2F3E46; font:500 12.5px system-ui;
+         /* one chevron, one size, one place, on every list in the bar (the native arrow differs by field) */
+         appearance:none; -webkit-appearance:none; padding:0 22px 0 8px; text-overflow:ellipsis;
+         background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%2372857C' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+         background-repeat:no-repeat; background-position:right 7px center; background-size:10px 10px; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) select:not(:where(.pop) *):hover { background-color:#E8EEEA; border:0; }
   #ctl :is(#type, #arrange, #cb-obj, .ctl-cell) button:not(:where(.pop) *) {
          height:24px; min-width:24px; padding:0 5px; border:0; border-radius:7px; background:#F2F5F3;
@@ -19467,40 +19488,42 @@ document.querySelectorAll('#cb-mode [data-m]').forEach(b =>
 // top and bottom are lists of selectors for the controls' own elements (matched while the
 // control is still at home; the first match gives its place; several in one cell sit side by
 // side, as a cluster of icon buttons does); bottom null makes the top cell span both rows (the
-// reference grid, the chain link). grow is how much the column takes of the bar's spare width
-// (0: it stays as wide as its content), max the widest it gets, in px; what is left over
-// becomes the gaps between columns. A column none of whose controls is shown is not drawn.
+// reference grid, the chain link). A column is as wide as its widest field's own width (the CSS
+// above gives each kind of field one: a number, a short list, a name); grow and max are for the
+// few columns that hold prose (the empty bar's hint), not for fields. What the window has beyond
+// the bar's 1500px content area is margin, and what the content area has beyond its columns is
+// the gaps between them. A column none of whose controls is shown is not drawn.
 // A control no list names goes to a last column of its own: add new bar controls here
 // (control-bar-two-rows.spec.js fails on any that is not named).
 const CTL_COLS = {
   // a shape, picture, table, chart or group: where it is and how big; then its look
   obj: [
     [['#cb-ref'], null],
-    [['label:has(#cb-x)'], ['label:has(#cb-y)'], 1, 120],
-    [['#cb-wwrap'], ['#cb-hwrap'], 1, 120],
+    [['label:has(#cb-x)'], ['label:has(#cb-y)']],
+    [['#cb-wwrap'], ['#cb-hwrap']],
     [['#cb-link'], ['#cb-pflag']],
-    [['#cb-swrap'], null, 1, 120],
-    [['#cb-sxwrap'], ['#cb-sywrap'], 1, 110],
-    [['label:has(#cb-rot)'], ['label:has(#cb-skew)'], 1, 110],
+    [['#cb-swrap'], null],
+    [['#cb-sxwrap'], ['#cb-sywrap']],
+    [['label:has(#cb-rot)'], ['label:has(#cb-skew)']],
     [['.ty-seg:has(#cb-rotccw)'], null],
-    [['#ar-style', '#ar-style-more'], ['#ar-pos', '#ar-table', '#ar-chart'], 1, 190],
+    [['#ar-style', '#ar-style-more'], ['#ar-pos', '#ar-table', '#ar-chart']],
     [['#ar-fill'], ['#ar-border']],
     [['#ar-alpha'], ['#ar-fxbtn']],
-    [['label:has(#cb-cols)', '#cb-gapwrap'], ['label:has(#cb-pad)'], 1, 150],
-    [['label:has(#cb-r)'], ['#cb-fit', '#cb-fitref', '#cb-fitopts'], 1, 160],
+    [['label:has(#cb-cols)', '#cb-gapwrap'], ['label:has(#cb-pad)']],
+    [['label:has(#cb-r)'], ['#cb-fit', '#cb-fitref', '#cb-fitopts']],
     [['#cb-align'], ['.ty-seg:has([data-va])']],
     [['#arrange > .ty-seg', '#ar-dup', '#ar-lock'], ['#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
   // a text box taken as an object (the ▭ mode)
   frame: [
     [['#cb-mode'], ['#cb-ref']],
-    [['label:has(#cb-x)'], ['label:has(#cb-y)'], 1, 160],
-    [['#cb-wwrap'], ['#cb-hwrap'], 1, 160],
+    [['label:has(#cb-x)'], ['label:has(#cb-y)']],
+    [['#cb-wwrap'], ['#cb-hwrap']],
     [['#cb-link'], ['#cb-pflag']],
-    [['#cb-sxwrap'], ['#cb-sywrap'], 1, 150],
-    [['label:has(#cb-rot)'], ['label:has(#cb-skew)'], 1, 150],
+    [['#cb-sxwrap'], ['#cb-sywrap']],
+    [['label:has(#cb-rot)'], ['label:has(#cb-skew)']],
     [['.ty-seg:has(#cb-rotccw)'], null],
-    [['label:has(#cb-cols)', '#cb-gapwrap'], ['label:has(#cb-pad)'], 1, 190],
+    [['label:has(#cb-cols)', '#cb-gapwrap'], ['label:has(#cb-pad)']],
     [['.ty-seg:has([data-va])'], ['#cb-align']],
     [['#ty-box', '#ty-anchor', '#ty-comment'], ['#ty-key']],
     [['#ar-style', '#ar-style-more', '#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
@@ -19509,25 +19532,25 @@ const CTL_COLS = {
   // A: the words themselves (B / I / U show only with words selected)
   char: [
     [['#cb-mode'], ['#cb-ref']],
-    [['#ty-font'], ['#ty-weight'], 1, 290],
-    [['.ty-step'], ['label:has(#cb-lead)'], 1, 170],
-    [['label:has(#cb-kern)'], ['label:has(#cb-track)'], 1, 150],
-    [['label:has(#cb-shift)'], ['#cb-smcp'], 1, 150],
+    [['#ty-font'], ['#ty-weight']],
+    [['.ty-step'], ['label:has(#cb-lead)']],
+    [['label:has(#cb-kern)'], ['label:has(#cb-track)']],
+    [['label:has(#cb-shift)'], ['#cb-smcp']],
     [['#ty-marks', '#ty-i', '#ty-u'], ['#cb-strike', '#ty-case']],
     [['#ty-colorbtn', '#ty-fx', '#ty-fxp'], ['#ty-spacebtn', '#ty-parabtn']],
-    [['#ty-style', '#ty-style-more'], ['#ty-reset', '#ty-box', '#ty-anchor', '#ty-comment', '#ty-key'], 1, 300],
+    [['#ty-style', '#ty-style-more'], ['#ty-reset', '#ty-box', '#ty-anchor', '#ty-comment', '#ty-key']],
     [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
      ['#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
   // ¶: how the paragraph sits
   para: [
     [['#cb-mode'], ['#cb-ref']],
-    [['#ty-alseg'], ['#cb-lmark'], 1, 260],
-    [['label:has(#cb-il)'], ['label:has(#cb-ti)'], 1, 190],
-    [['label:has(#cb-ir)'], ['label:has(#cb-dcap)'], 1, 190],
-    [['label:has(#cb-sb)'], ['label:has(#cb-sa)'], 1, 190],
+    [['#ty-alseg'], ['#cb-lmark']],
+    [['label:has(#cb-il)'], ['label:has(#cb-ti)']],
+    [['label:has(#cb-ir)'], ['label:has(#cb-dcap)']],
+    [['label:has(#cb-sb)'], ['label:has(#cb-sa)']],
     [['#cb-grid', '#cb-hyph'], ['#ty-parabtn', '#ty-reset']],
-    [['#ty-style', '#ty-style-more'], ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key'], 1, 300],
+    [['#ty-style', '#ty-style-more'], ['#ty-box', '#ty-anchor', '#ty-comment', '#ty-key']],
     [['#ar-fill', '#ar-border', '#ar-alpha', '#ar-fxbtn'],
      ['#ar-pos', '#arrange > .ty-seg', '#ar-dup', '#ar-lock', '#ar-del', '#ar-more', '#ar-comment', '#ar-anchor', '#ar-count']],
   ],
