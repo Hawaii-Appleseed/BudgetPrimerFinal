@@ -896,6 +896,13 @@
   .srcrow { padding:11px 14px; border-bottom:1px solid #EDF1EE;
     display:grid; grid-template-columns:1fr; gap:6px; }
   .srcrow:hover { background:#FAFCFB; }
+  .srcrow.on { background:#EEF4F0; box-shadow:inset 3px 0 0 var(--sage); }
+  .srcnum { order:-1; min-width:24px; height:22px; padding:0 6px; box-sizing:border-box;
+    display:inline-flex; align-items:center; justify-content:center;
+    font:700 12px system-ui; border-radius:6px; border:1px solid var(--deep);
+    background:var(--deep); color:#fff; cursor:pointer; }
+  .srcnum.none { background:none; border-color:#D9E1DB; color:#8A9691; cursor:default; }
+  button.srcnum:hover { filter:brightness(.92); }
   .srcid { font:12px ui-monospace,monospace; color:var(--deep);
     display:flex; gap:8px; align-items:center; }
   /* "unused" is the one that wants finding — it is the deletable one. */
@@ -12350,12 +12357,92 @@ function endnoteCaretOffset(d, li, at, len) {
   } catch (e) { swallowed('endnoteCaretOffset', e); return null; }
 }
 
-function editEndnote(d, li, sid, at = null) {
+/** id -> the number each endnote carries ON THE PAGE (the engine's id="enN",
+ *  else its place in the drawn list). endnoteNumbers() reads content.md alone,
+ *  so a report that keeps its words in text boxes had no numbers at all. */
+function pageNoteNumbers() {
+  const d = $('out').contentDocument;
+  const map = new Map();
+  if (d) [...d.querySelectorAll('[data-el^="endnote."]')].forEach((li, i) => {
+    const id = li.dataset.el.slice('endnote.'.length);
+    if (!map.has(id)) map.set(id, (/^en(\d+)$/.exec(li.id) || [])[1] || String(i + 1));
+  });
+  return map.size ? map : endnoteNumbers();
+}
+
+/** The markers in the report's text that point at endnote `num`, each with
+ *  the sheet it is on (1-based, as the page strip counts them). */
+function noteCitations(d, num) {
+  if (!d || !num) return [];
+  const sheets = [...d.querySelectorAll('section.page')];
+  return [...d.querySelectorAll(`a[href="#en${num}"]`)]
+    .filter(a => !a.closest('[data-el^="endnote."]') && a.closest('section.page'))
+    .map(a => ({ a, page: sheets.indexOf(a.closest('section.page')) + 1 }));
+}
+
+/** Scroll to the `k`th marker citing endnote `num` and light it up. */
+function jumpToCitation(num, k) {
+  const d = $('out').contentDocument;
+  const hit = noteCitations(d, num)[k];
+  if (!hit) return;
+  const el = hit.a.closest('sup') || hit.a;
+  jumpTo(el, 'center');
+  el.classList.add('ds-slotlink');
+  setTimeout(() => { try { el.classList.remove('ds-slotlink'); } catch (e) { /* gone */ } }, 2600);
+  $('stat').textContent = `endnote ${num} is cited here, on page ${hit.page}`;
+}
+
+/** Take an endnote out altogether: every [^id] that cites it, wherever words
+ *  live, and its line in Sources. One undo step. The Sources panel can only
+ *  delete a source nothing cites, which from the endnotes page meant hunting
+ *  down each marker by hand first. */
+async function removeEndnote(sid, num) {
+  const n = citeCount(sid);
+  const ok = await dsConfirm(
+    `Delete endnote ${num || `[${sid}]`}? Its ${n === 1 ? 'citation' : n + ' citations'} in the text `
+    + `${n === 1 ? 'goes' : 'go'} with it, and the notes after it renumber. Undo brings it back.`,
+    { okLabel: 'Delete', danger: true });
+  if (!ok) return false;
+  pushHistory();
+  const ref = new RegExp(`\\[\\^${rxEsc(sid)}\\]`, 'g');
+  citeSites().forEach(s => {
+    const v = s.read(), w = v.replace(ref, '');
+    if (w !== v) s.write(w);
+  });
+  deleteSource(sid);
+  markDirty();
+  await render();
+  $('stat').textContent = `endnote ${num || `[${sid}]`} deleted, with ${n === 1 ? 'its citation' : `its ${n} citations`}`;
+  return true;
+}
+
+/** A web address typed into a citation's TEXT rather than its Link: it prints
+ *  as plain words, not a link. Returns { url, text } with the address lifted
+ *  out and the words closed up around it, or null when there is none. */
+function liftCitationUrl(text) {
+  const m = /https?:\/\/[^\s<>"]+/.exec(text || '');
+  if (!m) return null;
+  const url = m[0].replace(/[.,;:)\]]+$/, '');
+  const before = text.slice(0, m.index).replace(/[\s,;:]+$/, '');
+  const after = text.slice(m.index + url.length).replace(/^\s+/, '');
+  const joined = before + (!after || /^[.,;:)]/.test(after) ? '' : ' ') + after;
+  return { url, text: joined.trim() };
+}
+
+/** A note saved on the way to the next one (Tab, the arrows) is written at
+ *  once but not rendered: the report redraws when the person leaves the list,
+ *  not once per note. */
+let endnoteRenderOwed = false;
+
+function editEndnote(d, li, sid, at = null, opts = {}) {
   if (editing) return;
   const s = parseSources().find(r => r.id === sid);
   if (!s) return;
   editing = true;
   const caret = endnoteCaretOffset(d, li, at, s.text.length);
+  // The number as the page draws it (the engine's id="enN"): endnoteNumbers()
+  // reads content.md alone and misses a note cited only from a text box.
+  const num = (/^en(\d+)$/.exec(li.id) || [])[1] || endnoteNumbers().get(sid);
 
   // The form goes INSIDE the entry, which stays where it is: it used to
   // replace the <li>, so the note lost its number and every note after it
@@ -12371,6 +12458,23 @@ function editEndnote(d, li, sid, at = null) {
   txt.value = s.text;
   txt.placeholder = 'Citation';
   txt.setAttribute('aria-label', 'Citation');
+  const mkb = (cls, label, title) => {
+    const b = d.createElement('button');
+    b.type = 'button'; b.className = cls; b.textContent = label; b.title = title;
+    // Out of the Tab order: Tab from the link goes on to the next note.
+    b.tabIndex = -1;
+    // The press must not take focus from the field: a blur there is a save
+    // (blurCheck), which would beat Cancel to it.
+    b.addEventListener('mousedown', e => e.preventDefault());
+    return b;
+  };
+  // A link typed into the citation's words: say so, and offer to move it.
+  const hint = d.createElement('div');
+  hint.className = 'ds-en-hint';
+  const hintSay = d.createElement('span');
+  hintSay.textContent = 'There is a web address in the citation text, so it will not be a link.';
+  const lift = mkb('ds-en-lift', 'Move it to Link', 'Take the address out of the text and make it this note\'s link (it then shows at the end of the note)');
+  hint.append(hintSay, lift);
   const row = d.createElement('div');
   row.className = 'ds-en-row';
   const lab = d.createElement('label');
@@ -12382,18 +12486,29 @@ function editEndnote(d, li, sid, at = null) {
   url.placeholder = 'https://… (optional)';
   url.spellcheck = false;
   lab.appendChild(url);
-  const mkb = (cls, label, title) => {
-    const b = d.createElement('button');
-    b.type = 'button'; b.className = cls; b.textContent = label; b.title = title;
-    // The press must not take focus from the field: a blur there is a save
-    // (blurCheck), which would beat Cancel to it.
-    b.addEventListener('mousedown', e => e.preventDefault());
-    return b;
-  };
-  const cancel = mkb('ds-en-cancel', 'Cancel', 'Leave this endnote as it was');
+  const cancel = mkb('ds-en-cancel', 'Cancel', 'Leave this endnote as it was (Esc)');
   const done = mkb('ds-en-done', 'Done', 'Save this endnote (Enter)');
   row.append(lab, cancel, done);
-  wrap.append(txt, row);
+  // Where the note is cited, and the way to take it out.
+  const meta = d.createElement('div');
+  meta.className = 'ds-en-meta';
+  const cites = noteCitations(d, num);
+  const where = d.createElement('span');
+  where.className = 'ds-en-where';
+  if (cites.length) {
+    where.append('Cited on ');
+    cites.forEach((c, k) => {
+      const b = mkb('ds-en-goto', `p. ${c.page}`, 'Save this note and go to where it is cited');
+      b.addEventListener('click', async () => { await finish(true); jumpToCitation(num, k); });
+      where.append(b);
+    });
+  } else {
+    const n = citeCount(sid);
+    where.textContent = n ? `Cited ${n}× in the text` : 'Not cited in the text';
+  }
+  const del = mkb('ds-en-del', 'Delete note', 'Delete this endnote and its citations in the text');
+  meta.append(where, del);
+  wrap.append(txt, hint, row, meta);
   // The entry (or the section's box) is a movable object, and a press on it
   // starts a drag: one on the form's own padding or its label would have
   // moved the list out from under the fields.
@@ -12407,47 +12522,87 @@ function editEndnote(d, li, sid, at = null) {
     txt.style.height = 'auto';
     txt.style.height = (txt.scrollHeight + txt.offsetHeight - txt.clientHeight) + 'px';
   };
+  const syncHint = () => { hint.hidden = !!url.value.trim() || !liftCitationUrl(txt.value); };
   fit();
+  syncHint();
   txt.focus();
-  const c = caret == null ? txt.value.length : caret;
+  const c = opts.caret === 'start' ? 0 : caret == null ? txt.value.length : caret;
   txt.setSelectionRange(c, c);
-  // The number as the page draws it (the engine's id="enN"): endnoteNumbers()
-  // reads content.md alone and misses a note cited only from a text box.
-  const num = (/^en(\d+)$/.exec(li.id) || [])[1] || endnoteNumbers().get(sid);
-  $('stat').textContent = `editing endnote ${num || `[${sid}]`} — Enter or Done saves, Cancel leaves it as it was`;
+  try { li.scrollIntoView({ block: 'nearest' }); } catch (e) { swallowed('editEndnote scroll', e); }
+  $('stat').textContent = `editing endnote ${num || `[${sid}]`} — Enter saves, Esc cancels, Tab goes to the next note`;
+  if (typeof showSourceRow === 'function') showSourceRow(sid);
   const opened = [txt.value.trim(), url.value.trim()];   // see edit()'s `opened`
 
-  const finish = async keep => {
-    if (wrap.dataset.done) return;
+  // What the fields hold now, and whether that differs from the source.
+  const held = () => {
+    // A citation is one line of the [[sources]] block.
+    const t = txt.value.replace(/\s*\n\s*/g, ' ').trim(), u = url.value.trim();
+    return { t, u, changed: (t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url) };
+  };
+  const close = () => {
     wrap.dataset.done = '1';
     editing = false;
     hubAutosaveFlushNext();
     // De-editorify immediately — see edit()'s finish: the old document stays
     // visible while the re-render loads, and live inputs there are a trap.
-    txt.disabled = url.disabled = cancel.disabled = done.disabled = true;
-    // A citation is one line of the [[sources]] block.
-    const t = txt.value.replace(/\s*\n\s*/g, ' ').trim(), u = url.value.trim();
-    const changed = keep && (t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url);
+    [txt, url, cancel, done, del, lift].forEach(x => { x.disabled = true; });
+  };
+  /** Put the entry back without a render: as it was drawn, or (`t` given)
+   *  saying what was just saved, until the owed render draws it properly. */
+  const redraw = (t, u) => {
+    wrap.remove();
+    li.classList.remove('ds-en-open');
+    if (t == null) { was.forEach(n => li.appendChild(n)); return; }
+    li.append(t);
+    if (u) {
+      const a = d.createElement('a');
+      a.href = u; a.textContent = u; a.style.wordBreak = 'break-all';
+      li.append(' ', a);
+    }
+  };
+  const finish = async keep => {
+    if (wrap.dataset.done) return;
+    const { t, u, changed } = held();
+    close();
     if (keep && !t) {
       // The URL may be cleared: a citation can be a book or an interview, and
       // requiring one here meant a source that had a link could never lose it.
       // The citation text itself still has to say something.
       // Said past the render below, which would otherwise claim the row.
       sayNowAndAfterRender(emptyCitationRefusal(sid));
-    } else if (changed) {
+    } else if (keep && changed) {
       pushHistory();
       updateSource(sid, t, u);
       markDirty();
-    } else {
+    } else if (!endnoteRenderOwed) {
       // Nothing to write: put the entry back as it was drawn. A render here
       // redrew the whole report to show the same words.
-      wrap.remove();
-      was.forEach(n => li.appendChild(n));
-      li.classList.remove('ds-en-open');
+      redraw();
       $('stat').textContent = '';
       return;
     }
+    endnoteRenderOwed = false;
     await render();
+  };
+  /** Save this note and open the one before or after it, with no render in
+   *  between. Past either end of the list it is an ordinary finish. */
+  const go = dir => {
+    if (wrap.dataset.done) return;
+    const all = [...d.querySelectorAll('[data-el^="endnote."]')];
+    const next = all[all.indexOf(li) + dir];
+    if (!next) { finish(true); return; }
+    const { t, u, changed } = held();
+    if (!t) { $('stat').textContent = emptyCitationRefusal(sid); return; }
+    close();
+    if (changed) {
+      pushHistory();
+      updateSource(sid, t, u);
+      markDirty();
+      endnoteRenderOwed = true;
+      redraw(t, u);
+    } else redraw();
+    editEndnote(d, next, next.dataset.el.slice('endnote.'.length), null,
+      { caret: dir > 0 ? 'start' : 'end' });
   };
   // Only finish once focus truly leaves the form, not on the hop between its
   // fields (matches the [data-slot] editor's toolbar-focus guard).
@@ -12456,13 +12611,39 @@ function editEndnote(d, li, sid, at = null) {
   }, 0);
   txt.addEventListener('blur', blurCheck);
   url.addEventListener('blur', blurCheck);
-  txt.addEventListener('input', fit);
+  txt.addEventListener('input', () => { fit(); syncHint(); });
+  url.addEventListener('input', syncHint);
   done.addEventListener('click', () => finish(true));
   cancel.addEventListener('click', () => finish(false));
+  lift.addEventListener('click', () => {
+    const r = liftCitationUrl(txt.value);
+    if (!r) return;
+    txt.value = r.text; url.value = r.url;
+    fit(); syncHint(); txt.focus();
+  });
+  del.addEventListener('click', async () => {
+    // The confirm takes focus, and a blur is a save: close the note first.
+    await finish(false);
+    await removeEndnote(sid, num);
+  });
   [txt, url].forEach(inp => inp.addEventListener('keydown', e => {
-    // Enter and Escape both keep what was typed (see edit()'s keydown);
-    // Cancel is the way to drop it.
-    if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); finish(true); }
+    // Enter keeps what was typed (see edit()'s keydown). Escape, here, drops
+    // it: a citation is retyped whole more often than a paragraph is, and the
+    // one key that backs out of a mistake should be the one everyone reaches
+    // for. ⌘Z still undoes a saved note.
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); return; }
+    if (e.altKey || e.metaKey || e.ctrlKey) return;
+    const atStart = inp.selectionStart === 0 && inp.selectionEnd === 0;
+    const atEnd = inp.selectionStart === inp.value.length && inp.selectionEnd === inp.value.length;
+    // Tab walks citation -> link -> the next note; Shift+Tab the other way.
+    // The arrows do the same from either end of a field.
+    if (e.key === 'Tab' && !e.shiftKey && inp === url) { e.preventDefault(); go(1); }
+    else if (e.key === 'Tab' && e.shiftKey && inp === txt) { e.preventDefault(); go(-1); }
+    else if (e.key === 'ArrowDown' && !e.shiftKey && inp === txt && atEnd) { e.preventDefault(); url.focus(); }
+    else if (e.key === 'ArrowDown' && !e.shiftKey && inp === url) { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowUp' && !e.shiftKey && inp === url) { e.preventDefault(); txt.focus(); }
+    else if (e.key === 'ArrowUp' && !e.shiftKey && inp === txt && atStart) { e.preventDefault(); go(-1); }
   }));
 }
 
@@ -29523,7 +29704,7 @@ function syncSourcesPanel() {
   if (!srcPanel) return;
   try {
     if (srcPanel.contains(document.activeElement) && document.activeElement !== srcPanel) return;
-    if (srcPanel.dataset.drawn !== readSlot('sources')) renderSources();
+    if (srcPanel.dataset.drawn !== srcDrawnKey()) renderSources();
   } catch (e) { swallowed('syncSourcesPanel', e); }
 }
 
@@ -30331,6 +30512,20 @@ function wire(roots) {
                border:1px solid #B7C6BC; background:#fff; color:#2F3E46; cursor:pointer; }
     .ds-en-row .ds-en-done { background:#52796F; border-color:#52796F; color:#fff; }
     .ds-en-row button:hover { filter:brightness(.95); }
+    /* Under the fields: where the note is cited (each a jump), and Delete. */
+    .ds-en-meta, .ds-en-hint { display:flex; align-items:center; gap:6px; margin:4px 0 3px;
+               font:500 10.5px/1.3 system-ui, sans-serif; color:#5B6E66; }
+    .ds-en-hint[hidden] { display:none; }
+    .ds-en-hint { background:#FFF6D8; border:1px solid #E6D38A; border-radius:3px; padding:4px 6px;
+               color:#5C4A00; }
+    .ds-en-hint span, .ds-en-where { flex:1; min-width:0; }
+    .ds-en-meta button, .ds-en-hint button { font:600 10.5px/1 system-ui, sans-serif; padding:4px 7px;
+               border-radius:3px; border:1px solid #B7C6BC; background:#fff; color:#2F3E46;
+               cursor:pointer; white-space:nowrap; }
+    .ds-en-where .ds-en-goto { margin-right:4px; color:#2F6B4F; }
+    .ds-en-meta button:hover, .ds-en-hint button:hover { background:#EEF4F0; }
+    .ds-en-meta .ds-en-del { border-color:transparent; background:none; color:#A8472F; }
+    .ds-en-meta .ds-en-del:hover { background:#F8E4DD; }
     /* The cursor is the whole affordance. A movable object grabs; its WORDS
        show the text caret, because a click on them types there and only a
        press that travels moves the object (typeOnClick). Words inside a
@@ -31088,6 +31283,34 @@ function moveSource(id, dir) {
 
 let srcPanel = null;
 let srcQuery = '', srcUnusedOnly = false;
+/** List the panel in endnote order (the order the page shows) rather than the
+ *  order the sources were declared in. On by default: the question the panel
+ *  is opened with is "where is note 7", and the declared order answers it
+ *  only by reading every row. Off, the arrows arrange the declared list. */
+let srcByNumber = true;
+/** What the panel was drawn from: the sources and the numbers they carry on
+ *  the page, which change when the prose does (a citation moved or cut). */
+const srcDrawnKey = () => readSlot('sources') + '\n#'
+  + [...pageNoteNumbers()].map(([k, v]) => k + '=' + v).join(',');
+/** Bring a source's row into view in the open panel and mark it: the note
+ *  just opened on the page, so the two read as the same thing. */
+function showSourceRow(sid) {
+  if (!srcPanel) return;
+  srcPanel.querySelectorAll('.srcrow.on').forEach(r => r.classList.remove('on'));
+  const row = [...srcPanel.querySelectorAll('.srcrow')].find(r => r.dataset.sid === sid);
+  if (!row) return;
+  row.classList.add('on');
+  row.scrollIntoView({ block: 'nearest' });
+}
+/** Scroll the page to a source's endnote and light it up. */
+function showNoteOnPage(sid) {
+  const d = $('out').contentDocument;
+  const el = d && d.querySelector(`[data-el="${CSS.escape('endnote.' + sid)}"]`);
+  if (!el) return;
+  jumpTo(el, 'center');
+  el.classList.add('ds-slotlink');
+  setTimeout(() => { try { el.classList.remove('ds-slotlink'); } catch (e) { /* gone */ } }, 2600);
+}
 function closeSources() { if (srcPanel) { srcPanel.remove(); srcPanel = null; } }
 function openSources() {
   if (editing) return;
@@ -31103,10 +31326,11 @@ function openSources() {
     + '<div class="src-tools">'
     + '<input id="src-q" type="search" placeholder="Search id, citation or link…" '
     + 'autocomplete="off" spellcheck="false">'
+    + '<button type="button" class="src-filter" id="src-bynum" '
+    + 'title="List the sources in the order their endnotes are numbered">By number</button>'
     + '<button type="button" class="src-filter" id="src-unused">Unused only</button>'
     + '</div><div id="srclist"></div>'
-    + '<p class="src-foot">Endnote numbers follow first use in the prose — reorder '
-    + 'only changes the list. Right-click a paragraph to cite one.</p>';
+    + '<p class="src-foot"></p>';
   srcPanel.querySelector('.src-x').onclick = closeSources;
   srcPanel.querySelector('.src-new').onclick = addSourceFromPanel;
   srcPanel.querySelector('.src-endnotes').onclick = async () => {
@@ -31117,6 +31341,9 @@ function openSources() {
   q.addEventListener('input', () => { srcQuery = q.value.trim().toLowerCase(); renderSources(); });
   srcPanel.querySelector('#src-unused').addEventListener('click', () => {
     srcUnusedOnly = !srcUnusedOnly; renderSources();
+  });
+  srcPanel.querySelector('#src-bynum').addEventListener('click', () => {
+    srcByNumber = !srcByNumber; renderSources();
   });
   document.body.appendChild(srcPanel);
   srcPanel.style.top = ($('bar').getBoundingClientRect().bottom + 6) + 'px';
@@ -31152,13 +31379,20 @@ async function addSourceFromPanel() {
 
 function renderSources() {
   if (!srcPanel) return;
-  srcPanel.dataset.drawn = readSlot('sources');
+  srcPanel.dataset.drawn = srcDrawnKey();
+  const nums = pageNoteNumbers();
   const list = srcPanel.querySelector('#srclist');
   list.textContent = '';
   const all = parseSources();
   srcPanel.querySelector('.src-count').textContent =
     all.length + (all.length === 1 ? ' source' : ' sources');
   srcPanel.querySelector('#src-unused').classList.toggle('on', srcUnusedOnly);
+  srcPanel.querySelector('#src-bynum').classList.toggle('on', srcByNumber);
+  srcPanel.querySelector('.src-foot').textContent = srcByNumber
+    ? 'Listed as the endnotes are numbered, which follows first use in the text. '
+      + 'Click a number to see that note on the page. Right-click a paragraph to cite one.'
+    : 'Listed as declared. The arrows arrange this list only: endnote numbers '
+      + 'follow first use in the text. Right-click a paragraph to cite one.';
   // The endnotes button describes the document's actual state rather than
   // offering an add that would silently do nothing (or, worse, produce a
   // second list renumbering beside the first).
@@ -31187,6 +31421,8 @@ function renderSources() {
   const rows = all.filter(s => {
     if (srcUnusedOnly && citeCount(s.id)) return false;
     if (!srcQuery) return true;
+    // A bare number asks for that endnote.
+    if (/^\d+$/.test(srcQuery)) return nums.get(s.id) === srcQuery;
     // Folded, so "aina" finds ʻāina and "hawaii" finds Hawaiʻi.
     return foldHaw(s.id + ' ' + s.text + ' ' + s.url).includes(foldHaw(srcQuery));
   });
@@ -31194,10 +31430,18 @@ function renderSources() {
     list.innerHTML = '<p class="srcempty">Nothing matches that.</p>';
     return;
   }
+  // In endnote order the numbered ones come first, as the page lists them,
+  // and a source nothing cites (it has no number) keeps its declared place
+  // after them.
+  if (srcByNumber) {
+    const at = s => (nums.has(s.id) ? +nums.get(s.id) : Infinity);
+    rows.sort((a, b) => (at(a) - at(b)) || (all.indexOf(a) - all.indexOf(b)));
+  }
   rows.forEach(s => {
     const idx = all.indexOf(s);
     const n = citeCount(s.id);
     const row = document.createElement('div'); row.className = 'srcrow';
+    row.dataset.sid = s.id;
     const id = document.createElement('div'); id.className = 'srcid';
     id.innerHTML = `[${s.id}]<span class="srcuse${n ? '' : ' unused'}">`
       + `${n ? `cited ${n}×` : 'unused'}</span>`;
@@ -31212,10 +31456,14 @@ function renderSources() {
     // Bounds are against the FULL list, not the filtered view — moving is a
     // move through the real order, so a filtered row is only at the end when
     // it is genuinely last.
-    mkb('↑', 'Move up', idx === 0, () => {
-      pushHistory(); moveSource(s.id, -1); markDirty(); render(); renderSources(); });
-    mkb('↓', 'Move down', idx === all.length - 1, () => {
-      pushHistory(); moveSource(s.id, 1); markDirty(); render(); renderSources(); });
+    // The arrows arrange the DECLARED list, so they are only offered while
+    // that is the order on show: in endnote order a press moved nothing.
+    if (!srcByNumber) {
+      mkb('↑', 'Move up', idx === 0, () => {
+        pushHistory(); moveSource(s.id, -1); markDirty(); render(); renderSources(); });
+      mkb('↓', 'Move down', idx === all.length - 1, () => {
+        pushHistory(); moveSource(s.id, 1); markDirty(); render(); renderSources(); });
+    }
     mkb('rename', 'Rename this id everywhere it is cited', false, async () => {
       const r = await dsForm(`Rename [${s.id}]`, [{
         name: 'id', label: 'New id', type: 'text', value: s.id, required: true,
@@ -31238,6 +31486,18 @@ function renderSources() {
     if (n) { del.disabled = true; del.title = `Cited in the prose — remove the [^${s.id}] refs first`; }
     ctl.appendChild(del);
     id.appendChild(ctl);
+    // The number the reader sees, leading the row (CSS order: the id's own
+    // text stays first in the markup). It is the way from a row to its note.
+    const num = nums.get(s.id);
+    const nb = document.createElement(num ? 'button' : 'span');
+    nb.className = 'srcnum' + (num ? '' : ' none');
+    nb.textContent = num || '–';
+    if (num) {
+      nb.type = 'button';
+      nb.title = `Endnote ${num}: show it on the page`;
+      nb.addEventListener('click', () => showNoteOnPage(s.id));
+    } else nb.title = 'Not cited, so it has no endnote number';
+    id.appendChild(nb);
     const txt = document.createElement('input');
     txt.className = 'srctext'; txt.value = s.text; txt.placeholder = 'citation text';
     // The URL keeps its position as the row's SECOND input (the suite reads it
