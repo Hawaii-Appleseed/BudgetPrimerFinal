@@ -2387,7 +2387,12 @@
   #cpanel.margin #cpanel-list > * { overflow-y:auto; }
   /* The line from the card in hand to the words it is about, across the
      ground between the page and the gutter. */
-  #cmt-leader { position:fixed; z-index:44; height:2px; background:var(--cmt-mark-on); pointer-events:none; border-radius:2px; }
+  /* Placed by transform alone (hubMarginLeader): left/top/width would lay the
+     page out again on every scrolled frame, a transform only composites. A
+     fixed 100px wide at the origin, translated to the line's start and
+     stretched to its length. */
+  #cmt-leader { position:fixed; left:0; top:0; width:100px; z-index:44; height:2px; background:var(--cmt-mark-on); pointer-events:none;
+    border-radius:2px; transform-origin:0 0; will-change:transform; }
   #cmt-leader[hidden] { display:none; }
   #cpanel-view { border:1px solid var(--cmt-edge); background:var(--cmt-card); font:600 12px system-ui; color:var(--cmt-dim); padding:3px 9px;
     border-radius:999px; cursor:pointer; margin-left:auto; margin-right:8px; }
@@ -14947,9 +14952,22 @@ function paintSel(d) {
  *  room for its handles, lies under the card, the card drops to the foot of
  *  the work area instead (#context.low). Re-judged on every selection paint
  *  and every scroll of the report. */
+let contextDodgeRaf = 0;
+/** A scroll asks for the dodge; it runs once, in the next frame, however many
+ *  scroll events came (the report's own scroll and the stage's both ask). */
+function contextDodgeSoon(d) {
+  if (contextDodgeRaf) return;
+  contextDodgeRaf = requestAnimationFrame(() => {
+    contextDodgeRaf = 0;
+    if ($('out') && $('out').contentDocument === d) contextDodge(d);   // the frame may have been swapped meanwhile
+  });
+}
 function contextDodge(d) {
   const ctx = $('context'), fr = $('out');
   if (!ctx || !fr || !d) return;
+  // Nothing selected: nothing to dodge, and no layout read to find that out
+  // (this is called on every scrolled frame; offsetHeight below forces one).
+  if (!selIds.size) { if (ctx.classList.contains('low')) ctx.classList.remove('low'); return; }
   const card = [...ctx.children].find(c => !c.hidden && c.offsetHeight);
   const els = card ? selEls(d) : [];
   if (!els.length) { ctx.classList.remove('low'); return; }
@@ -29822,7 +29840,7 @@ function stageChainWire(d) {
       if (rest > 0.5) w.scrollTo(w.scrollX, Math.max(0, from - rest));
     }
   }, { passive: false });
-  w.addEventListener('scroll', () => contextDodge(d), { passive: true });
+  w.addEventListener('scroll', () => contextDodgeSoon(d), { passive: true });
   w.addEventListener('scroll', () => {
     // Cheapest test first: the band is almost always in, and this runs on
     // every scroll event the report fires.
@@ -32578,6 +32596,7 @@ let hubCommentsFailed = null; // the last refresh's failure, so it is said once
 let hubCommentsView = 'margin';   // 'margin' | 'list' - the person's choice; the width has the last word
 try { hubCommentsView = localStorage.getItem('primer-comments-view') || 'margin'; } catch (e) { /* file: */ }
 let hubMarginRaf = 0;
+let hubMarginGlide = false;   // whether the layout queued for the next frame may glide the cards
 let hubMarginRO = null;       // watches the cards' heights: a reply box opening restacks the rest
 const COMMENT_MARK_CSS = `
 @media screen {
@@ -32663,8 +32682,13 @@ function hubSlotFocus(d) {
   el.classList.add('ds-slotlink');
   setTimeout(() => { try { el.classList.remove('ds-slotlink'); } catch (e) { /* gone */ } }, 2600);
 }
-function hubCommentsPaint(d) {
+/** `sameRangesKeep`: the caller has laid the cards out already (a thread taken
+ *  in hand renders, then paints); when this paint finds the same threads
+ *  highlighted as before, the rectangles that layout read are the ones it
+ *  would read again, so it is not run a second time. */
+function hubCommentsPaint(d, { sameRangesKeep = false } = {}) {
   if (!d || !d.body || !docStore()) return;
+  const rangesBefore = sameRangesKeep ? hubCommentRanges.map(h => h.id).join('\n') : null;
   if (!d.getElementById('ds-comment-css')) {
     const st = d.createElement('style'); st.id = 'ds-comment-css'; st.textContent = COMMENT_MARK_CSS;
     d.head.appendChild(st);
@@ -32701,6 +32725,7 @@ function hubCommentsPaint(d) {
     w.CSS.highlights.set('ds-comment-active', new w.Highlight(...active));
   }
   suggestPaint(d);
+  if (rangesBefore != null && rangesBefore === hubCommentRanges.map(h => h.id).join('\n')) return;
   hubMarginLayout(true);   // a render moved the anchors; the cards follow
 }
 
@@ -32773,17 +32798,36 @@ function hubMarginWheel(e) {
  *  always reachable; words that have scrolled off the top take their card
  *  with them, as in Docs. 0 for the document itself; Infinity when the
  *  anchor is gone. */
-function hubMarginWant(d, c, f, z, listTop, pageTop) {
+const hubAnchorEls = new Map();   // anchor -> its element, for threads with no quoted words
+function hubMarginWant(d, c, f, z, listTop, pageTop, rangeOf) {
   if (!c || !c.anchor) return { y: 0, onPage: true, rect: null };
   if (!d) return { y: Infinity, onPage: false, rect: null };
-  const hit = hubCommentRanges.find(h => h.id === c.id);
-  const t = hit ? hit.range : hubCommentEl(d, c.anchor);
+  const hit = rangeOf ? rangeOf.get(c.id) : hubCommentRanges.find(h => h.id === c.id);
+  // A thread on a whole element has no range: its element, found once and
+  // kept while it is still in the page (a selector over the whole report on
+  // every scrolled frame, for every such card, was most of what this cost).
+  let t = hit ? hit.range : hubAnchorEls.get(c.anchor);
+  // (Of THIS document: a swapped-out frame can stay in the page, and its elements stay connected.)
+  if (!t || (!hit && (t.ownerDocument !== d || !t.isConnected))) {
+    t = hubCommentEl(d, c.anchor);
+    if (t) hubAnchorEls.set(c.anchor, t); else hubAnchorEls.delete(c.anchor);
+  }
   if (!t) return { y: Infinity, onPage: false, rect: null };
   const r = t.getBoundingClientRect();
   const screenY = f.top + r.top * z;
   const onPage = screenY >= pageTop;
   const y = screenY - listTop;
   return { y: onPage ? Math.max(0, y) : y, onPage, rect: r };
+}
+/** `list`'s entries by id, the first of an id winning (as find() did). Built
+ *  once per layout - one pass - instead of a find() down each list per card:
+ *  the lists are changed in place in several ways (a merge splices, a put
+ *  assigns), so a map kept between layouts could go stale; one built here
+ *  cannot. */
+function hubIndexOf(list) {
+  const m = new Map();
+  for (const x of list) if (!m.has(x.id)) m.set(x.id, x);
+  return m;
 }
 /** A card leaving the list: the height watcher lets go of it. */
 function hubMarginForget(el) {
@@ -32794,7 +32838,6 @@ function hubMarginLayout(animate = false) {
   if (!panel || panel.hidden || !panel.classList.contains('margin') || !list) return;
   const items = [...list.children];
   if (!items.length) return;
-  list.classList.toggle('anim', !!animate);
   const out = $('out');
   const d = out && out.contentDocument;
   // This runs on every scrolled frame, so: every READ first, then every
@@ -32807,6 +32850,16 @@ function hubMarginLayout(animate = false) {
   const pageTop = $('work') ? $('work').getBoundingClientRect().top : 0;
   const panelBox = panel.getBoundingClientRect();
   const GAP = 8;
+  // Whether the cards may glide is a WRITE (it changes what the transform
+  // writes below do), so it goes with the writes, after every read above: set
+  // first it made the browser recalc the list's style before the first rect
+  // was read. It is also what keeps a scrolled frame from gliding: animate is
+  // false there, and the class is gone before the first transform is written.
+  const glide = !!animate;
+  // Threads and ranges by id, one pass each, not a find() down each list per
+  // card.
+  const byId = hubIndexOf(hubComments);
+  const rangeOf = hubIndexOf(hubCommentRanges);
   // A card taller than the gutter scrolls inside itself rather than being
   // cut off at the bottom edge. Written only when the room changes, and a
   // card so written is measured afresh.
@@ -32816,10 +32869,10 @@ function hubMarginLayout(animate = false) {
   const want = items.map(el => {
     const cmt = el.classList.contains('cmt');
     const composer = el.id === 'cpanel-composer';
-    const c = cmt ? hubComments.find(x => x.id === el.dataset.id)
+    const c = cmt ? byId.get(el.dataset.id)
             : composer ? { anchor: hubCommentAnchor() } : null;
     const w = (cmt && !el.classList.contains('resolved')) || composer
-      ? hubMarginWant(d, c, f, z, listTop, pageTop) : { y: Infinity, onPage: false, rect: null };
+      ? hubMarginWant(d, c, f, z, listTop, pageTop, rangeOf) : { y: Infinity, onPage: false, rect: null };
     // A card's height comes from the ResizeObserver once it has seen the
     // card; one it has not seen yet is measured here, the once.
     if (el.__dsH == null) el.__dsH = el.offsetHeight;
@@ -32872,6 +32925,7 @@ function hubMarginLayout(animate = false) {
   // composite, `top` a layout of the gutter. A card placed for the first
   // time goes straight to its place - no glide from the top of the gutter,
   // which read as the cards reshuffling on every click.
+  if (list.classList.contains('anim') !== glide) list.classList.toggle('anim', glide);
   let fresh = false;
   want.forEach((w, i) => {
     const t = Math.round(tops[i]);
@@ -32914,20 +32968,29 @@ function hubMarginLeader(want, tops, { f, z, listTop, panelBox, pageTop }) {
   // A resolved thread has no highlight on the page to point at - and no
   // rectangle from hubMarginWant, which gives it no place.
   const r = i >= 0 ? want[i].rect : null;
-  if (!r) { led.hidden = true; return; }
+  // Written only when it changes: a hidden line stays hidden for free, and a
+  // line that has not moved is not touched.
+  const hide = () => { if (!led.hidden) led.hidden = true; };
+  if (!r) { hide(); return; }
   const y = f.top + (r.top + r.height / 2) * z;
   const cardTop = listTop + tops[i];
-  if (y < pageTop || y > panelBox.bottom || Math.abs(y - (cardTop + 14)) > 400) { led.hidden = true; return; }
+  if (y < pageTop || y > panelBox.bottom || Math.abs(y - (cardTop + 14)) > 400) { hide(); return; }
   const x0 = Math.min(f.left + r.right * z + 4, panelBox.left - 6);
-  led.hidden = false;
-  led.style.left = x0 + 'px';
-  led.style.width = Math.max(0, panelBox.left - x0) + 'px';
-  led.style.top = Math.round(y) + 'px';
+  // translate to the start, stretch the 100px line to its length: a transform
+  // alone, no layout (the line is position:fixed at the origin, see its CSS).
+  const t = `translate(${Math.round(x0 * 10) / 10}px, ${Math.round(y)}px) scaleX(${Math.round(Math.max(0, panelBox.left - x0) * 10) / 1000})`;
+  if (led.__dsT !== t) { led.__dsT = t; led.style.transform = t; }
+  if (led.hidden) led.hidden = false;
 }
 /** One layout per frame, however many scroll events ask. */
 function hubMarginQueue(animate = false) {
+  // Requests that share a frame share its answer, and a request that must NOT
+  // glide (a scroll) wins over one that may (a card changing height): the
+  // glide class is never on for a frame the page's own scroll moved the cards
+  // in, however the two were ordered.
+  hubMarginGlide = hubMarginRaf ? (hubMarginGlide && animate) : animate;
   if (hubMarginRaf) return;
-  hubMarginRaf = requestAnimationFrame(() => { hubMarginRaf = 0; hubMarginLayout(animate); });
+  hubMarginRaf = requestAnimationFrame(() => { hubMarginRaf = 0; hubMarginLayout(hubMarginGlide); });
 }
 /** Once per document: a click on a highlight opens its thread; a text
  *  selection inside the open paragraph offers "+ Comment"; ⌘⌥M comments on
@@ -33276,9 +33339,10 @@ function hubCommentFocus(id, { scrollPage = true } = {}) {
   hubCommentActive = id;
   // On the tab that has it: a resolved thread lives under Resolved.
   if (c && (c.resolved ? hubCommentsTab !== 'resolved' : hubCommentsTab === 'resolved')) hubCommentsTab = c.resolved ? 'resolved' : 'open';
-  if ($('cpanel').hidden) hubCommentsToggle(true); else hubCommentsRender();
+  const wasOpen = !$('cpanel').hidden;
+  if (!wasOpen) hubCommentsToggle(true); else hubCommentsRender();
   const d = $('out') && $('out').contentDocument;
-  if (d) hubCommentsPaint(d);
+  if (d) hubCommentsPaint(d, { sameRangesKeep: wasOpen });   // the render just laid the cards out
   if (c && c.anchor && scrollPage) hubCommentShow(c);
   const card = $('cpanel-list') && $('cpanel-list').querySelector(`.cmt[data-id="${CSS.escape(id)}"]`);
   // In the margin the layout puts the card in hand beside its words, and the
