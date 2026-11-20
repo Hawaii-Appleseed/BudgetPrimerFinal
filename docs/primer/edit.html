@@ -12328,26 +12328,93 @@ function emptyCitationRefusal(id) {
     + 'nothing was changed (to remove it, take out its citations, then delete it in Sources)';
 }
 
-function editEndnote(d, li, sid) {
+/** How far into an endnote's citation text the point `at` falls, so the caret
+ *  opens where the person clicked rather than at one end of a long citation.
+ *  null when it cannot be told (no point, or the click was on the link). */
+function endnoteCaretOffset(d, li, at, len) {
+  if (!at) return null;
+  try {
+    let node = null, off = 0;
+    if (d.caretPositionFromPoint) {
+      const p = d.caretPositionFromPoint(at.x, at.y);
+      if (p) { node = p.offsetNode; off = p.offset; }
+    } else if (d.caretRangeFromPoint) {
+      const r = d.caretRangeFromPoint(at.x, at.y);
+      if (r) { node = r.startContainer; off = r.startOffset; }
+    }
+    if (!node || !li.contains(node)) return null;
+    const pre = d.createRange();
+    pre.setStart(li, 0); pre.setEnd(node, off);
+    const n = pre.toString().length;
+    return n <= len ? n : null;
+  } catch (e) { swallowed('endnoteCaretOffset', e); return null; }
+}
+
+function editEndnote(d, li, sid, at = null) {
   if (editing) return;
   const s = parseSources().find(r => r.id === sid);
   if (!s) return;
   editing = true;
+  const caret = endnoteCaretOffset(d, li, at, s.text.length);
 
+  // The form goes INSIDE the entry, which stays where it is: it used to
+  // replace the <li>, so the note lost its number and every note after it
+  // counted one lower for as long as the form was open.
   const wrap = d.createElement('div');
   wrap.className = 'ds-endnote-edit';
-  const txt = d.createElement('input');
+  // A textarea, not a one-line input: a citation runs two or three lines, and
+  // one line showed only its tail. It wraps in the note's own type and grows
+  // to what it holds, so the list keeps its shape while one note is open.
+  const txt = d.createElement('textarea');
   txt.className = 'ds-en-text';
+  txt.rows = 1;
   txt.value = s.text;
-  txt.placeholder = 'citation text';
+  txt.placeholder = 'Citation';
+  txt.setAttribute('aria-label', 'Citation');
+  const row = d.createElement('div');
+  row.className = 'ds-en-row';
+  const lab = d.createElement('label');
+  lab.className = 'ds-en-lab';
+  lab.textContent = 'Link';
   const url = d.createElement('input');
   url.className = 'ds-en-url';
   url.value = s.url;
-  url.placeholder = 'https://…';
-  wrap.append(txt, url);   // two fields, nothing else — no hint row pushing the list
-  li.replaceWith(wrap);
+  url.placeholder = 'https://… (optional)';
+  url.spellcheck = false;
+  lab.appendChild(url);
+  const mkb = (cls, label, title) => {
+    const b = d.createElement('button');
+    b.type = 'button'; b.className = cls; b.textContent = label; b.title = title;
+    // The press must not take focus from the field: a blur there is a save
+    // (blurCheck), which would beat Cancel to it.
+    b.addEventListener('mousedown', e => e.preventDefault());
+    return b;
+  };
+  const cancel = mkb('ds-en-cancel', 'Cancel', 'Leave this endnote as it was');
+  const done = mkb('ds-en-done', 'Done', 'Save this endnote (Enter)');
+  row.append(lab, cancel, done);
+  wrap.append(txt, row);
+  // The entry (or the section's box) is a movable object, and a press on it
+  // starts a drag: one on the form's own padding or its label would have
+  // moved the list out from under the fields.
+  wrap.addEventListener('mousedown', e => e.stopPropagation());
+  const was = [...li.childNodes];
+  was.forEach(n => n.remove());
+  li.appendChild(wrap);
+  li.classList.add('ds-en-open');
+  // border-box: the borders are part of the height set, not of scrollHeight.
+  const fit = () => {
+    txt.style.height = 'auto';
+    txt.style.height = (txt.scrollHeight + txt.offsetHeight - txt.clientHeight) + 'px';
+  };
+  fit();
   txt.focus();
-  txt.select();
+  const c = caret == null ? txt.value.length : caret;
+  txt.setSelectionRange(c, c);
+  // The number as the page draws it (the engine's id="enN"): endnoteNumbers()
+  // reads content.md alone and misses a note cited only from a text box.
+  const num = (/^en(\d+)$/.exec(li.id) || [])[1] || endnoteNumbers().get(sid);
+  $('stat').textContent = `editing endnote ${num || `[${sid}]`} — Enter or Done saves, Cancel leaves it as it was`;
   const opened = [txt.value.trim(), url.value.trim()];   // see edit()'s `opened`
 
   const finish = async keep => {
@@ -12357,32 +12424,44 @@ function editEndnote(d, li, sid) {
     hubAutosaveFlushNext();
     // De-editorify immediately — see edit()'s finish: the old document stays
     // visible while the re-render loads, and live inputs there are a trap.
-    txt.disabled = url.disabled = true;
-    if (keep) {
-      const t = txt.value.trim(), u = url.value.trim();
+    txt.disabled = url.disabled = cancel.disabled = done.disabled = true;
+    // A citation is one line of the [[sources]] block.
+    const t = txt.value.replace(/\s*\n\s*/g, ' ').trim(), u = url.value.trim();
+    const changed = keep && (t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url);
+    if (keep && !t) {
       // The URL may be cleared: a citation can be a book or an interview, and
       // requiring one here meant a source that had a link could never lose it.
       // The citation text itself still has to say something.
       // Said past the render below, which would otherwise claim the row.
-      if (!t) sayNowAndAfterRender(emptyCitationRefusal(sid));
-      else if ((t !== opened[0] || u !== opened[1]) && (t !== s.text || u !== s.url)) {
-        pushHistory();
-        updateSource(sid, t, u);
-        markDirty();
-      }
+      sayNowAndAfterRender(emptyCitationRefusal(sid));
+    } else if (changed) {
+      pushHistory();
+      updateSource(sid, t, u);
+      markDirty();
+    } else {
+      // Nothing to write: put the entry back as it was drawn. A render here
+      // redrew the whole report to show the same words.
+      wrap.remove();
+      was.forEach(n => li.appendChild(n));
+      li.classList.remove('ds-en-open');
+      $('stat').textContent = '';
+      return;
     }
     await render();
   };
-  // Only finish once focus truly leaves BOTH fields, not on the hop between
-  // them (matches the [data-slot] editor's toolbar-focus guard, adapted for
-  // two inputs instead of one field plus a toolbar).
+  // Only finish once focus truly leaves the form, not on the hop between its
+  // fields (matches the [data-slot] editor's toolbar-focus guard).
   const blurCheck = () => setTimeout(() => {
     if (!wrap.contains(d.activeElement)) finish(true);
   }, 0);
   txt.addEventListener('blur', blurCheck);
   url.addEventListener('blur', blurCheck);
+  txt.addEventListener('input', fit);
+  done.addEventListener('click', () => finish(true));
+  cancel.addEventListener('click', () => finish(false));
   [txt, url].forEach(inp => inp.addEventListener('keydown', e => {
-    // Enter and Escape both keep what was typed (see edit()'s keydown).
+    // Enter and Escape both keep what was typed (see edit()'s keydown);
+    // Cancel is the way to drop it.
     if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); finish(true); }
   }));
 }
@@ -25157,6 +25236,23 @@ function dragRefusal(d, el, page) {
  *  object WITHOUT typing — to align it, lock it, delete it — Escape out of
  *  the words (the object stays selected) or shift-click it. Returns whether
  *  an editor opened. */
+/** A click (a press that did not travel) on an endnote: open its citation.
+ *  `el` is the object the press took — the placed Endnotes section's box or a
+ *  frame its list runs on into, or, in a report whose renderer draws its own
+ *  list, the entry itself. The note becomes the thing in hand, so the box's
+ *  selection (and the text-box toolbar that goes with it, which says nothing
+ *  about one citation) is put down. Returns whether a note opened. */
+function endnoteOnClick(d, el, e0) {
+  if (tool === 'hand' || editing) return false;
+  if (e0.shiftKey || e0.altKey || e0.metaKey || e0.ctrlKey) return false;
+  const own = (el.dataset.el || '').startsWith('endnote.') ? el : null;
+  const en = own || endnoteEntryAt(el, e0.target);
+  if (!en) return false;
+  setSel(d, []);
+  editEndnote(d, en, en.dataset.el.slice('endnote.'.length), ptOf(e0));
+  return editing;
+}
+
 function typeOnClick(d, el, e0) {
   if (tool === 'hand') return false;       // the Hand tool selects and moves; it does not type
   if (editing || e0.shiftKey || e0.altKey || e0.metaKey || e0.ctrlKey) return false;
@@ -25382,6 +25478,13 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     // refusal was neither a move nor a click.
     if (!started) {
       if (refused) return;
+      // A click on an endnote opens THAT note, whatever the selection was:
+      // the section's box is grouped with its rule, so the general ladder
+      // (select the group, drill in, then type) took three clicks to reach
+      // one citation and showed nothing on the way to say a fourth thing
+      // was possible. A press that travels still moves the section, or
+      // reorders an entry that is its own object. Shift-click selects.
+      if (endnoteOnClick(d, clickTo || el, e0)) { clearGuides(d); return; }
       // Except when the group was already selected and this click did not
       // move it: then it means "get inside" — select just the piece under
       // the pointer, which is what puts resize handles on it. An expandable
@@ -30199,10 +30302,35 @@ function wire(roots) {
     .ds-fitgrid button.on { background:#6B9E78; border-color:#6B9E78; }
     .ds-chip.ds-spchip { color:#5B6E66; font:600 .62em/1 system-ui; padding:0 2px; vertical-align:.15em; }
     .ds-chip.ds-varchip { color:#2F3E46; font-size:.82em; font-style:normal; white-space:nowrap; }
-    .ds-endnote-edit { display:block; padding:2px 0; }
-    .ds-endnote-edit input { display:block; width:100%; box-sizing:border-box; font:inherit;
-               color:inherit; margin:0 0 4px; padding:2px 4px; border:2px solid #6B9E78;
-               border-radius:3px; background:#fff; }
+    /* An endnote says it can be opened: a tint on the ONE note under the
+       pointer and the text cursor, since a click there types. The section's
+       own dashed ring steps back while a note is pointed at, or the whole
+       list read as the thing a click would take. */
+    [data-el^="endnote."] { cursor:text; }
+    [data-el^="endnote."]:not(.ds-en-open):hover {
+      background:rgba(107,158,120,.16); box-shadow:0 0 0 3px rgba(107,158,120,.16);
+      border-radius:2px; }
+    [data-el]:not(.ds-sel):not(.ds-grouped):has([data-el^="endnote."]:hover) { outline:none !important; }
+    /* The open note: the form sits inside the entry, so its number stays and
+       the list keeps counting. The citation wraps in the note's own type. */
+    .ds-endnote-edit { display:block; margin:-3px -5px 0 -3px; cursor:auto; }
+    .ds-endnote-edit .ds-en-text { display:block; width:100%; box-sizing:border-box; font:inherit;
+               line-height:inherit; color:inherit; margin:0; padding:2px 4px 2px 2px; resize:none;
+               overflow:hidden; border:1.5px solid #6B9E78; border-radius:3px; background:#fff;
+               outline:none; box-shadow:0 0 0 3px rgba(107,158,120,.22); }
+    .ds-en-row { display:flex; align-items:center; gap:6px; margin:5px 0 2px; }
+    .ds-en-lab { flex:1; min-width:0; display:flex; align-items:center; gap:6px;
+               font:600 10.5px/1 system-ui, sans-serif; letter-spacing:.04em; text-transform:uppercase;
+               color:#52796F; cursor:text; }
+    .ds-en-lab .ds-en-url { flex:1; min-width:0; box-sizing:border-box; font:inherit; font-weight:400;
+               letter-spacing:0; text-transform:none; line-height:1.3; color:#2F3E46; margin:0;
+               padding:3px 5px; border:1px solid #B7C6BC; border-radius:3px; background:#fff; }
+    .ds-en-lab .ds-en-url:focus { outline:none; border-color:#6B9E78;
+               box-shadow:0 0 0 3px rgba(107,158,120,.22); }
+    .ds-en-row button { font:600 10.5px/1 system-ui, sans-serif; padding:5px 9px; border-radius:3px;
+               border:1px solid #B7C6BC; background:#fff; color:#2F3E46; cursor:pointer; }
+    .ds-en-row .ds-en-done { background:#52796F; border-color:#52796F; color:#fff; }
+    .ds-en-row button:hover { filter:brightness(.95); }
     /* The cursor is the whole affordance. A movable object grabs; its WORDS
        show the text caret, because a click on them types there and only a
        press that travels moves the object (typeOnClick). Words inside a
