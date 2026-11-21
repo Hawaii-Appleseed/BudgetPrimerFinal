@@ -2126,6 +2126,9 @@
   .dsdlg-title { font:600 14px system-ui; margin:0; color:var(--ink); }
   .dsdlg-msg { font:13px/1.5 system-ui; margin:0; white-space:pre-wrap; color:var(--ink); }
   .dsdlg-field { display:flex; flex-direction:column; gap:5px; font:12px system-ui; color:#5B6E66; }
+  .dsdlg-more { display:flex; flex-direction:column; gap:12px; }
+  .dsdlg-more > summary { font:12px system-ui; color:#3F6E5A; cursor:pointer; padding:2px 0; }
+  .dsdlg-more[open] > summary { margin-bottom:12px; }
   .dsdlg-field > input, .dsdlg-field > select, .dsdlg-field > textarea {
         font:13px system-ui; color:var(--ink); padding:8px 10px;
         border:1px solid #C9D6CD; border-radius:7px; background:#fff; width:100%;
@@ -3892,7 +3895,17 @@ function dsForm(title, fields, opts = {}) {
       h.textContent = title; form.appendChild(h);
     }
     const inputs = {};
+    // Fields marked `more` fold under one "More details" line, so a form that
+    // needs one answer most of the time does not ask seven.
+    let more = null;
     fields.forEach(f => {
+      if (f.more && !more) {
+        more = document.createElement('details');
+        more.className = 'dsdlg-more';
+        const sum = document.createElement('summary');
+        sum.textContent = opts.moreLabel || 'More details';
+        more.appendChild(sum);
+      }
       const label = document.createElement('label'); label.className = 'dsdlg-field';
       if (f.label) { const s = document.createElement('span'); s.textContent = f.label; label.appendChild(s); }
       let input;
@@ -3919,8 +3932,9 @@ function dsForm(title, fields, opts = {}) {
       if (f.required) input.required = true;
       label.appendChild(input);
       inputs[f.name] = input;
-      form.appendChild(label);
+      (f.more ? more : form).appendChild(label);
     });
+    if (more) form.appendChild(more);
     const err = document.createElement('p'); err.className = 'dsdlg-err'; form.appendChild(err);
     const btns = document.createElement('div'); btns.className = 'dsdlg-btns';
     const cancel = document.createElement('button');
@@ -5691,20 +5705,36 @@ function citationText({ author, title, publisher, detail, date }) {
   return tail ? `${head}"${t}," ${tail}.` : `${head}"${t}."`;
 }
 
+/** A source id made from its title: the first three words that carry
+ *  meaning, lower case, joined by hyphens ("Who Pays? 7th edition" ->
+ *  who-pays-7th), with -2, -3… when that id is taken. Nobody reading the
+ *  report sees it; it only has to be unique and recognisable in content.md. */
+function sourceIdFrom(title) {
+  const stop = new Set(['the', 'a', 'an', 'of', 'and', 'for', 'in', 'on', 'to', 'by', 'with']);
+  const words = (title || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s-]/g, ' ').split(/[\s-]+/).filter(w => w && !stop.has(w));
+  const base = words.slice(0, 3).join('-').slice(0, 28).replace(/-+$/, '') || 'source';
+  const have = new Set(sourceIds());
+  let id = base, i = 2;
+  while (have.has(id)) id = `${base}-${i++}`;
+  return id;
+}
+
 async function newSourceAt(d, host, range) {
   const r = await dsForm('New endnote', [
-    { name: 'id', label: 'Short id (e.g. act99, itep-whopays)', type: 'text', required: true },
-    { name: 'title', label: 'Title', type: 'text', required: true },
-    { name: 'author', label: 'Author (optional, e.g. Kawafuchi, Kurt)', type: 'text' },
-    { name: 'publisher', label: 'Publisher / organisation (optional)', type: 'text' },
-    { name: 'detail', label: 'Detail (optional, e.g. p. 5, Part II)', type: 'text' },
-    { name: 'date', label: 'Date (optional, e.g. December 16, 2024)', type: 'text' },
-    { name: 'url', label: 'Source URL (optional — a book or an interview has none)',
-      type: 'text' },
-  ], { okLabel: 'Add & cite', validate: vals => {
+    { name: 'title', label: 'Title of the source', type: 'text', required: true,
+      placeholder: 'e.g. Who Pays? 7th edition' },
+    { name: 'url', label: 'Link (optional; a book or an interview has none)', type: 'text',
+      placeholder: 'https://' },
+    { name: 'author', label: 'Author (e.g. Kawafuchi, Kurt)', type: 'text', more: true },
+    { name: 'publisher', label: 'Publisher or organization', type: 'text', more: true },
+    { name: 'detail', label: 'Detail (e.g. p. 5, Part II)', type: 'text', more: true },
+    { name: 'date', label: 'Date (e.g. December 16, 2024)', type: 'text', more: true },
+    { name: 'id', label: 'Short id (blank: made from the title)', type: 'text', more: true },
+  ], { okLabel: 'Add & cite', moreLabel: 'Author, publisher, date…', validate: vals => {
     const id = vals.id.trim();
-    if (!id) return 'A short id is required.';
-    if (sourceIds().includes(id)) return `[${id}] already exists — pick it from the list.`;
+    if (id && /\s/.test(id)) return 'A short id cannot contain spaces.';
+    if (id && sourceIds().includes(id)) return `[${id}] already exists — pick it from the list.`;
     if (!vals.title.trim()) return 'A title is required.';
     // A URL is optional, but one that is given has to be usable: the line
     // format ends "— <url>" with no spaces, and it is recognised by its
@@ -5717,7 +5747,7 @@ async function newSourceAt(d, host, range) {
     return '';
   } });
   if (!r) return null;
-  const id = r.id.trim();
+  const id = r.id.trim() || sourceIdFrom(r.title);
   addSource(id, citationText(r), r.url.trim());
   insertNodeAt(d, host, range, makeFnChip(d, id));
   wantEndnotesSection = true;   // settled when this edit commits
@@ -6187,12 +6217,15 @@ function buildEndnoteRows(d, m, host, range) {
   // declare them in. The number is how the list is scanned, so a column of
   // numbers that jumps 3, 16, 15, 14 is a list you have to search rather than
   // read. Never-cited sources have no number and settle at the end.
-  const nums = endnoteNumbers();
+  // The numbers as the PAGE draws them: endnoteNumbers() reads content.md
+  // alone, so a report that keeps its words in text boxes listed every note
+  // with a dash.
+  const nums = pageNoteNumbers();
   const ids = sourceIds().slice().sort((a2, b2) => {
     const na = +(nums.get(a2) || Infinity), nb = +(nums.get(b2) || Infinity);
     return na - nb;
   });
-  submenuRow(d, m, 'Existing endnote ▸', sub => {
+  const listRow = submenuRow(d, m, 'Existing endnote ▸', sub => {
     if (!ids.length) {
       const none = d.createElement('div');
       none.className = 'ds-menu-head';
@@ -6201,9 +6234,70 @@ function buildEndnoteRows(d, m, host, range) {
       return;
     }
     sub.classList.add('ds-notes');
+    // Type to find: a number goes straight to that note, words match the
+    // citation. Keys are caught at the document so the words being edited keep
+    // focus (a field of its own would blur them, and a blur commits the edit).
+    const HINT = 'Type a number or a word to find a note';
+    const q = d.createElement('div');
+    q.className = 'ds-note-q';
+    q.textContent = HINT;
+    sub.appendChild(q);
+    const rows = [];
+    let typed = '';
+    const shown = () => rows.filter(r => !r.b.hidden).map(r => r.b);
+    const hot = () => sub.querySelector('.ds-note-hot');
+    const setHot = b => {
+      rows.forEach(r => r.b.classList.toggle('ds-note-hot', r.b === b));
+      if (b) b.scrollIntoView({ block: 'nearest' });
+    };
+    const apply = () => {
+      const s = typed.trim().toLowerCase();
+      rows.forEach(r => {
+        r.b.hidden = !!s && !(/^\d+$/.test(s)
+          ? r.n === s || (s.length >= 3 && r.hay.includes(s))
+          : r.hay.includes(s));
+      });
+      setHot(s ? shown()[0] || null : null);
+      q.textContent = s ? `Find: ${typed}` + (shown().length ? '' : ' (no match)') : HINT;
+      q.classList.toggle('on', !!s);
+      // The full list was lifted to fit the screen; a shorter one goes back
+      // beside the row it came from rather than floating far above it.
+      if (listRow && listRow.isConnected) {
+        const win = d.defaultView || window;
+        const rr = listRow.getBoundingClientRect(), h = sub.getBoundingClientRect().height;
+        const top = Math.max(0, Math.min(rr.top - 4, frameClearBottom() - 8 - h));
+        sub.style.top = (top + win.scrollY) + 'px';
+      }
+    };
+    const onKey = ev => {
+      if (!sub.isConnected) { d.removeEventListener('keydown', onKey, true); return; }
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      const vis = shown();
+      if (ev.key === 'Backspace') { if (!typed) return; typed = typed.slice(0, -1); apply(); }
+      else if (ev.key === 'Escape') {
+        if (typed) { typed = ''; apply(); } else closeMenu(d);
+      } else if (ev.key === 'Enter') {
+        const b = hot() || (typed ? vis[0] : null);
+        if (!b) return;
+        ev.preventDefault(); ev.stopPropagation();
+        b.click();
+        return;
+      } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        if (!vis.length) return;
+        const i = vis.indexOf(hot());
+        const j = i < 0 ? (ev.key === 'ArrowDown' ? 0 : vis.length - 1)
+          : Math.min(vis.length - 1, Math.max(0, i + (ev.key === 'ArrowDown' ? 1 : -1)));
+        setHot(vis[j]);
+      } else if (ev.key.length === 1) { typed += ev.key; apply(); }
+      else return;
+      ev.preventDefault(); ev.stopPropagation();
+    };
+    d.addEventListener('keydown', onKey, true);
     ids.forEach(id => {
       const b = d.createElement('button');
       b.className = 'ds-note';
+      rows.push({ b, n: nums.get(id) || '',
+        hay: `${id} ${sourceText(id) || ''}`.toLowerCase() });
       const n = d.createElement('span');
       n.className = 'ds-note-n';
       // The number the reader sees is the only handle most people have on an
@@ -6223,7 +6317,8 @@ function buildEndnoteRows(d, m, host, range) {
       });
       sub.appendChild(b);
     });
-  }).disabled = false;
+  });
+  listRow.disabled = false;
 }
 
 /** Toggle a bulleted/numbered list on the block-level elements ($host's
@@ -12390,6 +12485,134 @@ function jumpToCitation(num, k) {
   el.classList.add('ds-slotlink');
   setTimeout(() => { try { el.classList.remove('ds-slotlink'); } catch (e) { /* gone */ } }, 2600);
   $('stat').textContent = `endnote ${num} is cited here, on page ${hit.page}`;
+}
+
+/** The citation marker `t` is (or sits in): an <a href="#enN"> in the
+ *  report's text, never one inside the endnote list itself. */
+function citeMarkerAt(t) {
+  const a = t && t.closest ? t.closest('a[href^="#en"]') : null;
+  if (!a || !/^#en\d+$/.test(a.getAttribute('href') || '')) return null;
+  return a.closest('[data-el^="endnote."]') ? null : a;
+}
+
+/** The source id behind the number the page shows. */
+function noteIdByNumber(num) {
+  for (const [id, n] of pageNoteNumbers()) if (String(n) === String(num)) return id;
+  return null;
+}
+
+/** The words a drawn marker came from, as { read, write, el }: the text box it
+ *  sits in, else the slot. Null when neither can be told. */
+function citeHostOf(a) {
+  const be = a.closest('[data-el^="text."]');
+  const b = be && boxOf(be.dataset.el);
+  if (b) return { el: be, read: () => String(b.md ?? ''), write: v => { b.md = v; return true; } };
+  const se = a.closest('[data-slot]');
+  const k = se && se.dataset.slot;
+  if (k && k !== 'sources' && readSlot(k)) {
+    return { el: se, read: () => readSlot(k), write: v => writeSlot(k, v) };
+  }
+  return null;
+}
+
+/** Take out the ONE citation the person clicked, leaving the note and every
+ *  other place that cites it. The marker is matched to its [^id] by order
+ *  within its own text; when the counts disagree nothing is guessed. */
+function citeWhere(a, num) {
+  const h = citeHostOf(a);
+  const markers = h ? [...h.el.querySelectorAll(`a[href="#en${num}"]`)] : [];
+  return { h, k: markers.indexOf(a), count: markers.length };
+}
+
+/** `where` is citeWhere's answer, taken when the card opened: a render in
+ *  between replaces the marker element, but not the words it came from. */
+async function removeCitationAt(where, sid, num) {
+  const { h, k, count } = where;
+  const txt = h ? h.read() : '';
+  const hits = [...txt.matchAll(new RegExp(`\\[\\^${rxEsc(sid)}\\]`, 'g'))];
+  if (!h || k < 0 || hits.length !== count) {
+    $('stat').textContent = `could not tell which citation this is — click into the text and delete the ${num} there`;
+    return false;
+  }
+  pushHistory();
+  const m = hits[k];
+  if (h.write(txt.slice(0, m.index) + txt.slice(m.index + m[0].length)) === false) {
+    withdrawStep();
+    return false;
+  }
+  markDirty();
+  await render();
+  const left = citeCount(sid);
+  $('stat').textContent = left
+    ? `citation removed here; endnote [${sid}] is still cited ${left === 1 ? 'once' : left + ' times'} elsewhere`
+    : `citation removed; endnote [${sid}] is cited nowhere now (Sources still has it)`;
+  return true;
+}
+
+/** A click on a citation number in the text: a small card under it with the
+ *  note's words and what can be done from here. Before this the click did
+ *  nothing useful at best, and at worst navigated the canvas away. */
+function citeMarkerPopover(d, a) {
+  closeMenu(d);
+  const num = /^#en(\d+)$/.exec(a.getAttribute('href') || '')[1];
+  const sid = noteIdByNumber(num);
+  const s = sid && parseSources().find(r => r.id === sid);
+  const m = d.createElement('div');
+  m.className = 'ds-menu ds-citepop';
+  m.addEventListener('mousedown', menuKeepFocus);
+  const head = d.createElement('div');
+  head.className = 'ds-menu-head';
+  head.textContent = `Endnote ${num}`;
+  const body = d.createElement('div');
+  body.className = 'ds-citepop-t';
+  body.textContent = s ? s.text : 'This number points at no note in Sources.';
+  m.append(head, body);
+  if (s && s.url) {
+    const u = d.createElement('div');
+    u.className = 'ds-citepop-u';
+    u.textContent = s.url;
+    m.appendChild(u);
+  }
+  const item = (label, fn) => {
+    const b = d.createElement('button');
+    b.textContent = label;
+    b.addEventListener('click', async ev => { ev.stopPropagation(); closeMenu(d); await fn(); });
+    m.appendChild(b);
+    return b;
+  };
+  if (s) {
+    const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
+    item('Edit note', async () => {
+      const li = d.querySelector(`[data-el="endnote.${CSS.escape(sid)}"]`);
+      if (li) { jumpTo(li, 'center'); editEndnote(d, li, sid); }
+      else showSourceRow(sid);
+    });
+    if (s.url) item('Open link ↗', () => { window.open(s.url, '_blank', 'noopener'); });
+    const where = citeWhere(a, num);
+    item('Remove this citation', () => removeCitationAt(where, sid, num));
+  }
+  d.body.appendChild(m); menuUp(true);
+  const win = d.defaultView || window;
+  const r = a.getBoundingClientRect();
+  m.style.left = (r.left + win.scrollX - 8) + 'px';
+  m.style.top = (r.bottom + win.scrollY + 6) + 'px';
+  const mr = m.getBoundingClientRect();
+  if (mr.right > win.innerWidth - 8) m.style.left = (win.innerWidth - 8 - mr.width + win.scrollX) + 'px';
+  if (mr.bottom > frameClearBottom() - 8) m.style.top = (r.top + win.scrollY - mr.height - 6) + 'px';
+}
+
+/** How far down the report's frame (in its own viewport pixels) nothing of
+ *  the editor's chrome lies over it: the page strip sits ON the canvas, so a
+ *  card placed by the frame's height alone could open under it, unclickable. */
+function frameClearBottom() {
+  const f = $('out'), win = f.contentWindow;
+  let y = win ? win.innerHeight : 0;
+  const rail = $('rail');
+  if (rail && !rail.hidden) {
+    const top = rail.getBoundingClientRect().top - f.getBoundingClientRect().top;
+    if (top > 0) y = Math.min(y, top);
+  }
+  return y;
 }
 
 /** Take an endnote out altogether: every [^id] that cites it, wherever words
@@ -30321,12 +30544,26 @@ function wire(roots) {
   // handler prevents the DRAG default, but navigation is the CLICK's
   // default, so the frame still sailed off to the citation's URL whenever
   // the next render lost the race to the site's response — reproduced at
-  // DS_CPU_THROTTLE=6.) Pure-hash anchors (footnote markers → #enN) still
-  // scroll; the published page's links are untouched — this binds in edit
-  // wiring only.
+  // DS_CPU_THROTTLE=6.) Pure-hash anchors are no exception: the draft is a
+  // srcdoc with a <base href>, so "#en1" resolves against the report's FOLDER
+  // and the click swapped the whole report for its directory listing. A hash
+  // link scrolls by hand instead, and a citation marker opens its note in a
+  // small card (citeMarkerPopover). The published page's links are untouched
+  // — this binds in edit wiring only.
   d.addEventListener('click', e => {
     const a = e.target.closest('a[href]');
-    if (a && !(a.getAttribute('href') || '').startsWith('#')) e.preventDefault();
+    if (a) {
+      e.preventDefault();
+      const href = a.getAttribute('href') || '';
+      const mk = editing ? null : citeMarkerAt(a);
+      if (mk) citeMarkerPopover(d, mk);
+      else if (href.length > 1 && href.startsWith('#')) {
+        let t = null;
+        try { t = d.getElementById(decodeURIComponent(href.slice(1))); }
+        catch (err) { swallowed('hash link', err); }
+        if (t) jumpTo(t, 'center');
+      }
+    }
     // A DERIVED value (C.derived in a renderer) answers instead of ignoring
     // the click. Silence is what makes a tally read as "broken" rather than
     // "not yours to type": the renderer named the command that remakes it,
@@ -30873,14 +31110,25 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
     /* The endnote list: a fixed-width, scrolling column of numbered rows.
        Unbounded, a document's worth of citations ran off the screen and the
        ones at the bottom could not be reached at all. */
-    .ds-notes { width:330px; max-height:min(52vh, 420px); overflow-y:auto; }
+    .ds-notes { width:380px; max-height:min(56vh, 460px); overflow-y:auto; }
     .ds-menu button.ds-note { display:flex; align-items:baseline; gap:9px;
              padding:5px 8px; }
+    .ds-menu button.ds-note[hidden] { display:none; }
     .ds-note-n { flex:none; min-width:20px; text-align:right;
              font:700 11px ui-monospace,monospace; color:#7A8E92; }
     .ds-menu button.ds-note:hover:not(:disabled) .ds-note-n { color:#EAF3EC; }
-    .ds-note-t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
-             white-space:nowrap; }
+    .ds-menu button.ds-note.ds-note-hot { background:#E3EFE6; }
+    .ds-note-t { flex:1; min-width:0; overflow:hidden; white-space:normal;
+             display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    .ds-note-q { position:sticky; top:-4px; background:#fff; z-index:1;
+             font:11px system-ui; color:#8B9A90; padding:6px 8px 7px;
+             border-bottom:1px solid #E4EBE6; margin:-4px -4px 4px; }
+    .ds-note-q.on { color:#2F3E46; font-weight:600; }
+    .ds-citepop { width:320px; padding:6px; }
+    .ds-citepop-t { font:13px/1.45 system-ui; color:#2F3E46; padding:0 8px 6px;
+             max-height:9.5em; overflow-y:auto; }
+    .ds-citepop-u { font:11px ui-monospace,monospace; color:#5B6E66; padding:0 8px 6px;
+             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ds-menu button { display:block; width:100%; text-align:left; border:0; background:none;
                       padding:5px 8px; border-radius:4px; cursor:pointer; font:12px system-ui;
                       color:#2F3E46; }
