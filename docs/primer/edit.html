@@ -6027,11 +6027,10 @@ async function variablesDialog() {
     label: 'One per line: name = text. Use {var:name} in any words.', placeholder: 'bill = HB 1234' }],
     { okLabel: 'Apply', validate: v => parse(v.vars).error || '' });
   if (got == null) return;
-  pushHistory();
-  const vars = parse(got.vars).vars;
-  if (Object.keys(vars).length) layout.variables = vars; else delete layout.variables;
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    const vars = parse(got.vars).vars;
+    if (Object.keys(vars).length) layout.variables = vars; else delete layout.variables;
+  });
 }
 
 // ------------------------------------------------------------- glyphs
@@ -6719,10 +6718,9 @@ async function openColorsPanel() {
       $('stat').textContent = 'select something on the page, then click a swatch to fill it';
       return;
     }
-    pushHistory();
-    ids.forEach(id => fillTargets(id).set(c));
-    markDirty();
-    await render();
+    await changeDoc(() => {
+      ids.forEach(id => fillTargets(id).set(c));
+    });
     paintSel($('out').contentDocument);
   };
 
@@ -6885,9 +6883,9 @@ function swatchRow(d, host, current, onPick, opts = {}) {
       const got = await dsForm('New swatch', [{ name: 'name', type: 'text', label: `Name for ${current}`, value: '' }],
         { okLabel: 'Save', validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(asciiName(v.name)) ? '' : 'letters, digits, spaces, - and _' });
       if (got == null) return;
-      pushHistory();
-      (layout.swatches = layout.swatches || {})[asciiName(got.name)] = current.toUpperCase();
-      markDirty(); await render();
+      await changeDoc(() => {
+        (layout.swatches = layout.swatches || {})[asciiName(got.name)] = current.toUpperCase();
+      });
       $('stat').textContent = `swatch "${asciiName(got.name)}" saved — it is in every colour menu now`;
     });
     row.appendChild(add);
@@ -7078,9 +7076,10 @@ function fillRow(d, m, id) {
       if (got == null) return;
       const n = asciiName(got.name);
       g.stops.sort((a, b) => a.at - b.at);
-      pushHistory();
-      (layout.swatches = layout.swatches || {})[n] = clone(g);
-      t.set(`@${n}`); markDirty(); closeMenu(d); await render();
+      await changeDoc(() => {
+        (layout.swatches = layout.swatches || {})[n] = clone(g);
+        t.set(`@${n}`); closeMenu(d);
+      });
       $('stat').textContent = `gradient swatch "${n}" saved — any fill can wear it now`;
     });
     body.appendChild(save);
@@ -7273,16 +7272,15 @@ function pageMenu(d, pg, e) {
   // One Paste, whichever clipboard has something on it: the style is the more
   // specific intent, so it wins when both do.
   item('Paste', async () => {
-    pushHistory();
-    if (pageStyleClip) {
-      layout.fill = layout.fill || {};
-      if (pageStyleClip.fill) layout.fill[pageFillId(pid)] = clone(pageStyleClip.fill);
-      else delete layout.fill[pageFillId(pid)];
-    } else {
-      pastePageContents(pid, pageClip);
-    }
-    markDirty();
-    await render();
+    await changeDoc(() => {
+      if (pageStyleClip) {
+        layout.fill = layout.fill || {};
+        if (pageStyleClip.fill) layout.fill[pageFillId(pid)] = clone(pageStyleClip.fill);
+        else delete layout.fill[pageFillId(pid)];
+      } else {
+        pastePageContents(pid, pageClip);
+      }
+    });
   }, !!(pageClip || pageStyleClip));
   item('Duplicate page', () => duplicatePage(pid));
   item('Margins and columns…', () => marginsDialog(pid));
@@ -7597,11 +7595,11 @@ function layerMenu(d, el, e) {
     // InDesign's override: change this one page's copy and leave the layout,
     // and every other page, as they are. Undone by putting it back.
     if (!mi.overridden) item('Change on this page only', async () => {
-      pushHistory(); masterOverride(id, true); markDirty(); await render();
+      await changeDoc(() => { masterOverride(id, true); });
       $('stat').textContent = 'changes to this item now stay on this page';
     });
     else item('Back to the shared layout', async () => {
-      pushHistory(); masterOverride(id, false); markDirty(); await render();
+      await changeDoc(() => { masterOverride(id, false); });
       $('stat').textContent = 'this page follows the shared layout again';
     });
     item('Remove from shared layout', () => masterRemoveItem(id));
@@ -7669,18 +7667,18 @@ function layerMenu(d, el, e) {
       const cur = curAnim();
       pick('None', async () => {
         if (!cur) return;
-        pushHistory();
-        const st = ensureStore(d, el);
-        delete st.anim;
-        markDirty(); await render();
+        await changeDoc(() => {
+          const st = ensureStore(d, el);
+          delete st.anim;
+        });
       }, !cur);
       ANIMS.forEach(([k, label]) => pick(label, async () => {
-        pushHistory();
-        const st = ensureStore(d, el);
-        st.anim = { kind: k,
-                    duration: (cur && cur.duration) || 0.6,
-                    delay: (cur && cur.delay) || 0 };
-        markDirty(); await render();
+        await changeDoc(() => {
+          const st = ensureStore(d, el);
+          st.anim = { kind: k,
+                      duration: (cur && cur.duration) || 0.6,
+                      delay: (cur && cur.delay) || 0 };
+        });
         previewAnim(id);          // feedback: play it once, right now
         $('stat').textContent = `${label} — plays when the published page `
           + 'scrolls to it, and on its slide in presentation mode; '
@@ -7736,17 +7734,17 @@ function layerMenu(d, el, e) {
     if (others.length) {
       item(`Reveal the ${others.length} selected element${others.length > 1 ? 's' : ''}`,
         async () => {
-          pushHistory();
-          tglBox.target = others.length === 1 ? others[0] : others;
-          markDirty(); await render();
+          await changeDoc(() => {
+            tglBox.target = others.length === 1 ? others[0] : others;
+          });
           $('stat').textContent = `button now reveals ${others.length} `
             + `element${others.length > 1 ? 's' : ''} on the published page`;
         });
     }
     item('Stop revealing (plain text box)', async () => {
-      pushHistory();
-      delete tglBox.act; delete tglBox.target; delete tglBox.tglSpeed;
-      markDirty(); await render();
+      await changeDoc(() => {
+        delete tglBox.act; delete tglBox.target; delete tglBox.tglSpeed;
+      });
     });
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
   }
@@ -7774,9 +7772,9 @@ function layerMenu(d, el, e) {
     if (boxOf(id) && /^[ \t]*\{state:[^{}\n]{1,40}\}[ \t]*$/m.test(boxOf(id).md || '')) {
       const bx = boxOf(id);
       item(bx.states === 'slides' ? 'Show the states as tabs' : 'Show the states as slides', async () => {
-        pushHistory();
-        if (bx.states === 'slides') delete bx.states; else bx.states = 'slides';
-        markDirty(); await render();
+        await changeDoc(() => {
+          if (bx.states === 'slides') delete bx.states; else bx.states = 'slides';
+        });
         $('stat').textContent = `on the web this box shows ${bx.states === 'slides' ? 'slides' : 'tabs'}; in print, every state`;
       });
     }
@@ -7824,10 +7822,10 @@ function layerMenu(d, el, e) {
     if (noteKey) item('Add a note…', () => addNoteDialog(noteKey));
     if (boxOf(id) && !/!\[/.test(boxOf(id).md || ''))
       item('Fill with placeholder text', async () => {
-        pushHistory();
-        const b = boxOf(id);
-        b.md = placeholderText(b.w || 3, b.h || boxHeightIn(id) || 2);
-        markDirty(); await render();
+        await changeDoc(() => {
+          const b = boxOf(id);
+          b.md = placeholderText(b.w || 3, b.h || boxHeightIn(id) || 2);
+        });
       });
     item('Select next below', () => { setSel(d, [id]); selectNextObject(d, -1); });
     item(isLocked(id) ? 'Unlock' : 'Lock', () => {
@@ -7890,9 +7888,9 @@ function layerMenu(d, el, e) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     if (!shOwner.shadow) {
       item('Add shadow', async () => {
-        pushHistory();
-        shOwner.shadow = { offset: 0.05, direction: 135, blur: 0.08, alpha: 0.35 };
-        markDirty(); await render();
+        await changeDoc(() => {
+          shOwner.shadow = { offset: 0.05, direction: 135, blur: 0.08, alpha: 0.35 };
+        });
       });
     } else {
       menuHead('shadow');
@@ -7903,9 +7901,9 @@ function layerMenu(d, el, e) {
       slider('blur', 0, 0.3, 0.01, shOwner.shadow.blur ?? sdef.blur, v => sh('blur', v));
       slider('depth', 0, 1, 0.05, shOwner.shadow.alpha ?? sdef.alpha, v => sh('alpha', v));
       item('Remove shadow', async () => {
-        pushHistory();
-        delete shOwner.shadow;
-        markDirty(); await render();
+        await changeDoc(() => {
+          delete shOwner.shadow;
+        });
       });
     }
   }
@@ -7932,10 +7930,11 @@ function layerMenu(d, el, e) {
       const row = d.createElement('div');
       row.className = 'ds-swatches';
       const strokePaint = async c => {
-        pushHistory();
-        shp.stroke = c;
-        if (c !== 'none' && (shp.sw ?? 0) < 0.005) shp.sw = 0.02;
-        markDirty(); closeMenu(d); await render();
+        await changeDoc(() => {
+          shp.stroke = c;
+          if (c !== 'none' && (shp.sw ?? 0) < 0.005) shp.sw = 0.02;
+          closeMenu(d);
+        });
       };
       const none = d.createElement('button');
       none.className = 'ds-sw';
@@ -7959,9 +7958,9 @@ function layerMenu(d, el, e) {
       if (k === cur) return;
       item(k[0].toUpperCase() + k.slice(1) + (shp.kind === 'line' ? ' line' : ' border'),
         async () => {
-          pushHistory();
-          if (presets[k]) shp.dash = presets[k]; else delete shp.dash;
-          markDirty(); await render();
+          await changeDoc(() => {
+            if (presets[k]) shp.dash = presets[k]; else delete shp.dash;
+          });
         });
     });
     if (shp.kind === 'line') {
@@ -7970,9 +7969,9 @@ function layerMenu(d, el, e) {
       ends.filter(e2 => e2 !== curE).forEach(e2 => {
         item({ none: 'Plain ends', end: 'Arrowhead', both: 'Arrows both ways' }[e2],
           async () => {
-            pushHistory();
-            if (e2 === 'none') delete shp.ends; else shp.ends = e2;
-            markDirty(); await render();
+            await changeDoc(() => {
+              if (e2 === 'none') delete shp.ends; else shp.ends = e2;
+            });
           });
       });
     }
@@ -7991,12 +7990,12 @@ function layerMenu(d, el, e) {
       const on = cur.includes(axis);
       item((on ? 'Unflip ' : 'Flip ') + (axis === 'h' ? 'horizontal' : 'vertical'),
         async () => {
-          pushHistory();
-          const st = ensureStore(d, el);
-          const next = on ? cur.replace(axis, '')
-                          : (cur + axis).split('').sort().join('');
-          if (next) st.flip = next; else delete st.flip;
-          markDirty(); await render();
+          await changeDoc(() => {
+            const st = ensureStore(d, el);
+            const next = on ? cur.replace(axis, '')
+                            : (cur + axis).split('').sort().join('');
+            if (next) st.flip = next; else delete st.flip;
+          });
         });
     };
     flipItem('h');
@@ -8032,29 +8031,29 @@ function layerMenu(d, el, e) {
     item('Replace image…', () => {
       closeMenu(d);
       uploadImageFile(d, async path => {
-        pushHistory();
-        ig().src = path;
-        // The crop framed the OLD picture: laid over one of another shape it
-        // shows the wrong part, or zooms in on nothing. The frame, the fit
-        // and the filters stay; the new picture starts uncropped.
-        delete ig().crop;
-        markDirty(); await render();
+        await changeDoc(() => {
+          ig().src = path;
+          // The crop framed the OLD picture: laid over one of another shape it
+          // shows the wrong part, or zooms in on nothing. The frame, the fit
+          // and the filters stay; the new picture starts uncropped.
+          delete ig().crop;
+        });
       });
     });
     item('Crop… (or double-click)', () => { closeMenu(d); cropMode(d, el); });
     if (igNow.crop) {
       item('Reset crop', async () => {
-        pushHistory();
-        delete ig().crop;
-        markDirty(); await render();
+        await changeDoc(() => {
+          delete ig().crop;
+        });
       });
     }
     if (Object.keys(igNow).length) {
       item('Reset image styling', async () => {
-        pushHistory();
-        delete layout.img[id];
-        if (!Object.keys(layout.img).length) delete layout.img;
-        markDirty(); await render();
+        await changeDoc(() => {
+          delete layout.img[id];
+          if (!Object.keys(layout.img).length) delete layout.img;
+        });
       });
     }
   }
@@ -8083,7 +8082,7 @@ function layerMenu(d, el, e) {
         { okLabel: 'Save', validate: v => !v.data.trim() ? 'what should it open?'
           : new TextEncoder().encode(v.data.trim()).length > 213 ? 'longer than a QR code here carries (213 bytes)' : '' });
       if (got == null) return;
-      pushHistory(); one.data = got.data.trim(); markDirty(); await render();
+      await changeDoc(() => { one.data = got.data.trim(); });
     });
     if (one && ['polygon', 'star', 'rect'].includes(one.kind)) item('Shape options…', async () => {
       closeMenu(d);
@@ -8094,15 +8093,15 @@ function layerMenu(d, el, e) {
            { name: 'r', type: 'number', label: 'Corner size, inches', value: one.r || 0.15 }];
       const got = await dsForm('Shape options', f, { okLabel: 'Apply' });
       if (got == null) return;
-      pushHistory();
-      if (one.kind === 'polygon') one.sides = Math.max(3, Math.min(12, Math.round(+got.sides) || 6));
-      else if (one.kind === 'star') { one.points = Math.max(3, Math.min(24, Math.round(+got.points) || 5)); one.inner = Math.max(0.2, Math.min(0.9, +got.inner || 0.5)); }
-      else {
-        const c = String(got.corner).trim().toLowerCase();
-        if (['bevel', 'inset'].includes(c)) one.corner = c; else delete one.corner;
-        one.r = Math.max(0, Math.min(2, +got.r || 0));
-      }
-      markDirty(); await render();
+      await changeDoc(() => {
+        if (one.kind === 'polygon') one.sides = Math.max(3, Math.min(12, Math.round(+got.sides) || 6));
+        else if (one.kind === 'star') { one.points = Math.max(3, Math.min(24, Math.round(+got.points) || 5)); one.inner = Math.max(0.2, Math.min(0.9, +got.inner || 0.5)); }
+        else {
+          const c = String(got.corner).trim().toLowerCase();
+          if (['bevel', 'inset'].includes(c)) one.corner = c; else delete one.corner;
+          one.r = Math.max(0, Math.min(2, +got.r || 0));
+        }
+      });
     });
     if (one && one.kind === 'compound') item('Release compound', async () => {
       pushHistory(); const r = _releaseApply(id); markDirty(); await render();
@@ -8200,10 +8199,9 @@ function layerMenu(d, el, e) {
       if (got == null) return;
       const words = got.words.replace(/\s+/g, ' ').trim();
       if (words === desc.words) return;
-      pushHistory();
-      writeSlot(desc.key, words);
-      markDirty();
-      await render();
+      await changeDoc(() => {
+        writeSlot(desc.key, words);
+      });
       $('stat').textContent = `${desc.key} — updated`;
     });
   }
@@ -8215,9 +8213,9 @@ function layerMenu(d, el, e) {
   if (!!shapeOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Delete shape', async () => {
-      pushHistory();
-      layout.shapes = layout.shapes.filter(s => s.id !== id);
-      markDirty(); await render();
+      await changeDoc(() => {
+        layout.shapes = layout.shapes.filter(s => s.id !== id);
+      });
     });
   }
   if (boxOf(id) && !masterItemOf(id)) {
@@ -8247,18 +8245,18 @@ function layerMenu(d, el, e) {
   if (boxOf(id)) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Delete text box', async () => {
-      pushHistory();
-      unlinkFrame(id);
-      layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, ''));
-      markDirty(); await render();
+      await changeDoc(() => {
+        unlinkFrame(id);
+        layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, ''));
+      });
     });
   }
   if (layout.positions[id]) {
     const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     item('Reset to its designed place', async () => {
-      pushHistory();
-      delete layout.positions[id];
-      markDirty(); await render();
+      await changeDoc(() => {
+        delete layout.positions[id];
+      });
     });
   }
   d.body.appendChild(m); menuUp(true);
@@ -9588,18 +9586,17 @@ const TEXT_PRESETS = {
 async function addTextBox(kind) {
   const preset = TEXT_PRESETS[kind] || TEXT_PRESETS.body;
   const page = visiblePageId();
-  pushHistory();
   const id = freeBoxId();
-  const box = { id, page, x: placeX(preset.w), y: 2, w: preset.w,
-                z: nextZ(1, page), md: preset.md };   // on top of whatever floats there
-  if (preset.style && Object.keys(preset.style).length) box.style = { ...preset.style };
-  if (preset.fill) box.fill = preset.fill;
-  if (preset.act) box.act = preset.act;
-  else wearDefaults('box', box);
-  boxes().push(box);
-  setSel($('out').contentDocument, ['text.' + id]);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    const box = { id, page, x: placeX(preset.w), y: 2, w: preset.w,
+                  z: nextZ(1, page), md: preset.md };   // on top of whatever floats there
+    if (preset.style && Object.keys(preset.style).length) box.style = { ...preset.style };
+    if (preset.fill) box.fill = preset.fill;
+    if (preset.act) box.act = preset.act;
+    else wearDefaults('box', box);
+    boxes().push(box);
+    setSel($('out').contentDocument, ['text.' + id]);
+  });
   $('stat').textContent = `text.${id} added to page ${page} — double-click to write, drag to place`;
 }
 /** Restart entrance animations under `root` (or on root itself). The one
@@ -9752,22 +9749,21 @@ function openTglSpeedPopover(d, anchorBtn, tb) {
  *  edit. */
 async function addExpandable() {
   const page = visiblePageId();
-  pushHistory();
-  const contentId = freeBoxId();
-  const content = { id: contentId, page, x: placeX(5), y: 2.55, w: 5, z: 2,
-    md: 'This content starts hidden on the published page — the button above reveals it. '
-      + 'Put anything here: text, **bold**, [links](https://example.org).' };
-  boxes().push(content);
-  const btnId = freeBoxId();
-  boxes().push({ id: btnId, page, x: placeX(5), y: 2, w: 2.6, z: 2,
-    md: 'Show details',
-    style: { size: 14, weight: 700, color: '#FFFFFF' },
-    fill: '#52796F', act: 'toggle', target: contentId });
-  layout.groups = layout.groups || [];
-  layout.groups.push(['text.' + btnId, 'text.' + contentId]);
-  setSel($('out').contentDocument, ['text.' + btnId, 'text.' + contentId]);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    const contentId = freeBoxId();
+    const content = { id: contentId, page, x: placeX(5), y: 2.55, w: 5, z: 2,
+      md: 'This content starts hidden on the published page — the button above reveals it. '
+        + 'Put anything here: text, **bold**, [links](https://example.org).' };
+    boxes().push(content);
+    const btnId = freeBoxId();
+    boxes().push({ id: btnId, page, x: placeX(5), y: 2, w: 2.6, z: 2,
+      md: 'Show details',
+      style: { size: 14, weight: 700, color: '#FFFFFF' },
+      fill: '#52796F', act: 'toggle', target: contentId });
+    layout.groups = layout.groups || [];
+    layout.groups.push(['text.' + btnId, 'text.' + contentId]);
+    setSel($('out').contentDocument, ['text.' + btnId, 'text.' + contentId]);
+  });
   $('stat').textContent = 'expandable section added — the button reveals the '
     + 'content on the published page; here both stay visible so you can edit them';
 }
@@ -10187,7 +10183,7 @@ function tableMenu(d, td, e) {
     b.addEventListener('click', async () => {
       closeMenu(d);
       if (raw) { fn(); return; }
-      pushHistory(); fn(); markDirty(); await render();
+      await changeDoc(() => { fn(); });
       paintCells($('out').contentDocument);
       renderTablePanel();
     });
@@ -10435,25 +10431,25 @@ async function tableOptionsDialog(t, ri) {
     return '';
   } });
   if (got == null) return;
-  pushHistory();
-  const h = Math.round(+got.headerRows || 0), f = Math.round(+got.footerRows || 0);
-  if (h === 1) { t.header = true; delete t.headerRows; }
-  else if (h === 0) { delete t.header; delete t.headerRows; }
-  else { t.headerRows = h; }
-  if (f) t.footerRows = f; else delete t.footerRows;
-  const ins = String(got.inset).trim().split(/\s+/).filter(Boolean).map(Number);
-  if (ins.length) t.inset = ins.length === 1 ? ins[0] : ins; else delete t.inset;
-  if (got.valign) t.valign = got.valign; else delete t.valign;
-  const rh = t.rowh || Array(t.rows.length).fill(null);
-  rh[ri] = got.rowh ? +got.rowh : null;
-  if (rh.some(v => v != null)) t.rowh = rh; else delete t.rowh;
-  if (got.stroke) { const [w, color] = got.stroke.trim().split(/\s+/); t.bandStroke = { w: +w, color }; }
-  else delete t.bandStroke;
-  if (+got.headerCols) t.headerCols = Math.round(+got.headerCols); else delete t.headerCols;
-  if (got.bandCols.trim()) t.bandCols = got.bandCols.trim(); else delete t.bandCols;
-  if (got.colStroke) { const [w, color] = got.colStroke.trim().split(/\s+/); t.bandColStroke = { w: +w, color }; }
-  else delete t.bandColStroke;
-  markDirty(); await render();
+  await changeDoc(() => {
+    const h = Math.round(+got.headerRows || 0), f = Math.round(+got.footerRows || 0);
+    if (h === 1) { t.header = true; delete t.headerRows; }
+    else if (h === 0) { delete t.header; delete t.headerRows; }
+    else { t.headerRows = h; }
+    if (f) t.footerRows = f; else delete t.footerRows;
+    const ins = String(got.inset).trim().split(/\s+/).filter(Boolean).map(Number);
+    if (ins.length) t.inset = ins.length === 1 ? ins[0] : ins; else delete t.inset;
+    if (got.valign) t.valign = got.valign; else delete t.valign;
+    const rh = t.rowh || Array(t.rows.length).fill(null);
+    rh[ri] = got.rowh ? +got.rowh : null;
+    if (rh.some(v => v != null)) t.rowh = rh; else delete t.rowh;
+    if (got.stroke) { const [w, color] = got.stroke.trim().split(/\s+/); t.bandStroke = { w: +w, color }; }
+    else delete t.bandStroke;
+    if (+got.headerCols) t.headerCols = Math.round(+got.headerCols); else delete t.headerCols;
+    if (got.bandCols.trim()) t.bandCols = got.bandCols.trim(); else delete t.bandCols;
+    if (got.colStroke) { const [w, color] = got.colStroke.trim().split(/\s+/); t.bandColStroke = { w: +w, color }; }
+    else delete t.bandColStroke;
+  });
 }
 /** Text to table: a text box's lines become rows, split on tabs (or the
  *  separator given — comma, |); the table takes the box's place. */
@@ -10563,10 +10559,9 @@ function tableInsertRow(t, at) {
  *  filled by typing through it, as in Word, Docs and InDesign. It used to
  *  close the words and drop the keyboard on the page. */
 async function tableAppendRow(t) {
-  pushHistory();
-  tableInsertRow(t, t.rows.length);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    tableInsertRow(t, t.rows.length);
+  });
   const d = $('out').contentDocument;
   const id = 'table.' + t.id, r = t.rows.length - 1;
   if (!selIds.has(id)) setSel(d, [id]);
@@ -10692,10 +10687,9 @@ function openTablePanel(id) {
 async function tableWrite(fn) {
   const t = tableOfId(tablePanelId || '');
   if (!t) return;
-  pushHistory();
-  fn(t);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    fn(t);
+  });
   paintCells($('out').contentDocument);
   renderTablePanel();
 }
@@ -11064,10 +11058,9 @@ function openChartPanel(id) {
 
 async function chartWrite(fn) {
   if (!chartOf(chartPanelId)) return;
-  pushHistory();
-  chartApply(chartPanelId, fn);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    chartApply(chartPanelId, fn);
+  });
   renderChartPanel();
 }
 
@@ -12626,15 +12619,14 @@ async function removeEndnote(sid, num) {
     + `${n === 1 ? 'goes' : 'go'} with it, and the notes after it renumber. Undo brings it back.`,
     { okLabel: 'Delete', danger: true });
   if (!ok) return false;
-  pushHistory();
-  const ref = new RegExp(`\\[\\^${rxEsc(sid)}\\]`, 'g');
-  citeSites().forEach(s => {
-    const v = s.read(), w = v.replace(ref, '');
-    if (w !== v) s.write(w);
+  await changeDoc(() => {
+    const ref = new RegExp(`\\[\\^${rxEsc(sid)}\\]`, 'g');
+    citeSites().forEach(s => {
+      const v = s.read(), w = v.replace(ref, '');
+      if (w !== v) s.write(w);
+    });
+    deleteSource(sid);
   });
-  deleteSource(sid);
-  markDirty();
-  await render();
   $('stat').textContent = `endnote ${num || `[${sid}]`} deleted, with ${n === 1 ? 'its citation' : `its ${n} citations`}`;
   return true;
 }
@@ -13350,9 +13342,7 @@ function renderFindFonts(pop) {
     });
     sel.addEventListener('change', async () => {
       if (!sel.value) return;
-      pushHistory();
-      const n = replaceFont(family, sel.value);
-      markDirty(); await render();
+      const n = await changeDoc(() => replaceFont(family, sel.value));
       renderFindPanel();
       $('stat').textContent = `${family} → ${sel.value} in ${n} place${n === 1 ? '' : 's'}`;
     });
@@ -13834,13 +13824,13 @@ function renderStylePop() {
       ]);
       if (!got || !got.name.trim()) return;
       const name = got.name.trim();
-      pushHistory();
-      layout.textStyles = { ...textStyles(), [name]: look };
-      // The slot it came from wears it, with nothing left over: otherwise the
-      // very slot that defined the style is the one style changes can't move.
-      setStyle(selected, Object.fromEntries(Object.keys(look).map(k => [k, null])));
-      setStyle(selected, { use: name });
-      markDirty(); await render(); showType(selected); renderStylePop();
+      await changeDoc(() => {
+        layout.textStyles = { ...textStyles(), [name]: look };
+        // The slot it came from wears it, with nothing left over: otherwise the
+        // very slot that defined the style is the one style changes can't move.
+        setStyle(selected, Object.fromEntries(Object.keys(look).map(k => [k, null])));
+        setStyle(selected, { use: name });
+      }); showType(selected); renderStylePop();
       $('stat').textContent = `saved the style "${name}"`;
     }));
 
@@ -13848,13 +13838,13 @@ function renderStylePop() {
     'Make this style look like this text — everything wearing it follows',
     async () => {
       const look = { ...textStyles()[worn], ...bareStyle(st) };
-      pushHistory();
-      layout.textStyles = { ...textStyles(), [worn]: look };
-      // The slot's own keys have been folded into the style, so it stops
-      // carrying them: the point of redefining is that this slot and every
-      // other one now say the same thing.
-      setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
-      markDirty(); await render(); showType(selected); renderStylePop();
+      await changeDoc(() => {
+        layout.textStyles = { ...textStyles(), [worn]: look };
+        // The slot's own keys have been folded into the style, so it stops
+        // carrying them: the point of redefining is that this slot and every
+        // other one now say the same thing.
+        setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
+      }); showType(selected); renderStylePop();
       $('stat').textContent = `"${worn}" now looks like this, everywhere`;
     }, !worn || !Object.keys(bareStyle(st)).length));
 
@@ -13874,21 +13864,21 @@ function renderStylePop() {
         $('stat').textContent = 'nothing else looks like this';
         return;
       }
-      pushHistory();
-      hit.forEach(h => {
-        const other = h.get();
-        Object.keys(bareStyle(other)).forEach(k => delete other[k]);
-        other.use = worn;
-      });
-      markDirty(); await render(); showType(selected); renderStylePop();
+      await changeDoc(() => {
+        hit.forEach(h => {
+          const other = h.get();
+          Object.keys(bareStyle(other)).forEach(k => delete other[k]);
+          other.use = worn;
+        });
+      }); showType(selected); renderStylePop();
       $('stat').textContent = `${hit.length} more now wear "${worn}"`;
     }, !worn));
   row2.appendChild(btn('Unlink', 'Keep the look, stop following the style',
     async () => {
       const look = resolvedStyle(st);
-      pushHistory();
-      setStyle(selected, { use: null, ...look });
-      markDirty(); await render(); showType(selected); renderStylePop();
+      await changeDoc(() => {
+        setStyle(selected, { use: null, ...look });
+      }); showType(selected); renderStylePop();
     }, !worn));
 
   // Housekeeping (76) and the default for new text boxes (79).
@@ -13898,8 +13888,9 @@ function renderStylePop() {
   const own = styleOverrides().find(o => o.key === selected);
   row3.appendChild(btn('Clear overrides', own ? `Back to "${worn}" — drops ${own.keys.join(', ')}` : 'This text looks exactly like its style',
     async () => {
-      pushHistory(); clearOverrides(selected);
-      markDirty(); await render(); showType(selected); renderStylePop();
+      await changeDoc(() => {
+        clearOverrides(selected);
+      }); showType(selected); renderStylePop();
       $('stat').textContent = `back to "${worn}"`;
     }, !own));
   const hi = btn(showOverrides ? 'Highlighting overrides ✓' : 'Highlight overrides',
@@ -13909,7 +13900,7 @@ function renderStylePop() {
   row3.appendChild(btn(isDef ? 'New text boxes wear this ✓' : 'Use for new text boxes',
     isDef ? 'Stop giving this style to new text boxes' : `Every text box added from now on wears "${worn}"`,
     async () => {
-      pushHistory(); setDefaultStyle('text', isDef ? null : worn); markDirty(); await render(); renderStylePop();
+      await changeDoc(() => { setDefaultStyle('text', isDef ? null : worn); }); renderStylePop();
       $('stat').textContent = isDef ? 'new text boxes wear no style' : `new text boxes wear "${worn}"`;
     }, !worn));
   styleHousekeeping(host, 'text', worn, () => { showType(selected); renderStylePop(); });
@@ -14244,10 +14235,7 @@ function _continueEndnotesValidate() {
 async function continueEndnotes() {
   const v = _continueEndnotesValidate();
   if (!v.ok) { $('stat').textContent = v.error; return v; }
-  pushHistory();
-  const r = _continueEndnotesApply();
-  markDirty();
-  await render();
+  const r = await changeDoc(() => _continueEndnotesApply());
   $('stat').textContent = 'the endnotes now run on onto a new page after this one';
   return { ok: true, ...r };
 }
@@ -14306,9 +14294,7 @@ function threadWire(d) {
     if (!hit) { $('stat').textContent = 'threading cancelled'; return; }
     const v = _threadValidate(from, hit.dataset.el);
     if (!v.ok) { $('stat').textContent = v.error; return; }
-    pushHistory();
-    const r = _threadApply(from, hit.dataset.el);
-    markDirty(); await render();
+    const r = await changeDoc(() => _threadApply(from, hit.dataset.el));
     $('stat').textContent = `text now flows through ${r.frames.length} frames`;
   }, true);
   d.addEventListener('keydown', e => {
@@ -14431,17 +14417,17 @@ async function anchorRelease(d, id) {
   const st = storeOf(id);
   if (!st || !st.anchor) return { ok: true, id, anchor: null };
   const el = d.querySelector(`[data-el="${CSS.escape(id)}"]`);
-  pushHistory();
-  delete st.wrap;                       // text wraps only around what belongs somewhere
-  if (el) {
-    // Where it is NOW, in the store's own frame, so releasing never moves it.
-    const page = el.closest('section.page') || d.querySelector('section.page');
-    const P = placer(d, el, page);
-    const here = inchBox(el, page);
-    delete st.anchor;
-    P.commit(P.put(here.x, here.y, false));
-  } else delete st.anchor;
-  markDirty(); await render();
+  await changeDoc(() => {
+    delete st.wrap;                       // text wraps only around what belongs somewhere
+    if (el) {
+      // Where it is NOW, in the store's own frame, so releasing never moves it.
+      const page = el.closest('section.page') || d.querySelector('section.page');
+      const P = placer(d, el, page);
+      const here = inchBox(el, page);
+      delete st.anchor;
+      P.commit(P.put(here.x, here.y, false));
+    } else delete st.anchor;
+  });
   const nd = $('out').contentDocument;
   paintSel(nd);
   if (selected === id) showType(id);
@@ -14477,9 +14463,9 @@ async function wrapSet(id, side) {
     $('stat').textContent = 'anchor it to a paragraph first — text wraps around what it belongs to';
     return { ok: false, error: `'${id}' is not anchored — anchor(id, slot) first; text wraps around what it belongs to` };
   }
-  pushHistory();
-  if (side) st.wrap = side; else delete st.wrap;
-  markDirty(); await render();
+  await changeDoc(() => {
+    if (side) st.wrap = side; else delete st.wrap;
+  });
   paintSel($('out').contentDocument);
   if (selected === id) showType(id);
   wrapRowsPaint();
@@ -14494,9 +14480,9 @@ async function wrapShapeSet(id, shape) {
   if (!st || !st.wrap) return { ok: false, error: `'${id}' does not wrap — wrap(id, side) first` };
   if (shape && !['contour', 'ellipse', 'box'].includes(shape))
     return { ok: false, error: `wrap shape '${shape}' — box, contour or ellipse` };
-  pushHistory();
-  if (shape && shape !== 'box') st.wrapShape = shape; else delete st.wrapShape;
-  markDirty(); await render();
+  await changeDoc(() => {
+    if (shape && shape !== 'box') st.wrapShape = shape; else delete st.wrapShape;
+  });
   paintSel($('out').contentDocument);
   wrapRowsPaint();
   return { ok: true, id, wrapShape: st.wrapShape || 'box' };
@@ -14650,10 +14636,10 @@ function fillObjStylePicker(sel, obj, kind) {
 /** Wear a style: the object's own look goes, or the first thing anyone ever
  *  styled by hand would ignore the style it was just given. */
 async function wearObjStyle(obj, kind, name, after) {
-  pushHistory();
-  stripLook(obj, kind);
-  if (name) obj.use = name; else delete obj.use;
-  markDirty(); await render(); after();
+  await changeDoc(() => {
+    stripLook(obj, kind);
+    if (name) obj.use = name; else delete obj.use;
+  }); after();
 }
 /** The four verbs that make a stylesheet a stylesheet, built into `host` for
  *  one object. Shared by the arrange strip (shapes, tables) and the type bar's
@@ -14685,23 +14671,23 @@ function renderObjStyleVerbs(host, obj, kind, after) {
       ]);
       if (!got || !got.name.trim()) return;
       const name = got.name.trim();
-      pushHistory();
-      layout.objectStyles = { ...objectStyles(), [name]: { kind, ...look } };
-      // The object it came from WEARS it, with nothing left over: otherwise
-      // the very thing that defined the style is the one a redefine can't move.
-      stripLook(obj, kind);
-      obj.use = name;
-      markDirty(); await render(); after();
+      await changeDoc(() => {
+        layout.objectStyles = { ...objectStyles(), [name]: { kind, ...look } };
+        // The object it came from WEARS it, with nothing left over: otherwise
+        // the very thing that defined the style is the one a redefine can't move.
+        stripLook(obj, kind);
+        obj.use = name;
+      }); after();
       $('stat').textContent = `saved the style "${name}"`;
     }));
   row.appendChild(btn(`Redefine ${worn || ''}`.trim(),
     `Make this style look like this ${noun} — everything wearing it follows`,
     async () => {
       const own = objLook(obj, kind);
-      pushHistory();
-      layout.objectStyles = { ...objectStyles(), [worn]: { ...objectStyles()[worn], ...own } };
-      stripLook(obj, kind);
-      markDirty(); await render(); after();
+      await changeDoc(() => {
+        layout.objectStyles = { ...objectStyles(), [worn]: { ...objectStyles()[worn], ...own } };
+        stripLook(obj, kind);
+      }); after();
       $('stat').textContent = `"${worn}" now looks like this, everywhere`;
     }, !worn || !Object.keys(objLook(obj, kind)).length));
   const row2 = document.createElement('div');
@@ -14716,25 +14702,25 @@ function renderObjStyleVerbs(host, obj, kind, after) {
         $('stat').textContent = 'nothing else looks like this';
         return;
       }
-      pushHistory();
-      hit.forEach(o => { stripLook(o, kind); o.use = worn; });
-      markDirty(); await render(); after();
+      await changeDoc(() => {
+        hit.forEach(o => { stripLook(o, kind); o.use = worn; });
+      }); after();
       $('stat').textContent = `${hit.length} more now wear "${worn}"`;
     }, !worn));
   row2.appendChild(btn('Unlink', 'Keep the look, stop following the style',
     async () => {
       const look = objLook(dressedObj(obj), kind);
-      pushHistory();
-      delete obj.use;
-      Object.assign(obj, look);
-      markDirty(); await render(); after();
+      await changeDoc(() => {
+        delete obj.use;
+        Object.assign(obj, look);
+      }); after();
     }, !worn));
   // The default for new things of this kind (79), and housekeeping (76).
   const isDef = !!worn && defaultStyles()[kind] === worn;
   row2.appendChild(btn(isDef ? `New ${noun}s wear this ✓` : `Use for new ${noun}s`,
     isDef ? `Stop giving this style to new ${noun}s` : `Every ${noun} added from now on wears "${worn}"`,
     async () => {
-      pushHistory(); setDefaultStyle(kind, isDef ? null : worn); markDirty(); await render(); after();
+      await changeDoc(() => { setDefaultStyle(kind, isDef ? null : worn); }); after();
       $('stat').textContent = isDef ? `new ${noun}s wear no style` : `new ${noun}s wear "${worn}"`;
     }, !worn));
   styleHousekeeping(host, 'object', worn, after);
@@ -14806,10 +14792,9 @@ function applyBoxFrame(bx, patch) {
 async function setBoxFrame(id, patch) {
   const bx = boxOf(id);
   if (!bx) return false;
-  pushHistory();
-  applyBoxFrame(bx, patch);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    applyBoxFrame(bx, patch);
+  });
   return true;
 }
 function renderBoxPanel() {
@@ -15180,10 +15165,10 @@ function wireType() {
   });
   const gridField = async () => {
     const inc = +$('ty-ginc').value, st = +$('ty-gst').value;
-    pushHistory();
-    if (!$('ty-ginc').value) delete layout.grid;
-    else layout.grid = { increment: Math.max(4, Math.min(72, inc)), start: Math.max(0, Math.min(6, st || 0)) };
-    markDirty(); await render(); fillParaPop(selected);
+    await changeDoc(() => {
+      if (!$('ty-ginc').value) delete layout.grid;
+      else layout.grid = { increment: Math.max(4, Math.min(72, inc)), start: Math.max(0, Math.min(6, st || 0)) };
+    }); fillParaPop(selected);
   };
   $('ty-ginc').addEventListener('change', gridField);
   $('ty-gst').addEventListener('change', gridField);
@@ -16505,24 +16490,23 @@ async function transformAgain(d) {
   const els = outermost(selEls(d).filter(el => !isLocked(idOf(el))));
   if (!els.length) return;
   const x = lastXform;
-  pushHistory();
-  els.forEach(el => {
-    const page = el.closest('section.page') || d.querySelector('section.page');
-    if (x.kind === 'move') {
-      const P = placer(d, el, page);
-      P.commit(P.put(P.box.x + x.dx, P.box.y + x.dy, false));
-    } else {
-      const st = ensureStore(d, el);
-      let deg = (((st.rot || 0) + x.deg) % 360 + 360) % 360;
-      if (deg > 180) deg -= 360;
-      deg = Math.round(deg * 10) / 10;
-      if (deg) st.rot = deg; else delete st.rot;
-      paintRot(d, el);
-    }
+  await changeDoc(() => {
+    els.forEach(el => {
+      const page = el.closest('section.page') || d.querySelector('section.page');
+      if (x.kind === 'move') {
+        const P = placer(d, el, page);
+        P.commit(P.put(P.box.x + x.dx, P.box.y + x.dy, false));
+      } else {
+        const st = ensureStore(d, el);
+        let deg = (((st.rot || 0) + x.deg) % 360 + 360) % 360;
+        if (deg > 180) deg -= 360;
+        deg = Math.round(deg * 10) / 10;
+        if (deg) st.rot = deg; else delete st.rot;
+        paintRot(d, el);
+      }
+    });
+    lastXform = x;
   });
-  lastXform = x;
-  markDirty();
-  await render();
   $('stat').textContent = x.kind === 'move'
     ? `moved again by ${x.dx.toFixed(2)}in, ${x.dy.toFixed(2)}in` : `rotated again by ${x.deg}°`;
 }
@@ -16645,10 +16629,9 @@ async function pasteStyle(d) {
   if (!styleClip) { $('stat').textContent = 'copy a style first (⌘⌥C)'; return; }
   const targets = [...selIds].filter(id => styleType(d, id) === styleClip.type);
   if (!targets.length) { $('stat').textContent = `paste style needs a selected ${styleClip.type}`; return; }
-  pushHistory();
-  applyStyleClip(d, styleClip, targets);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    applyStyleClip(d, styleClip, targets);
+  });
   $('stat').textContent = `style pasted to ${targets.length} ${styleClip.type}${targets.length > 1 ? 's' : ''}`;
 }
 /** Put a copied look onto targets of its kind — no history, no render. */
@@ -18169,11 +18152,11 @@ function pastePageContents(pid, c) {
  *  the master's join them. */
 async function masterApply(pid, name) {
   if (name && !masters()[name]) return { ok: false, error: `no shared layout "${name}"` };
-  pushHistory();
-  const pm = pageMasters();
-  if (name) pm[String(pid)] = name; else delete pm[String(pid)];
-  if (!Object.keys(pm).length) delete layout.pageMasters;
-  markDirty(); await render();
+  await changeDoc(() => {
+    const pm = pageMasters();
+    if (name) pm[String(pid)] = name; else delete pm[String(pid)];
+    if (!Object.keys(pm).length) delete layout.pageMasters;
+  });
   const d = $('out').contentDocument;
   if (selPage != null) pageBar(d);
   $('stat').textContent = name ? `page ${pageLabel(pid)} uses the shared layout "${name}"`
@@ -18239,11 +18222,11 @@ async function masterDetach(pid) {
 async function masterRemoveItem(id) {
   const mi = masterItemOf(id);
   if (!mi) return { ok: false, error: `'${id}' is not part of a shared layout` };
-  pushHistory();
-  const list = masters()[mi.name][mi.kind];
-  list.splice(list.indexOf(mi.item), 1);
-  selIds.delete(id);
-  markDirty(); await render();
+  await changeDoc(() => {
+    const list = masters()[mi.name][mi.kind];
+    list.splice(list.indexOf(mi.item), 1);
+    selIds.delete(id);
+  });
   paintSel($('out').contentDocument);
   $('stat').textContent = `removed from the shared layout "${mi.name}" — on every page that uses it`;
   return { ok: true, master: mi.name };
@@ -20647,10 +20630,9 @@ async function ctlFrameChange(patch) {
   const d = $('out').contentDocument;
   const els = d && d.body ? selEls(d) : [];
   if (els.length !== 1 || isLocked(idOf(els[0]))) return false;
-  pushHistory();
-  applyFrameChange(d, els[0], patch, ctlRef, ctlLink);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    applyFrameChange(d, els[0], patch, ctlRef, ctlLink);
+  });
   paintSel($('out').contentDocument);
   return true;
 }
@@ -20908,9 +20890,9 @@ $('cb-r').addEventListener('change', async () => {
   const sh = one && shapeOf(idOf(one));
   const v = parseLen($('cb-r').value);
   if (!sh || !isFinite(v)) { $('cb-r').classList.add('bad'); return; }
-  pushHistory();
-  sh.r = +Math.max(0, Math.min(2, v)).toFixed(3);
-  markDirty(); await render();
+  await changeDoc(() => {
+    sh.r = +Math.max(0, Math.min(2, v)).toFixed(3);
+  });
 });
 // Fitting: right-click ▸ Fitting's appliers, through applyFitting.
 document.querySelectorAll('#cb-fit [data-fit]').forEach(b => b.addEventListener('click', () => {
@@ -21792,33 +21774,34 @@ function qaItems() {
       run: () => { applyCharStyle(t.d, t.host, n); t.host.dispatchEvent(new Event('input', { bubbles: true })); } }));
   if (t.textKeys.length && !t.host)
     textNames.forEach(n => out.push({ kind: 'text style', label: n, run: async () => {
-      pushHistory();
-      t.textKeys.forEach(k => {
-        const st = styleOf(k) || {};
-        setStyle(k, Object.fromEntries(Object.keys(bareStyle(st)).map(x => [x, null])));
-        setStyle(k, { use: n });
-      });
-      markDirty(); await render(); if (selected) showType(selected);
+      await changeDoc(() => {
+        t.textKeys.forEach(k => {
+          const st = styleOf(k) || {};
+          setStyle(k, Object.fromEntries(Object.keys(bareStyle(st)).map(x => [x, null])));
+          setStyle(k, { use: n });
+        });
+      }); if (selected) showType(selected);
     } }));
   const kinds = [...new Set(t.objIds.map(objKindOf))];
   if (kinds.length === 1)
     objStyleNames(kinds[0]).forEach(n => out.push({ kind: 'object style', label: n, run: async () => {
-      pushHistory();
-      t.objIds.forEach(id => { const o = objOf(id); stripLook(o, kinds[0]); o.use = n; });
-      markDirty(); await render(); paintSel($('out').contentDocument);
+      await changeDoc(() => {
+        t.objIds.forEach(id => { const o = objOf(id); stripLook(o, kinds[0]); o.use = n; });
+      }); paintSel($('out').contentDocument);
     } }));
   Object.keys(swatches()).sort().forEach(n => {
     const grad = isGradSwatch(n);
     if (t.fillIds.length && !t.host) out.push({ kind: 'swatch', label: `${n} — fill`, chip: cssFill(`@${n}`),
       run: async () => {
-        pushHistory();
-        t.fillIds.forEach(id => { const f = fillTargets(id); f.set(`@${n}`); });
-        markDirty(); await render(); paintSel($('out').contentDocument);
+        await changeDoc(() => {
+          t.fillIds.forEach(id => { const f = fillTargets(id); f.set(`@${n}`); });
+        }); paintSel($('out').contentDocument);
       } });
     if (!grad && t.textKeys.length && !t.fillIds.length && !t.host) out.push({ kind: 'swatch', label: `${n} — text colour`,
       chip: swatchHex(`@${n}`), run: async () => {
-        pushHistory(); t.textKeys.forEach(k => setStyle(k, { color: `@${n}` }));
-        markDirty(); await render(); if (selected) showType(selected);
+        await changeDoc(() => {
+          t.textKeys.forEach(k => setStyle(k, { color: `@${n}` }));
+        }); if (selected) showType(selected);
       } });
   });
   return out.concat(qaCommands());
@@ -21957,7 +21940,7 @@ function selectLayer(name) {
   return { ok: true, selected: ids };
 }
 async function layerWrite(fn) {
-  pushHistory(); fn(); markDirty(); await render();
+  await changeDoc(() => { fn(); });
   docLayersRender(); if (!$('layerspop').hidden) layersRender();
 }
 function docLayersRender() {
@@ -22094,13 +22077,12 @@ function layersRender() {
 }
 
 async function applyLayerOrder(d, seq) {
-  pushHistory();
-  const di = seq.indexOf('__content__');
-  const above = seq.slice(0, di), below = seq.slice(di + 1);
-  above.forEach((id, i) => setZ(id, above.length - i));
-  below.forEach((id, i) => setZ(id, -(i + 1)));
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    const di = seq.indexOf('__content__');
+    const above = seq.slice(0, di), below = seq.slice(di + 1);
+    above.forEach((id, i) => setZ(id, above.length - i));
+    below.forEach((id, i) => setZ(id, -(i + 1)));
+  });
   layersRender();
 }
 
@@ -22124,10 +22106,9 @@ async function applyLayerOrder(d, seq) {
 async function layerStep(d, dir, extreme, els = null) {
   els = (els || selEls(d)).filter(el => !isLocked(idOf(el)));
   if (!els.length) return;
-  pushHistory();
-  layerApply(d, dir, extreme, els);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    layerApply(d, dir, extreme, els);
+  });
   if (!$('layerspop').hidden) layersRender();
   $('stat').textContent = extreme
     ? (dir > 0 ? 'brought to front' : 'sent to back')
@@ -22311,24 +22292,23 @@ async function turnObjects(d, ids, { rot = 0, flip = null }) {
   const els = ids.map(i => d.querySelector(`[data-el="${CSS.escape(i)}"], [data-shape="${CSS.escape(i)}"]`)).filter(Boolean)
     .filter(el => !isLocked(idOf(el)));
   if (!els.length) return;
-  pushHistory();
-  els.forEach(el => {
-    const st = _pilotStoreOf(idOf(el)) || ensureStore(d, el);
-    if (rot) {
-      let v = (((st.rot || 0) + rot) % 360 + 360) % 360;
-      if (v > 180) v -= 360;
-      if (v) st.rot = v; else delete st.rot;
-    }
-    if (flip) {
-      const cur = new Set((st.flip || '').split(''));
-      cur.has(flip) ? cur.delete(flip) : cur.add(flip);
-      const f = ['h', 'v'].filter(x => cur.has(x)).join('');
-      if (f) st.flip = f; else delete st.flip;
-    }
+  await changeDoc(() => {
+    els.forEach(el => {
+      const st = _pilotStoreOf(idOf(el)) || ensureStore(d, el);
+      if (rot) {
+        let v = (((st.rot || 0) + rot) % 360 + 360) % 360;
+        if (v > 180) v -= 360;
+        if (v) st.rot = v; else delete st.rot;
+      }
+      if (flip) {
+        const cur = new Set((st.flip || '').split(''));
+        cur.has(flip) ? cur.delete(flip) : cur.add(flip);
+        const f = ['h', 'v'].filter(x => cur.has(x)).join('');
+        if (f) st.flip = f; else delete st.flip;
+      }
+    });
+    if (rot) lastXform = { kind: 'rot', deg: rot };
   });
-  if (rot) lastXform = { kind: 'rot', deg: rot };
-  markDirty();
-  await render();
 }
 
 /** InDesign's Clear Transformations (INDESIGN_PARITY.md 81): rotation,
@@ -22572,7 +22552,7 @@ function coloursRender() {
   b.textContent = `Name ${unnamed} unnamed as swatches`;
   b.disabled = !cs.some(c => c.raw);
   b.addEventListener('click', async () => {
-    pushHistory(); const r = nameAllColours(); markDirty(); await render(); coloursRender();
+    const r = await changeDoc(() => nameAllColours()); coloursRender();
     $('stat').textContent = `${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`;
   });
   tools.appendChild(b);
@@ -22606,7 +22586,7 @@ function coloursRender() {
       const got = await dsForm(`Replace ${c.hex} everywhere`, [{ name: 'to', label: 'With (a #hex, or @Swatch)', value: c.hex }], {
         okLabel: 'Replace', validate: v => (HEX_RE.test(v.to.trim()) || (/^@/.test(v.to.trim()) && (layout.swatches || {})[v.to.trim().slice(1)])) ? '' : 'a colour like #1E6194, or @ and a swatch name' });
       if (got == null) return;
-      pushHistory(); const n = replaceColour(c.hex, got.to.trim()); markDirty(); await render(); coloursRender();
+      const n = await changeDoc(() => replaceColour(c.hex, got.to.trim())); coloursRender();
       $('stat').textContent = `replaced in ${n} place${n === 1 ? '' : 's'}`;
     });
     acts.append(sel, rp);
@@ -22882,7 +22862,7 @@ function styleHousekeeping(host, scope, name, after) {
     const got = await dsForm(`Duplicate "${name}"`, [{ name: 'as', label: 'Name', value: `${name} copy`, required: true }],
       { okLabel: 'Duplicate', validate: v => (layout[STYLE_STORES[scope]] || {})[v.as.trim()] ? 'that name is taken' : '' });
     if (!got) return;
-    pushHistory(); const nn = duplicateStyle(scope, name, got.as.trim()); markDirty(); await render(); after();
+    const nn = await changeDoc(() => duplicateStyle(scope, name, got.as.trim())); after();
     $('stat').textContent = `"${nn}" made from "${name}"`;
   }, !name);
   btn('Delete unused…', 'Styles and swatches nothing in this report uses', () => deleteUnusedDialog().then(after));
@@ -23190,7 +23170,7 @@ function hyperlinksRender() {
   }, local && links.some(l => !l.internal));
   const bare = linkBareUrls(true);
   btn(`Link bare addresses (${bare})`, async () => {
-    pushHistory(); const n = linkBareUrls(); markDirty(); await render(); hyperlinksRender();
+    const n = await changeDoc(() => linkBareUrls()); hyperlinksRender();
     $('stat').textContent = `linked ${n} address${n === 1 ? '' : 'es'}`;
   }, bare > 0);
   if (!links.length) { list.textContent = 'No links.'; return; }
@@ -23211,7 +23191,7 @@ function hyperlinksRender() {
     ch.addEventListener('click', async () => {
       const got = await dsForm('Change link', [{ name: 'url', label: `Everywhere ${l.url} is written`, value: l.url }], { okLabel: 'Change' });
       if (got == null || !got.url.trim() || got.url.trim() === l.url) return;
-      pushHistory(); const n = changeLink(l.url, got.url.trim()); markDirty(); await render(); hyperlinksRender();
+      const n = await changeDoc(() => changeLink(l.url, got.url.trim())); hyperlinksRender();
       $('stat').textContent = `changed in ${n} place${n === 1 ? '' : 's'}`;
     });
     acts.appendChild(ch);
@@ -23326,9 +23306,7 @@ function linksRender() {
     const re = document.createElement('button');
     re.textContent = 'Relink…';
     re.addEventListener('click', () => uploadImageFile(d, async path => {
-      pushHistory();
-      const n = relinkSource($('out').contentDocument, e.src, path);
-      markDirty(); await render();
+      const n = await changeDoc(() => relinkSource($('out').contentDocument, e.src, path));
       linksRender();
       $('stat').textContent = `relinked ${e.src.split('/').pop()} → ${path.split('/').pop()} in ${n} place${n === 1 ? '' : 's'}`;
     }));
@@ -23381,18 +23359,17 @@ function _pasteIntoApply(shapeId, boxId) {
 // text has, and the asset file itself lives with the project (assets dir).
 async function placeImageBox(path, name, at = null) {
   const d = $('out').contentDocument;
-  pushHistory();
-  const id = freeBoxId();
   const page = visiblePageId();
-  // Dropped onto the page in view: under the pointer, kept on the sheet.
-  const x = at && String(at.page) === String(page) && at.x != null
-    ? Math.max(0, Math.min(+at.x, PAGE_W_IN - 3)) : placeX(3);
-  const y = at && String(at.page) === String(page) && at.y != null
-    ? Math.max(0, Math.min(+at.y, PAGE_H_IN - 1)) : 1.5;
-  boxes().push({ id, page, x: +x.toFixed(2), y: +y.toFixed(2), w: 3, z: 2, md: `![${name}](${path})` });
-  setSel(d, ['text.' + id]);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    const id = freeBoxId();
+    // Dropped onto the page in view: under the pointer, kept on the sheet.
+    const x = at && String(at.page) === String(page) && at.x != null
+      ? Math.max(0, Math.min(+at.x, PAGE_W_IN - 3)) : placeX(3);
+    const y = at && String(at.page) === String(page) && at.y != null
+      ? Math.max(0, Math.min(+at.y, PAGE_H_IN - 1)) : 1.5;
+    boxes().push({ id, page, x: +x.toFixed(2), y: +y.toFixed(2), w: 3, z: 2, md: `![${name}](${path})` });
+    setSel(d, ['text.' + id]);
+  });
   $('stat').textContent =
     `${name} placed on page ${page} — drag to move, edges to resize; `
     + 'right-click ▸ Description to say what it shows';
@@ -23593,12 +23570,12 @@ $('ar-alpha').addEventListener('click', () => {
     const o = objOf(id);
     bsel.value = dressedObj(o).blend || 'normal';
     bsel.onchange = async () => {
-      pushHistory();
-      delete o.blend;
-      // "normal" on an object whose STYLE blends has to be said out loud.
-      if (bsel.value !== 'normal') o.blend = bsel.value;
-      else if ((dressedObj(o).blend || 'normal') !== 'normal') o.blend = 'normal';
-      markDirty(); await render(); paintSel($('out').contentDocument);
+      await changeDoc(() => {
+        delete o.blend;
+        // "normal" on an object whose STYLE blends has to be said out loud.
+        if (bsel.value !== 'normal') o.blend = bsel.value;
+        else if ((dressedObj(o).blend || 'normal') !== 'normal') o.blend = 'normal';
+      }); paintSel($('out').contentDocument);
     };
   }
   ain.oninput = () => {
@@ -24670,7 +24647,7 @@ const stepTimes = new Map();
 function pushHistory() {
   historySeq++;
   suggestCapture();
-  if (collab) { collabStepBefore = snapshot(); collab.mark(); syncHistoryButtons(); return; }
+  if (collab) { const sn = collabStepBefore = snapshot(); collab.mark(); syncHistoryButtons(); return sn; }
   const sn = snapshot();
   past.push(sn);
   stepTimes.set(sn, Date.now());
@@ -24680,6 +24657,7 @@ function pushHistory() {
   if (past.length > UNDO_DEPTH) stepTimes.delete(past.shift());
   future.length = 0;
   syncHistoryButtons();
+  return sn;
 }
 /** Take back the step pushHistory just marked, because the action it was
  *  for turned out to do nothing (a duplicate of nothing copyable, a refused
@@ -24695,6 +24673,40 @@ function withdrawStep() {
   if (sn) stepTimes.delete(sn);
   syncHistoryButtons();
   return sn;
+}
+/** ONE undoable change, start to finish: the way to change `source` or
+ *  `layout`. Every feature used to run the steps itself — pushHistory(), the
+ *  change, markDirty(), `await render()` — in 230 places, and a site that
+ *  missed or reordered one made a change that could not be undone, was not
+ *  saved, or never reached the room. Hand the change here instead:
+ *
+ *      await changeDoc(() => { layout.locked = [...]; });
+ *      await changeDoc(() => { one.data = v; }, { render: false });   // no redraw
+ *
+ *  `change` may be async. What it returns comes back to the caller. A change
+ *  that REFUSES — returns `false`, or the pilot's `{ ok: false }` — and one
+ *  that throws leave no undo step behind, provided they left the document as
+ *  they found it; if they did change something on the way, the step stays
+ *  (⌘Z can still take the half-change back) and it is marked for saving.
+ *  A synchronous change with `render: false` has done everything by the time
+ *  changeDoc() returns its promise, so a caller that cannot await loses nothing.
+ *  New code calls this, not pushHistory(): tools/edit-ratchet.mjs counts the
+ *  bare calls that are left and fails when the count goes up. */
+async function changeDoc(change, { render: draw = true } = {}) {
+  const before = pushHistory();
+  const untouched = () => { try { return snapshot() === before; } catch (e) { return false; } };
+  let out;
+  try {
+    out = change();
+    if (out && typeof out.then === 'function') out = await out;
+  } catch (e) {
+    if (untouched()) withdrawStep(); else markDirty();
+    throw e;
+  }
+  if ((out === false || (out && out.ok === false)) && untouched()) { withdrawStep(); return out; }
+  markDirty();
+  if (draw) await render();
+  return out;
 }
 async function restore(json) {
   const st = JSON.parse(json);
@@ -25732,17 +25744,16 @@ function undoMoveFromWords(host, prior) {
     off();
     host.blur();                       // the words commit, as any close does
     await renderIdle();
-    pushHistory();
-    prior.forEach(p => {
-      if (p.box) {
-        const bx = boxOf(p.id);
-        if (bx) { Object.assign(bx, p.box); if (p.box.h == null) delete bx.h; }
-      }
-      else if (p.pos) layout.positions[p.id] = p.pos;
-      else delete layout.positions[p.id];
+    await changeDoc(() => {
+      prior.forEach(p => {
+        if (p.box) {
+          const bx = boxOf(p.id);
+          if (bx) { Object.assign(bx, p.box); if (p.box.h == null) delete bx.h; }
+        }
+        else if (p.pos) layout.positions[p.id] = p.pos;
+        else delete layout.positions[p.id];
+      });
     });
-    markDirty();
-    await render();
     $('stat').textContent = 'undone';
   };
   const off = () => { host.removeEventListener('keydown', key, true);
@@ -26599,17 +26610,16 @@ async function addIcon(id) {
   if (!it) return;
   iconRecentAdd(id, it);
   const page = visiblePageId();
-  pushHistory();
-  const sid = freeShapeId('icon');
-  // Square, and the report's own primary — an icon lands in the palette
-  // rather than as a black sticker to be recoloured afterwards. Its markup
-  // draws in currentColor, so the Fill control recolours the whole glyph.
-  layout.shapes.push({ id: sid, page, kind: 'icon', x: placeX(0.6), y: 1, w: 0.6, h: 0.6,
-                       icon: id, vb: it.vb, svg: it.body,
-                       fill: '#52796F', z: nextZ(2, page) });
-  setSel($('out').contentDocument, [sid]);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    const sid = freeShapeId('icon');
+    // Square, and the report's own primary — an icon lands in the palette
+    // rather than as a black sticker to be recoloured afterwards. Its markup
+    // draws in currentColor, so the Fill control recolours the whole glyph.
+    layout.shapes.push({ id: sid, page, kind: 'icon', x: placeX(0.6), y: 1, w: 0.6, h: 0.6,
+                         icon: id, vb: it.vb, svg: it.body,
+                         fill: '#52796F', z: nextZ(2, page) });
+    setSel($('out').contentDocument, [sid]);
+  });
   $('stat').textContent = `${id} placed on page ${page} — drag to size, recolour with Fill`;
 }
 
@@ -26669,25 +26679,24 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
   // re-opening the picker between each one.
   const kind = b.dataset.k;
   const page = visiblePageId();
-  pushHistory();
   const id = freeShapeId(kind);
-  // A new shape is a SOLID, visible object by default — a near-white fill read
-  // as "just an outline". Sage is the report's own primary, clearly on the
-  // page; recolour it from the Fill control in the toolbar (or right-click).
-  // On TOP by default — one above whatever already floats on the page
-  // (nextZ; 3 on an empty page) — so a new shape is plainly visible, not
-  // hidden behind the page's own (often translucent) panels or the last thing
-  // placed, which read as "just an outline". Send it back from the layers
-  // panel / right-click when it should sit behind content.
-  layout.shapes.push({ id, page, kind, x: placeX(2), y: 1, w: 2, h: kind === 'line' ? 0 : (kind === 'polygon' || kind === 'star' ? 2 : 1),
-                       ...(kind === 'polygon' ? { sides: 6 } : kind === 'star' ? { points: 5, inner: 0.5 } : {}),
-                       fill: kind === 'line' ? 'none' : '#6B9E78',
-                       stroke: kind === 'line' ? '#52796F' : 'none',
-                       sw: 0.02, z: nextZ(2, page) });
-  wearDefaults('shape', layout.shapes[layout.shapes.length - 1]);
-  setSel($('out').contentDocument, [id]);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    // A new shape is a SOLID, visible object by default — a near-white fill read
+    // as "just an outline". Sage is the report's own primary, clearly on the
+    // page; recolour it from the Fill control in the toolbar (or right-click).
+    // On TOP by default — one above whatever already floats on the page
+    // (nextZ; 3 on an empty page) — so a new shape is plainly visible, not
+    // hidden behind the page's own (often translucent) panels or the last thing
+    // placed, which read as "just an outline". Send it back from the layers
+    // panel / right-click when it should sit behind content.
+    layout.shapes.push({ id, page, kind, x: placeX(2), y: 1, w: 2, h: kind === 'line' ? 0 : (kind === 'polygon' || kind === 'star' ? 2 : 1),
+                         ...(kind === 'polygon' ? { sides: 6 } : kind === 'star' ? { points: 5, inner: 0.5 } : {}),
+                         fill: kind === 'line' ? 'none' : '#6B9E78',
+                         stroke: kind === 'line' ? '#52796F' : 'none',
+                         sw: 0.02, z: nextZ(2, page) });
+    wearDefaults('shape', layout.shapes[layout.shapes.length - 1]);
+    setSel($('out').contentDocument, [id]);
+  });
   $('stat').textContent = `${id} on page ${page} — drag to place, recolour with the Fill button`;
 }));
 
@@ -31619,9 +31628,9 @@ async function addSourceFromPanel() {
     return '';
   } });
   if (!r) return;
-  pushHistory();
-  addSource(r.id.trim(), r.text.trim(), r.url.trim());
-  markDirty(); await render(); renderSources();
+  await changeDoc(() => {
+    addSource(r.id.trim(), r.text.trim(), r.url.trim());
+  }); renderSources();
   $('stat').textContent = `[${r.id.trim()}] added — right-click a paragraph to cite it`;
 }
 
@@ -31997,10 +32006,9 @@ function editSvgSlot(d, key, node) {
     const val = inp.value.replace(/\s+/g, ' ').trim();
     inp.remove();
     if (keep && val !== opened && val !== cur) {
-      pushHistory();
-      writeSlot(key, val);
-      markDirty();
-      await render();
+      await changeDoc(() => {
+        writeSlot(key, val);
+      });
       $('stat').textContent = `${key} — updated`;
     }
   };
@@ -36028,10 +36036,9 @@ $('file-website').onclick = async () => {
       + 'live the next time you ' + how + ', and updates on every ' + how + ' after that.'
       + (cur ? '\n\nThe page at its old address (' + websiteUrl(cur) + ') stays up until it is removed from the site.' : ''),
       { okLabel: 'Make it public' })) return;
-  pushHistory();
-  layout.website = next;
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    layout.website = next;
+  });
   $('stat').textContent = 'website: ' + url + ' — ' + how + ' to put it live';
 };
 $('file-website-off').onclick = async () => {
@@ -36041,10 +36048,9 @@ $('file-website-off').onclick = async () => {
   if (!await dsConfirm('Stop publishing this page as a website?\n\nPublishing will no longer update '
       + websiteUrl(cur) + '. The page already there stays up until it is removed from the site.',
       { okLabel: 'Stop publishing', danger: true })) return;
-  pushHistory();
-  delete layout.website;
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    delete layout.website;
+  });
   $('stat').textContent = 'no longer a website — Save to keep that';
 };
 
@@ -36062,11 +36068,10 @@ $('file-restore').onclick = async () => {
     value: ids[0],
   }], { okLabel: 'Restore' });
   if (!pick) return;
-  pushHistory();
-  layout.hidden = pick.id === '\u0000all' ? [] : ids.filter(x => x !== pick.id);
-  if (!layout.hidden.length) delete layout.hidden;
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    layout.hidden = pick.id === '\u0000all' ? [] : ids.filter(x => x !== pick.id);
+    if (!layout.hidden.length) delete layout.hidden;
+  });
   $('stat').textContent = pick.id === '\u0000all'
     ? `restored ${ids.length} deleted element${ids.length > 1 ? 's' : ''}`
     : `restored ${pick.id}`;
@@ -39670,10 +39675,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateDress(id, name);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyDress(id, name);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplyDress(id, name));
     paintSel($('out').contentDocument);
     return { ...docsync.api.status(), ...r };
   },
@@ -39692,10 +39694,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateDefineStyle(spec);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyDefineStyle(spec);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplyDefineStyle(spec));
     return { ...docsync.api.status(), ...r };
   },
 
@@ -39707,10 +39706,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateDropStyle(scope, name);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyDropStyle(scope, name);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplyDropStyle(scope, name));
     return { ...docsync.api.status(), ...r };
   },
 
@@ -39943,10 +39939,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async addSource(id, text, url) {
     const v = _pilotValidateAddSource(id, text, url);
     if (!v.ok) return v;
-    pushHistory();
-    _pilotApplyAddSource(id, text, url);
-    markDirty();
-    await render();
+    await changeDoc(() => {
+      _pilotApplyAddSource(id, text, url);
+    });
     return { ...docsync.api.status(), id };
   },
 
@@ -40183,10 +40178,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateSetBoxText(id, md);
     if (!v.ok) return v;
-    pushHistory();
-    _pilotApplySetBoxText(id, md);
-    markDirty();
-    await render();
+    await changeDoc(() => {
+      _pilotApplySetBoxText(id, md);
+    });
     return { ...docsync.api.status(), id, box: _pilotMeasure(id) };
   },
 
@@ -40224,10 +40218,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _threadValidate(fromId, toId);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _threadApply(fromId, toId);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _threadApply(fromId, toId));
     return { ...docsync.api.status(), ...r };
   },
 
@@ -40247,10 +40238,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     if (!(boxOf(id) && boxOf(id).next))
       return { ok: false, error: `'${id}' does not continue into another frame` };
-    pushHistory();
-    const r = _unthreadApply(id);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _unthreadApply(id));
     return { ...docsync.api.status(), id, ...r };
   },
 
@@ -40263,10 +40251,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateDescribeImage(host, words, src);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyDescribeImage(host, words, src);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplyDescribeImage(host, words, src));
     return { ...docsync.api.status(), ...r };
   },
 
@@ -40372,10 +40357,9 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     const list = (Array.isArray(to) ? to : [to]).filter(Boolean);
     const wrong = list.filter(id => styleType(d, id) !== clip.type);
     if (!list.length || wrong.length) return { ok: false, error: `copyStyle: every target is a ${clip.type}${wrong.length ? ` — not ${wrong.join(', ')}` : ''}` };
-    pushHistory();
-    applyStyleClip(d, clip, list);
-    markDirty();
-    await render();
+    await changeDoc(() => {
+      applyStyleClip(d, clip, list);
+    });
     return { ...docsync.api.status(), from, to: list, kind: clip.type };
   },
   /** setWebsite({site, slug} | null) — File ▸ Publish as a website: the
@@ -40386,15 +40370,15 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (M.site || !Object.keys(sites).length) return { ok: false, error: 'this report cannot be published as a website — no site is set up for it' };
     if (w == null) {
       if (!layout.website) return { ...docsync.api.status(), website: null, unchanged: true };
-      pushHistory(); delete layout.website; markDirty(); await render();
+      await changeDoc(() => { delete layout.website; });
       return { ...docsync.api.status(), website: null };
     }
     const site = w.site || Object.keys(sites)[0], slug = String(w.slug || '').trim();
     if (!sites[site]) return { ok: false, error: `no website '${site}' — ${Object.keys(sites).join(', ')}` };
     if (!WEBSITE_SLUG_RE.test(slug)) return { ok: false, error: 'setWebsite: slug is lowercase letters, numbers and hyphens, 2 to 64 characters, no hyphen at either end' };
-    pushHistory();
-    layout.website = { site, slug, home: docStore() ? 'hub' : 'local' };
-    markDirty(); await render();
+    await changeDoc(() => {
+      layout.website = { site, slug, home: docStore() ? 'hub' : 'local' };
+    });
     return { ...docsync.api.status(), website: layout.website, url: websiteUrl(layout.website),
              note: 'nothing is public yet: it goes live the next time a person Publishes' };
   },
@@ -40535,10 +40519,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidatePlace(id);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplySkew(id, deg);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplySkew(id, deg));
     return { ...docsync.api.status(), ...r };
   },
 
@@ -40547,10 +40528,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidatePlace(id);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyRotate(id, deg);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplyRotate(id, deg));
     return { ...docsync.api.status(), ...r };
   },
 
