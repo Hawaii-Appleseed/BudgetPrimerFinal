@@ -24956,85 +24956,165 @@ const clearGuides = d => d.querySelectorAll('.ds-guide').forEach(g => g.remove()
 
 // ---- history: every move is undoable, or it is not safe to experiment ----
 const UNDO_DEPTH = 200;
-const past = [], future = [];
 const snapshot = () => JSON.stringify({ source, layout });
-// Reflect what's undoable on the toolbar buttons. The buttons only mirror
-// state; undo()/redo() themselves stay the source of truth (and still work
-// from the keyboard when a button is momentarily out of sync).
-function syncHistoryButtons() {
-  const u = $('undo'), r = $('redo');
-  if (u) u.disabled = !(collab ? collab.canUndo() : past.length);
-  if (r) r.disabled = !(collab ? collab.canRedo() : future.length);
-  // The open list of steps follows what it lists.
-  if ($('histpop') && !$('histpop').hidden && typeof historyRender === 'function') historyRender();
+// history backends: begin
+// ONE undo history, two ways of keeping it, chosen once: `undoHistory` starts
+// as the local snapshot stacks and becomes the shared document's
+// Y.UndoManager when a session starts (collabStart). Nothing outside these
+// two backends knows which is running — tools/undo-ratchet.mjs counts the
+// lines that reach past them, and that count only goes down. The interface:
+//   open(before)     a step begins (pushHistory); `before` is the snapshot now
+//   withdraw()       the step just opened changed nothing: take it back, and
+//                    leave the redo list as it was before it opened
+//   boundary()       edits that stream into the document from here (a
+//                    paragraph typed live into the room) are their own step
+//   canUndo() canRedo() undo() redo()   (undo/redo put the state on screen)
+//   steps()          {past: [{before, time}], future: [{after}]}, oldest first
+//   top() nextRedo() the step undo/redo would take, as a token to compare
+//   seal()           close the step in hand and return top()
+//   clear()          forget every step
+//   versionReplaced() the document was swapped for a saved version under it
+//   discardLive()    take back the words boundary() let stream in: the
+//                    document's files after, or null when there were none
+//   shared           true for the room's history: its steps are this tab's
+//                    own, so a relayed undo can tell Claude's from a person's
+function localHistory() {
+  // Each entry is {state, time}: past entries hold the state BEFORE their
+  // step, future entries the state their redo goes TO. Objects, not the
+  // snapshot strings themselves: a time keyed by its string was lost on
+  // redo and shared by two steps that happened to leave the same state.
+  const past = [], future = [];
+  return {
+    shared: false,
+    open(before) {
+      // The redo list is set aside, not dropped, until the step proves to
+      // change something: a refused action used to cost the redo list here
+      // and not in a session.
+      // Only the newest step can still be withdrawn, so only it keeps one.
+      if (past.length) past[past.length - 1].parked = null;
+      past.push({ state: before, time: Date.now(), parked: future.splice(0) });
+      // 200 steps, said on the button. A snapshot is ~20–35KB, so a few MB.
+      if (past.length > UNDO_DEPTH) past.shift();
+    },
+    withdraw() {
+      const e = past.pop();
+      if (e && e.parked && e.parked.length && !future.length) future.push(...e.parked);
+    },
+    boundary() {},   // the state is copied at open(); nothing streams in between
+    canUndo: () => past.length > 0,
+    canRedo: () => future.length > 0,
+    async undo() {
+      const e = past.pop();
+      future.push({ state: snapshot(), time: e.time });
+      await restore(e.state);
+    },
+    async redo() {
+      const e = future.pop();
+      past.push({ state: snapshot(), time: e.time, parked: null });
+      await restore(e.state);
+    },
+    steps: () => ({ past: past.map(e => ({ before: e.state, time: e.time })),
+                    future: future.map(e => ({ after: e.state })) }),
+    top: () => past[past.length - 1] || null,
+    nextRedo: () => future[future.length - 1] || null,
+    seal() { return this.top(); },
+    clear() { past.length = 0; future.length = 0; },
+    versionReplaced() {},   // a snapshot undo puts back exactly what was there
+    discardLive: () => null,
+  };
 }
-// In a session the steps are items on the document's Y.UndoManager, which
-// knows what to take back and nothing a person could read. So each item is
-// given, as it is made, the state on its far side: an edit's item the state
-// BEFORE the edit (pushHistory's), an undone step's item the state it would
-// redo TO. The list of steps names each one from those, exactly as it names
-// the local snapshots. Keyed by the item itself, so a cleared or popped item
-// takes its record with it.
-const collabSteps = new WeakMap();   // stack item -> {before | after, time}
-let collabStepBefore = null;         // the state when the step in hand began
-function collabStepsWatch(um) {
+// In a live session the snapshot stacks give way to the document's own
+// Y.UndoManager (collab/client/session.mjs): a snapshot restore would put
+// back a collaborator's edit along with ours, and it cannot express "undo
+// mine, keep theirs". open() keeps its meaning exactly — it is the boundary
+// between undo steps — it just marks one in the document instead of copying
+// the state; the state itself lands at the next render's flush.
+function collabHistory(s) {
+  const um = s.undoManager;
+  // The Y items know what to take back and nothing a person could read. So
+  // each is given, as it is made, the state on its far side: an edit's item
+  // the state BEFORE the edit, an undone step's item the state it would redo
+  // TO. Keyed by the item itself, so a cleared or popped item takes its
+  // record with it.
+  const rec = new WeakMap();   // stack item -> {before | after, time}
+  let before = null;           // the state when the step in hand began
+  let depth = null;            // the undo stack's length when it began
   um.on('stack-item-added', ev => {
     try {
       if (ev.origin === um) {
         // Made by an undo (a redo item) or a redo (an undo item): the editor
         // still shows the state from before it, which is this item's far side.
-        collabSteps.set(ev.stackItem, ev.type === 'redo' ? { after: snapshot(), time: Date.now() } : { before: snapshot(), time: Date.now() });
+        rec.set(ev.stackItem, ev.type === 'redo' ? { after: snapshot(), time: Date.now() } : { before: snapshot(), time: Date.now() });
       } else if (ev.type === 'undo') {
-        collabSteps.set(ev.stackItem, { before: collabStepBefore, time: Date.now() });
-        collabStepBefore = null;
+        rec.set(ev.stackItem, { before, time: Date.now() });
+        before = null;
       }
-    } catch (e) { swallowed('collabStepsWatch', e); }
+    } catch (e) { swallowed('collabHistory: step record', e); }
   });
+  const top = st => (st.length ? st[st.length - 1] : null);
+  return {
+    shared: true,
+    open(b) { before = b; depth = um.undoStack.length; s.mark(); },
+    withdraw() {
+      // Nothing changed since open(), so the step has no item — unless the
+      // change reached the room and was put back (a pilot batch the engine
+      // refused after its render): then its item holds the change and its
+      // reverse, and ⌘Z would take a visible nothing. Drop it, and mark
+      // again so the next change does not join the step before.
+      if (depth != null && um.undoStack.length > depth) { um.undoStack.splice(depth); s.mark(); s.onHistory(); }
+      before = null; depth = null;
+    },
+    boundary() { before = snapshot(); s.mark(); },
+    canUndo: () => s.canUndo(),
+    canRedo: () => s.canRedo(),
+    async undo() { collabNoteCaret(); await collabAdopt(s.undo(), 'undo'); },
+    async redo() { collabNoteCaret(); await collabAdopt(s.redo(), 'redo'); },
+    steps: () => ({ past: um.undoStack.map(it => ({ before: (rec.get(it) || {}).before || null, time: (rec.get(it) || {}).time || null })),
+                    future: um.redoStack.map(it => ({ after: (rec.get(it) || {}).after || null })) }),
+    top: () => top(um.undoStack),
+    nextRedo: () => top(um.redoStack),
+    seal() { s.mark(); return top(um.undoStack); },
+    clear() { s.forgetHistory(); },
+    // The room's steps are from BEFORE the restore: undoing one now would
+    // re-insert old words beside the restored copy, for everyone.
+    versionReplaced() { s.forgetHistory(); },
+    discardLive() { return s.canUndo() ? s.undo() : null; },
+  };
 }
-// In a live session the snapshot stack gives way to the document's own
-// Y.UndoManager (collab/client/session.mjs): a snapshot restore would put
-// back a collaborator's edit along with ours, and it cannot express "undo
-// mine, keep theirs". pushHistory() keeps its meaning exactly — it is the
-// boundary between undo steps — it just marks one in the document instead of
-// copying the state; the state itself lands at the next render's flush.
+// history backends: end
+let undoHistory = localHistory();
+// Reflect what's undoable on the toolbar buttons. The buttons only mirror
+// state; undo()/redo() themselves stay the source of truth (and still work
+// from the keyboard when a button is momentarily out of sync).
+function syncHistoryButtons() {
+  const u = $('undo'), r = $('redo');
+  if (u) u.disabled = !undoHistory.canUndo();
+  if (r) r.disabled = !undoHistory.canRedo();
+  // The open list of steps follows what it lists.
+  if ($('histpop') && !$('histpop').hidden && typeof historyRender === 'function') historyRender();
+}
 /** Bumped at every undo boundary, undo and redo. Something that wants a run of
  *  its own changes to be ONE step (a burst of arrow-key nudges) compares it
  *  with the value it saw when its step began: anything else touching the
  *  history in between — another edit, an undo — means a new step. */
 let historySeq = 0;
-// When each step was taken (INDESIGN_PARITY 69), keyed by the snapshot
-// itself: `past` is popped and shifted in many places, and a parallel array
-// would drift; a snapshot string keyed in a Map cannot.
-const stepTimes = new Map();
 function pushHistory() {
   historySeq++;
   suggestCapture();
-  if (collab) { const sn = collabStepBefore = snapshot(); collab.mark(); syncHistoryButtons(); return sn; }
   const sn = snapshot();
-  past.push(sn);
-  stepTimes.set(sn, Date.now());
-  // 200 steps, said on the button. The cap was 60 and nowhere: a long
-  // session of nudges lost its way back silently. A snapshot is ~20–35KB,
-  // so this is a few MB, flat.
-  if (past.length > UNDO_DEPTH) stepTimes.delete(past.shift());
-  future.length = 0;
+  undoHistory.open(sn);
   syncHistoryButtons();
   return sn;
 }
 /** Take back the step pushHistory just marked, because the action it was
  *  for turned out to do nothing (a duplicate of nothing copyable, a refused
- *  conversion, a batch rolled back). Locally the snapshot comes off the
- *  stack. In a session there is no snapshot: pushHistory marked a boundary
- *  on the document's Y.UndoManager, and with nothing changed since, the
- *  boundary is empty and harmless. Every site used to `past.pop()` itself —
- *  in a session that popped a snapshot from before the session began, or
- *  nothing, and batch() then JSON.parse'd undefined. */
+ *  conversion, a batch rolled back). The redo list is left as it was before
+ *  the step opened, alone and in a session. Every site used to `past.pop()`
+ *  itself — in a session that popped a snapshot from before the session
+ *  began, or nothing, and batch() then JSON.parse'd undefined. */
 function withdrawStep() {
-  if (collab) { syncHistoryButtons(); return null; }
-  const sn = past.pop();
-  if (sn) stepTimes.delete(sn);
+  undoHistory.withdraw();
   syncHistoryButtons();
-  return sn;
 }
 /** ONE undoable change, start to finish: the way to change `source` or
  *  `layout`. Every feature used to run the steps itself — pushHistory(), the
@@ -25125,9 +25205,14 @@ function beginChange() {
     async rollback({ render: draw = committed } = {}) {
       const st = JSON.parse(before);
       source = st.source; layout = st.layout;
-      if (kept) withdrawStep();
+      const was = kept;
       open = false; kept = false;
       if (draw) { markDirty(); await render(); }
+      // Withdrawn after the redraw, not before: in a session that render is
+      // what puts the change back in the room, and only then is the step
+      // empty (a committed change and its reverse in one item, which ⌘Z
+      // would take as a visible nothing).
+      if (was) withdrawStep();
     },
   };
 }
@@ -25153,33 +25238,15 @@ async function restore(json) {
 }
 async function undo() {
   historySeq++;
-  if (collab) {
-    if (!collab.canUndo()) { tell('nothing to undo'); return; }
-    collabNoteCaret();
-    await collabAdopt(collab.undo(), 'undo');
-    syncHistoryButtons();
-    tell('undone');
-    return;
-  }
-  if (!past.length) { tell('nothing to undo'); return; }
-  future.push(snapshot());
-  await restore(past.pop());
+  if (!undoHistory.canUndo()) { tell('nothing to undo'); return; }
+  await undoHistory.undo();
   syncHistoryButtons();
   tell('undone');
 }
 async function redo() {
   historySeq++;
-  if (collab) {
-    if (!collab.canRedo()) { tell('nothing to redo'); return; }
-    collabNoteCaret();
-    await collabAdopt(collab.redo(), 'redo');
-    syncHistoryButtons();
-    tell('redone');
-    return;
-  }
-  if (!future.length) { tell('nothing to redo'); return; }
-  past.push(snapshot());
-  await restore(future.pop());
+  if (!undoHistory.canRedo()) { tell('nothing to redo'); return; }
+  await undoHistory.redo();
   syncHistoryButtons();
   tell('redone');
 }
@@ -25235,16 +25302,10 @@ const hTime = t => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', min
 /** [{i, label, time, state: 'past' | 'now' | 'ahead'}] — newest first. */
 function historyList() {
   const now = snapshot(), rows = [];
-  // The same two stacks either way: the state before each step that can be
-  // undone, the state after each that can be redone. In a session they come
-  // off the shared document's undo items (collabSteps).
-  let pastS = past, futureS = future, timeOf = k => stepTimes.get(past[k]) || null;
-  if (collab) {
-    const um = collab.undoManager, rec = it => collabSteps.get(it) || {};
-    pastS = um.undoStack.map(it => rec(it).before || null);
-    futureS = um.redoStack.map(it => rec(it).after || null);
-    timeOf = k => rec(um.undoStack[k]).time || null;
-  }
+  // The same two stacks alone or in a session: the state before each step
+  // that can be undone, the state after each that can be redone.
+  const st = undoHistory.steps();
+  const pastS = st.past.map(p => p.before), futureS = st.future.map(f => f.after), timeOf = k => st.past[k].time || null;
   for (let k = futureS.length - 1; k >= 0; k--) {
     const after = futureS[k], before = k === futureS.length - 1 ? now : futureS[k + 1];
     rows.push({ i: futureS.length - k, state: 'ahead', label: historyLabel(before, after), time: null });
@@ -27893,7 +27954,7 @@ function collabLiveFiles() {
 /** edit() opened a paragraph: the typing to come is its own undo step. */
 function collabParaOpened() {
   collabLastLive = null; collabLiveDirty = false; collabPendingRefresh = null;
-  if (collab) collab.mark();
+  undoHistory.boundary();
 }
 function collabParaClosed() {
   collabLastLive = null; collabLiveDirty = false; collabPendingRefresh = null; collabComposing = false;
@@ -27918,10 +27979,10 @@ function collabLiveFlush() {
  *  undo of this editor's step, which leaves a collaborator's edits to the
  *  same paragraph standing. The caller renders. */
 function collabDiscardLive() {
-  if (!collab || !collabLiveDirty) return false;
+  if (!collabLiveDirty) return false;
   collabLiveDirty = false; collabLastLive = null;
-  if (!collab.canUndo()) return false;
-  const f = collab.undo();
+  const f = undoHistory.discardLive();
+  if (!f) return false;
   source = f.content;
   layout = f.layout;
   layout.positions = layout.positions || {};
@@ -28959,10 +29020,10 @@ async function startCollab() {
     onPeers: peers => collabPeersArrived(peers),
     debug: !!localStorage.getItem('collab-debug'),
   });
-  collabStepsWatch(collab.undoManager);   // so the list of steps can name them
-  // The snapshot stack is meaningless from here on: its entries predate the
-  // shared document and a restore would clobber everyone.
-  past.length = 0; future.length = 0;
+  // The snapshot stacks are meaningless from here on: their entries predate
+  // the shared document and a restore would clobber everyone. The room's
+  // Y.UndoManager keeps the steps instead.
+  undoHistory = collabHistory(collab);
   syncHistoryButtons();
   window.addEventListener('pagehide', () => { if (collab) collab.close(); });
 }
@@ -33704,10 +33765,11 @@ async function hubRestore(v) {
       docVersion = j.version;
       hubMarkSeen(j.version);
     });
-    // The room's undo steps are from BEFORE the restore: undoing one now
+    // A room's undo steps are from BEFORE the restore: undoing one now
     // re-inserts old words beside the restored copy, for everyone. Forgotten
     // here and, through the flag on the version, in every other editor.
-    if (collab) { collab.forgetHistory(); collab.setBaseSha(j.version, { restored: true }); }
+    undoHistory.versionReplaced();
+    if (collab) collab.setBaseSha(j.version, { restored: true });
     clearDraftCache();
     markDirty();
     // Not a bare write: a render still queued behind this one (the collab
@@ -36241,7 +36303,7 @@ window.__dsTestReset = async () => {
   layout.shapes = layout.shapes || [];
   layout.sections = layout.sections || {};
   syncPageSize();
-  past.length = 0; future.length = 0; stepTimes.clear(); historySeq++;
+  undoHistory.clear(); historySeq++;
   renderError = '';             // a draft refused earlier (the sweep makes some on purpose)
   // Back to the top of the report: render() keeps the scroll it finds.
   try { const se = $('out').contentDocument.scrollingElement; se.scrollTop = 0; se.scrollLeft = 0; }
@@ -40127,28 +40189,24 @@ async function hubPilot(msg) {
  *  while that step is still the last one here, and a redo only while what
  *  it undid is still the next. Anything typed in between makes it refuse. */
 let pilotLastStep = null, pilotUndoneStep = null;
-const pilotTop = stack => (stack && stack.length ? stack[stack.length - 1] : null);
 function pilotMarkStep() {
-  if (!collab) return;
-  collab.mark();
-  pilotLastStep = pilotTop(collab.undoManager.undoStack);
+  pilotLastStep = undoHistory.seal();
   pilotUndoneStep = null;
 }
 async function pilotHistory(verb) {
-  if (!collab) return { ok: false, error: 'undo and redo are relayed only to an editor in a shared session' };
-  const um = collab.undoManager;
+  if (!undoHistory.shared) return { ok: false, error: 'undo and redo are relayed only to an editor in a shared session' };
   if (verb === 'undo') {
-    if (!pilotLastStep || pilotTop(um.undoStack) !== pilotLastStep)
+    if (!pilotLastStep || undoHistory.top() !== pilotLastStep)
       return { ok: false, error: 'the last step in the open editor is not your edit — someone has changed the report since, or this tab did not apply it. Nothing was undone; ask them to use Undo, or change it back with another edit' };
     await undo();
     pilotLastStep = null;
-    pilotUndoneStep = pilotTop(um.redoStack);
+    pilotUndoneStep = undoHistory.nextRedo();
   } else {
-    if (!pilotUndoneStep || pilotTop(um.redoStack) !== pilotUndoneStep)
+    if (!pilotUndoneStep || undoHistory.nextRedo() !== pilotUndoneStep)
       return { ok: false, error: 'there is no undone edit of yours to redo here — something has changed since the undo. Nothing was redone' };
     await redo();
     pilotUndoneStep = null;
-    pilotLastStep = pilotTop(um.undoStack);
+    pilotLastStep = undoHistory.top();
   }
   return { ok: true, results: [{ verb, ok: true }] };
 }
