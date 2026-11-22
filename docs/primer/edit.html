@@ -4499,15 +4499,15 @@ const writeSlot = (k, v) => {
   const marker = v.split('\n').find(l => MARKER_RE.test(l.trim()));
   if (marker) {
     console.warn('refused a slot marker inside slot text:', marker);
-    $('stat').textContent = `"${marker.trim()}" is a slot marker, and a line of `
-      + 'its own here would split this slot — nothing was saved';
+    tell(`"${marker.trim()}" is a slot marker, and a line of `
+      + 'its own here would split this slot — nothing was saved');
     return false;
   }
   if (k === 'sources') {
     const bad = badSourceLines(v);
     if (bad.length) {
       console.warn('refused malformed sources line(s):', bad);
-      $('stat').textContent = `refused a malformed sources line: "${bad[0].slice(0, 70)}" — nothing was saved`;
+      tell(`refused a malformed sources line: "${bad[0].slice(0, 70)}" — nothing was saved`);
       return false;
     }
   }
@@ -4798,7 +4798,7 @@ async function linkedTextDialog(d, host, range) {
     .filter(k => k !== 'sources' && readSlot(k).trim());
   const opts = [...keys, ...boxes().filter(b => (b.md || '').trim() && !/!\[/.test(b.md)).map(b => 'text.' + b.id)]
     .map(k => ({ value: k, label: `${k} — ${linkedPreview(k)}` }));
-  if (!opts.length) { $('stat').textContent = 'nothing to link to yet'; return; }
+  if (!opts.length) { tell('nothing to link to yet'); return; }
   const got = await dsForm('Insert linked text', [{ name: 'ref', type: 'select', value: opts[0].value, options: opts,
     label: 'Repeat the first paragraph of — edit it there and it changes here too' }], { okLabel: 'Insert' });
   if (got == null) return;
@@ -6121,7 +6121,7 @@ function textMenu(d, host, e) {
   // the heading wherever it moves.
   item('Link to a place in this report…', async () => {
     const places = reportPlaces(d);
-    if (!places.length) { $('stat').textContent = 'no headings to link to yet'; return; }
+    if (!places.length) { tell('no headings to link to yet'); return; }
     const got = await dsForm('Link to a place in this report', [{ name: 'to', type: 'select', value: places[0].key,
       label: 'Jump to', options: places.map(p => ({ value: p.key, label: `${p.words.slice(0, 60)} · p. ${p.page || ''}` })) }],
       { okLabel: 'Link' });
@@ -6175,7 +6175,7 @@ function textMenu(d, host, e) {
   item('Spelling suggestions…', () => {
     restoreRange(d, range);
     spellPassUntil = Date.now() + 15000;
-    $('stat').textContent = 'right-click the underlined word again for spelling suggestions (or hold Shift and right-click any time)';
+    tell('right-click the underlined word again for spelling suggestions (or hold Shift and right-click any time)');
   }).title = 'The browser’s own corrections for an underlined word';
   const openBox = !host.dataset.slot && boxOf(host.dataset.el || '');
   if (openBox && !masterItemOf('text.' + openBox.id)) {
@@ -6376,12 +6376,12 @@ function glyphInsert(ch) {
     c.d.execCommand('insertText', false, ch);
     c.range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
     if (!$('glyphpop').hidden) $('gl-q').focus();     // the next pick, or Escape
-    $('stat').textContent = `${ch} ${glyphHex(ch)} put in`;
+    tell(`${ch} ${glyphHex(ch)} put in`);
     return true;
   }
   // Not typing: hand it over to paste wherever it is wanted.
   if (navigator.clipboard) navigator.clipboard.writeText(ch).catch(() => {});
-  $('stat').textContent = `${ch} ${glyphHex(ch)} copied — paste it where you want it`;
+  tell(`${ch} ${glyphHex(ch)} copied — paste it where you want it`);
   return false;
 }
 function glyphRender() {
@@ -6692,8 +6692,8 @@ async function uploadImageFile(d, onDone) {
   // Local mode: the dev server writes the file into the checkout's assets
   // dir, and the next Save's path-scoped commit takes it along. On the hub it
   // lands in the document store. A static page has nowhere to put it.
-  if (hubViewOnly()) { $('stat').textContent = 'view only — this document is shared with you to read'; return; }
-  if (!local && !docStore()) { $('stat').textContent = 'uploads need the local server or the staff hub'; return; }
+  if (hubViewOnly()) { tell('view only — this document is shared with you to read'); return; }
+  if (!local && !docStore()) { tell('uploads need the local server or the staff hub'); return; }
   const inp = d.createElement('input');
   inp.type = 'file';
   inp.accept = 'image/*';
@@ -6727,8 +6727,8 @@ async function fileTag(file) {
 /** The upload itself — for a picked file, a pasted one or a dropped one. */
 async function uploadImageBlob(file, onDone) {
     if (!file) return;
-    if (hubViewOnly()) { $('stat').textContent = 'view only — this document is shared with you to read'; return; }
-    if (!local && !docStore()) { $('stat').textContent = 'uploads need the local server or the staff hub'; return; }
+    if (hubViewOnly()) { tell('view only — this document is shared with you to read'); return; }
+    if (!local && !docStore()) { tell('uploads need the local server or the staff hub'); return; }
     const beforeKB = file.size / 1024;
     file = await compressImageFile(file);
     const afterKB = file.size / 1024;
@@ -6749,18 +6749,18 @@ async function uploadImageBlob(file, onDone) {
       fr.readAsDataURL(file);
     });
     const b64 = String(dataUrl).split(',')[1];
-    $('stat').textContent = shrunk
+    tell(shrunk
       ? `uploading ${name}… (shrunk ${beforeKB.toFixed(0)}KB → ${afterKB.toFixed(0)}KB)`
-      : `uploading ${name}…`;
+      : `uploading ${name}…`);
     if (local) {
       try {
         const j = await postLocal('/__upload', { project: M.id, name, data: b64 });
         if (!j.ok) throw new Error(j.error || 'upload failed');
         localImages.set(j.src, dataUrl);   // preview before the next build copies it
-        $('stat').textContent = `${name} saved to ${j.path} — commits with your next Save`;
+        tell(`${name} saved to ${j.path} — commits with your next Save`);
         onDone(j.src, name);
       } catch (e) {
-        $('stat').textContent = 'upload failed: ' + e.message;
+        tell('upload failed: ' + e.message);
       }
       return;
     }
@@ -6774,12 +6774,12 @@ async function uploadImageBlob(file, onDone) {
         const j = await hubJson(r);
         if (!r.ok) throw new Error(j.error || `upload refused (${r.status})`);
         localImages.set(j.src, dataUrl);
-        $('stat').textContent = shrunk
+        tell(shrunk
           ? `${name} uploaded — shrunk from ${beforeKB.toFixed(0)}KB to ${afterKB.toFixed(0)}KB`
-          : `${name} uploaded`;
+          : `${name} uploaded`);
         onDone(j.src, name);
       } catch (e) {
-        $('stat').textContent = 'upload failed: ' + e.message;
+        tell('upload failed: ' + e.message);
       }
       return;
     }
@@ -6981,7 +6981,7 @@ async function openColorsPanel() {
   const fillSel = async c => {
     const ids = [...selIds].filter(id => !isLocked(id));
     if (!ids.length) {
-      $('stat').textContent = 'select something on the page, then click a swatch to fill it';
+      tell('select something on the page, then click a swatch to fill it');
       return;
     }
     await changeDoc(() => {
@@ -7013,9 +7013,9 @@ async function openColorsPanel() {
       go.title = 'Recolour every use of the current topic colour to ' + s.name;
       go.addEventListener('click', async () => {
         const r = await applySchemeColor(s.color);
-        $('stat').textContent = r.ok
+        tell(r.ok
           ? `${s.name}: ${r.swapped} element${r.swapped === 1 ? '' : 's'} retinted — ⌘Z undoes`
-          : r.error;
+          : r.error);
         if (r.ok) openColorsPanel_refresh();
       });
       row.append(sw, nm, go);
@@ -7058,7 +7058,7 @@ function colorsInUse() {
 
 const hasEyeDropper = () => typeof window.EyeDropper === 'function';
 async function eyedrop(onPick) {
-  if (!hasEyeDropper()) { $('stat').textContent = 'the eyedropper needs a Chromium browser'; return; }
+  if (!hasEyeDropper()) { tell('the eyedropper needs a Chromium browser'); return; }
   try { const r = await new window.EyeDropper().open(); onPick(r.sRGBHex); }
   catch (e) { /* the user pressed Esc */ }
 }
@@ -7152,7 +7152,7 @@ function swatchRow(d, host, current, onPick, opts = {}) {
       await changeDoc(() => {
         (layout.swatches = layout.swatches || {})[asciiName(got.name)] = current.toUpperCase();
       });
-      $('stat').textContent = `swatch "${asciiName(got.name)}" saved — it is in every colour menu now`;
+      tell(`swatch "${asciiName(got.name)}" saved — it is in every colour menu now`);
     });
     row.appendChild(add);
   }
@@ -7346,7 +7346,7 @@ function fillRow(d, m, id) {
         (layout.swatches = layout.swatches || {})[n] = clone(g);
         t.set(`@${n}`); closeMenu(d);
       });
-      $('stat').textContent = `gradient swatch "${n}" saved — any fill can wear it now`;
+      tell(`gradient swatch "${n}" saved — any fill can wear it now`);
     });
     body.appendChild(save);
     const gnames = Object.keys(swatches()).filter(isGradSwatch);
@@ -7529,12 +7529,12 @@ function pageMenu(d, pg, e) {
   item('Copy', () => {
     pageClip = pageContents(pid);
     const n = pageClip.boxes.length + pageClip.tables.length + pageClip.shapes.length;
-    $('stat').textContent = `page ${pageLabel(pid)} copied — ${n} item${n === 1 ? '' : 's'}`;
+    tell(`page ${pageLabel(pid)} copied — ${n} item${n === 1 ? '' : 's'}`);
   });
   item('Copy page as picture', () => copyAsPicture(d, pg, null, `page ${pageLabel(pid)}`));
   item('Copy page style', () => {
     pageStyleClip = { fill: (layout.fill || {})[pageFillId(pid)] };
-    $('stat').textContent = 'page style copied — paste it onto another page';
+    tell('page style copied — paste it onto another page');
   });
   // One Paste, whichever clipboard has something on it: the style is the more
   // specific intent, so it wins when both do.
@@ -7689,8 +7689,8 @@ async function editMdAlt(at) {
   if (cleanAlt(got.words) === at.alt) return;
   if (at.kind === 'slot') collabWarnShared(at.key, 'description');
   const alt = await changeDoc(() => writeMdAlt(at, got.words));
-  $('stat').textContent = alt ? 'image description saved'
-    : 'image marked as decoration — a screen reader skips it';
+  tell(alt ? 'image description saved'
+    : 'image marked as decoration — a screen reader skips it');
 }
 
 // ------------------------------------------------------ frame fitting
@@ -7760,7 +7760,7 @@ function _pilotApplyFit(id, mode, align) {
  *  appliers above; a refusal ({ok:false}) leaves nothing changed. */
 async function applyFitting(id, fn) {
   const r = await changeDoc(fn);
-  if (r && r.ok === false) $('stat').textContent = r.error;
+  if (r && r.ok === false) tell(r.error);
   return r;
 }
 /** Fit Frame to Content: the frame's height becomes what the picture's own
@@ -7871,11 +7871,11 @@ function layerMenu(d, el, e) {
     // and every other page, as they are. Undone by putting it back.
     if (!mi.overridden) item('Change on this page only', async () => {
       await changeDoc(() => { masterOverride(id, true); });
-      $('stat').textContent = 'changes to this item now stay on this page';
+      tell('changes to this item now stay on this page');
     });
     else item('Back to the shared layout', async () => {
       await changeDoc(() => { masterOverride(id, false); });
-      $('stat').textContent = 'this page follows the shared layout again';
+      tell('this page follows the shared layout again');
     });
     item('Remove from shared layout', () => masterRemoveItem(id));
     item(`Detach shared layout to this page`, () => masterDetach(mi.page));
@@ -7964,9 +7964,9 @@ function layerMenu(d, el, e) {
                       delay: (cur && cur.delay) || 0 };
         });
         previewAnim(id);          // feedback: play it once, right now
-        $('stat').textContent = `${label} — plays when the published page `
+        tell(`${label} — plays when the published page `
           + 'scrolls to it, and on its slide in presentation mode; '
-          + '▶ in the toolbar plays it again';
+          + '▶ in the toolbar plays it again');
       }, cur && cur.kind === k));
       if (cur) {
         // Timing, right where the kind was chosen. The value tracks the drag,
@@ -8024,8 +8024,8 @@ function layerMenu(d, el, e) {
           await changeDoc(() => {
             tglBox.target = others.length === 1 ? others[0] : others;
           });
-          $('stat').textContent = `button now reveals ${others.length} `
-            + `element${others.length > 1 ? 's' : ''} on the published page`;
+          tell(`button now reveals ${others.length} `
+            + `element${others.length > 1 ? 's' : ''} on the published page`);
         });
     }
     item('Stop revealing (plain text box)', async () => {
@@ -8047,9 +8047,9 @@ function layerMenu(d, el, e) {
     if (boxOf(id) && /[\t|,]/.test(boxOf(id).md || '') && !/!\[/.test(boxOf(id).md || ''))
       item('Convert text to table', async () => {
         const r = await changeDoc(() => { const t = textToTable(id); return t.error ? { ...t, ok: false } : t; });
-        if (r.error) { $('stat').textContent = r.error; return; }
+        if (r.error) { tell(r.error); return; }
         setSel($('out').contentDocument, [r.id]);
-        $('stat').textContent = `${r.rows} rows × ${r.cols} columns`;
+        tell(`${r.rows} rows × ${r.cols} columns`);
       });
     if (clonable || (tableOf(id) && !tableOf(id).flow))
       item('Step and repeat…', () => { if (!selIds.has(id)) setSel(d, [id]); stepRepeatDialog(d); });
@@ -8061,7 +8061,7 @@ function layerMenu(d, el, e) {
         await changeDoc(() => {
           if (bx.states === 'slides') delete bx.states; else bx.states = 'slides';
         });
-        $('stat').textContent = `on the web this box shows ${bx.states === 'slides' ? 'slides' : 'tabs'}; in print, every state`;
+        tell(`on the web this box shows ${bx.states === 'slides' ? 'slides' : 'tabs'}; in print, every state`);
       });
     }
     // The library (50): keep this — and whatever else is selected with it.
@@ -8098,7 +8098,7 @@ function layerMenu(d, el, e) {
        ['Flip vertical', o => turnObjects(d, turnIds, { flip: 'v' })],
        ['Clear transformations', async o => {
          const n = await changeDoc(() => clearTransforms(turnIds));
-         $('stat').textContent = n ? `straightened ${n}` : 'nothing was turned, skewed, flipped or scaled';
+         tell(n ? `straightened ${n}` : 'nothing was turned, skewed, flipped or scaled');
        }]].forEach(([label, fn]) => {
         const b = d.createElement('button'); b.textContent = label;
         b.addEventListener('click', () => { closeMenu(d); fn(); }); sub.appendChild(b);
@@ -8398,7 +8398,7 @@ function layerMenu(d, el, e) {
         closeMenu(d);
         const r = await changeDoc(() => _pasteIntoApply(id, pic));
         setSel($('out').contentDocument, [r.id]);
-        $('stat').textContent = 'the picture is inside the shape — right-click it for Fill or Fit';
+        tell('the picture is inside the shape — right-click it for Fill or Fit');
       });
       submenuRow(d, m, 'Picture inside ▸', sub => {
         const btn = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
@@ -8424,7 +8424,7 @@ function layerMenu(d, el, e) {
     const pid = mount ? (/^\d+$/.test(mount.dataset.dsMount) ? +mount.dataset.dsMount : mount.dataset.dsMount) : visiblePageId();
     const r = await changeDoc(() => _pilotApplyAddTextBox({ page: pid, x: +b.x.toFixed(2), y: +(b.y + b.h + 0.06).toFixed(2), w: +b.w.toFixed(2),
       md: `{caption:${id}}`, style: { italic: true, size: 12 } }));
-    $('stat').textContent = 'caption added — it shows the image\'s description (right-click the image ▸ Description to change it)';
+    tell('caption added — it shows the image\'s description (right-click the image ▸ Description to change it)');
     void r;
   });
   if (fitKind(id)) {
@@ -8479,7 +8479,7 @@ function layerMenu(d, el, e) {
       await changeDoc(() => {
         writeSlot(desc.key, words);
       });
-      $('stat').textContent = `${desc.key} — updated`;
+      tell(`${desc.key} — updated`);
     });
   }
   const mdi = !desc && mdImageOf(el, e);
@@ -8503,14 +8503,14 @@ function layerMenu(d, el, e) {
         closeMenu(d);
         threadArm = id;
         d.documentElement.classList.add('ds-thread-arm');
-        $('stat').textContent = 'click the box the words should continue in — Esc to cancel';
+        tell('click the box the words should continue in — Esc to cancel');
       });
     } else {
       item('Break thread after this frame', async () => {
         const r = await changeDoc(() => _unthreadApply(id));
-        $('stat').textContent = r.removed
+        tell(r.removed
           ? `thread broken — ${r.removed} empty frame${r.removed === 1 ? '' : 's'} after it removed`
-          : 'thread broken';
+          : 'thread broken');
       });
     }
     // The endnotes section, or any frame its list runs on into.
@@ -8852,9 +8852,9 @@ function wireSections(d, roots) {
         hIn = startIn + (e.clientY - grabY) / px;
         cleared = hIn <= naturalIn + 0.05;
         el.style.minHeight = cleared ? '' : hIn.toFixed(2) + 'in';
-        $('stat').textContent = cleared
+        tell(cleared
           ? id + ' -> natural height'
-          : id + ' -> ' + hIn.toFixed(2) + 'in tall';
+          : id + ' -> ' + hIn.toFixed(2) + 'in tall');
       };
       const up = () => {
         dragUnlisten(d, move, up);
@@ -8963,7 +8963,7 @@ function startGroupResize(d, members, page, U, e0, dir) {
     ov.className = 'ds-handles ds-handles-group';
     ov.style.cssText = `left:${X}in;top:${Y}in;width:${U.w * f}in;height:${U.h * f}in`;
     page.appendChild(ov);
-    $('stat').textContent = `${parts.length} pieces → ${Math.round(f * 100)}%`;
+    tell(`${parts.length} pieces → ${Math.round(f * 100)}%`);
   };
   const move = e => apply(e);
   const up = () => {
@@ -9021,7 +9021,7 @@ function startResize(d, el, e0, dir) {
       if (Math.abs(scale - 1) < 0.005) delete st.scale; else st.scale = scale;
       paintRot(d, el);
       showHandles(d, page, el);
-      $('stat').textContent = `${id} → ${Math.round(scale * 100)}%`;
+      tell(`${id} → ${Math.round(scale * 100)}%`);
       return { scale };
     }
     // Any edge, any corner: a west or north handle moves the origin as it
@@ -9062,8 +9062,8 @@ function startResize(d, el, e0, dir) {
       if (vertical) el.style[wordy ? 'minHeight' : 'height'] = h.toFixed(2) + 'in';
     }
     showHandles(d, page, el);
-    $('stat').textContent = `${id} → ${w.toFixed(2)}in wide`
-                          + (vertical ? ` × ${h.toFixed(2)}in` : '');
+    tell(`${id} → ${w.toFixed(2)}in wide`
+                          + (vertical ? ` × ${h.toFixed(2)}in` : ''));
     return { x, y, w, h };
   };
 
@@ -9088,7 +9088,7 @@ function startResize(d, el, e0, dir) {
     }
     step.commit({ render: false });
     const kept = spacerFollow(spPre, [id]);
-    if (kept) render().then(() => { $('stat').textContent = kept; });
+    if (kept) render().then(() => { tell(kept); });
     else paintSel(d);                     // ring + handles + mini follow the new box
   };
   dragListen(d, move, up);
@@ -9253,7 +9253,7 @@ function startRotate(d, el, e0) {
     if (deg > 180) deg -= 360;
     if (deg) st.rot = deg; else delete st.rot;
     paintRot(d, el);
-    $('stat').textContent = `${id} → ${deg}°`;
+    tell(`${id} → ${deg}°`);
   };
   const up = () => {
     dragUnlisten(d, move, up);
@@ -9375,7 +9375,7 @@ function cropMode(d, el) {
     g.crop = { imgW: +c.imgW.toFixed(2), dx: +c.dx.toFixed(2), dy: +c.dy.toFixed(2) };
     delete g.fit; delete g.fitAlign; delete g.h;   // crop and fit are two ways to frame one image
     await step.commit();
-    $('stat').textContent = `${id} cropped — the resize handles size the window`;
+    tell(`${id} cropped — the resize handles size the window`);
   };
   const keys = e => {
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish(true); }
@@ -9867,7 +9867,7 @@ async function addTextBox(kind) {
     boxes().push(box);
     setSel($('out').contentDocument, ['text.' + id]);
   });
-  $('stat').textContent = `text.${id} added to page ${page} — double-click to write, drag to place`;
+  tell(`text.${id} added to page ${page} — double-click to write, drag to place`);
 }
 /** Restart entrance animations under `root` (or on root itself). The one
  *  mechanism behind both the editor's pick-a-kind preview and presentation
@@ -10037,8 +10037,8 @@ async function addExpandable() {
     layout.groups.push(['text.' + btnId, 'text.' + contentId]);
     setSel($('out').contentDocument, ['text.' + btnId, 'text.' + contentId]);
   });
-  $('stat').textContent = 'expandable section added — the button reveals the '
-    + 'content on the published page; here both stay visible so you can edit them';
+  tell('expandable section added — the button reveals the '
+    + 'content on the published page; here both stay visible so you can edit them');
 }
 
 document.querySelectorAll('#textpop .shp[data-k]').forEach(b =>
@@ -10060,7 +10060,7 @@ $('table').onclick = async () => {
   // Land on the styling panel, the way Canva drops you into the new table's
   // controls rather than making you hunt for them.
   openTablePanel('table.' + id);
-  $('stat').textContent = `table.${id} added to page ${page} — click a cell to style it, double-click to type`;
+  tell(`table.${id} added to page ${page} — click a cell to style it, double-click to type`);
 };
 
 /** Table cells edit in place (double-click) and offer a rows/columns menu
@@ -10505,7 +10505,7 @@ function tableMenu(d, td, e) {
     const many = rg.r1 > rg.r0 || rg.c1 > rg.c0;
     item('grid', 'Merge cells', '', () => {
       const err = tableMerge(t, rg.r0, rg.c0, rg.r1, rg.c1);
-      if (err) $('stat').textContent = err;
+      if (err) tell(err);
       else selectCell(idOf(tableEl), rg.r0, rg.c0);
     }, many);
     item('grid', 'Unmerge cells', '', () => tableUnmerge(t, ri, ci), !!mergeAt(t, ri, ci));
@@ -10526,7 +10526,7 @@ function tableMenu(d, td, e) {
       row('No cell style', () => applyCellStyle(t, keys, null));
       row('Save this cell’s look as…', async () => {
         const look = pick({ ...((t.cells || {})[`${ri},${ci}`] || {}) }, CELL_STYLE_KEYS);
-        if (!Object.keys(look).length) { $('stat').textContent = 'this cell has no look of its own to save — give it a fill or bold first'; return false; }
+        if (!Object.keys(look).length) { tell('this cell has no look of its own to save — give it a fill or bold first'); return false; }
         const got = await dsForm('New cell style', [{ name: 'name', label: 'Name', value: '' }], { okLabel: 'Save',
           validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(asciiName(v.name)) ? '' : 'a name of letters, digits, spaces, - and _' });
         if (got == null) return false;
@@ -10538,7 +10538,7 @@ function tableMenu(d, td, e) {
   item('sliders', 'Table options…', '', () => tableOptionsDialog(t, ri), true, true);
   item('grid', 'Convert table to text', '', () => {
     const r = tableToText('table.' + t.id);
-    if (r.error) $('stat').textContent = r.error;
+    if (r.error) tell(r.error);
   }, !t.flow);
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
@@ -10839,7 +10839,7 @@ async function tableAppendRow(t) {
   renderTablePanel();
   const td = cellEl(d, id, r, 0);
   if (td) editCell(d, td);
-  $('stat').textContent = 'a new row — Tab moves on, Shift+Tab back';
+  tell('a new row — Tab moves on, Shift+Tab back');
 }
 /** A merged cell's words live in its top-left cell. Deleting the row (or
  *  column) that cell is on keeps the merge — one line shorter — and used to
@@ -11641,7 +11641,7 @@ function chartGridPaste(e) {
       });
     });
   });
-  $('stat').textContent = rows.length + ' rows pasted';
+  tell(rows.length + ' rows pasted');
 }
 
 /** How many points a chart draws: its longest list, labels or data. */
@@ -11736,7 +11736,7 @@ function renderChartData(pop, s, c, isPie, mk) {
         if (n === null) {
           vi.value = se.data[ri] === undefined ? '' : se.data[ri];
           vi.classList.add('ch-bad'); setTimeout(() => vi.classList.remove('ch-bad'), 900);
-          $('stat').textContent = 'not a number - the cell kept its value';
+          tell('not a number - the cell kept its value');
           return;
         }
         if (n === (se.data[ri] === undefined ? 0 : se.data[ri])) return;   // nothing moved: no version, no render
@@ -11881,7 +11881,7 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
             inp.value = cur === undefined || cur === null ? '' : cur;
             inp.classList.add('ch-bad');
             setTimeout(() => inp.classList.remove('ch-bad'), 900);
-            $('stat').textContent = 'not a number - the field kept its value';
+            tell('not a number - the field kept its value');
             return;
           }
           chartWrite(ch => f.set(ch, n));
@@ -11957,7 +11957,7 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
           chartStyleName = got.name.trim();
         }, { render: false });
         renderChartPanel();
-        $('stat').textContent = 'saved the look as "' + chartStyleName + '"';
+        tell('saved the look as "' + chartStyleName + '"');
       });
     mk(row2, 'Apply to all', 'Dress every chart in this document the same way',
       async () => {
@@ -11972,8 +11972,8 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
           return all;
         });
         renderChartPanel();
-        $('stat').textContent = ids.length + ' charts now wear "'
-          + chartStyleName + '"';
+        tell(ids.length + ' charts now wear "'
+          + chartStyleName + '"');
       }, !chartStyleName || !(layout.chartStyles || {})[chartStyleName]);
     mk(row2, 'Delete', 'Forget this saved look',
       () => {
@@ -12109,7 +12109,7 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
           if (n === null) {
             val.value = r.value; val.classList.add('ch-bad');
             setTimeout(() => val.classList.remove('ch-bad'), 900);
-            $('stat').textContent = 'not a number - the line kept its value';
+            tell('not a number - the line kept its value');
             return;
           }
           chartWrite(ch => { ch.rules[i].value = n; });
@@ -12482,7 +12482,7 @@ async function addChartOfType(type = 'bar') {
     setSel($('out').contentDocument, [id]);
   });
   openChartPanel(id);
-  $('stat').textContent = `${id} added to page ${page} — edit its data in the Chart panel`;
+  tell(`${id} added to page ${page} — edit its data in the Chart panel`);
 }
 $('chart').onclick = () => addChartOfType('bar');
 $('ar-chart').addEventListener('click', () => openChartPanel(selectedChartId()));
@@ -12749,7 +12749,7 @@ function jumpToCitation(num, k) {
   jumpTo(el, 'center');
   el.classList.add('ds-slotlink');
   setTimeout(() => { try { el.classList.remove('ds-slotlink'); } catch (e) { /* gone */ } }, 2600);
-  $('stat').textContent = `endnote ${num} is cited here, on page ${hit.page}`;
+  tell(`endnote ${num} is cited here, on page ${hit.page}`);
 }
 
 /** The citation marker `t` is (or sits in): an <a href="#enN"> in the
@@ -12796,16 +12796,16 @@ async function removeCitationAt(where, sid, num) {
   const txt = h ? h.read() : '';
   const hits = [...txt.matchAll(new RegExp(`\\[\\^${rxEsc(sid)}\\]`, 'g'))];
   if (!h || k < 0 || hits.length !== count) {
-    $('stat').textContent = `could not tell which citation this is — click into the text and delete the ${num} there`;
+    tell(`could not tell which citation this is — click into the text and delete the ${num} there`);
     return false;
   }
   const m = hits[k];
   const wrote = await changeDoc(() => h.write(txt.slice(0, m.index) + txt.slice(m.index + m[0].length)) !== false);
   if (!wrote) return false;
   const left = citeCount(sid);
-  $('stat').textContent = left
+  tell(left
     ? `citation removed here; endnote [${sid}] is still cited ${left === 1 ? 'once' : left + ' times'} elsewhere`
-    : `citation removed; endnote [${sid}] is cited nowhere now (Sources still has it)`;
+    : `citation removed; endnote [${sid}] is cited nowhere now (Sources still has it)`);
   return true;
 }
 
@@ -12894,7 +12894,7 @@ async function removeEndnote(sid, num) {
     });
     deleteSource(sid);
   });
-  $('stat').textContent = `endnote ${num || `[${sid}]`} deleted, with ${n === 1 ? 'its citation' : `its ${n} citations`}`;
+  tell(`endnote ${num || `[${sid}]`} deleted, with ${n === 1 ? 'its citation' : `its ${n} citations`}`);
   return true;
 }
 
@@ -13011,7 +13011,7 @@ function editEndnote(d, li, sid, at = null, opts = {}) {
   const c = opts.caret === 'start' ? 0 : caret == null ? txt.value.length : caret;
   txt.setSelectionRange(c, c);
   try { li.scrollIntoView({ block: 'nearest' }); } catch (e) { swallowed('editEndnote scroll', e); }
-  $('stat').textContent = `editing endnote ${num || `[${sid}]`} — Enter saves, Esc cancels, Tab goes to the next note`;
+  tell(`editing endnote ${num || `[${sid}]`} — Enter saves, Esc cancels, Tab goes to the next note`);
   if (typeof showSourceRow === 'function') showSourceRow(sid);
   const opened = [txt.value.trim(), url.value.trim()];   // see edit()'s `opened`
 
@@ -13058,7 +13058,7 @@ function editEndnote(d, li, sid, at = null, opts = {}) {
       // Nothing to write: put the entry back as it was drawn. A render here
       // redrew the whole report to show the same words.
       redraw();
-      $('stat').textContent = '';
+      tell('');
       return;
     }
     endnoteRenderOwed = false;
@@ -13072,7 +13072,7 @@ function editEndnote(d, li, sid, at = null, opts = {}) {
     const next = all[all.indexOf(li) + dir];
     if (!next) { finish(true); return; }
     const { t, u, changed } = held();
-    if (!t) { $('stat').textContent = emptyCitationRefusal(sid); return; }
+    if (!t) { tell(emptyCitationRefusal(sid)); return; }
     close();
     if (changed) {
       changeDoc(() => { updateSource(sid, t, u); }, { render: false });
@@ -13358,7 +13358,7 @@ function findShow(t, hit) {
     return;
   }
   const el = findElOf(t);
-  if (!el) { $('stat').textContent = `${t.label} is not on a page right now`; return; }
+  if (!el) { tell(`${t.label} is not on a page right now`); return; }
   findFlash(el, hit);
 }
 /** The endnote entry on the page for a hit in the sources slot: the `[id]:`
@@ -13607,7 +13607,7 @@ function renderFindFonts(pop) {
       if (!sel.value) return;
       const n = await changeDoc(() => replaceFont(family, sel.value));
       renderFindPanel();
-      $('stat').textContent = `${family} → ${sel.value} in ${n} place${n === 1 ? '' : 's'}`;
+      tell(`${family} → ${sel.value} in ${n} place${n === 1 ? '' : 's'}`);
     });
     row.append(lab, sel);
     box.appendChild(row);
@@ -13692,11 +13692,11 @@ async function findReplaceAll() {
   findRun();
   renderFindPanel();
   const changed = done.size - refused;
-  $('stat').textContent = refused
+  tell(refused
     ? `${changed ? `changed ${changed} ${changed === 1 ? 'place' : 'places'}; ` : ''}`
       + `${refused} ${refused === 1 ? 'place' : 'places'} refused the change — ${why}`
     : `changed ${n} ${n === 1 ? 'hit' : 'hits'} in `
-      + `${done.size} ${done.size === 1 ? 'place' : 'places'}`;
+      + `${done.size} ${done.size === 1 ? 'place' : 'places'}`);
 }
 
 // ------------------------------------------------------- the stylesheet
@@ -14076,7 +14076,7 @@ function renderStylePop() {
     'Name what this text looks like, and reuse it', async () => {
       const look = bareStyle(st);
       if (!Object.keys(look).length) {
-        $('stat').textContent = 'nothing to save — this text has no style of its own';
+        tell('nothing to save — this text has no style of its own');
         return;
       }
       const got = await dsForm('Save as a text style', [
@@ -14091,7 +14091,7 @@ function renderStylePop() {
         setStyle(selected, Object.fromEntries(Object.keys(look).map(k => [k, null])));
         setStyle(selected, { use: name });
       }); showType(selected); renderStylePop();
-      $('stat').textContent = `saved the style "${name}"`;
+      tell(`saved the style "${name}"`);
     }));
 
   row.appendChild(btn(`Redefine ${worn || ''}`.trim(),
@@ -14105,7 +14105,7 @@ function renderStylePop() {
         // other one now say the same thing.
         setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
       }); showType(selected); renderStylePop();
-      $('stat').textContent = `"${worn}" now looks like this, everywhere`;
+      tell(`"${worn}" now looks like this, everywhere`);
     }, !worn || !Object.keys(bareStyle(st)).length));
 
   const row2 = document.createElement('div');
@@ -14121,7 +14121,7 @@ function renderStylePop() {
           && JSON.stringify(cssFor(resolvedStyle(other))) === want;
       });
       if (!hit.length) {
-        $('stat').textContent = 'nothing else looks like this';
+        tell('nothing else looks like this');
         return;
       }
       await changeDoc(() => {
@@ -14131,7 +14131,7 @@ function renderStylePop() {
           other.use = worn;
         });
       }); showType(selected); renderStylePop();
-      $('stat').textContent = `${hit.length} more now wear "${worn}"`;
+      tell(`${hit.length} more now wear "${worn}"`);
     }, !worn));
   row2.appendChild(btn('Unlink', 'Keep the look, stop following the style',
     async () => {
@@ -14151,7 +14151,7 @@ function renderStylePop() {
       await changeDoc(() => {
         clearOverrides(selected);
       }); showType(selected); renderStylePop();
-      $('stat').textContent = `back to "${worn}"`;
+      tell(`back to "${worn}"`);
     }, !own));
   const hi = btn(showOverrides ? 'Highlighting overrides ✓' : 'Highlight overrides',
     'Outline every piece of text that differs from the style it wears', () => { toggleOverrides(); renderStylePop(); });
@@ -14161,7 +14161,7 @@ function renderStylePop() {
     isDef ? 'Stop giving this style to new text boxes' : `Every text box added from now on wears "${worn}"`,
     async () => {
       await changeDoc(() => { setDefaultStyle('text', isDef ? null : worn); }); renderStylePop();
-      $('stat').textContent = isDef ? 'new text boxes wear no style' : `new text boxes wear "${worn}"`;
+      tell(isDef ? 'new text boxes wear no style' : `new text boxes wear "${worn}"`);
     }, !worn));
   styleHousekeeping(host, 'text', worn, () => { showType(selected); renderStylePop(); });
 
@@ -14494,9 +14494,9 @@ function _continueEndnotesValidate() {
 }
 async function continueEndnotes() {
   const v = _continueEndnotesValidate();
-  if (!v.ok) { $('stat').textContent = v.error; return v; }
+  if (!v.ok) { tell(v.error); return v; }
   const r = await changeDoc(() => _continueEndnotesApply());
-  $('stat').textContent = 'the endnotes now run on onto a new page after this one';
+  tell('the endnotes now run on onto a new page after this one');
   return { ok: true, ...r };
 }
 /** Break the thread after `id`. The story stays in the frames before the
@@ -14551,16 +14551,16 @@ function threadWire(d) {
     e.preventDefault(); e.stopPropagation();
     const from = threadArm; threadArm = null;
     d.documentElement.classList.remove('ds-thread-arm');
-    if (!hit) { $('stat').textContent = 'threading cancelled'; return; }
+    if (!hit) { tell('threading cancelled'); return; }
     const v = _threadValidate(from, hit.dataset.el);
-    if (!v.ok) { $('stat').textContent = v.error; return; }
+    if (!v.ok) { tell(v.error); return; }
     const r = await changeDoc(() => _threadApply(from, hit.dataset.el));
-    $('stat').textContent = `text now flows through ${r.frames.length} frames`;
+    tell(`text now flows through ${r.frames.length} frames`);
   }, true);
   d.addEventListener('keydown', e => {
     if (threadArm && e.key === 'Escape') {
       threadArm = null; d.documentElement.classList.remove('ds-thread-arm');
-      $('stat').textContent = 'threading cancelled';
+      tell('threading cancelled');
     }
   });
 }
@@ -14664,13 +14664,13 @@ async function anchorSet(d, id, key, edge) {
     markDirty(); await render();
     paintSel($('out').contentDocument);
     anchorButtonsPaint();
-    $('stat').textContent = `${id} is placed by its renderer's own style rule — the page cannot make it follow a paragraph`;
+    tell(`${id} is placed by its renderer's own style rule — the page cannot make it follow a paragraph`);
     return { ok: false, error: `'${id}' is placed by its renderer's own style rule, not by an attribute the anchor runtime can read` };
   }
   paintSel(nd);
   if (selected === id) showType(id);
   anchorButtonsPaint();
-  $('stat').textContent = `${id} now follows "${key}" — move the text and it moves too`;
+  tell(`${id} now follows "${key}" — move the text and it moves too`);
   return { ok: true, id, anchor: { ...st.anchor } };
 }
 /** Release: the object stays where the paragraph last put it. */
@@ -14693,7 +14693,7 @@ async function anchorRelease(d, id) {
   paintSel(nd);
   if (selected === id) showType(id);
   anchorButtonsPaint();
-  $('stat').textContent = `${id} released — it stays where it is`;
+  tell(`${id} released — it stays where it is`);
   return { ok: true, id, anchor: null };
 }
 /** The button: release if anchored, otherwise arm (or disarm) the next click. */
@@ -14703,7 +14703,7 @@ async function anchorClick(id) {
   const st = storeOf(id);
   if (st && st.anchor) { await anchorRelease(d, id); return; }
   anchorArm = anchorArm === id ? null : id;
-  $('stat').textContent = anchorArm ? 'click the paragraph this should follow (Esc cancels)' : '';
+  tell(anchorArm ? 'click the paragraph this should follow (Esc cancels)' : '');
   anchorButtonsPaint();
 }
 $('ar-anchor').addEventListener('click', () => {
@@ -14721,7 +14721,7 @@ async function wrapSet(id, side) {
   const d = $('out').contentDocument;
   const st = storeOf(id);
   if (!st || !st.anchor) {
-    $('stat').textContent = 'anchor it to a paragraph first — text wraps around what it belongs to';
+    tell('anchor it to a paragraph first — text wraps around what it belongs to');
     return { ok: false, error: `'${id}' is not anchored — anchor(id, slot) first; text wraps around what it belongs to` };
   }
   await changeDoc(() => {
@@ -14730,8 +14730,8 @@ async function wrapSet(id, side) {
   paintSel($('out').contentDocument);
   if (selected === id) showType(id);
   wrapRowsPaint();
-  $('stat').textContent = side ? `text now flows around ${id}, on the ${side === 'left' ? 'right' : 'left'}`
-                               : `${id} sits on the text again`;
+  tell(side ? `text now flows around ${id}, on the ${side === 'left' ? 'right' : 'left'}`
+                               : `${id} sits on the text again`);
   return { ok: true, id, wrap: side || null };
 }
 /** What the lines follow (layout.WRAP_SHAPES): the box, the picture's own
@@ -14779,7 +14779,7 @@ function anchorWire(d) {
     anchorArm = null;
     const host = e.target && e.target.closest ? e.target.closest('[data-slot]') : null;
     if (!host) {
-      $('stat').textContent = 'that is not a paragraph — nothing anchored';
+      tell('that is not a paragraph — nothing anchored');
       anchorButtonsPaint();
       return;
     }
@@ -14787,13 +14787,13 @@ function anchorWire(d) {
   }, true);
   d.addEventListener('keydown', e => {
     if (e.key === 'Escape' && anchorArm) {
-      anchorArm = null; $('stat').textContent = ''; anchorButtonsPaint();
+      anchorArm = null; tell(''); anchorButtonsPaint();
     }
   }, true);
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && anchorArm) {
-    anchorArm = null; $('stat').textContent = ''; anchorButtonsPaint();
+    anchorArm = null; tell(''); anchorButtonsPaint();
   }
 });
 
@@ -14923,7 +14923,7 @@ function renderObjStyleVerbs(host, obj, kind, after) {
     `Name what this ${noun} looks like, and reuse it`, async () => {
       const look = objLook(obj, kind);
       if (!Object.keys(look).length) {
-        $('stat').textContent = `nothing to save — this ${noun} has no look of its own`;
+        tell(`nothing to save — this ${noun} has no look of its own`);
         return;
       }
       const hint = { box: 'e.g. Pull quote', table: 'e.g. Data table', shape: 'e.g. Hairline' }[kind];
@@ -14939,7 +14939,7 @@ function renderObjStyleVerbs(host, obj, kind, after) {
         stripLook(obj, kind);
         obj.use = name;
       }); after();
-      $('stat').textContent = `saved the style "${name}"`;
+      tell(`saved the style "${name}"`);
     }));
   row.appendChild(btn(`Redefine ${worn || ''}`.trim(),
     `Make this style look like this ${noun} — everything wearing it follows`,
@@ -14949,7 +14949,7 @@ function renderObjStyleVerbs(host, obj, kind, after) {
         layout.objectStyles = { ...objectStyles(), [worn]: { ...objectStyles()[worn], ...own } };
         stripLook(obj, kind);
       }); after();
-      $('stat').textContent = `"${worn}" now looks like this, everywhere`;
+      tell(`"${worn}" now looks like this, everywhere`);
     }, !worn || !Object.keys(objLook(obj, kind)).length));
   const row2 = document.createElement('div');
   row2.className = 'tp-row';
@@ -14960,13 +14960,13 @@ function renderObjStyleVerbs(host, obj, kind, after) {
       const want = lookKey(obj, kind);
       const hit = objectsOf(kind).filter(o => o !== obj && !o.use && lookKey(o, kind) === want);
       if (!hit.length) {
-        $('stat').textContent = 'nothing else looks like this';
+        tell('nothing else looks like this');
         return;
       }
       await changeDoc(() => {
         hit.forEach(o => { stripLook(o, kind); o.use = worn; });
       }); after();
-      $('stat').textContent = `${hit.length} more now wear "${worn}"`;
+      tell(`${hit.length} more now wear "${worn}"`);
     }, !worn));
   row2.appendChild(btn('Unlink', 'Keep the look, stop following the style',
     async () => {
@@ -14982,7 +14982,7 @@ function renderObjStyleVerbs(host, obj, kind, after) {
     isDef ? `Stop giving this style to new ${noun}s` : `Every ${noun} added from now on wears "${worn}"`,
     async () => {
       await changeDoc(() => { setDefaultStyle(kind, isDef ? null : worn); }); after();
-      $('stat').textContent = isDef ? `new ${noun}s wear no style` : `new ${noun}s wear "${worn}"`;
+      tell(isDef ? `new ${noun}s wear no style` : `new ${noun}s wear "${worn}"`);
     }, !worn));
   styleHousekeeping(host, 'object', worn, after);
   const n = document.createElement('p');
@@ -15392,7 +15392,7 @@ function wireType() {
   $('ty-llev').addEventListener('change', () => listSet('levels', $('ty-llev').value));
   $('ty-lcont').addEventListener('change', () => {
     const v = $('ty-lcont').value.trim().replace(/\s+/g, '-');
-    if (v && !/^[A-Za-z][A-Za-z0-9-]{0,29}$/.test(v)) { $('stat').textContent = 'a list name: a letter, then letters, digits and -'; return; }
+    if (v && !/^[A-Za-z][A-Za-z0-9-]{0,29}$/.test(v)) { tell('a list name: a letter, then letters, digits and -'); return; }
     listSet('continue', v);
   });
   $('ty-lind').addEventListener('change', () =>
@@ -15447,9 +15447,9 @@ function wireType() {
     let rule;
     if (kind === 'grep') {
       const pattern = v === 'g:custom' ? $('ty-auto-pat').value : v.slice(2);
-      try { new RegExp(pattern); } catch (e) { $('stat').textContent = `not a pattern: ${e.message}`; return; }
+      try { new RegExp(pattern); } catch (e) { tell(`not a pattern: ${e.message}`); return; }
       if (!pattern || new RegExp(`^(?:${pattern})$`).test('')) {
-        $('stat').textContent = 'that pattern matches nothing at all'; return;
+        tell('that pattern matches nothing at all'); return;
       }
       rule = { pattern, style: st };
     } else {
@@ -15665,8 +15665,8 @@ function paintSel(d) {
   // is invisible, and "I clicked the button and there are no size handles"
   // is the only possible conclusion.
   if (wholeGroup && els.length > 1) {
-    $('stat').textContent = `group of ${els.length} — drag to move it as one; `
-      + 'click or double-click a piece to get inside and resize it';
+    tell(`group of ${els.length} — drag to move it as one; `
+      + 'click or double-click a piece to get inside and resize it');
   }
   els.forEach(el => {
     // A CSS outline on an SVG child paints around the whole page-sized <svg>
@@ -15814,8 +15814,8 @@ function showMini(d, els) {
       '<svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M4.2 2.4 11.6 7 4.2 11.6Z"/></svg>',
       () => {
         previewAnim(idOf(mine[0]));
-        $('stat').textContent = `playing ${soloAnim.kind}`
-          + (soloAnim.delay ? ` after ${soloAnim.delay}s` : '');
+        tell(`playing ${soloAnim.kind}`
+          + (soloAnim.delay ? ` after ${soloAnim.delay}s` : ''));
       });
   }
   // An expandable section's button and its target(s) are grouped, so
@@ -15831,9 +15831,9 @@ function showMini(d, els) {
       '<svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M4.2 2.4 11.6 7 4.2 11.6Z"/></svg>',
       () => {
         const ok = previewToggle(tb);
-        $('stat').textContent = ok
+        tell(ok
           ? `previewing the expand — ${(tb.tglSpeed != null ? tb.tglSpeed : 0.3).toFixed(2)}s`
-          : 'nothing to preview — its target is not on this page';
+          : 'nothing to preview — its target is not on this page');
       });
     const speedB = btn('Expand speed…',
       '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="5.3"/><path d="M7 4.2v3l2 1.1"/></svg>',
@@ -16327,7 +16327,7 @@ function alignSel(d, mode, to = alignTo) {
   const items = arrangeUnits(d, page, els);
   const key = to === 'page' || to === 'selection' ? null : keyUnit(items);
   if (to === 'key' && !key) {
-    $('stat').textContent = 'no key object — click one of the selected things again to make it the key';
+    tell('no key object — click one of the selected things again to make it the key');
     return;
   }
   changeDoc(() => {
@@ -16439,7 +16439,7 @@ async function deleteSel(d) {
     const gone = [];
     [...selIds].filter(id => !isLocked(id)).forEach(id => {
       if (masterItemOf(id)) {
-        $('stat').textContent = `that is on the shared layout "${masterItemOf(id).name}" — right-click it for Remove from shared layout, or detach the layout to this page`;
+        tell(`that is on the shared layout "${masterItemOf(id).name}" — right-click it for Remove from shared layout, or detach the layout to this page`);
         return;
       }
       if (!!shapeOf(id)) {
@@ -16494,7 +16494,7 @@ async function deleteSel(d) {
   });
   // AFTER the render: the pipeline writes its own status ("unsaved changes"),
   // and a note printed before it is a note nobody sees.
-  if (demoteNote) $('stat').textContent = demoteNote;
+  if (demoteNote) tell(demoteNote);
 }
 
 /** Drop ids from any group and discard groups the removal empties below two. */
@@ -16629,9 +16629,9 @@ async function duplicateSel(d) {
     setSel(d, copies);                       // the copies become the selection
   });
   if (made === false) return;
-  $('stat').textContent = asBoxCount
+  tell(asBoxCount
     ? `duplicated ${copies.length} — a designed element's copy is a floating text box`
-    : `duplicated ${copies.length} element${copies.length > 1 ? 's' : ''}`;
+    : `duplicated ${copies.length} element${copies.length > 1 ? 's' : ''}`);
 }
 
 // ----------------------------------------------------------- clipboard
@@ -16650,7 +16650,7 @@ function copySel(d) {
     else if (b) items.push({ kind: 'box', data: standaloneCopy(b) });
   });
   if (!items.length) {
-    $('stat').textContent = "nothing to copy — a designed element can't be copied; try Copy style";
+    tell("nothing to copy — a designed element can't be copied; try Copy style");
     return;
   }
   const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
@@ -16664,7 +16664,7 @@ function copySel(d) {
     try { ((d.defaultView || window).navigator.clipboard || navigator.clipboard).writeText(words).catch(() => {}); }
     catch (e) { swallowed('copySel clipboard', e); }
   }
-  $('stat').textContent = `copied ${items.length} element${items.length > 1 ? 's' : ''} — ⌘V pastes onto the page in view`;
+  tell(`copied ${items.length} element${items.length > 1 ? 's' : ''} — ⌘V pastes onto the page in view`);
 }
 
 async function pasteClip(d, inPlace = false) {
@@ -16724,8 +16724,8 @@ async function pasteClip(d, inPlace = false) {
     }
     setSel(d, copies);
   });
-  $('stat').textContent = `pasted ${copies.length} element${copies.length > 1 ? 's' : ''}`
-    + `${inPlace ? ' in place' : ''} onto page ${page}`;
+  tell(`pasted ${copies.length} element${copies.length > 1 ? 's' : ''}`
+    + `${inPlace ? ' in place' : ''} onto page ${page}`);
 }
 
 // ----------------------------------------------- step and repeat, again
@@ -16758,7 +16758,7 @@ function stepRepeatIds(ids, count, dx, dy) {
 }
 async function stepRepeatDialog(d) {
   const ids = [...selIds].filter(id => shapeOf(id) || boxOf(id) || (tableOf(id) && !tableOf(id).flow));
-  if (!ids.length) { $('stat').textContent = 'step and repeat works on shapes, text boxes and placed tables'; return; }
+  if (!ids.length) { tell('step and repeat works on shapes, text boxes and placed tables'); return; }
   const got = await dsForm('Step and Repeat', [
     { name: 'count', type: 'number', label: 'Count', value: 3 },
     { name: 'dx', type: 'number', label: 'Horizontal offset, inches', value: 0.25 },
@@ -16773,7 +16773,7 @@ async function stepRepeatDialog(d) {
     return m;
   });
   if (!made) return;
-  $('stat').textContent = `made ${made.length} cop${made.length > 1 ? 'ies' : 'y'}`;
+  tell(`made ${made.length} cop${made.length > 1 ? 'ies' : 'y'}`);
 }
 
 // Transform Again (⌥⌘3): the last move or rotation, done once more to what
@@ -16781,7 +16781,7 @@ async function stepRepeatDialog(d) {
 // the X/Y fields, place()), a rotation by the rotate handle and field.
 let lastXform = null;
 async function transformAgain(d) {
-  if (!lastXform) { $('stat').textContent = 'nothing to repeat yet — move or rotate something first'; return; }
+  if (!lastXform) { tell('nothing to repeat yet — move or rotate something first'); return; }
   const els = outermost(selEls(d).filter(el => !isLocked(idOf(el))));
   if (!els.length) return;
   const x = lastXform;
@@ -16802,8 +16802,8 @@ async function transformAgain(d) {
     });
     lastXform = x;
   });
-  $('stat').textContent = x.kind === 'move'
-    ? `moved again by ${x.dx.toFixed(2)}in, ${x.dy.toFixed(2)}in` : `rotated again by ${x.deg}°`;
+  tell(x.kind === 'move'
+    ? `moved again by ${x.dx.toFixed(2)}in, ${x.dy.toFixed(2)}in` : `rotated again by ${x.deg}°`);
 }
 
 // Select next object above / below (⌥] / ⌥[): steps through the page's
@@ -16842,7 +16842,7 @@ function selectNextObject(d, dir) {
   if (!next) return;
   setSel(d, [idOf(next)]);
   if (next.closest('section.page') !== pg) jumpTo(next, 'center');
-  $('stat').textContent = `${idOf(next)} · layer ${zOf(idOf(next))}`;
+  tell(`${idOf(next)} · layer ${zOf(idOf(next))}`);
 }
 
 // ------------------------------------------------------- format painter
@@ -16887,12 +16887,12 @@ function styleClipFor(d, id) {
   return { type, data: clone(data) };
 }
 function copyStyle(d) {
-  if (selIds.size !== 1) { $('stat').textContent = 'select one element to copy its style'; return; }
+  if (selIds.size !== 1) { tell('select one element to copy its style'); return; }
   const clip = styleClipFor(d, [...selIds][0]);
-  if (!clip) { $('stat').textContent = 'that element has no copyable style'; return; }
+  if (!clip) { tell('that element has no copyable style'); return; }
   styleClip = clip;
   const type = clip.type;
-  $('stat').textContent = `style copied — select ${type}${type === 'box' ? 'es' : 's'} and press ⌘⌥V to paste it`;
+  tell(`style copied — select ${type}${type === 'box' ? 'es' : 's'} and press ⌘⌥V to paste it`);
 }
 /** The painter on a run of words (65): ⌘⌥C in the words takes the run's
  *  look where the caret or selection starts — its character style and bold,
@@ -16905,29 +16905,29 @@ function textPaintCopy(d, host) {
   const cs = n && n.closest && n.closest('span.ds-cs');
   textClip = { cs: cs && host.contains(cs) ? cs.dataset.cs : null,
                b: markActive(d, host, 'b'), i: markActive(d, host, 'i'), u: markActive(d, host, 'u') };
-  $('stat').textContent = 'look of these words copied'
-    + (textClip.cs ? ` (${textClip.cs})` : '') + ' — select other words and press ⌘⌥V';
+  tell('look of these words copied'
+    + (textClip.cs ? ` (${textClip.cs})` : '') + ' — select other words and press ⌘⌥V');
   return true;
 }
 function textPaintPaste(d, host) {
-  if (!textClip) { $('stat').textContent = 'copy the look of some words first (⌘⌥C in the words)'; return false; }
+  if (!textClip) { tell('copy the look of some words first (⌘⌥C in the words)'); return false; }
   const sel = d.getSelection();
-  if (!sel || !sel.rangeCount || sel.getRangeAt(0).collapsed) { $('stat').textContent = 'select the words to paint'; return false; }
+  if (!sel || !sel.rangeCount || sel.getRangeAt(0).collapsed) { tell('select the words to paint'); return false; }
   applyCharStyle(d, host, textClip.cs || null);
   ['b', 'i', 'u'].forEach(t => { if (!!markActive(d, host, t) !== !!textClip[t]) toggleMark(d, host, t); });
   host.dispatchEvent(new Event('input', { bubbles: true }));
-  $('stat').textContent = 'look pasted on the words';
+  tell('look pasted on the words');
   return true;
 }
 let textClip = null;
 async function pasteStyle(d) {
-  if (!styleClip) { $('stat').textContent = 'copy a style first (⌘⌥C)'; return; }
+  if (!styleClip) { tell('copy a style first (⌘⌥C)'); return; }
   const targets = [...selIds].filter(id => styleType(d, id) === styleClip.type);
-  if (!targets.length) { $('stat').textContent = `paste style needs a selected ${styleClip.type}`; return; }
+  if (!targets.length) { tell(`paste style needs a selected ${styleClip.type}`); return; }
   await changeDoc(() => {
     applyStyleClip(d, styleClip, targets);
   });
-  $('stat').textContent = `style pasted to ${targets.length} ${styleClip.type}${targets.length > 1 ? 's' : ''}`;
+  tell(`style pasted to ${targets.length} ${styleClip.type}${targets.length > 1 ? 's' : ''}`);
 }
 /** Put a copied look onto targets of its kind — no history, no render. */
 function applyStyleClip(d, styleClip, targets) {
@@ -16966,7 +16966,7 @@ function toggleLockSel(d) {
     if (!layout.locked.length) delete layout.locked;
   }, { render: false });
   paintSel(d);
-  $('stat').textContent = locked ? 'unlocked' : 'locked — drag is off until unlocked';
+  tell(locked ? 'unlocked' : 'locked — drag is off until unlocked');
 }
 
 // ------------------------------------------------------------------ groups
@@ -16985,7 +16985,7 @@ function groupSel(d) {
     layout.groups.push(ids);
   }, { render: false });
   paintSel(d);
-  $('stat').textContent = `grouped ${ids.length} elements — they move as one`;
+  tell(`grouped ${ids.length} elements — they move as one`);
 }
 
 function ungroupSel(d) {
@@ -16996,7 +16996,7 @@ function ungroupSel(d) {
     if (!layout.groups.length) delete layout.groups;
   }, { render: false });
   paintSel(d);
-  $('stat').textContent = 'ungrouped';
+  tell('ungrouped');
 }
 // Group when 2+ are selected and they are not already one whole group;
 // ungroup when the selection is (or holds) a group.
@@ -17104,10 +17104,10 @@ function selectAllOnPage(d) {
     || d.querySelector('section.page');
   if (!pg) return;
   const ids = layerItems(d, pg).map(o => o.id).filter(id => !isLocked(id));
-  if (!ids.length) { $('stat').textContent = 'nothing placed on this page to select'; return; }
+  if (!ids.length) { tell('nothing placed on this page to select'); return; }
   setSel(d, withGroups(ids));
   const n = pageNumOf(d, pg);
-  $('stat').textContent = `${selIds.size} selected — everything placed on ${n != null ? 'page ' + n : 'this page'}`;
+  tell(`${selIds.size} selected — everything placed on ${n != null ? 'page ' + n : 'this page'}`);
 }
 
 /** ⌘X: copy, then delete — the way to move a shape or a text box to another
@@ -17119,7 +17119,7 @@ async function cutSel(d) {
   if (clip === before) return;
   const n = clip.items.length;
   await deleteSel(d);
-  $('stat').textContent = `cut ${n} element${n > 1 ? 's' : ''} — ⌘V pastes onto the page in view`;
+  tell(`cut ${n} element${n > 1 ? 's' : ''} — ⌘V pastes onto the page in view`);
 }
 
 /** Enter on a selected text box opens its words (Canva's and Figma's way in;
@@ -17257,7 +17257,7 @@ function marquee(d, pg, e0, onClick = null) {
     // A group is all-or-nothing: touch one member, take them all.
     const all = withGroups(hit);
     setSel(d, all);
-    $('stat').textContent = all.length ? `${all.length} selected` : '';
+    tell(all.length ? `${all.length} selected` : '');
   };
   dragListen(d, move, up);
 }
@@ -17288,10 +17288,10 @@ async function pasteLooseText(text) {
   const page = visiblePageId();
   const w = Math.min(5, Math.max(2, PAGE_W_IN - 2));
   const r = await docsync.api.addTextBox({ page, x: placeX(w), y: 1.5, w, md: text });
-  if (!r.ok) { $('stat').textContent = r.error; return; }
+  if (!r.ok) { tell(r.error); return; }
   const d = $('out').contentDocument;
   setSel(d, [r.id]);
-  $('stat').textContent = `pasted as a text box on page ${page} — drag to move, double-click to edit`;
+  tell(`pasted as a text box on page ${page} — drag to move, double-click to edit`);
 }
 async function insertLooseImages(files, at = null) {
   for (const f of files) await uploadImageBlob(f, (path, name) => placeImageBox(path, name, at));
@@ -17306,7 +17306,7 @@ function wireDrop(doc) {
     if (!dragHasFiles(e.dataTransfer)) return;
     e.preventDefault();
     const files = looseFiles(e.dataTransfer);
-    if (!files.length) { $('stat').textContent = 'only pictures can be dropped onto the page'; return; }
+    if (!files.length) { tell('only pictures can be dropped onto the page'); return; }
     let at = null;
     const pg = e.target && e.target.closest ? e.target.closest('section.page') : null;
     if (pg) {
@@ -17415,7 +17415,7 @@ function setTool(t, quiet = false) {
   });
   document.body.dataset.tool = t;
   applyTool($('out').contentDocument);
-  if (!quiet) $('stat').textContent = TOOL_HINT[t];
+  if (!quiet) tell(TOOL_HINT[t]);
 }
 function applyTool(d) {
   if (!d || !d.documentElement) return;
@@ -17445,7 +17445,7 @@ function wireTypeTool(d) {
     const host = textEl || (slotEl && slotEl.closest('[data-el]'));
     if (host && !isLocked(idOf(host))) {
       setSel(d, [idOf(host)]);
-      if (!typeOnClick(d, host, e)) $('stat').textContent = 'that text cannot be opened from here — double-click it';
+      if (!typeOnClick(d, host, e)) tell('that text cannot be opened from here — double-click it');
       return;
     }
     // Empty page, or an object that is not text: a new box where you pressed.
@@ -17477,13 +17477,13 @@ async function placeTypedBox(pg, a, b) {
   const x = Math.max(0, Math.min(Math.min(a.x, b.x), PAGE_W_IN - w));
   const y = Math.max(0, Math.min(a.y, b.y));
   const r = await docsync.api.addTextBox({ page: pageIdOf(pg), x: +x.toFixed(2), y: +y.toFixed(2), w: +w.toFixed(2), md: 'Your text here' });
-  if (!r.ok) { $('stat').textContent = r.error; return; }
+  if (!r.ok) { tell(r.error); return; }
   setTool('select', true);
   const d = $('out').contentDocument;
   setSel(d, [r.id]);
   const el = d.querySelector(`[data-el="${CSS.escape(r.id)}"]`);
   if (el) editBox(d, el);
-  $('stat').textContent = `${r.id} placed — type to replace the stand-in words, Esc to finish`;
+  tell(`${r.id} placed — type to replace the stand-in words, Esc to finish`);
 }
 
 // --- the Insert palette and the rail's pins -----------------------------------
@@ -18239,7 +18239,7 @@ async function deleteBlankPage(pid) {
     if (layout.locked) layout.locked = layout.locked.filter(id => !gone.includes(id));
     return gone;
   });
-  $('stat').textContent = `page deleted`;
+  tell(`page deleted`);
   return gone;
 }
 
@@ -18250,7 +18250,7 @@ async function deleteBlankPage(pid) {
  *  which otherwise had to reach into the page with a script to drop a page. */
 async function hideDesignedPage(pid) {
   await changeDoc(() => { writeOrder(pageOrder().filter(p => p !== pid), pageBlanks()); });
-  $('stat').textContent = `page ${pid} taken out of the report — the page strip's Hidden group shows it again`;
+  tell(`page ${pid} taken out of the report — the page strip's Hidden group shows it again`);
 }
 
 /** Put a hidden DESIGNED page back, at its designed position among the
@@ -18446,8 +18446,8 @@ async function masterApply(pid, name) {
   });
   const d = $('out').contentDocument;
   if (selPage != null) pageBar(d);
-  $('stat').textContent = name ? `page ${pageLabel(pid)} uses the shared layout "${name}"`
-                               : `page ${pageLabel(pid)} uses no shared layout`;
+  tell(name ? `page ${pageLabel(pid)} uses the shared layout "${name}"`
+                               : `page ${pageLabel(pid)} uses no shared layout`);
   return { ok: true, page: pid, master: name || null };
 }
 /** MOVE a page's own boxes and shapes into a new master, and make the page
@@ -18475,7 +18475,7 @@ async function masterFromPage(pid, name) {
   });
   if (selPage != null) pageBar($('out').contentDocument);
   const n = c.boxes.length + c.shapes.length + c.tables.length;
-  $('stat').textContent = `"${name}" is a shared layout now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`;
+  tell(`"${name}" is a shared layout now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`);
   return { ok: true, master: name, items: n };
 }
 /** Detach: the master's items become this page's own copies, and the page
@@ -18502,7 +18502,7 @@ async function masterDetach(pid) {
     if (!Object.keys(pageMasters()).length) delete layout.pageMasters;
   });
   if (selPage != null) pageBar($('out').contentDocument);
-  $('stat').textContent = `page ${label} has its own copies now — ${n} item${n === 1 ? '' : 's'} — and no shared layout`;
+  tell(`page ${label} has its own copies now — ${n} item${n === 1 ? '' : 's'} — and no shared layout`);
   return { ok: true, page: pid, items: n };
 }
 /** Take one item off its master — off every page that uses it. */
@@ -18515,7 +18515,7 @@ async function masterRemoveItem(id) {
     selIds.delete(id);
   });
   paintSel($('out').contentDocument);
-  $('stat').textContent = `removed from the shared layout "${mi.name}" — on every page that uses it`;
+  tell(`removed from the shared layout "${mi.name}" — on every page that uses it`);
   return { ok: true, master: mi.name };
 }
 /** The strip's picker: the master this page uses, the others, and a way to
@@ -18542,7 +18542,7 @@ $('ar-master').addEventListener('change', async () => {
     ]);
     if (!got || !got.name.trim()) return;
     const r = await masterFromPage(pid, got.name);
-    if (!r.ok) $('stat').textContent = r.error;
+    if (!r.ok) tell(r.error);
     return;
   }
   await masterApply(pid, v || null);
@@ -18733,13 +18733,13 @@ async function duplicatePage(pid) {
     if (masterNameOf(pid)) pageMasters()[bid] = masterNameOf(pid);
   });
   setSelPage($('out').contentDocument, bid);
-  $('stat').textContent = snap
+  tell(snap
     ? `page duplicated — everything on it is a copy you can edit here; a chart in the copy `
       + 'keeps its numbers (the renderer draws those), and its endnotes are copied as text'
     : designed
       ? `page duplicated — ${moved} placed item${moved === 1 ? '' : 's'} copied; `
         + 'the designed content could not be snapshotted, so it stays on its own page'
-      : `page duplicated — ${moved} item${moved === 1 ? '' : 's'} copied`;
+      : `page duplicated — ${moved} item${moved === 1 ? '' : 's'} copied`);
   return { ok: true, page: bid, copied: !!snap, items: moved };
 }
 
@@ -18757,7 +18757,7 @@ async function addBlankPage(at) {
     order.splice(Math.max(0, Math.min(at, order.length)), 0, bid);
     writeOrder(order, [...blanks, { id: bid }]);
   });
-  $('stat').textContent = `blank page added — drag boxes, shapes and images onto it`;
+  tell(`blank page added — drag boxes, shapes and images onto it`);
 }
 
 $('rail-add').addEventListener('click', () => addBlankPage());
@@ -19092,9 +19092,9 @@ function setZoom(choice, say = true) {
   if (d) paintSel(d);
   // Zoom has no visible control at the moment (#zoom is display:none), so the
   // status row is the only feedback that anything happened.
-  if (say) $('stat').textContent = zoomChoice
+  if (say) tell(zoomChoice
     ? 'zoom ' + Math.round(curScale * 100) + '%'
-    : 'zoom fit to width';
+    : 'zoom fit to width');
 }
 
 document.querySelectorAll('#zoom button').forEach(b => b.addEventListener('click', () => {
@@ -19105,7 +19105,7 @@ document.querySelectorAll('#zoom button').forEach(b => b.addEventListener('click
 // follows the handle rather than jumping when it is let go.
 $('zb-range').addEventListener('input', () => {
   setZoom(String(+$('zb-range').value / 100), false);
-  $('stat').textContent = 'zoom ' + $('zb-range').value + '%';
+  tell('zoom ' + $('zb-range').value + '%');
 });
 // Double-click the readout to go back to fitting the width — the same thing
 // ⌘0 does, for anyone who reaches for the mouse.
@@ -19126,8 +19126,8 @@ function stepZoom(dir) {
     ? ZOOM_STEPS.find(z => z > cur + 0.001)
     : [...ZOOM_STEPS].reverse().find(z => z < cur - 0.001);
   if (next == null) {
-    $('stat').textContent = 'zoom ' + Math.round(cur * 100) + '% — '
-      + (dir > 0 ? 'as far in as it goes' : 'as far out as it goes');
+    tell('zoom ' + Math.round(cur * 100) + '% — '
+      + (dir > 0 ? 'as far in as it goes' : 'as far out as it goes'));
     return false;
   }
   setZoom(String(next));
@@ -19158,10 +19158,10 @@ async function saveFromKey() {
   await new Promise(r => setTimeout(r, 0));
   await renderIdle();
   if (editing) return;                             // a dialog kept them open
-  if (hubViewOnly()) { $('stat').textContent = 'view only — there is nothing of yours to save'; return; }
-  if (!local && !docStore()) { $('stat').textContent = 'nothing to save to — open this report from the local server or the staff hub'; return; }
-  if (!dirty) { $('stat').textContent = 'nothing to save — every change is saved'; return; }
-  if ($('save').disabled) { $('stat').textContent = 'saving…'; return; }   // one is already running
+  if (hubViewOnly()) { tell('view only — there is nothing of yours to save'); return; }
+  if (!local && !docStore()) { tell('nothing to save to — open this report from the local server or the staff hub'); return; }
+  if (!dirty) { tell('nothing to save — every change is saved'); return; }
+  if ($('save').disabled) { tell('saving…'); return; }   // one is already running
   $('save').click();
 }
 
@@ -19340,7 +19340,7 @@ function addGuideHere(axis, at) {
   changeDoc(() => { v = addGuide(axis, at); }, { render: false });
   drawGuideLayer($('out').contentDocument);
   chromeSync();
-  $('stat').textContent = `${axis === 'x' ? 'vertical' : 'horizontal'} guide at ${v}in — drag it to move, drag it onto a ruler to remove it`;
+  tell(`${axis === 'x' ? 'vertical' : 'horizontal'} guide at ${v}in — drag it to move, drag it onto a ruler to remove it`);
 }
 /** Right-click ▸ Add a spacer here: a gap marker with its top-left corner where you clicked. */
 async function addSpacerHere(pid, x, y) {
@@ -19348,7 +19348,7 @@ async function addSpacerHere(pid, x, y) {
   const r = await changeDoc(() => _pilotApplyAddShape({ kind: 'spacer', page: pid, x: round2(Math.max(0, Math.min(PAGE_W_IN - w, x))),
                                   y: round2(Math.max(0, Math.min(PAGE_H_IN - h, y))), w, h }));
   setSel($('out').contentDocument, [r.id]);
-  $('stat').textContent = `spacer holding ${h}in — drag its edge to size the gap; things it touches keep it when one moves`;
+  tell(`spacer holding ${h}in — drag its edge to size the gap; things it touches keep it when one moves`);
 }
 
 /** A guide's right-click menu. */
@@ -19415,17 +19415,17 @@ async function addGuideDialog() {
   const v = await changeDoc(() => addGuide(got.axis === 'v' ? 'x' : 'y', parseLen(got.at)), { render: false });
   drawGuideLayer($('out').contentDocument);
   chromeSync();
-  $('stat').textContent = `${got.axis === 'v' ? 'vertical' : 'horizontal'} guide at ${v}in`;
+  tell(`${got.axis === 'v' ? 'vertical' : 'horizontal'} guide at ${v}in`);
 }
 function clearAllGuides() {
   const n = guidesX().length + guidesY().length;
-  if (!n) { $('stat').textContent = 'no guides to clear'; return; }
+  if (!n) { tell('no guides to clear'); return; }
   changeDoc(() => {
     selGuide = null;
     setGuides([], []);
   }, { render: false });
   drawGuideLayer($('out').contentDocument);
-  $('stat').textContent = `${n} guide${n === 1 ? '' : 's'} cleared — ⌘Z brings ${n === 1 ? 'it' : 'them'} back`;
+  tell(`${n} guide${n === 1 ? '' : 's'} cleared — ⌘Z brings ${n === 1 ? 'it' : 'them'} back`);
 }
 
 // One guide can be selected (a click on it), and Delete removes it — the
@@ -19450,7 +19450,7 @@ function deleteSelGuide() {
     if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
   }, { render: false });
   drawGuideLayer($('out').contentDocument);
-  $('stat').textContent = `guide at ${gone}in removed`;
+  tell(`guide at ${gone}in removed`);
   return true;
 }
 /** Add one ruler guide at `at` inches — 'x' a vertical line, 'y' a
@@ -19748,17 +19748,17 @@ function startRulerGuide(axis, e0) {
     }
     ghost.style.display = pos == null ? 'none' : '';
     if (pos != null) ghost.style[axis === 'v' ? 'left' : 'top'] = pos + 'in';
-    $('stat').textContent = pos == null ? 'drop on a page to place the guide' : `guide at ${pos}in`;
+    tell(pos == null ? 'drop on a page to place the guide' : `guide at ${pos}in`);
   };
   const up = () => {
     dragUnlisten(d, move, up);
     guideBusy = Math.max(0, guideBusy - 1);
     guideTip(null);
     if (ghost) ghost.remove();
-    if (pos == null) { $('stat').textContent = 'no guide placed'; return; }
+    if (pos == null) { tell('no guide placed'); return; }
     changeDoc(() => { addGuide(axis === 'v' ? 'x' : 'y', pos); }, { render: false });
     drawGuideLayer(d);
-    $('stat').textContent = `guide at ${pos}in — objects snap to it; drag it onto a ruler to remove`;
+    tell(`guide at ${pos}in — objects snap to it; drag it onto a ruler to remove`);
   };
   guideBusy++;
   dragListen(d, move, up);
@@ -19777,13 +19777,13 @@ function startRulerGuide(axis, e0) {
   if (!pgInfo) return;
   const along = horiz ? (e.clientX - pgInfo.left) / pgInfo.pxIn : (e.clientY - pgInfo.top) / pgInfo.pxIn;
   const span = horiz ? PAGE_W_IN : PAGE_H_IN;
-  if (along < 0 || along > span) { $('stat').textContent = 'double-click on the page’s own stretch of the ruler to add a guide'; return; }
+  if (along < 0 || along > span) { tell('double-click on the page’s own stretch of the ruler to add a guide'); return; }
   const d = F.d;
   const snap = guideSnap(pgInfo.pg, horiz ? 'v' : 'h', along, e, -1, pgInfo.pxIn / (DPI * zoomOf(pgInfo.pg)));
   let v;
   changeDoc(() => { v = addGuide(horiz ? 'x' : 'y', snap.v); }, { render: false });
   drawGuideLayer(d);
-  $('stat').textContent = `${horiz ? 'vertical' : 'horizontal'} guide at ${v}in — double-click it to retype, right-click for more`;
+  tell(`${horiz ? 'vertical' : 'horizontal'} guide at ${v}in — double-click it to retype, right-click for more`);
 }));
 // The corner square is the rulers' own switch: one click puts them away
 // (⌘; or View ▸ Rulers & guides brings them back).
@@ -19795,7 +19795,7 @@ window.addEventListener('resize', () => { rulerSig = ''; });
  *  to delete it. A press that does not travel selects it (Delete removes). */
 function startGuideDrag(d, pg, axis, idx, e0) {
   e0.preventDefault(); e0.stopPropagation();
-  if (guidesLocked) { $('stat').textContent = 'guides are locked — View ▸ Lock guides to move them'; return; }
+  if (guidesLocked) { tell('guides are locked — View ▸ Lock guides to move them'); return; }
   const px = DPI * zoomOf(pg), pr = pg.getBoundingClientRect();
   const span = axis === 'v' ? PAGE_W_IN : PAGE_H_IN;
   const el = e0.currentTarget;
@@ -19818,7 +19818,7 @@ function startGuideDrag(d, pg, axis, idx, e0) {
     el.style.opacity = gone() ? '.3' : '';
     const w = frameToWindow(e);
     guideTip(gone() ? 'release to delete this guide' : `${round2(shown)} in${snap.why ? ' · ' + snap.why : ''}`, w.x, w.y);
-    $('stat').textContent = gone() ? 'release to delete this guide' : `guide at ${round2(shown)}in`;
+    tell(gone() ? 'release to delete this guide' : `guide at ${round2(shown)}in`);
   };
   guideBusy++;
   const up = () => {
@@ -19831,7 +19831,7 @@ function startGuideDrag(d, pg, axis, idx, e0) {
       selGuide = { axis, idx };
       d.querySelectorAll('.ds-gd.sel').forEach(n => n.classList.remove('sel'));
       d.querySelectorAll(`.ds-gd.${axis}[data-idx="${idx}"]`).forEach(n => n.classList.add('sel'));
-      $('stat').textContent = `guide at ${(axis === 'v' ? guidesX() : guidesY())[idx]}in selected — Delete removes it`;
+      tell(`guide at ${(axis === 'v' ? guidesX() : guidesY())[idx]}in selected — Delete removes it`);
       return;
     }
     changeDoc(() => {
@@ -20061,7 +20061,7 @@ async function marginsDialog(pid) {
   }, { render: false });
   showGuidesNow();
   drawGuideLayer($('out').contentDocument);
-  $('stat').textContent = 'margins and columns set — objects snap to them while guides show';
+  tell('margins and columns set — objects snap to them while guides show');
 }
 // ---------------------------------------------------------- reading order
 // layout.readingOrder {page: [ids]}: the order a screen reader and the tagged
@@ -20098,7 +20098,7 @@ async function readingOrderDialog(pid) {
   if (got == null) return;
   const ids = got.ids.split('\n').map(x => x.trim()).filter(Boolean);
   await changeDoc(() => { setReadingOrder(pid, ids.join() === all.join() ? null : ids); });
-  $('stat').textContent = ids.length ? `reading order set for page ${pageLabel(pid)}` : 'reading order cleared';
+  tell(ids.length ? `reading order set for page ${pageLabel(pid)}` : 'reading order cleared');
 }
 async function createGuidesDialog(pid) {
   const got = await dsForm('Create guides', [
@@ -20113,7 +20113,7 @@ async function createGuidesDialog(pid) {
                            gutter: Math.max(0, +got.gutter || 0), fit: got.fit, pid }), { render: false });
   showGuidesNow();
   drawGuideLayer($('out').contentDocument);
-  $('stat').textContent = `added ${n.x + n.y} guide${n.x + n.y === 1 ? '' : 's'}`;
+  tell(`added ${n.x + n.y} guide${n.x + n.y === 1 ? '' : 's'}`);
 }
 
 // Refresh the window. Unsaved edits are the whole risk here — a reload throws
@@ -20137,8 +20137,8 @@ function toggleGuides() {
   if (d) drawGuideLayer(d);
   startRulers();
   if (typeof chromeSync === 'function') chromeSync();
-  $('stat').textContent = guidesOn
-    ? 'rulers and guides on — drag out of a ruler to add a guide' : 'rulers and guides off';
+  tell(guidesOn
+    ? 'rulers and guides on — drag out of a ruler to add a guide' : 'rulers and guides off');
 }
 $('guides').addEventListener('click', toggleGuides);
 $('guideshow').addEventListener('click', () => {
@@ -20148,7 +20148,7 @@ $('guideshow').addEventListener('click', () => {
   if (!guidesShown) unselectGuide($('out').contentDocument);
   drawGuideLayer($('out').contentDocument);
   chromeSync();
-  $('stat').textContent = guidesShown ? 'guides shown' : 'guides hidden — View ▸ Show guides brings them back';
+  tell(guidesShown ? 'guides shown' : 'guides hidden — View ▸ Show guides brings them back');
 });
 $('guideadd').addEventListener('click', () => addGuideDialog());
 $('guideclear').addEventListener('click', () => clearAllGuides());
@@ -20159,8 +20159,8 @@ $('guidelock').addEventListener('click', () => {
   const d = $('out').contentDocument;
   if (guidesLocked) unselectGuide(d);
   if (d) drawGuideLayer(d);
-  $('stat').textContent = guidesLocked ? 'guides locked — they stay put, and still snap'
-    : 'guides unlocked — drag one to move it';
+  tell(guidesLocked ? 'guides locked — they stay put, and still snap'
+    : 'guides unlocked — drag one to move it');
 });
 // Frame edges (InDesign's ⌘H): a hairline round every object on the page, so
 // an empty text box, a spacer or a transparent shape can be seen and lined
@@ -20175,7 +20175,7 @@ $('frameedges').addEventListener('click', () => {
   try { localStorage.setItem('ds-frames', frameEdges ? '1' : '0'); } catch (e) { /* file: */ }
   $('frameedges').classList.toggle('on', frameEdges);
   paintFrameEdges($('out').contentDocument);
-  $('stat').textContent = frameEdges ? 'frame edges shown' : 'frame edges hidden';
+  tell(frameEdges ? 'frame edges shown' : 'frame edges hidden');
 });
 
 // ------------------------------------------------------------- control bar
@@ -20472,8 +20472,8 @@ function toggleCtlBar(on = !ctlOn) {
   const d = $('out').contentDocument;
   if (d && d.body) { arrangeBar(d); contextDodge(d); }
   startRulers();          // the stage moved; the rulers follow its rect
-  $('stat').textContent = ctlOn ? 'control bar shown'
-    : 'control bar hidden — View ▸ Control bar brings it back';
+  tell(ctlOn ? 'control bar shown'
+    : 'control bar hidden — View ▸ Control bar brings it back');
 }
 $('ctlbar').addEventListener('click', () => toggleCtlBar());
 ctlDock();
@@ -20681,8 +20681,8 @@ function toggleDock(on = !dockOn) {
   dockStore('ds-dock', dockOn ? '1' : '0');
   dockMount();
   chromeSync();
-  $('stat').textContent = dockOn ? 'panels shown'
-    : 'panels hidden — the tab on the right edge, ⌥⌘2 or View ▸ Panels brings them back';
+  tell(dockOn ? 'panels shown'
+    : 'panels hidden — the tab on the right edge, ⌥⌘2 or View ▸ Panels brings them back');
 }
 function dockPin(on = !dockPinned) {
   dockPinned = !!on;
@@ -20759,22 +20759,22 @@ function toggleRail(on = !railOn) {
     document.querySelectorAll('#leftrail .pop').forEach(p => { p.hidden = true; });
   }
   chromeSync(); chromeRefit();
-  $('stat').textContent = railOn ? 'tools shown'
-    : 'tools hidden — the tab on the left edge, ⌥⌘1 or View ▸ Tools brings them back';
+  tell(railOn ? 'tools shown'
+    : 'tools hidden — the tab on the left edge, ⌥⌘1 or View ▸ Tools brings them back');
 }
 /** The page strip: folded to its label and chevron, or open. */
 function toggleStrip(on = $('rail').classList.contains('folded')) {
-  if ($('rail').hidden) { $('stat').textContent = 'this report has no pages to show in a strip'; return; }
+  if ($('rail').hidden) { tell('this report has no pages to show in a strip'); return; }
   setRailFolded(!on);
   chromeSync();
-  $('stat').textContent = on ? 'page strip shown' : 'page strip folded — its chevron, ⌥⌘4 or View ▸ Page strip brings it back';
+  tell(on ? 'page strip shown' : 'page strip folded — its chevron, ⌥⌘4 or View ▸ Page strip brings it back');
 }
 function toggleFocus(on = !focusOn) {
   focusOn = !!on;
   if (focusOn) { closePalette(); if (!$('dock-panel').hidden && !dockPinned) dockClose(); }
   chromeSync(); chromeRefit();
-  $('stat').textContent = focusOn ? 'focus mode — ⌘\\ or the pill brings the tools back'
-    : 'tools back';
+  tell(focusOn ? 'focus mode — ⌘\\ or the pill brings the tools back'
+    : 'tools back');
 }
 /** Back to how a fresh editor has it (the test fixture's reset). */
 function chromeReset() {
@@ -21109,8 +21109,8 @@ document.querySelectorAll('#ctl input[data-ar]').forEach(inp => {
     const v = ctlValue(inp);
     if (!isFinite(v)) {
       inp.classList.add('bad');
-      $('stat').textContent = inp.dataset.unit === 'len'
-        ? `“${inp.value}” is not a length — try 2.5, 2.5in, 36pt, 3p6 or 12mm` : `“${inp.value}” is not a number`;
+      tell(inp.dataset.unit === 'len'
+        ? `“${inp.value}” is not a length — try 2.5, 2.5in, 36pt, 3p6 or 12mm` : `“${inp.value}” is not a number`);
       return;
     }
     inp.classList.remove('bad');
@@ -21351,10 +21351,10 @@ function ctlRunChange(inp) {
   const v = ctlRunRead(inp);
   if (v === undefined) {
     inp.classList.add('bad');
-    $('stat').textContent = k === 'size' && /\d/.test(inp.value)
+    tell(k === 'size' && /\d/.test(inp.value)
       ? `${inp.value} is under the 7.875pt floor — nothing on the page goes smaller`
       : k === 'shift' && /\d/.test(inp.value) ? 'baseline shift is points, -24 to 24'
-      : `“${inp.value}” is not a value here`;
+      : `“${inp.value}” is not a value here`);
     return true;
   }
   inp.classList.remove('bad');
@@ -21363,8 +21363,8 @@ function ctlRunChange(inp) {
   const s2 = c.d.getSelection(); s2.removeAllRanges(); s2.addRange(c.range);
   const ok = c.range.collapsed ? kernAtCaret(c.d, c.host, v) : !!applyCharRun(c.d, c.host, { [k]: v });
   if (s2.rangeCount) c.range = s2.getRangeAt(0).cloneRange();
-  $('stat').textContent = ok ? (c.range.collapsed ? `kerning ${v || 0} at the caret` : `${k} set on the selected words`)
-    : 'nothing to kern here — put the caret between two characters';
+  tell(ok ? (c.range.collapsed ? `kerning ${v || 0} at the caret` : `${k} set on the selected words`)
+    : 'nothing to kern here — put the caret between two characters');
   return true;
 }
 /** The four fields, from the run the selection starts in (or the box's own). */
@@ -21444,7 +21444,7 @@ function ctlRunApply(patch, what) {
   const s2 = c.d.getSelection(); s2.removeAllRanges(); s2.addRange(c.range);
   const ok = !!applyCharRun(c.d, c.host, patch);
   if (s2.rangeCount) c.range = s2.getRangeAt(0).cloneRange();
-  $('stat').textContent = ok ? `${what} set on the selected words` : 'select the words first';
+  tell(ok ? `${what} set on the selected words` : 'select the words first');
   return true;
 }
 /** The run the held words start in, as {key: value}. */
@@ -21505,7 +21505,7 @@ Object.keys(CB_RUN_PICK).forEach(id => {
     if (!runCtx || runCtx.range.collapsed) return;
     e.stopImmediatePropagation();
     const p = ctlRunPick(el);
-    if (p.error) $('stat').textContent = p.error;
+    if (p.error) tell(p.error);
     else ctlRunApply(p.patch, p.what);
     // A pick is one act: let go now rather than wait for the control's blur,
     // which never comes when the pick arrived without focus (a script, an
@@ -21546,7 +21546,7 @@ Object.keys(CB_RUN).forEach(id => {
 $('cb-kern').addEventListener('change', () => {
   if (ctlRunChange($('cb-kern'))) return;
   $('cb-kern').value = '0';
-  $('stat').textContent = 'kerning is between characters — click into the words, between the two';
+  tell('kerning is between characters — click into the words, between the two');
 });
 $('cb-kern').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); $('cb-kern').blur(); }
@@ -21567,7 +21567,7 @@ document.querySelectorAll('#type input[data-proxy]').forEach(inp => {
     const v = ctlTextRead(inp);
     if (v === undefined) {
       inp.classList.add('bad');
-      $('stat').textContent = `“${inp.value}” is not a value here`;
+      tell(`“${inp.value}” is not a value here`);
       return;
     }
     ctlTextWrite($(inp.dataset.proxy), v);
@@ -21846,27 +21846,27 @@ async function placePiece(piece, at) {
   });
   setSel($('out').contentDocument, ids);
   const added = Object.values(merged).reduce((n, v) => n + v.added.length, 0);
-  $('stat').textContent = `${piece.name} placed — ${ids.length} object${ids.length === 1 ? '' : 's'}`
-    + (added ? `, ${added} style${added === 1 ? '' : 's'} and swatch${added === 1 ? '' : 'es'} brought along` : '');
+  tell(`${piece.name} placed — ${ids.length} object${ids.length === 1 ? '' : 's'}`
+    + (added ? `, ${added} style${added === 1 ? '' : 's'} and swatch${added === 1 ? '' : 'es'} brought along` : ''));
   return { ids, styles: merged };
 }
 async function saveToLibraryDialog() {
-  if (!selIds.size) { $('stat').textContent = 'select the pieces to save first'; return; }
+  if (!selIds.size) { tell('select the pieces to save first'); return; }
   const got = await dsForm('Save to library', [{ name: 'name', type: 'text', label: 'Name it — a stat card, a pull quote…', value: '' }],
     { okLabel: 'Save', validate: v => v.name.trim() ? '' : 'a name, so you can find it' });
   if (got == null) return;
   const piece = pieceFromSelection(got.name.trim());
-  if (!piece) { $('stat').textContent = 'nothing here can go in the library — shapes, text boxes and placed tables can'; return; }
+  if (!piece) { tell('nothing here can go in the library — shapes, text boxes and placed tables can'); return; }
   try {
     await libraryChange('add', piece);
-    $('stat').textContent = `"${piece.name}" is in the library` + (piece.pictures.length
-      ? ` — its picture${piece.pictures.length === 1 ? ' stays' : 's stay'} linked (${piece.pictures.join(', ')}); a report without the file shows it missing` : '');
-  } catch (e) { $('stat').textContent = 'not saved: ' + e.message; }
+    tell(`"${piece.name}" is in the library` + (piece.pictures.length
+      ? ` — its picture${piece.pictures.length === 1 ? ' stays' : 's stay'} linked (${piece.pictures.join(', ')}); a report without the file shows it missing` : ''));
+  } catch (e) { tell('not saved: ' + e.message); }
 }
 async function libraryDialog() {
   document.querySelectorAll('.pop:not(.docked)').forEach(p => { p.hidden = true; });
   let pieces;
-  try { pieces = await libraryList(); } catch (e) { $('stat').textContent = 'the library could not be read: ' + e.message; return; }
+  try { pieces = await libraryList(); } catch (e) { tell('the library could not be read: ' + e.message); return; }
   const wrap = document.createElement('div'); wrap.id = 'library';
   wrap.innerHTML = '<div class="st-card lib-card" role="dialog" aria-label="Library"><div class="st-head"><b>Library</b>'
     + `<span class="st-note">${local ? 'shared by every report on this computer' : 'kept in this browser'}</span>`
@@ -21951,7 +21951,7 @@ function storyWrite(key, md) {
   if (key.startsWith('text.')) {
     const b = boxOf(key);
     if (!b) return false;
-    if (!md.trim() && !isEndnotesBox(b)) { $('stat').textContent = 'a text box needs words — delete it on the page instead'; return false; }
+    if (!md.trim() && !isEndnotesBox(b)) { tell('a text box needs words — delete it on the page instead'); return false; }
     b.md = fixOkina(md); return true;
   }
   return writeSlot(key, md) !== false;
@@ -22176,8 +22176,8 @@ function closeQuickApply(refocus = true) {
 }
 async function qaRun(it) {
   closeQuickApply(true);
-  try { await it.run(); $('stat').textContent = `applied ${it.kind}: ${it.label}`; }
-  catch (e) { $('stat').textContent = `${it.label}: ${e.message}`; }
+  try { await it.run(); tell(`applied ${it.kind}: ${it.label}`); }
+  catch (e) { tell(`${it.label}: ${e.message}`); }
 }
 const qaKey = e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === 'Enter';
 window.addEventListener('keydown', e => {
@@ -22254,16 +22254,16 @@ function docLayersRender() {
         () => layerWrite(() => _defineLayer(L.name, { locked: !L.locked })), !!L.locked),
       n, c,
       btn('⇣', 'Put the selection on this layer', () => {
-        if (!selIds.size) { $('stat').textContent = 'select something first'; return; }
+        if (!selIds.size) { tell('select something first'); return; }
         layerWrite(() => _toLayer([...selIds], L.name));
       }),
       btn('◎', 'Select everything on this layer', () => {
         const r = selectLayer(L.name);
-        $('stat').textContent = r.ok ? `${r.selected.length} selected on ${L.name}` : r.error;
+        tell(r.ok ? `${r.selected.length} selected on ${L.name}` : r.error);
       }),
       btn('⤓', 'Merge this layer into another — what is on it moves there', async () => {
         const others = docLayers().filter(x => x.name !== L.name);
-        if (!others.length) { $('stat').textContent = 'there is no other layer to merge into'; return; }
+        if (!others.length) { tell('there is no other layer to merge into'); return; }
         const got = await dsForm(`Merge “${L.name}” into`, [{ name: 'into', type: 'select', value: others[others.length - 1].name,
           label: `${count} thing${count === 1 ? '' : 's'} move there, and “${L.name}” goes`,
           options: [...others].reverse().map(x => ({ value: x.name, label: x.name })) }], { okLabel: 'Merge' });
@@ -22397,9 +22397,9 @@ async function layerStep(d, dir, extreme, els = null) {
     layerApply(d, dir, extreme, els);
   });
   if (!$('layerspop').hidden) layersRender();
-  $('stat').textContent = extreme
+  tell(extreme
     ? (dir > 0 ? 'brought to front' : 'sent to back')
-    : (dir > 0 ? 'brought forward' : 'sent backward');
+    : (dir > 0 ? 'brought forward' : 'sent backward'));
 }
 /** The stacking change itself, with no history, no render and no status: the
  *  menu's layerStep and the pilot's sendToBack / bringToFront / sendBackward /
@@ -22628,7 +22628,7 @@ function toggleHidden() {
   try { localStorage.setItem('ds-hidden', showHidden ? '1' : '0'); } catch (e) { /* file: */ }
   $('hiddenchars').classList.toggle('on', showHidden);
   drawHidden($('out').contentDocument);
-  $('stat').textContent = showHidden ? 'showing hidden characters and text threads (⌥⌘I)' : 'hidden characters off';
+  tell(showHidden ? 'showing hidden characters and text threads (⌥⌘I)' : 'hidden characters off');
 }
 function drawHidden(d) {
   if (!d || !d.body) return;
@@ -22706,7 +22706,7 @@ function applyTypeStep(key, step) {
   if (step.shift) { const v = Math.max(-24, Math.min(24, (+cur.shift || 0) + step.shift)); patch.shift = v || null; }
   changeDoc(() => { setStyle(key, patch); }, { render: false, burst: typeBurst });
   const k = Object.keys(patch)[0];
-  $('stat').textContent = `${k} ${patch[k] ?? 0}${k === 'size' || k === 'tracking' ? 'px' : k === 'shift' ? 'pt' : ''}`;
+  tell(`${k} ${patch[k] ?? 0}${k === 'size' || k === 'tracking' ? 'px' : k === 'shift' ? 'pt' : ''}`);
   return patch;
 }
 function typeKey(d, e, key) {
@@ -22836,7 +22836,7 @@ function coloursRender() {
   b.disabled = !cs.some(c => c.raw);
   b.addEventListener('click', async () => {
     const r = await changeDoc(() => nameAllColours()); coloursRender();
-    $('stat').textContent = `${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`;
+    tell(`${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`);
   });
   tools.appendChild(b);
   const du = document.createElement('button');
@@ -22862,7 +22862,7 @@ function coloursRender() {
       const d = $('out').contentDocument;
       const ids = u.filter(i => d.querySelector(`[data-el="${CSS.escape(i)}"], [data-shape="${CSS.escape(i)}"]`));
       if (ids.length) setSel(d, ids);
-      $('stat').textContent = ids.length ? `${ids.length} selected` : 'nothing on the page to select — it is a style or a page colour';
+      tell(ids.length ? `${ids.length} selected` : 'nothing on the page to select — it is a style or a page colour');
     });
     const rp = document.createElement('button'); rp.textContent = 'Replace…'; rp.disabled = !c.raw;
     rp.addEventListener('click', async () => {
@@ -22870,7 +22870,7 @@ function coloursRender() {
         okLabel: 'Replace', validate: v => (HEX_RE.test(v.to.trim()) || (/^@/.test(v.to.trim()) && (layout.swatches || {})[v.to.trim().slice(1)])) ? '' : 'a colour like #1E6194, or @ and a swatch name' });
       if (got == null) return;
       const n = await changeDoc(() => replaceColour(c.hex, got.to.trim())); coloursRender();
-      $('stat').textContent = `replaced in ${n} place${n === 1 ? '' : 's'}`;
+      tell(`replaced in ${n} place${n === 1 ? '' : 's'}`);
     });
     acts.append(sel, rp);
     row.append(chip, mid, acts);
@@ -22920,25 +22920,25 @@ function mergeStyles(src, how) {
 }
 async function loadStylesDialog() {
   const ids = Object.keys(REGISTRY || {}).filter(id => id !== PROJECT);
-  if (!ids.length) { $('stat').textContent = 'no other report to load from'; return; }
+  if (!ids.length) { tell('no other report to load from'); return; }
   const name = id => (REGISTRY[id] && REGISTRY[id].name) || id;
   const pick = await dsForm('Load styles from another report', [{ name: 'pid', type: 'select', label: 'From', value: ids[0],
     options: ids.map(id => ({ value: id, label: name(id) })) }], { okLabel: 'Next' });
   if (pick == null) return;
   let src;
-  try { src = await otherLayout(pick.pid); } catch (e) { $('stat').textContent = `could not read ${name(pick.pid)}'s layout: ${e.message}`; return; }
+  try { src = await otherLayout(pick.pid); } catch (e) { tell(`could not read ${name(pick.pid)}'s layout: ${e.message}`); return; }
   const fields = STYLE_KINDS.filter(([k]) => Object.keys(src[k] || {}).length).map(([k, label]) => {
     const theirs = Object.keys(src[k]), clash = theirs.filter(n => n in (layout[k] || {}));
     return { name: k, type: 'select', label: `${label}: ${theirs.length}${clash.length ? ` (${clash.length} also here: ${clash.slice(0, 3).join(', ')}${clash.length > 3 ? '…' : ''})` : ''}`,
       value: 'add', options: [{ value: 'add', label: 'Add the ones this report lacks' },
         { value: 'replace', label: 'Add, and replace same-named ones' }, { value: 'skip', label: 'Leave alone' }] };
   });
-  if (!fields.length) { $('stat').textContent = `${name(pick.pid)} has no styles to load`; return; }
+  if (!fields.length) { tell(`${name(pick.pid)} has no styles to load`); return; }
   const how = await dsForm(`Load from ${name(pick.pid)}`, fields, { okLabel: 'Load' });
   if (how == null) return;
   const r = await changeDoc(() => mergeStyles(src, how));
   const n = Object.values(r).reduce((a, x) => a + x.added.length + x.replaced.length, 0);
-  $('stat').textContent = `loaded ${n} from ${name(pick.pid)}`;
+  tell(`loaded ${n} from ${name(pick.pid)}`);
 }
 
 // ------------------------------------------------------ style housekeeping
@@ -23113,7 +23113,7 @@ function toggleOverrides(on) {
   try { localStorage.setItem('ds-overrides', showOverrides ? '1' : '0'); } catch (e) { /* file: */ }
   drawOverrides($('out').contentDocument);
   const n = styleOverrides().length;
-  $('stat').textContent = showOverrides ? `${n} piece${n === 1 ? '' : 's'} of text differ${n === 1 ? 's' : ''} from ${n === 1 ? 'its' : 'their'} style — outlined` : 'override highlighter off';
+  tell(showOverrides ? `${n} piece${n === 1 ? '' : 's'} of text differ${n === 1 ? 's' : ''} from ${n === 1 ? 'its' : 'their'} style — outlined` : 'override highlighter off');
 }
 /** Editor-only: a dashed outline on every piece of text that overrides its
  *  style, redrawn after each render while the highlighter is on. */
@@ -23144,7 +23144,7 @@ function styleHousekeeping(host, scope, name, after) {
       { okLabel: 'Duplicate', validate: v => (layout[STYLE_STORES[scope]] || {})[v.as.trim()] ? 'that name is taken' : '' });
     if (!got) return;
     const nn = await changeDoc(() => duplicateStyle(scope, name, got.as.trim())); after();
-    $('stat').textContent = `"${nn}" made from "${name}"`;
+    tell(`"${nn}" made from "${name}"`);
   }, !name);
   btn('Delete unused…', 'Styles and swatches nothing in this report uses', () => deleteUnusedDialog().then(after));
 }
@@ -23154,14 +23154,14 @@ async function deleteUnusedDialog() {
   const fields = Object.keys(LAB).filter(k => un[k].length).map(k => ({ name: k, type: 'select', value: 'delete',
     label: `${LAB[k]}: ${un[k].slice(0, 5).join(', ')}${un[k].length > 5 ? ` and ${un[k].length - 5} more` : ''}`,
     options: [{ value: 'delete', label: `Delete these ${un[k].length}` }, { value: 'keep', label: 'Keep them' }] }));
-  if (!fields.length) { $('stat').textContent = 'every style and swatch is in use'; return; }
+  if (!fields.length) { tell('every style and swatch is in use'); return; }
   const how = await dsForm('Delete unused styles', fields, { okLabel: 'Delete', danger: true });
   if (!how) return;
   const kinds = Object.keys(how).filter(k => how[k] === 'delete');
   if (!kinds.length) return;
   const gone = await changeDoc(() => deleteUnusedStyles(kinds));
   const n = Object.values(gone).reduce((a, x) => a + x.length, 0);
-  $('stat').textContent = `deleted ${n} unused`;
+  tell(`deleted ${n} unused`);
 }
 
 // --------------------------------------------------------------- preflight
@@ -23321,7 +23321,7 @@ function goToIssue(i) {
   }
   const sheet = i.page != null && docSheets().find(s => String(s.id) === String(i.page));
   if (sheet) sheet.pg.scrollIntoView({ block: 'start' });
-  else if (i.kind === 'uncited-source') $('stat').textContent = `${id}: cite it, or delete it from the sources`;
+  else if (i.kind === 'uncited-source') tell(`${id}: cite it, or delete it from the sources`);
 }
 function preflightRender(list = preflightIssues()) {
   const box = $('pf-list');
@@ -23444,13 +23444,13 @@ function hyperlinksRender() {
   const chk = btn(local ? 'Check links' : 'Check links (local only)', async () => {
     chk.disabled = true; chk.textContent = 'Checking…';
     const r = await checkLinks();
-    $('stat').textContent = r.ok ? `checked ${r.checked} link${r.checked === 1 ? '' : 's'}` : r.error;
+    tell(r.ok ? `checked ${r.checked} link${r.checked === 1 ? '' : 's'}` : r.error);
     hyperlinksRender();
   }, local && links.some(l => !l.internal));
   const bare = linkBareUrls(true);
   btn(`Link bare addresses (${bare})`, async () => {
     const n = await changeDoc(() => linkBareUrls()); hyperlinksRender();
-    $('stat').textContent = `linked ${n} address${n === 1 ? '' : 'es'}`;
+    tell(`linked ${n} address${n === 1 ? '' : 'es'}`);
   }, bare > 0);
   if (!links.length) { list.textContent = 'No links.'; return; }
   const order = { broken: 0, unverified: 1, unchecked: 2, ok: 3 };
@@ -23471,7 +23471,7 @@ function hyperlinksRender() {
       const got = await dsForm('Change link', [{ name: 'url', label: `Everywhere ${l.url} is written`, value: l.url }], { okLabel: 'Change' });
       if (got == null || !got.url.trim() || got.url.trim() === l.url) return;
       const n = await changeDoc(() => changeLink(l.url, got.url.trim())); hyperlinksRender();
-      $('stat').textContent = `changed in ${n} place${n === 1 ? '' : 's'}`;
+      tell(`changed in ${n} place${n === 1 ? '' : 's'}`);
     });
     acts.appendChild(ch);
     row.append(mid, acts);
@@ -23587,7 +23587,7 @@ function linksRender() {
     re.addEventListener('click', () => uploadImageFile(d, async path => {
       const n = await changeDoc(() => relinkSource($('out').contentDocument, e.src, path));
       linksRender();
-      $('stat').textContent = `relinked ${e.src.split('/').pop()} → ${path.split('/').pop()} in ${n} place${n === 1 ? '' : 's'}`;
+      tell(`relinked ${e.src.split('/').pop()} → ${path.split('/').pop()} in ${n} place${n === 1 ? '' : 's'}`);
     }));
     acts.append(go, re);
     row.append(th, mid, acts);
@@ -23649,9 +23649,9 @@ async function placeImageBox(path, name, at = null) {
     boxes().push({ id, page, x: +x.toFixed(2), y: +y.toFixed(2), w: 3, z: 2, md: `![${name}](${path})` });
     setSel(d, ['text.' + id]);
   });
-  $('stat').textContent =
+  tell(
     `${name} placed on page ${page} — drag to move, edges to resize; `
-    + 'right-click ▸ Description to say what it shows';
+    + 'right-click ▸ Description to say what it shows');
 }
 
 /** Every image this report already carries: the manifest's listing of its
@@ -24884,7 +24884,7 @@ function bindMeasure(d) {
     clear();
     showGuides(d, page, null, null, [], ms);
     d.querySelectorAll('.ds-guide.v, .ds-guide.h, .ds-guide.gx, .ds-guide.gy').forEach(g => g.remove());
-    $('stat').textContent = ms.map(m => `${(m.b - m.a).toFixed(2)}in ${m.axis === 'x' ? 'across' : 'down'}`).join(' · ');
+    tell(ms.map(m => `${(m.b - m.a).toFixed(2)}in ${m.axis === 'x' ? 'across' : 'down'}`).join(' · '));
   });
   d.addEventListener('keyup', e => { if (e.key === 'Alt') clear(); });
   (d.defaultView || window).addEventListener('blur', clear);
@@ -25092,34 +25092,34 @@ async function restore(json) {
 async function undo() {
   historySeq++;
   if (collab) {
-    if (!collab.canUndo()) { $('stat').textContent = 'nothing to undo'; return; }
+    if (!collab.canUndo()) { tell('nothing to undo'); return; }
     collabNoteCaret();
     await collabAdopt(collab.undo(), 'undo');
     syncHistoryButtons();
-    $('stat').textContent = 'undone';
+    tell('undone');
     return;
   }
-  if (!past.length) { $('stat').textContent = 'nothing to undo'; return; }
+  if (!past.length) { tell('nothing to undo'); return; }
   future.push(snapshot());
   await restore(past.pop());
   syncHistoryButtons();
-  $('stat').textContent = 'undone';
+  tell('undone');
 }
 async function redo() {
   historySeq++;
   if (collab) {
-    if (!collab.canRedo()) { $('stat').textContent = 'nothing to redo'; return; }
+    if (!collab.canRedo()) { tell('nothing to redo'); return; }
     collabNoteCaret();
     await collabAdopt(collab.redo(), 'redo');
     syncHistoryButtons();
-    $('stat').textContent = 'redone';
+    tell('redone');
     return;
   }
-  if (!future.length) { $('stat').textContent = 'nothing to redo'; return; }
+  if (!future.length) { tell('nothing to redo'); return; }
   past.push(snapshot());
   await restore(future.pop());
   syncHistoryButtons();
-  $('stat').textContent = 'redone';
+  tell('redone');
 }
 $('undo').onclick = undo;
 $('redo').onclick = redo;
@@ -25312,8 +25312,8 @@ function dragify(d, roots) {
         if (editing || e.button !== 0) return;
         e.preventDefault(); e.stopPropagation();
         setSel(d, [idOf(el)]);
-        $('stat').textContent = "the button's arrow — set its colour in the toolbar; "
-          + 'it turns to point up when the section is open';
+        tell("the button's arrow — set its colour in the toolbar; "
+          + 'it turns to point up when the section is open');
       });
       return;
     }
@@ -25442,8 +25442,8 @@ function dragify(d, roots) {
             && (justDrilled || !(selIds.size === 1 && selIds.has(bid)))) {
           setSel(d, [bid]);
           lastDrill = { id: bid, t: Date.now() };
-          $('stat').textContent = 'inside the group — drag the handles to resize, '
-            + 'double-click again to edit the words, Escape to leave';
+          tell('inside the group — drag the handles to resize, '
+            + 'double-click again to edit the words, Escape to leave');
           return;
         }
         editBox(d, el, ptOf(e));
@@ -25884,9 +25884,9 @@ function placer(d, el, page) {
     // The measure readout (72): the gap to the nearest neighbour each side.
     const meas = snap ? measureNeighbours(lines().boxes, { x, y, w: box.w, h: box.h }) : [];
     showGuides(d, page, vx, hy, gaps, meas);
-    $('stat').textContent = `${id} → ${x.toFixed(2)}in, ${y.toFixed(2)}in`
+    tell(`${id} → ${x.toFixed(2)}in, ${y.toFixed(2)}in`
                           + (vx !== null || hy !== null ? '  · aligned' : '')
-                          + (gaps.length ? `  · equal spacing ${(gaps[0].b - gaps[0].a).toFixed(2)}in` : '');
+                          + (gaps.length ? `  · equal spacing ${(gaps[0].b - gaps[0].a).toFixed(2)}in` : ''));
     return { x, y };
   };
 
@@ -26125,7 +26125,7 @@ function undoMoveFromWords(host, prior) {
         else delete layout.positions[p.id];
       });
     });
-    $('stat').textContent = 'undone';
+    tell('undone');
   };
   const off = () => { host.removeEventListener('keydown', key, true);
                       host.removeEventListener('input', off); };
@@ -26225,7 +26225,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
           && Math.abs(e.clientY - grab.y) < DEAD_PX) return;
       // It travelled, so it was a drag — and this one cannot move. Say why,
       // once, and let the release do nothing (it is not a click either).
-      if (refusal) { refused = true; $('stat').textContent = refusal; return; }
+      if (refusal) { refused = true; tell(refusal); return; }
       // begin() sets `started` first, so one that throws partway (a page
       // swapped out under the press) leaves `at` unset and every later move
       // died on at[0]: once per mouse move. Give up on the drag instead.
@@ -26254,7 +26254,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
       at[i] = P.put(starts[i].x - group.x + gx, starts[i].y - group.y + gy, false);
     });
     showGuides(d, page, vx, hy, gaps);
-    $('stat').textContent = `${members.length} elements → ${gx.toFixed(2)}in, ${gy.toFixed(2)}in`;
+    tell(`${members.length} elements → ${gx.toFixed(2)}in, ${gy.toFixed(2)}in`);
   };
   const up = async () => {
     dragUnlisten(d, move, up);
@@ -26285,16 +26285,16 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
         // dblclick that follows would find a solo element and open the text
         // editor — the very thing the drill-in was reaching past.
         lastDrill = { id: idOf(el), t: Date.now() };
-        $('stat').textContent = 'inside the group — drag the handles to resize '
-          + 'this piece, Escape to leave';
+        tell('inside the group — drag the handles to resize '
+          + 'this piece, Escape to leave');
         clearGuides(d); paintSel(d); return;
       }
       if (keyCandidate === idOf(el) && selIds.size > 1) {
         keyId = keyOf() === keyCandidate ? null : keyCandidate;   // again = off
         keyCandidate = null;
-        $('stat').textContent = keyId
+        tell(keyId
           ? 'key object — Align and Distribute keep it still; click it again to clear'
-          : 'key object cleared';
+          : 'key object cleared');
         clearGuides(d); paintSel(d); return;
       }
       if (clickTo) {
@@ -26325,7 +26325,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
       step.commit({ render: false });            // no change: no undo entry
       clearGuides(d);
       await render();                            // snaps it back into the flow
-      if (moved) $('stat').textContent = moved;  // after render, so it survives
+      if (moved) tell(moved);  // after render, so it survives
       return;
     }
     Ps.forEach((P, i) => P.commit(at[i]));
@@ -26333,7 +26333,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     const kept = cloned ? '' : spacerFollow(spPre, members.map(idOf));
     if (cloned || kept) await render();    // clones need real, wired nodes; a push redraws
     else paintSel(d);
-    if (kept) $('stat').textContent = kept;
+    if (kept) tell(kept);
   };
   dragListen(d, move, up);
 }
@@ -26418,13 +26418,13 @@ function keyDrag(d, el, e) {
       const P = placer(d, el, page);
       held.set(el, { P, at: { x: P.box.x, y: P.box.y }, change });
       el.classList.add('ds-lifted');
-      $('stat').textContent = `${P.id} picked up — arrows to move, Space to drop, Esc to cancel`;
+      tell(`${P.id} picked up — arrows to move, Space to drop, Esc to cancel`);
     } else {
       picked.P.commit(picked.at);
       picked.change.commit({ render: false });
       el.classList.remove('ds-lifted');
       held.delete(el);
-      $('stat').textContent = 'dropped';
+      tell('dropped');
     }
     return;
   }
@@ -26586,10 +26586,10 @@ function penWire(d) {
     const p = pen; pen = null;
     d.querySelectorAll('.ds-penpreview').forEach(x => x.remove());
     d.documentElement.classList.remove('ds-pen-arm');
-    if (!p || p.pts.length < 2) { $('stat').textContent = 'pen put away — a path needs two points'; return; }
+    if (!p || p.pts.length < 2) { tell('pen put away — a path needs two points'); return; }
     const r = await changeDoc(() => _pilotApplyAddPath({ page: p.pid, points: p.pts, closed }));
     setSel($('out').contentDocument, [r.id]);
-    $('stat').textContent = `path drawn — ${p.pts.length} points; double-click it to move its points`;
+    tell(`path drawn — ${p.pts.length} points; double-click it to move its points`);
   };
   // The page under the POINTER, not the click's target: an editor overlay
   // (a selection ring, the stage band) can be the target and sits outside
@@ -26642,7 +26642,7 @@ function penWire(d) {
   }, true);
 }
 function pathPointEdit(d, sh, node) {
-  if (sh.rot || sh.skew) { $('stat').textContent = 'straighten the path to move its points'; return; }
+  if (sh.rot || sh.skew) { tell('straighten the path to move its points'); return; }
   const pg = node.closest('section.page');
   d.querySelectorAll('.ds-pathdot').forEach(x => x.remove());
   const before = JSON.stringify(sh.points);
@@ -26679,7 +26679,7 @@ function pathPointEdit(d, sh, node) {
     });
     pg.appendChild(dot);
   });
-  $('stat').textContent = 'drag a point to move it — Alt-click removes one, Esc when done';
+  tell('drag a point to move it — Alt-click removes one, Esc when done');
 }
 
 function paintShape(d, id) {
@@ -26991,7 +26991,7 @@ async function addIcon(id) {
                          fill: '#52796F', z: nextZ(2, page) });
     setSel($('out').contentDocument, [sid]);
   });
-  $('stat').textContent = `${id} placed on page ${page} — drag to size, recolour with Fill`;
+  tell(`${id} placed on page ${page} — drag to size, recolour with Fill`);
 }
 
 $('icon').onclick = () => {
@@ -27033,13 +27033,13 @@ $('shapepop').querySelector('[data-spacer]').addEventListener('click', async () 
   const r = await changeDoc(() => _pilotApplyAddShape(spacerUnder(d) || spacerInView(d) || { kind: 'spacer' }));
   setSel($('out').contentDocument, [r.id]);
   const sh = shapeOf(r.id);
-  $('stat').textContent = `spacer holding ${sh.h}in — size it to the gap you want; things it touches keep it when one moves`;
+  tell(`spacer holding ${sh.h}in — size it to the gap you want; things it touches keep it when one moves`);
 });
 $('shapepop').querySelector('[data-pen]').addEventListener('click', () => {
   $('shapepop').hidden = true;
   pen = { pts: [], page: null, pid: null, drag: null };
   $('out').contentDocument.documentElement.classList.add('ds-pen-arm');
-  $('stat').textContent = 'pen: click to place points, drag to pull a curve — Enter or the first point closes, Esc finishes open';
+  tell('pen: click to place points, drag to pull a curve — Enter or the first point closes, Esc finishes open');
 });
 document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListener('click', async () => {
   // The panel stays open: Canva lets you place a run of shapes without
@@ -27064,7 +27064,7 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
     wearDefaults('shape', layout.shapes[layout.shapes.length - 1]);
     setSel($('out').contentDocument, [id]);
   });
-  $('stat').textContent = `${id} on page ${page} — drag to place, recolour with the Fill button`;
+  tell(`${id} on page ${page} — drag to place, recolour with the Fill button`);
 }));
 
 addEventListener('keydown', saveKey, true);       // capture: see saveKey
@@ -27204,11 +27204,97 @@ function setStatLive(on) {
  *  stays. Two writers used to put the sentence straight over it, so whether
  *  the warning showed depended on which of them ran last. */
 function sayIdle() {
-  const st = $('stat');
-  if (st.classList.contains('err')) return;
-  st.textContent = UNKNOWN_PROJECT
+  if ($('stat').classList.contains('err')) return;
+  tell(UNKNOWN_PROJECT
     ? `no report called "${UNKNOWN_PROJECT}" on this server — this is ${M && M.id}. File ▸ Open lists the rest`
-    : IDLE_STAT;
+    : IDLE_STAT);
+}
+/** The status line's one owner (2026-11-21). Everything the editor says in
+ *  #stat goes through here: the words, the tooltip, the red look, a colour
+ *  flash and the timers that undo them. It used to be about 390 direct
+ *  writes, and whichever ran last won — a failed Save wiped a moment later by
+ *  the render's routine hint, a red look nobody took off.
+ *
+ *    tell(text)                              a routine line (kind 'info')
+ *    tell(text, { kind: 'ok' })              the same, said as good news
+ *    tell(text, { kind: 'error', title })    red; the full text on hover
+ *    tell(text, { kind: 'warn', ms: 12000 }) red for 12s, then plain
+ *    tell(text, { kind: 'error', sticky })   red, and holds the line, until untell()
+ *    tell(text, { kind: 'warn', keep })      a standing warning: red until untell(),
+ *                                            though routine lines may replace the words
+ *    tell(text, { flash: '#F2B8A8', ms })    tinted for ms (default 6s)
+ *    tell(text, { click: fn })               the line becomes a button (pointer)
+ *
+ *  Which message wins: an error holds the line for STAT_HOLD_MS (or its own
+ *  `ms`, if shorter); a routine line that arrives in that time is kept and
+ *  said when the hold ends (the latest one only). A sticky error holds it
+ *  until untell(). A warning is red but holds nothing. `force: true` says a
+ *  routine line regardless; `passing: true` (the render's own "rendering…"
+ *  and hint, which nobody asked for) is dropped during a hold, never kept,
+ *  so it cannot replace a held Save confirmation.
+ *  A plain error's red comes off when the next routine line replaces it.
+ *  `title` is set only when given ('' clears it). Returns the text, so an
+ *  old `x = el.textContent = t` reads the same as `x = tell(t)`. */
+// `var`, not let/const: tell() is hoisted and boot code above these lines can
+// call it before they run, which a let would answer with a ReferenceError.
+var STAT_HOLD_MS = 4000;
+var statHoldUntil = 0, statHeld = null, statSticky = false;
+var statErrTimer = null, statFlashTimer = null, statHoldTimer = null, statErrPassing = false;
+function tell(text, o = {}) {
+  const el = $('stat');
+  if (!el) return text;
+  const loud = o.kind === 'error' || o.kind === 'warn';
+  if (!loud && !o.force && (statSticky || Date.now() < statHoldUntil)) {
+    if (!o.passing) statHeld = [text, o];
+    return text;
+  }
+  statHeld = null;
+  if (!loud && statErrPassing) { statErrPassing = false; el.classList.remove('err'); }
+  el.textContent = text;
+  if ('title' in o) el.title = o.title || '';
+  if (loud) {
+    el.classList.add('err');
+    statErrPassing = !o.keep && !o.sticky && !o.ms;
+    clearTimeout(statErrTimer); statErrTimer = null;
+    if (o.ms) statErrTimer = setTimeout(() => { statErrTimer = null; el.classList.remove('err'); }, o.ms);
+    statSticky = !!o.sticky;
+    clearTimeout(statHoldTimer); statHoldTimer = null;
+    if (statSticky) statHoldUntil = 0;
+    else if (o.kind === 'warn') statHoldUntil = 0;
+    else {
+      const hold = Math.min(o.ms || STAT_HOLD_MS, STAT_HOLD_MS);
+      statHoldUntil = Date.now() + hold;
+      statHoldTimer = setTimeout(sayHeld, hold);
+    }
+  }
+  if (o.click) { el.style.cursor = 'pointer'; el.onclick = o.click; }
+  if (o.flash) {
+    el.style.color = o.flash;
+    clearTimeout(statFlashTimer);
+    statFlashTimer = setTimeout(() => { statFlashTimer = null; el.style.color = ''; }, o.ms || 6000);
+  }
+  return text;
+}
+/** A routine line that waited out an error's hold. */
+function sayHeld() {
+  statHoldTimer = null;
+  if (!statHeld || statSticky || Date.now() < statHoldUntil) return;
+  const [t, o] = statHeld;
+  tell(t, o);
+}
+/** Stand an error down: the red look, its tooltip and any hold go, and a line
+ *  that waited behind it is said. `text` (optional) replaces the words. */
+function untell(text) {
+  const el = $('stat');
+  if (!el) return;
+  clearTimeout(statErrTimer); statErrTimer = null;
+  clearTimeout(statHoldTimer); statHoldTimer = null;
+  el.classList.remove('err');
+  el.title = '';
+  statErrPassing = false;
+  statSticky = false; statHoldUntil = 0;
+  if (text !== undefined) { statHeld = null; el.textContent = text; }
+  else sayHeld();
 }
 (function watchStat() {
   const el = $('stat');
@@ -27352,8 +27438,7 @@ async function boot() {
     const line = what.length === 1 ? what[0]
       : `${what.length} files (${what.slice(0, 2).join(', ')}…)`;
     const msg = `still waiting on ${line} — ${stalledFor}s so far`;
-    $('stat').textContent = msg;
-    $('stat').title = msg;
+    tell(msg, { title: msg });
     console.warn('[boot] ' + msg);
   }, BOOT_STALL_S * 1000);
   let pyodide, files;
@@ -27449,8 +27534,8 @@ async function boot() {
   // thing on screen explaining the traceback in the canvas. Reassurance that
   // contradicts what the user is looking at is worse than silence.
   if (local && !renderFailed) sayIdle();
-  else if (cachedRestored) $('stat').textContent =
-    'restored unsaved edits from this browser — Save to keep them, or Discard to drop them';
+  else if (cachedRestored) tell(
+    'restored unsaved edits from this browser — Save to keep them, or Discard to drop them');
   // What moved while this person was away. After the first render, because
   // the marks go onto rendered paragraphs and the diff is against `source`,
   // which the render above settled. Not awaited, and silent when there is
@@ -28219,9 +28304,9 @@ function collabWarnShared(id, what, { merges = true } = {}) {
   // paragraph merges; a field whose whole value is the smallest thing the
   // document holds does not, and saying "both will be kept" about one of
   // those was the lie that made the loss silent.
-  $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'are' : 'is'} also editing this ${what} — `
+  tell(`${who.join(' and ')} ${who.length > 1 ? 'are' : 'is'} also editing this ${what} — `
     + (merges ? 'both of your edits will be kept'
-              : 'words here cannot be merged, so you will be asked which version to keep');
+              : 'words here cannot be merged, so you will be asked which version to keep'));
 }
 /** About to move something a collaborator has in hand: say who, and what
  *  that means. Unlike a paragraph, a move cannot be merged. */
@@ -28230,8 +28315,8 @@ function collabWarnHeld(id) {
   const who = collabPeers.filter(p => !p.idle && (p.sel || []).includes(id))
     .map(p => p.name || fmtWho(p.login) || 'someone');
   if (!who.length) return;
-  $('stat').textContent = `${who.join(' and ')} ${who.length > 1 ? 'have' : 'has'} this selected too — `
-    + 'a move is not merged, so whoever lets go last wins';
+  tell(`${who.join(' and ')} ${who.length > 1 ? 'have' : 'has'} this selected too — `
+    + 'a move is not merged, so whoever lets go last wins');
 }
 window.addEventListener('pointerup', () => { collabPointerAt = 0; }, true);
 window.addEventListener('blur', () => { collabPointerAt = 0; });
@@ -28553,7 +28638,7 @@ function collabSayBackSoon() {
   collabBackTimer = setTimeout(() => {
     if (!collabSayBack) return;
     collabSayBack = false;
-    if (collabInfo.status === 'live') $('stat').textContent = COLLAB_BACK_MSG;
+    if (collabInfo.status === 'live') tell(COLLAB_BACK_MSG);
   }, 900);
 }
 
@@ -28627,7 +28712,7 @@ function collabGoTo(p, { say = true } = {}) {
   const d = $('out') && $('out').contentDocument;
   const name = p.name || fmtWho(p.login) || 'someone';
   const place = collabPeerPlace(d, p);
-  if (!place.el) { if (say) $('stat').textContent = `${name} is not on a page yet`; return false; }
+  if (!place.el) { if (say) tell(`${name} is not on a page yet`); return false; }
   // The report's own window is scrolled, by arithmetic, to put the place in
   // the middle - not scrollIntoView, which would also drag the stage and the
   // page around it. Instant, as Docs jumps. And asserted again on the next
@@ -28646,7 +28731,7 @@ function collabGoTo(p, { say = true } = {}) {
   put();
   requestAnimationFrame(put);
   setTimeout(put, 200);
-  if (say) $('stat').textContent = `${name} is ${p.slot ? 'typing' : place.how === 'view' ? 'reading' : 'working'} on page ${place.page || '?'}`;
+  if (say) tell(`${name} is ${p.slot ? 'typing' : place.how === 'view' ? 'reading' : 'working'} on page ${place.page || '?'}`);
   return true;
 }
 function collabAvatarClick(p) {
@@ -28654,7 +28739,7 @@ function collabAvatarClick(p) {
   if (collabJumped === p.login) {
     collabFollow = p.login; collabFollowName = p.name || fmtWho(p.login) || 'someone'; collabJumped = null;
     collabGoTo(p, { say: false });
-    $('stat').textContent = `following ${collabFollowName} — scroll or click the page to stop`;
+    tell(`following ${collabFollowName} — scroll or click the page to stop`);
     collabChip();
     return;
   }
@@ -28665,7 +28750,7 @@ function collabAvatarClick(p) {
 function collabFollowStop(why) {
   if (!collabFollow) return;
   collabFollow = null; collabJumped = null;
-  $('stat').textContent = why || `stopped following ${collabFollowName}`;
+  tell(why || `stopped following ${collabFollowName}`);
   collabChip();
 }
 /** Each presence tick: keep the followed person's place in view. */
@@ -28870,7 +28955,7 @@ async function collabSaved(sha, info) {
         : 'a collaborator restored an earlier version, which replaced the edits you had not saved — '
           + 'ask them, or bring the newer version back from History')
       : 'a collaborator restored an earlier version — it is what is on screen now');
-    if (hadMine) { $('stat').classList.add('err'); setTimeout(() => $('stat').classList.remove('err'), 12000); }
+    if (hadMine) tell($('stat').textContent, { kind: 'warn', ms: 12000 });
     return;
   }
   sayNowAndAfterRender('a collaborator saved the shared draft — it holds what is on screen');
@@ -28919,16 +29004,16 @@ function contentHealth(d) {
 
 $('cupd').addEventListener('click', async () => {
   $('cupd').disabled = true;
-  $('stat').textContent = 'bringing in newer content…';
+  tell('bringing in newer content…');
   try {
     const j = await postLocal('/__pull', { project: M.id });
     if (!j.ok) throw new Error(j.error || 'update failed');
-    $('stat').textContent = j.message || 'updated';
+    tell(j.message || 'updated');
     $('cupd').hidden = true;
     // The rebuild bumps the version, so the live-reload path pulls the new
     // content in by itself — nothing to re-render from here.
   } catch (e) {
-    $('stat').textContent = 'could not update the report: ' + e.message;
+    tell('could not update the report: ' + e.message);
     $('cupd').disabled = false;
   }
 });
@@ -28979,7 +29064,7 @@ async function agentNoteClick() {
   if (keep) {
     // The files on disk moved under the draft in memory, so the only honest
     // thing to show is what is now on disk.
-    $('stat').textContent = r.message || 'rewound';
+    tell(r.message || 'rewound');
     location.reload();
   }
 }
@@ -29145,7 +29230,7 @@ async function detectLocal() {
   // double-fire — ahead is read every time regardless, since it can move
   // (a Push, a save from another tab) without the build itself changing.
   const onBump = async (v, err) => {
-    if (err) { $('stat').textContent = 'build failed on disk — see the terminal'; return; }
+    if (err) { tell('build failed on disk — see the terminal'); return; }
     if (v === liveVer) return;
     // Mark the build seen ONLY once the pull actually happened. pullFromDisk
     // declines while a text editor is open (or a pull is already in flight),
@@ -29741,7 +29826,7 @@ const STALE_MSG_HUB = 'a newer editor is out — click to reload when you reach 
 function collabStale(awayMs) {
   if (dirty || editing || document.querySelector('dialog[open]')) return false;
   const mins = Math.max(1, Math.round(awayMs / 60000));
-  $('stat').textContent = `this tab was away ${mins} minutes — opening the current version`;
+  tell(`this tab was away ${mins} minutes — opening the current version`);
   Promise.resolve().then(() => clearDraftCache())
     .catch(e => swallowed('collabStale: draft cache', e))
     .finally(() => location.reload());
@@ -29749,22 +29834,18 @@ function collabStale(awayMs) {
 }
 
 function offerEditorReload() {
-  const s = $('stat');
   const msg = docStore() ? STALE_MSG_HUB : STALE_MSG;
   // Idempotent, NOT once-only. It used to return early after the first call,
   // and _pull() then overwrote the text with "reloaded" — so the notice
   // flashed red for an instant and was gone for good, which is the opposite
   // of what a "you are running stale code" warning is for. Now it can be
   // re-asserted after anything that overwrites the row.
-  s.dataset.stale = '1';
-  if (s.textContent === msg) return;
-  s.textContent = msg;
-  s.classList.add('err');
-  s.style.cursor = 'pointer';
-  s.title = docStore()
+  $('stat').dataset.stale = '1';
+  if ($('stat').textContent === msg) return;
+  tell(msg, { kind: 'warn', keep: true, title: docStore()
     ? 'Reload to pick up the new build. Everything typed so far is kept in the shared document; finish the sentence you are in first.'
-    : 'Reload to pick up the new build. Save first if you have unsaved edits.';
-  s.onclick = () => location.reload();
+    : 'Reload to pick up the new build. Save first if you have unsaved edits.',
+    click: () => location.reload() });
 }
 async function checkBuildFresh() {
   if (await buildChangedOnDisk()) offerEditorReload();
@@ -29817,10 +29898,9 @@ function watchHealth(d) {
   if (d.watchAge < 15) { $('stat').dataset.watchdead = ''; return; }
   if ($('stat').dataset.watchdead) return;
   $('stat').dataset.watchdead = '1';
-  $('stat').textContent = 'live reload has stopped on the server — relaunch the editor app';
-  $('stat').classList.add('err');
-  $('stat').title = 'The file watcher is no longer running, so edits on disk will '
-    + 'not reach this page. Your work here is unaffected.';
+  tell('live reload has stopped on the server — relaunch the editor app', { kind: 'warn', keep: true,
+    title: 'The file watcher is no longer running, so edits on disk will '
+      + 'not reach this page. Your work here is unaffected.' });
 }
 
 /** The SERVER's own code has moved on since it booted.
@@ -29842,45 +29922,40 @@ const SRV_STALE_MSG = 'editor server is running old code — relaunch the editor
  *  Returns true when the payload was only this news, so nothing else reads
  *  numbers out of it. */
 function serverReach(d) {
-  const stat = $('stat');
   if (d && d.serverDown) {
-    if (stat.textContent !== SERVER_GONE_MSG) {
-      stat.dataset.srvgone = '1';
-      stat.textContent = SERVER_GONE_MSG;
-      stat.classList.add('err');
-      stat.title = 'Nothing on disk changed. Edits keep working here; Save needs the server back.';
+    if ($('stat').textContent !== SERVER_GONE_MSG) {
+      $('stat').dataset.srvgone = '1';
+      tell(SERVER_GONE_MSG, { kind: 'warn', keep: true,
+        title: 'Nothing on disk changed. Edits keep working here; Save needs the server back.' });
     }
     return true;
   }
-  if (stat.dataset.srvgone) {                             // it is back
-    stat.dataset.srvgone = ''; stat.classList.remove('err'); stat.title = '';
-    if (stat.textContent === SERVER_GONE_MSG) stat.textContent = 'live again';
+  if ($('stat').dataset.srvgone) {                             // it is back
+    $('stat').dataset.srvgone = '';
+    untell($('stat').textContent === SERVER_GONE_MSG ? 'live again' : undefined);
   }
   return false;
 }
 
 function serverHealth(d) {
   if (!d || typeof d.serverStale !== 'boolean') return;   // older server: no opinion
-  const stat = $('stat');
   if (!d.serverStale) {
-    if (stat.dataset.srvstale) {                          // it was fixed: stand down
-      stat.dataset.srvstale = ''; stat.classList.remove('err');
-      if (stat.textContent === SRV_STALE_MSG) stat.textContent = '';
+    if ($('stat').dataset.srvstale) {                          // it was fixed: stand down
+      $('stat').dataset.srvstale = '';
+      untell($('stat').textContent === SRV_STALE_MSG ? '' : undefined);
     }
     return;
   }
-  if (stat.dataset.watchdead) return;                     // a dead watcher outranks this
+  if ($('stat').dataset.watchdead) return;                     // a dead watcher outranks this
   // RE-asserted every ping, not latched once. Boot writes its own status
   // AFTER the first ping lands, so a one-shot warning was set and then
   // immediately overwritten — with the flag already set, it never came back.
   // This condition is persistent and consequential (nothing shipped since the
   // server booted is live), so it outranks the steady-state status line.
-  if (stat.textContent === SRV_STALE_MSG) return;
-  stat.dataset.srvstale = '1';
-  stat.textContent = SRV_STALE_MSG;
-  stat.classList.add('err');
-  stat.title = 'The server started before the current server/engine code was '
-    + 'written, so anything fixed since is not live yet. Your work here is unaffected.';
+  if ($('stat').textContent === SRV_STALE_MSG) return;
+  $('stat').dataset.srvstale = '1';
+  tell(SRV_STALE_MSG, { kind: 'warn', keep: true, title: 'The server started before the current server/engine code was '
+    + 'written, so anything fixed since is not live yet. Your work here is unaffected.' });
 }
 
 /** Which build is running, and whether a newer one is waiting.
@@ -29899,7 +29974,7 @@ let updateOffer = null, rollbackTo = '';
 async function goBackAVersion() {
   if (!rollbackTo) return;
   if (dirty) {
-    $('stat').textContent = 'save your changes first — going back a version reloads the editor';
+    tell('save your changes first — going back a version reloads the editor');
     return;
   }
   const yes = await dsConfirm(
@@ -29917,7 +29992,7 @@ async function installUpdate() {
   // and unsaved work lives only here — so this refuses rather than asking a
   // question whose wrong answer loses the afternoon.
   if (dirty) {
-    $('stat').textContent = 'save your changes first — installing an update reloads the editor';
+    tell('save your changes first — installing an update reloads the editor');
     return;
   }
   b.disabled = true;
@@ -29940,10 +30015,10 @@ async function restartThrough(endpoint, verb) {
     })).json();
   } catch (e) { j = { ok: false, why: e.message }; }
   if (!j.ok) {
-    $('stat').textContent = 'nothing changed: ' + (j.why || 'unknown reason');
+    tell('nothing changed: ' + (j.why || 'unknown reason'));
     return false;
   }
-  $('stat').textContent = verb + ' — restarting…';
+  tell(verb + ' — restarting…');
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 500));
@@ -29954,7 +30029,7 @@ async function restartThrough(endpoint, verb) {
       }
     } catch (e) { /* still down — keep waiting */ }
   }
-  $('stat').textContent = 'the editor did not come back — quit and reopen the app';
+  tell('the editor did not come back — quit and reopen the app');
   return true;
 }
 
@@ -30068,7 +30143,7 @@ async function _pull() {
     }
     if (took || engineMoved) {
       await render();
-      $('stat').textContent = took ? 'updated from disk' : 'reloaded';
+      tell(took ? 'updated from disk' : 'reloaded');
     }
     if ($('stat').dataset.stale) offerEditorReload();   // the warning outranks the status
   }
@@ -30082,13 +30157,11 @@ async function _pull() {
   else if (took || engineMoved) {
     if (took) markDirty();
     await render();
-    $('stat').textContent = took ? 'updated from disk' : 'reloaded';
+    tell(took ? 'updated from disk' : 'reloaded');
   }
   if (clash) {
-    $('stat').textContent = 'Claude changed the same thing you have unsaved — '
-      + 'Discard to take the disk version, or Save to keep yours';
-    $('stat').style.color = '#F2B8A8';
-    setTimeout(() => { $('stat').style.color = ''; }, 6000);
+    tell('Claude changed the same thing you have unsaved — '
+      + 'Discard to take the disk version, or Save to keep yours', { flash: '#F2B8A8', ms: 6000 });
   }
 }
 
@@ -30326,10 +30399,10 @@ function renderSays(msg) {
   if ($('stat').textContent !== statFromRender) return;   // someone else is talking
   if (sayAfterRender && Date.now() - sayAfterRenderAt < 4000) { msg = sayAfterRender; }
   sayAfterRender = '';
-  $('stat').textContent = statFromRender = msg;
+  tell(statFromRender = msg, { passing: true });
 }
 function sayNowAndAfterRender(msg) {
-  $('stat').textContent = msg;
+  tell(msg);
   sayAfterRender = msg; sayAfterRenderAt = Date.now();
 }
 
@@ -30346,7 +30419,7 @@ async function renderOnce() {
   // restore), that was said later and on purpose: the held one is old news, and
   // saying it after this render replaced the Save's confirmation.
   if (sayAfterRender && ![sayAfterRender, statFromRender].includes($('stat').textContent)) sayAfterRender = '';
-  $('stat').textContent = statFromRender = 'rendering…';
+  tell(statFromRender = 'rendering…', { passing: true });
   // Every mutation in this file ends in a render, so this is the one place a
   // local edit becomes a document transaction the room can see. Idempotent:
   // a render that follows an adopted remote change finds nothing to write.
@@ -30401,7 +30474,7 @@ open('/repo/' + OUT).read()
     // failure is an answer: show it.
     const warmFr = $('ds-warm'); if (warmFr) warmFr.remove();
     const warmChip = $('ds-warmchip'); if (warmChip) warmChip.remove();
-    $('stat').textContent = 'draft does not build';
+    tell('draft does not build');
     // What stands in #out is now an error page, not a render — so the next
     // successful one has nothing to diff against and must swap in full.
     lastHtml = null;
@@ -30947,9 +31020,9 @@ function wire(roots) {
     // "not yours to type": the renderer named the command that remakes it,
     // so say so, in the one place the editor already talks.
     const fx = e.target.closest('[data-fixed]');
-    if (fx) $('stat').textContent =
+    if (fx) tell(
       'this figure is derived, not typed — it changes by re-running: '
-      + fx.getAttribute('data-fixed');
+      + fx.getAttribute('data-fixed'));
   }, true);
   within(d, roots, 'section.page').forEach(pg => {
     pg.addEventListener('mousedown', e => {
@@ -31797,10 +31870,10 @@ async function addEndnotesSection({ silent = false } = {}) {
   const pageless = isPageless();
   const box = await changeDoc(() => makeEndnotesSection());
   if (!silent) {
-    $('stat').textContent = pageless
+    tell(pageless
       ? 'endnotes section added at the end — every citation you make lists itself here'
       : 'endnotes section added on a new page at the end — every citation you '
-        + 'make lists itself here';
+        + 'make lists itself here');
   }
   return box;
 }
@@ -31998,7 +32071,7 @@ async function addSourceFromPanel() {
   await changeDoc(() => {
     addSource(r.id.trim(), r.text.trim(), r.url.trim());
   }); renderSources();
-  $('stat').textContent = `[${r.id.trim()}] added — right-click a paragraph to cite it`;
+  tell(`[${r.id.trim()}] added — right-click a paragraph to cite it`);
 }
 
 function renderSources() {
@@ -32144,7 +32217,7 @@ function renderSources() {
       const t = txt.value.trim(), u = url.value.trim();
       // The citation must say something; the LINK is optional — a book or an
       // interview has none, and a source that had one must be able to lose it.
-      if (!t) { $('stat').textContent = emptyCitationRefusal(s.id); txt.value = s.text; return; }
+      if (!t) { tell(emptyCitationRefusal(s.id)); txt.value = s.text; return; }
       changeDoc(() => { updateSource(s.id, t, u); });
     };
     txt.addEventListener('change', commit);       // fires on blur only when changed
@@ -32292,7 +32365,7 @@ $('add').onclick = async () => {
   for (let n = 2; source.includes(`[[extra.${page}.${slug}]]`); n++) slug = `${base}-${n}`;
   changeDoc(() => {
     pendingEdit = addExtra(page, slug);
-    $('stat').textContent = `new section on ${label} — write it below`;
+    tell(`new section on ${label} — write it below`);
   });
 };
 
@@ -32375,7 +32448,7 @@ function editSvgSlot(d, key, node) {
       await changeDoc(() => {
         writeSlot(key, val);
       });
-      $('stat').textContent = `${key} — updated`;
+      tell(`${key} — updated`);
     }
   };
   inp.addEventListener('blur', () => { if (!modalOpen) finish(true); });
@@ -32710,8 +32783,8 @@ function edit(d, key, clicked, at) {
     // keeps its own Shift-Enter and renders the break.)
     if (e.key === 'Enter' && e.shiftKey && !richInline) {
       e.preventDefault();
-      $('stat').textContent = 'the report has paragraphs, not line breaks — '
-        + 'press Enter for a new paragraph';
+      tell('the report has paragraphs, not line breaks — '
+        + 'press Enter for a new paragraph');
     }
     if (allowMd && e.key === 'k' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); link(d, host); }
     // Tab indents the bullet the caret is in. stopPropagation as well as
@@ -32992,7 +33065,7 @@ async function hubShareLoad() {
     $('publish').disabled = true;
     suggestSetMode(true, { say: false });
     $('mode').disabled = true;
-    $('stat').textContent = 'view only — this document is shared with you to read; an edit you make here is suggested, for an editor to accept';
+    tell('view only — this document is shared with you to read; an edit you make here is suggested, for an editor to accept');
   }
   collabChip();
 }
@@ -33103,7 +33176,7 @@ async function hubHistoryLoad() {
     if (seq !== hubHistoryLoading) return;   // a later load answered first
     hubHistoryVersions = j;
     hubHistoryMore = r.headers.get('x-history-more') === '1';
-  } catch (e) { hubHistoryVersions = []; hubHistoryMore = false; $('stat').textContent = 'history not loaded: ' + e.message; }
+  } catch (e) { hubHistoryVersions = []; hubHistoryMore = false; tell('history not loaded: ' + e.message); }
   hubHistoryRender();
 }
 /** The next page back from the oldest version on screen. */
@@ -33118,7 +33191,7 @@ async function hubHistoryLoadOlder() {
     const have = new Set(hubHistoryVersions.map(v => v.version));
     hubHistoryVersions = hubHistoryVersions.concat(j.filter(v => !have.has(v.version)));
     hubHistoryMore = r.headers.get('x-history-more') === '1';
-  } catch (e) { $('stat').textContent = 'older versions not loaded: ' + e.message; }
+  } catch (e) { tell('older versions not loaded: ' + e.message); }
   hubHistoryOlderBusy = false;
   hubHistoryRender();
 }
@@ -33191,7 +33264,7 @@ function hubHistoryRow(v, canChange) {
       if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
       v.label = label.value; row.classList.toggle('named', !!v.label);
       label.classList.add('saved'); setTimeout(() => label.classList.remove('saved'), 900);
-    } catch (e) { $('stat').textContent = 'name not saved: ' + e.message; }
+    } catch (e) { tell('name not saved: ' + e.message); }
   };
   const btns = document.createElement('div'); btns.className = 'hub-history-btns';
   if (canChange && v.version !== docVersion) {
@@ -33470,14 +33543,14 @@ function hubSinceClick(e) {
   hubSinceChip();
   const el = d && hubCommentEl(d, hubSince.keys[hubSince.at]);
   if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' });
-  $('stat').textContent = `${hubSince.keys[hubSince.at]} — changed since you last looked `
-    + `(${hubSince.at + 1} of ${hubSince.keys.length})`;
+  tell(`${hubSince.keys[hubSince.at]} — changed since you last looked `
+    + `(${hubSince.at + 1} of ${hubSince.keys.length})`);
 }
 function hubSinceClear() {
   hubSince = null;
   hubSinceChip();
   hubSincePaint($('out') && $('out').contentDocument);
-  $('stat').textContent = 'cleared the marks';
+  tell('cleared the marks');
 }
 $('sincechip').addEventListener('click', hubSinceClick);
 
@@ -33536,7 +33609,7 @@ async function hubRestore(v) {
       + warn
       + 'It becomes the current version — a new Save on top of the others, so nothing is lost. '
       + 'Everyone in this session gets it.', { okLabel: 'Restore' })) return;
-  $('stat').textContent = 'restoring…';
+  tell('restoring…');
   try {
     if (collab) await collab.drainNow();   // a collaborator's words still held back by an open box count
     // A version that lacks a file (hubVersionFiles) is restored whole all the
@@ -33591,7 +33664,7 @@ async function hubRestore(v) {
     sayNowAndAfterRender(`restored — the version from ${fmtWhen(v.updated_at)} is the current one now`
       + (kept.length ? `; unsaved words in ${kept.length === 1 ? 'a paragraph' : kept.length + ' paragraphs'} it did not change were kept — Save to keep them` : ''));
   } catch (e) {
-    $('stat').textContent = 'restore failed: ' + e.message;
+    tell('restore failed: ' + e.message);
   }
 }
 
@@ -34150,7 +34223,7 @@ async function hubCommentsLoad() {
     hubCommentsFailed = null;
   } catch (e) {
     // Stale is said, once, where the person is looking - not on every poll.
-    if (hubCommentsFailed !== e.message && $('cpanel') && !$('cpanel').hidden) $('stat').textContent = 'comments not refreshed: ' + e.message;
+    if (hubCommentsFailed !== e.message && $('cpanel') && !$('cpanel').hidden) tell('comments not refreshed: ' + e.message);
     hubCommentsFailed = e.message;
     return;
   }
@@ -34292,7 +34365,7 @@ function hubCommentTextNodes(text, mentions) {
 function hubCommentShow(c) {
   const d = $('out').contentDocument;
   const t = hubCommentEl(d, c.anchor);
-  if (!t) { $('stat').textContent = 'that part of the document is not on the page any more'; return false; }
+  if (!t) { tell('that part of the document is not on the page any more'); return false; }
   t.scrollIntoView({ block: 'center', behavior: 'smooth' });
   // One flash at a time: a thread shown while the last one's words are still
   // lit takes the light with it, so the page never points two ways at once.
@@ -34622,8 +34695,8 @@ function hubCommentsRenderInner() {
       if (!sug) items.push([c.resolved ? 'Reopen' : 'Resolve', () => hubCommentPatch(c.id, { resolved: !c.resolved })]);
       items.push(['Copy link', async () => {
         const u = new URL(location.href); u.searchParams.set('comment', c.id);
-        try { await navigator.clipboard.writeText(u.href); $('stat').textContent = 'link to this comment copied'; }
-        catch (e) { $('stat').textContent = u.href; }
+        try { await navigator.clipboard.writeText(u.href); tell('link to this comment copied'); }
+        catch (e) { tell(u.href); }
       }]);
       hubCommentMenu(el, items);
     });
@@ -34825,7 +34898,7 @@ async function hubCommentsCall(url, init, failWord, tmpId) {
     hubCommentsChanged();
     if (j && j.id && Array.isArray(j.replies)) hubCommentsMerge(j, tmpId);
     return j;
-  } catch (e) { $('stat').textContent = `${failWord}: ${e.message}`; return null; }
+  } catch (e) { tell(`${failWord}: ${e.message}`); return null; }
 }
 const jsonInit = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 // Every change shows AT ONCE, as it will stand once the hub agrees, and the
@@ -34870,10 +34943,10 @@ async function hubReplyAdd(id, text, mentions) {
     for (let i = 0; i < 100; i++) {
       const real = hubComments.find(x => x.__clientId === id && !x.pending);
       if (real) { id = real.id; break; }
-      if (!hubComments.some(x => x.id === id)) { $('stat').textContent = 'reply not added: the comment was not posted'; return null; }
+      if (!hubComments.some(x => x.id === id)) { tell('reply not added: the comment was not posted'); return null; }
       await new Promise(r => setTimeout(r, 150));
     }
-    if (String(id).startsWith('pending-')) { $('stat').textContent = 'reply not added: the comment is still posting — try again in a moment'; return null; }
+    if (String(id).startsWith('pending-')) { tell('reply not added: the comment is still posting — try again in a moment'); return null; }
   }
   const c = hubComments.find(x => x.id === id);
   const was = hubCopy(c);
@@ -35121,7 +35194,7 @@ async function suggestFinalize() {
     if (hubCommentActive === tmp.id) hubCommentActive = null;
     if (made) hubCommentsLoad();   // answered, but not with a thread: the list as the hub has it
   } else {
-    $('stat').textContent = 'suggested — an editor can accept or reject it from the Comments panel';
+    tell('suggested — an editor can accept or reject it from the Comments panel');
   }
   hubCommentsShow();
 }
@@ -35145,7 +35218,7 @@ async function suggestAccept(c) {
       syncPageSize();
     });
     await hubCommentPatch(c.id, { status: 'accepted' });
-    $('stat').textContent = 'suggestion accepted — it is on the page for everyone; Save keeps it';
+    tell('suggestion accepted — it is on the page for everyone; Save keeps it');
   } finally { suggestApplying = false; }
 }
 /** What the layout holds now where a suggestion's layout entry points. */
@@ -35180,14 +35253,14 @@ $('cpanel-accept-all').onclick = async () => {
   if (!all.length) return;
   if (!await dsConfirm(`Accept all ${all.length} suggestions?\n\nEach is applied to the document the way Accept does — one undo step each.`, { okLabel: 'Accept all' })) return;
   for (const c of all) await suggestAccept(c);
-  $('stat').textContent = `${all.length} suggestions accepted — on the page for everyone; Save keeps them`;
+  tell(`${all.length} suggestions accepted — on the page for everyone; Save keeps them`);
 };
 $('cpanel-reject-all').onclick = async () => {
   const all = suggestOpenAll();
   if (!all.length) return;
   if (!await dsConfirm(`Reject all ${all.length} suggestions?\n\nThe document stays as it is.`, { okLabel: 'Reject all', danger: true })) return;
   for (const c of all) await suggestReject(c);
-  $('stat').textContent = `${all.length} suggestions rejected — the document is as it was`;
+  tell(`${all.length} suggestions rejected — the document is as it was`);
 };
 /** Markdown to the plain words the page shows of it, near enough to find. */
 const suggestPlain = md => String(md || '').replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\^[^\]]*\]/g, '')
@@ -35290,9 +35363,9 @@ function suggestSetMode(on, { say = true } = {}) {
     b.classList.toggle('suggesting', suggesting);
     b.title = suggesting ? 'Your edits are proposed for an editor to accept' : 'Your edits change the document';
   }
-  if (say) $('stat').textContent = suggesting
+  if (say) tell(suggesting
     ? 'suggesting — edits you make are proposed, not made; an editor accepts or rejects them'
-    : 'editing — your edits change the document for everyone';
+    : 'editing — your edits change the document for everyone');
 }
 function suggestMenu() {
   const b = $('mode');
@@ -35359,8 +35432,8 @@ async function hubShareDialog() {
     link.onfocus = () => link.select();
     const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'hub-share-copy'; copy.textContent = 'Copy link';
     copy.onclick = async () => {
-      try { await navigator.clipboard.writeText(link.value); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy link'; }, 1500); $('stat').textContent = 'link copied — anyone signed in to the hub opens straight to this document'; }
-      catch (e) { link.focus(); link.select(); $('stat').textContent = 'select the link and copy it — the clipboard was not allowed'; }
+      try { await navigator.clipboard.writeText(link.value); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy link'; }, 1500); tell('link copied — anyone signed in to the hub opens straight to this document'); }
+      catch (e) { link.focus(); link.select(); tell('select the link and copy it — the clipboard was not allowed'); }
     };
     linkRow.append(link, copy); form.appendChild(linkRow);
 
@@ -35459,11 +35532,11 @@ async function hubShareDialog() {
     const j = await hubJson(r);
     if (!r.ok) throw new Error(j.error || `the hub answered ${r.status}`);
     const named = Object.keys(result.people).length;
-    $('stat').textContent = `sharing saved — everyone ${result.default === 'none' ? 'is kept out' : result.default === 'viewer' ? 'may view' : 'may edit'}`
-      + (named ? `, ${named} named` : '');
+    tell(`sharing saved — everyone ${result.default === 'none' ? 'is kept out' : result.default === 'viewer' ? 'may view' : 'may edit'}`
+      + (named ? `, ${named} named` : ''));
     await hubShareLoad();
   } catch (e) {
-    $('stat').textContent = 'sharing not saved: ' + e.message;
+    tell('sharing not saved: ' + e.message);
   }
 }
 
@@ -35474,14 +35547,14 @@ async function docStorePublish() {
   if (dirty) {
     if (!await docStoreSave(JSON.stringify(layout, null, 2) + '\n')) return;
   }
-  if (!docVersion) { $('stat').textContent = 'nothing to publish yet — make an edit and Save first'; return; }
+  if (!docVersion) { tell('nothing to publish yet — make an edit and Save first'); return; }
   if (!await dsConfirm('Publish this document to GitHub?\n\nOne commit of it as saved, on the hub/'
       + M.id + ' branch of ' + (REPO || 'its repository') + '. '
       + (siteOf() ? 'The public page' + (siteOf().url ? ' (' + siteOf().url + ')' : '') + ' is then rebuilt from it.'
                 : 'The live report is not changed by this.'),
       { okLabel: 'Publish' })) return;
   $('publish').disabled = true;
-  $('stat').textContent = 'publishing…';
+  tell('publishing…');
   try {
     const r = await fetch(`${docStore()}/publish`, { method: 'POST' });
     const j = await hubJson(r);
@@ -35490,10 +35563,10 @@ async function docStorePublish() {
     const head = j.status === 'unchanged'
       ? `already published — ${j.branch} is at ${sha}`
       : `published ✓ — ${j.repo}@${j.branch} ${sha}`;
-    $('stat').textContent = head;
+    tell(head);
     if (siteOf() && j.version) docStoreAwaitSite(j.version, head, j.status === 'unchanged');
   } catch (e) {
-    $('stat').textContent = 'publish failed: ' + e.message;
+    tell('publish failed: ' + e.message);
   } finally {
     $('publish').disabled = false;
   }
@@ -35525,7 +35598,7 @@ function siteLine(site) {
 async function docStoreAwaitSite(version, head, unchanged) {
   // The site's answer first: the status line is clipped to the toolbar's width,
   // and it is the part people are waiting for. All of it on hover.
-  const say = ([short, full]) => { $('stat').textContent = short; $('stat').title = full + ' · ' + head; };
+  const say = ([short, full]) => { tell(short, { title: full + ' · ' + head }); };
   const tries = unchanged ? 1 : 30;                       // 30 x 10 s = 5 minutes
   for (let i = 0; i < tries; i++) {
     const site = await docStoreSite();
@@ -35568,7 +35641,7 @@ async function docStoreLoad(urls, files) {
     if (!r.ok) throw new Error(m.error || `the store answered ${r.status}`);
     if (!m.exists) {
       storeHas.content = storeHas.layout = false;
-      $('stat').textContent = 'first time on the hub — Save puts this document in the store';
+      tell('first time on the hub — Save puts this document in the store');
       return;
     }
     const get = async what => {
@@ -35586,10 +35659,10 @@ async function docStoreLoad(urls, files) {
     try { hubSinceWas = localStorage.getItem('primer-seen:' + (collabRoom() || '')); } catch (e) { hubSinceWas = null; }
     docVersion = m.version;
     hubMarkSeen(m.version);
-    $('stat').textContent = 'from the hub' + (m.updated_by ? ` — last saved by ${m.updated_by}` : '')
-      + (m.updated_at ? ` ${new Date(m.updated_at).toLocaleString()}` : '');
+    tell('from the hub' + (m.updated_by ? ` — last saved by ${m.updated_by}` : '')
+      + (m.updated_at ? ` ${new Date(m.updated_at).toLocaleString()}` : ''));
   } catch (e) {
-    $('stat').textContent = `could not load from the document store (${e.message}) — showing the vendored copy; Save will retry`;
+    tell(`could not load from the document store (${e.message}) — showing the vendored copy; Save will retry`);
   }
 }
 
@@ -35611,7 +35684,7 @@ async function collabSavedByPeer(j) {
 async function docStoreSave(layoutText, force = false, auto = false, leaving = false) {
   $('save').disabled = true;
   hubSaveBusy = true;
-  $('stat').textContent = 'saving…';
+  tell('saving…');
   try {
     const body = { base: (collab && collab.baseSha()) || docVersion, force,
                    // Where these files belong in the repository, for the
@@ -35650,7 +35723,7 @@ async function docStoreSave(layoutText, force = false, auto = false, leaving = f
       // be a moment behind the 409, so the roster is asked as well.
       if (collab && j.version && await collabSavedByPeer(j)) {
         collabSaved(j.version);
-        $('stat').textContent = `saved a moment ago by ${hubNameOf(j.updated_by)} — it holds what is on screen`;
+        tell(`saved a moment ago by ${hubNameOf(j.updated_by)} — it holds what is on screen`);
         return true;
       }
       const who = j.updated_by ? ` by ${j.updated_by}` : '';
@@ -35659,13 +35732,13 @@ async function docStoreSave(layoutText, force = false, auto = false, leaving = f
         // Not a question an automatic Save may answer: hold, and leave the
         // choice to a press of Save.
         hubAutosaveHold = true;
-        $('stat').textContent = `not saved — the document changed outside this session${who}; press Save to choose`;
+        tell(`not saved — the document changed outside this session${who}; press Save to choose`);
         markDirty(); return false;
       }
       const ok = await dsConfirm(`This document was saved outside this session${who}${when}.\n\n`
         + 'Saving replaces that with what everyone here sees.',
         { okLabel: 'Save over it', danger: true });
-      if (!ok) { $('stat').textContent = 'not saved — the document changed outside this session'; markDirty(); return false; }
+      if (!ok) { tell('not saved — the document changed outside this session'); markDirty(); return false; }
       return docStoreSave(layoutText, true);
     }
     if (!r.ok) throw new Error(j.error || `the store answered ${r.status}`);
@@ -35698,16 +35771,16 @@ async function docStoreSave(layoutText, force = false, auto = false, leaving = f
       // hold it.
       hubAutosaveFails++;
       if (hubAutosaveFails <= 3) {
-        $('stat').textContent = `save failed: ${e.message} — trying again`;
+        tell(`save failed: ${e.message} — trying again`);
         clearTimeout(hubAutosaveTimer);
         hubAutosaveTimer = setTimeout(hubAutosaveTick, 1500 * hubAutosaveFails);
       } else {
         hubAutosaveHold = true; hubAutosaveHoldWhy = e.message;
-        $('stat').textContent = 'autosave paused — save failed: ' + e.message + '; press Save to try again';
+        tell('autosave paused — save failed: ' + e.message + '; press Save to try again');
         hubAutosaveNoticeSync();
       }
     }
-    else $('stat').textContent = 'save failed: ' + e.message;
+    else tell('save failed: ' + e.message);
     markDirty();
     return false;
   } finally {
@@ -35838,7 +35911,7 @@ $('file-autosave').onclick = () => {
   hubAutosaveMenu();
   hubSaveLabel();     // turning autosave off puts Save back on the bar, and on takes it away
   hubAutosaveSchedule();
-  $('stat').textContent = hubAutosaveOn() ? 'autosave on — a moment after an edit is a Save' : 'autosave off — Save is yours to press';
+  tell(hubAutosaveOn() ? 'autosave on — a moment after an edit is a Save' : 'autosave off — Save is yours to press');
   togglePop($('filepop'), $('file'));
 };
 
@@ -35994,7 +36067,7 @@ $('save').onclick = async () => {
     saving = true;
     $('save').disabled = true;
     $('push').disabled = true;
-    $('stat').textContent = 'saving to disk…';
+    tell('saving to disk…');
     try {
       const j = await postLocal('/__save', {
         project: M.id,
@@ -36003,8 +36076,7 @@ $('save').onclick = async () => {
       });
       if (!j.ok) throw new Error(j.error || 'save failed');
       original = sent; layoutOrig = layoutText;
-      $('stat').textContent = j.message || 'saved';
-      $('stat').title = '';
+      tell(j.message || 'saved', { title: '' });
       saving = false;
       markDirty();                   // false now, unless something came after `sent`
       setPushState(j.ahead);
@@ -36012,8 +36084,7 @@ $('save').onclick = async () => {
       // The status line is one line. A commit a hook refused (the ʻokina
       // lint says eleven lines' worth) was cut to "git commit failed:" and
       // nothing of the fix — the whole message rides the tooltip.
-      $('stat').textContent = 'save failed: ' + e.message.replace(/\s+/g, ' ');
-      $('stat').title = e.message;
+      tell('save failed: ' + e.message.replace(/\s+/g, ' '), { kind: 'error', title: e.message });
       saving = false;
       markDirty();                   // always recoverable — never a dead spinner
       setPushState(lastAhead);
@@ -36022,7 +36093,7 @@ $('save').onclick = async () => {
   }
 
   if (docStore()) { await docStoreSave(layoutText); return; }
-  $('stat').textContent = 'nothing to save to — open this report from the local server or the staff hub';
+  tell('nothing to save to — open this report from the local server or the staff hub');
 };
 
 // Push: send whatever is committed locally (one Save, or several since the
@@ -36031,9 +36102,9 @@ $('save').onclick = async () => {
 // editor, and this is what sends all of them at once.
 $('agentnote').onclick = agentNoteClick;
 $('push').onclick = async () => {
-  if (saving) { $('stat').textContent = 'saving first — Push once it has landed'; return; }
+  if (saving) { tell('saving first — Push once it has landed'); return; }
   $('push').disabled = true;
-  $('stat').textContent = 'pushing…';
+  tell('pushing…');
   try {
     let j = await postLocal('/__push', { project: M.id });
     // Not a failure — a question. Pushing publishes by fast-forwarding the
@@ -36041,24 +36112,24 @@ $('push').onclick = async () => {
     // great many commits: the server refuses until the number has been seen.
     if (!j.ok && j.needsConfirm) {
       $('push').disabled = false;
-      $('stat').textContent = 'waiting on you';
+      tell('waiting on you');
       if (!await dsConfirm(j.error + '.\n\nPublish now?',
                            { okLabel: 'Publish', danger: true })) {
-        $('stat').textContent = 'not pushed';
+        tell('not pushed');
         setPushState(j.ahead);
         return;
       }
       $('push').disabled = true;
-      $('stat').textContent = 'pushing…';
+      tell('pushing…');
       j = await postLocal('/__push', { project: M.id, deploy: true });
     }
     if (!j.ok) throw new Error(j.error || 'push failed');
-    $('stat').textContent = j.message || 'pushed';
+    tell(j.message || 'pushed');
     pushHealth = {};          // a successful push retires any stale warning
     setPushState(j.ahead);
   } catch (e) {
     // The server pushes with this machine's own git credentials.
-    $('stat').textContent = 'push failed: ' + e.message;
+    tell('push failed: ' + e.message);
     setPushState(1);          // still ahead — the try again path stays lit
   }
 };
@@ -36402,7 +36473,7 @@ $('file-website').onclick = async () => {
   await changeDoc(() => {
     layout.website = next;
   });
-  $('stat').textContent = 'website: ' + url + ' — ' + how + ' to put it live';
+  tell('website: ' + url + ' — ' + how + ' to put it live');
 };
 $('file-website-off').onclick = async () => {
   $('filepop').hidden = true;
@@ -36414,7 +36485,7 @@ $('file-website-off').onclick = async () => {
   await changeDoc(() => {
     delete layout.website;
   });
-  $('stat').textContent = 'no longer a website — Save to keep that';
+  tell('no longer a website — Save to keep that');
 };
 
 // Bring back an element that Delete hid. Undo covers the moment right after,
@@ -36435,9 +36506,9 @@ $('file-restore').onclick = async () => {
     layout.hidden = pick.id === '\u0000all' ? [] : ids.filter(x => x !== pick.id);
     if (!layout.hidden.length) delete layout.hidden;
   });
-  $('stat').textContent = pick.id === '\u0000all'
+  tell(pick.id === '\u0000all'
     ? `restored ${ids.length} deleted element${ids.length > 1 ? 's' : ''}`
-    : `restored ${pick.id}`;
+    : `restored ${pick.id}`);
 };
 $('file-open').onclick = () => { renderOpenList(); togglePop($('openpop'), $('file')); };
 $('file-find').onclick = () => { $('filepop').hidden = true; openFindPanel(); };
@@ -36458,11 +36529,11 @@ async function openEditorWindow(url) {
       body: JSON.stringify({ url }),
     });
     const j = await r.json();
-    $('stat').textContent = j.ok
+    tell(j.ok
       ? 'new window opened — both edit the same files, so save one at a time'
-      : 'could not open a window: ' + (j.error || 'unknown');
+      : 'could not open a window: ' + (j.error || 'unknown'));
   } catch (e) {
-    $('stat').textContent = 'could not open a window: ' + e.message;
+    tell('could not open a window: ' + e.message);
   }
 }
 
@@ -36572,7 +36643,7 @@ async function newReport(intoNewWindow) {
     || ((text.match(/^#\s+(.+)$/m) || [])[1] || '').trim();
   const slug = slugifyReport(r.slug || name);
   const size = NEW_REPORT_SIZES.find(s => s.value === r.size) || NEW_REPORT_SIZES[0];
-  $('stat').textContent = `creating "${name}"…`;
+  tell(`creating "${name}"…`);
   let j;
   try {
     // postLocal, so a crash page or a gone server is said as such rather
@@ -36582,11 +36653,10 @@ async function newReport(intoNewWindow) {
                                          scheme: r.scheme || '', text,
                                          size: { w: size.w, h: size.h } }, 120000);
   } catch (e) {
-    $('stat').textContent = 'could not create it: ' + e.message;
-    $('stat').title = e.message;
+    tell('could not create it: ' + e.message, { title: e.message });
     return;
   }
-  if (!j.ok) { $('stat').textContent = j.error || 'could not create it'; return; }
+  if (!j.ok) { tell(j.error || 'could not create it'); return; }
   const url = location.origin + location.pathname
     + '?project=' + encodeURIComponent(j.slug);
   if (intoNewWindow) return openEditorWindow(url);
@@ -36615,7 +36685,7 @@ $('file-quit').onclick = async () => {
   // The confirm above already asked; beforeunload must not ask again in the
   // browser's own words as the window goes.
   dirty = false;
-  $('stat').textContent = 'stopping the editor…';
+  tell('stopping the editor…');
   let j = null;
   try {
     // keepalive: the window may be gone before this settles.
@@ -36627,7 +36697,7 @@ $('file-quit').onclick = async () => {
     // an explicit refusal below is.
   }
   if (j && j.ok === false) {
-    $('stat').textContent = j.error || 'could not stop the editor';
+    tell(j.error || 'could not stop the editor');
     return;
   }
   // An --app window was opened by `open`, not by script, so Chrome is entitled
@@ -36641,7 +36711,7 @@ $('file-quit').onclick = async () => {
   // only fires if the window is still here to run it, so it cannot lie.
   window.close();
   setTimeout(() => {
-    $('stat').textContent = 'editor stopped — close this window';
+    tell('editor stopped — close this window');
   }, 1500);
 };
 
@@ -36660,12 +36730,12 @@ $('file-doc').onclick = async () => {
   if (!r) return;
   let j;
   try { j = await postLocal('/__doc', { project: M.id, url: r.url.trim() }); }
-  catch (e) { $('stat').textContent = 'could not save the link: ' + e.message; return; }
-  if (!j.ok) { $('stat').textContent = j.error || 'could not save the link'; return; }
+  catch (e) { tell('could not save the link: ' + e.message); return; }
+  if (!j.ok) { tell(j.error || 'could not save the link'); return; }
   DOC = j.doc || '';
-  $('stat').textContent = DOC
+  tell(DOC
     ? 'linked — File ▸ Import text from the Doc brings its words in'
-    : 'unlinked from its Google Doc';
+    : 'unlinked from its Google Doc');
 };
 
 /** Bring the linked doc's text in.
@@ -36677,13 +36747,13 @@ $('file-doc').onclick = async () => {
  *  pressed, and the doc itself is never written to at all. */
 $('file-docimport').onclick = async () => {
   $('filepop').hidden = true;
-  if (editing) { $('stat').textContent = 'close the open text editor first'; return; }
-  $('stat').textContent = 'reading the Google Doc…';
+  if (editing) { tell('close the open text editor first'); return; }
+  tell('reading the Google Doc…');
   let j;
   // 60s, not the default 30: this waits on Google, not on a local build.
   try { j = await postLocal('/__doc/import', { project: M.id }, 60000); }
-  catch (e) { $('stat').textContent = 'could not read the doc: ' + e.message; return; }
-  if (!j.ok) { $('stat').textContent = j.error || 'could not read the doc'; return; }
+  catch (e) { tell('could not read the doc: ' + e.message); return; }
+  if (!j.ok) { tell(j.error || 'could not read the doc'); return; }
   if (!(j.rows || []).length) {
     await dsAlert(j.mode === 'empty'
       ? 'That doc is empty.'
@@ -36697,9 +36767,9 @@ $('file-docimport').onclick = async () => {
 
   const res = await docsync.api.batch(
     picked.map(r => ({ verb: 'setSlot', args: [r.key, r.md] })));
-  if (!res.ok) { $('stat').textContent = 'nothing was imported: ' + res.error; return; }
-  $('stat').textContent = 'imported ' + picked.length + ' section'
-    + (picked.length === 1 ? '' : 's') + ' from the Google Doc — ⌘Z undoes it';
+  if (!res.ok) { tell('nothing was imported: ' + res.error); return; }
+  tell('imported ' + picked.length + ' section'
+    + (picked.length === 1 ? '' : 's') + ' from the Google Doc — ⌘Z undoes it');
 };
 
 /** The review list: one row per proposed slot write, each one skippable and
@@ -36844,11 +36914,11 @@ async function forgetProject(id) {
     // as the parser's "Unexpected token '<'".
     const j = await postLocal('/__forget', { project: id });
     if (!j.ok) throw new Error(j.error || 'refused');
-  } catch (e) { $('stat').textContent = 'could not forget ' + name + ': ' + e.message; return; }
+  } catch (e) { tell('could not forget ' + name + ': ' + e.message); return; }
   delete REGISTRY[id];
   if (isActive || !Object.keys(REGISTRY).length) { location.href = 'start.html'; return; }
   renderOpenList();
-  $('stat').textContent = 'forgot ' + name;
+  tell('forgot ' + name);
 }
 
 $('open-list').onclick = async (e) => {
@@ -36894,9 +36964,9 @@ async function applyDocSize(d) {
   syncPageSize();
   markDirty();
   await render();          // re-renders at the new size and re-runs the print-cut check
-  $('stat').textContent = 'page is now ' + d.name + ' ('
+  tell('page is now ' + d.name + ' ('
     + (d.h === null ? d.w + 'in wide, no fixed height' : d.w + ' × ' + d.h + ' in')
-    + ') — Save to keep it';
+    + ') — Save to keep it');
 }
 
 /** PAGE_W_IN / PAGE_H_IN are what every clamp, guide and align rule measures
@@ -37388,7 +37458,7 @@ async function measureDesignWidth(bodyHtml, css, viewPx) {
 
 async function exportHtml(forSquarespace) {
   const label = forSquarespace ? 'Squarespace block' : 'HTML';
-  $('stat').textContent = `building ${label}…`;
+  tell(`building ${label}…`);
   try {
     const raw = await renderClean();
     const doc = new DOMParser().parseFromString(raw, 'text/html');
@@ -37502,9 +37572,9 @@ ${body}
     a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    $('stat').textContent = `downloaded ${name}`;
+    tell(`downloaded ${name}`);
   } catch (e) {
-    $('stat').textContent = `${label} export failed: ` + (e.message || e);
+    tell(`${label} export failed: ` + (e.message || e));
   } finally {
     await render();          // put the editable scaffolding back
   }
@@ -37520,7 +37590,7 @@ ${body}
 const baseName = p => p.split('/').pop();
 async function downloadSource() {
   $('downloadpop').hidden = true;
-  $('stat').textContent = 'zipping the source…';
+  tell('zipping the source…');
   try {
     const { zipSync, strToU8 } =
       await import('https://cdn.jsdelivr.net/npm/fflate@0.8.3/esm/browser.js');
@@ -37539,9 +37609,9 @@ async function downloadSource() {
     a.href = url; a.download = (M.id || 'report') + '-source.zip';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    $('stat').textContent = `downloaded ${a.download}`;
+    tell(`downloaded ${a.download}`);
   } catch (e) {
-    $('stat').textContent = 'source download failed: ' + e.message;
+    tell('source download failed: ' + e.message);
   }
 }
 
@@ -37583,7 +37653,7 @@ function saveBlob(blob, name) {
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
-  $('stat').textContent = `downloaded ${name}`;
+  tell(`downloaded ${name}`);
 }
 /** A raster, re-encoded (JPEG on white — it has no transparency) and,
  *  given `crop` in pixels, cut to that box. */
@@ -37599,7 +37669,7 @@ async function reencode(blob, type, crop) {
 }
 async function exportPagesJpeg() {
   $('downloadpop').hidden = true;
-  $('stat').textContent = 'rendering the pages as JPEG… (a full report takes a moment)';
+  tell('rendering the pages as JPEG… (a full report takes a moment)');
   try {
     const { unzipSync, zipSync } = await fflateLib();
     const zip = unzipSync(new Uint8Array(await (await exportBlob({ fmt: 'png' })).arrayBuffer()));
@@ -37609,7 +37679,7 @@ async function exportPagesJpeg() {
       out[n.replace(/\.png$/i, '.jpg')] = new Uint8Array(await jpg.arrayBuffer());
     }
     saveBlob(new Blob([zipSync(out, { level: 0 })], { type: 'application/zip' }), `${exportBasename()}-pages-jpg.zip`);
-  } catch (e) { $('stat').textContent = 'export failed: ' + e.message; }
+  } catch (e) { tell('export failed: ' + e.message); }
 }
 /** The selection's box on its page, in inches, and that page's place. */
 function selectionBox() {
@@ -37626,15 +37696,15 @@ function selectionBox() {
 async function exportSelection(type) {
   $('downloadpop').hidden = true;
   const box = selectionBox();
-  if (!box) { $('stat').textContent = 'select what to export first'; return; }
-  $('stat').textContent = 'rendering the selection…';
+  if (!box) { tell('select what to export first'); return; }
+  tell('rendering the selection…');
   try {
     const scale = 3, px = 96 * scale, pad = 0.04;          // a hair round it, so a stroke is not cut
     const png = await exportBlob({ fmt: 'png', page: box.page, scale });
     const out = await reencode(png, type, { x: (box.x - pad) * px, y: (box.y - pad) * px,
                                             w: (box.w + 2 * pad) * px, h: (box.h + 2 * pad) * px });
     saveBlob(out, `${exportBasename()}-selection.${type === 'jpeg' ? 'jpg' : 'png'}`);
-  } catch (e) { $('stat').textContent = 'export failed: ' + e.message; }
+  } catch (e) { tell('export failed: ' + e.message); }
 }
 /** Every @font-face the HTML loads: [{family, weight, style, url}]. */
 function fontFaces(css) {
@@ -37654,7 +37724,7 @@ function fontFaces(css) {
  *  or a designer asks for. */
 async function exportPackage() {
   $('downloadpop').hidden = true;
-  $('stat').textContent = 'packaging: the PDF, the pages, the HTML and the fonts…';
+  tell('packaging: the PDF, the pages, the HTML and the fonts…');
   try {
     const { unzipSync, zipSync, strToU8 } = await fflateLib();
     const slug = exportBasename();
@@ -37706,10 +37776,10 @@ async function exportPackage() {
     saveBlob(new Blob([zipSync(files, { level: 6 })], { type: 'application/zip' }), `${slug}-package.zip`);
     // Said in the status line too, not only the README: a fallback is a decision
     // the person should see without opening the zip.
-    $('stat').textContent += ` — ${got} font file${got === 1 ? '' : 's'} embedded`
+    tell($('stat').textContent + ` — ${got} font file${got === 1 ? '' : 's'} embedded`
       + (inl.fontsLinked.length ? `; fonts LINKED, not embedded (could not fetch ${inl.fontsLinked.length})` : '')
-      + (inl.scriptsLeft.length ? '; a script is still external' : '');
-  } catch (e) { $('stat').textContent = 'package failed: ' + e.message; }
+      + (inl.scriptsLeft.length ? '; a script is still external' : ''));
+  } catch (e) { tell('package failed: ' + e.message); }
 }
 
 /** What an exported file should be CALLED.
@@ -38142,19 +38212,19 @@ let pictureBusy = false;
 async function copyAsPicture(d, page, boxIn, what) {
   if (pictureBusy) return { ok: false, error: 'still copying the last picture' };
   if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
-    $('stat').textContent = 'this browser cannot copy a picture: use File > Download instead';
+    tell('this browser cannot copy a picture: use File > Download instead');
     return { ok: false, error: 'no clipboard' };
   }
   pictureBusy = true;
-  $('stat').textContent = `copying ${what} as a picture…`;
+  tell(`copying ${what} as a picture…`);
   try {
     const blob = pagePicture(d, page, boxIn);
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     const b = await blob;
-    $('stat').textContent = `${what} copied as a picture: paste it anywhere`;
+    tell(`${what} copied as a picture: paste it anywhere`);
     return { ok: true, bytes: b.size };
   } catch (e) {
-    $('stat').textContent = 'could not copy the picture: ' + (e.message || e);
+    tell('could not copy the picture: ' + (e.message || e));
     return { ok: false, error: String(e.message || e) };
   } finally { pictureBusy = false; }
 }
@@ -38173,7 +38243,7 @@ function selBounds(d) {
 }
 function copySelAsPicture(d) {
   const sb = selBounds(d);
-  if (!sb) { $('stat').textContent = 'select something to copy as a picture'; return; }
+  if (!sb) { tell('select something to copy as a picture'); return; }
   return copyAsPicture(d, sb.page, sb.box, sb.n === 1 ? 'the selection' : `${sb.n} objects`);
 }
 
@@ -38190,16 +38260,16 @@ async function matchSizeSel(d, what, refId) {
   await changeDoc(() => {
     others.forEach(el => commitSize(d, el, { w: what === 'h' ? undefined : rb.w, h: what === 'w' ? undefined : rb.h }));
   });
-  $('stat').textContent = `${others.length + 1} things made the same ${what === 'w' ? 'width' : what === 'h' ? 'height' : 'size'}`;
+  tell(`${others.length + 1} things made the same ${what === 'w' ? 'width' : what === 'h' ? 'height' : 'size'}`);
   return { ok: true, changed: others.length };
 }
 
 /** File > Download > PDF without a server. `pages` is the sorted list of
  *  sheet numbers (null: all), `spec` what the person typed for them. */
 async function exportPdfInBrowser(pages, spec) {
-  if (pdfBusy) { $('stat').textContent = 'still making the PDF… it will download when it is ready'; return; }
+  if (pdfBusy) { tell('still making the PDF… it will download when it is ready'); return; }
   pdfBusy = true;
-  const stat = t => { $('stat').textContent = t; };
+  const stat = t => { tell(t); };
   const tick = () => new Promise(r => setTimeout(r, 0));
   const name = `${exportBasename()}${spec ? '-p' + spec.replace(/,/g, '_') : ''}.pdf`;
   let pf = null;
@@ -38231,11 +38301,11 @@ async function exportPdfInBrowser(pages, spec) {
     if (inl.fontsLinked.length) notes.push('fonts could not be embedded, so a fallback font is used');
     if (missed.length) notes.push(`${missed.length} background picture${missed.length === 1 ? '' : 's'} could not be fetched`);
     if (blank) notes.push(`${blank} page${blank === 1 ? '' : 's'} may have come out empty — try Chrome`);
-    $('stat').textContent += ` — ${out.length} page${out.length === 1 ? '' : 's'}, ${(blob.size / 1048576).toFixed(1)} MB`
-      + (notes.length ? '; ' + notes.join('; ') : '');
+    tell($('stat').textContent + ` — ${out.length} page${out.length === 1 ? '' : 's'}, ${(blob.size / 1048576).toFixed(1)} MB`
+      + (notes.length ? '; ' + notes.join('; ') : ''));
   } catch (e) {
-    stat('PDF failed: ' + (e.message || e) + '. Try again, or download one page at a time (PDF pages)');
-    $('stat').title = String(e && e.stack || e);
+    tell('PDF failed: ' + (e.message || e) + '. Try again, or download one page at a time (PDF pages)',
+      { title: String(e && e.stack || e) });
   } finally {
     if (pf) pf.frame.remove();
     pdfBusy = false;
@@ -38245,7 +38315,7 @@ async function exportPdfInBrowser(pages, spec) {
 async function doExport(fmt) {
   // A PDF of some pages (INDESIGN_PARITY 83). Checked before anything runs.
   const pages = fmt === 'pdf' ? exportPages() : null;
-  if (typeof pages === 'string') { $('stat').textContent = pages; return; }
+  if (typeof pages === 'string') { tell(pages); return; }
   const spec = pages ? $('dl-pages').value.replace(/\s+/g, '') : '';
   $('downloadpop').hidden = true;
   if (!local) {                        // the hub, a static copy: no server to print for us
@@ -38258,7 +38328,7 @@ async function doExport(fmt) {
   const marks = $('dl-marks').checked;
   const slug = exportBasename();
   const name = fmt === 'pdf' ? `${slug}${spec ? '-p' + spec.replace(/,/g, '_') : ''}.pdf` : `${slug}-pages.zip`;
-  $('stat').textContent = `rendering the ${fmt.toUpperCase()}… (a full report takes a moment)`;
+  tell(`rendering the ${fmt.toUpperCase()}… (a full report takes a moment)`);
   try {
     const r = await fetch('/__export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -38268,8 +38338,7 @@ async function doExport(fmt) {
     const blob = await exportAnswer(r, fmt === 'pdf' ? ['application/pdf'] : ['application/zip', 'application/octet-stream']);
     saveBlob(blob, name);
   } catch (e) {
-    $('stat').textContent = 'export failed: ' + e.message;
-    $('stat').title = e.message;
+    tell('export failed: ' + e.message, { title: e.message });
   }
 }
 
@@ -41490,9 +41559,7 @@ boot().catch(async e => {
       msg = 'no connection — the editor needs one to load a report';
     }
   }
-  $('stat').textContent = msg;
-  $('stat').title = msg;          // the row ellipsises; hover gets all of it
-  $('stat').classList.add('err');
+  tell(msg, { kind: 'error', sticky: true, title: msg });   // the row ellipsises; hover gets all of it
 });
 </script>
 </body>
