@@ -6941,13 +6941,13 @@ async function applySchemeColor(to) {
       ? 'the report is already in that scheme'
       : 'no scheme colour is in use here — fill the cover pages with one first' };
   }
-  pushHistory();
-  const swapped = schemeColorWalk(from, TO);
-  const pi = (M.palette || []).findIndex(c => c.toUpperCase() === from);
-  if (pi >= 0) M.palette[pi] = TO;
-  else (M.palette = M.palette || []).unshift(TO);
-  markDirty();
-  await render();
+  const swapped = await changeDoc(() => {
+    const n = schemeColorWalk(from, TO);
+    const pi = (M.palette || []).findIndex(c => c.toUpperCase() === from);
+    if (pi >= 0) M.palette[pi] = TO;
+    else (M.palette = M.palette || []).unshift(TO);
+    return n;
+  });
   paintSel($('out').contentDocument);
   return { ok: true, from, to: TO, swapped };
 }
@@ -7219,7 +7219,7 @@ function fillRow(d, m, id) {
   m.appendChild(modesWrap);
   m.appendChild(body);
 
-  const commit = async v => { pushHistory(); t.set(v); markDirty(); closeMenu(d); await render(); };
+  const commit = async v => { await changeDoc(() => { t.set(v); closeMenu(d); }); };
 
   function toGrad(type) {
     if (val && typeof val === 'object') return { ...val, type };
@@ -7688,10 +7688,7 @@ async function editMdAlt(at) {
   if (got == null) return;
   if (cleanAlt(got.words) === at.alt) return;
   if (at.kind === 'slot') collabWarnShared(at.key, 'description');
-  pushHistory();
-  const alt = writeMdAlt(at, got.words);
-  markDirty();
-  await render();
+  const alt = await changeDoc(() => writeMdAlt(at, got.words));
   $('stat').textContent = alt ? 'image description saved'
     : 'image marked as decoration — a screen reader skips it';
 }
@@ -7762,10 +7759,8 @@ function _pilotApplyFit(id, mode, align) {
  *  bar's fitting buttons): one undo step, then a render. `fn` is one of the
  *  appliers above; a refusal ({ok:false}) leaves nothing changed. */
 async function applyFitting(id, fn) {
-  pushHistory();
-  const r = fn();
-  if (r && r.ok === false) { withdrawStep(); $('stat').textContent = r.error; return r; }
-  markDirty(); await render();
+  const r = await changeDoc(fn);
+  if (r && r.ok === false) $('stat').textContent = r.error;
   return r;
 }
 /** Fit Frame to Content: the frame's height becomes what the picture's own
@@ -7892,10 +7887,11 @@ function layerMenu(d, el, e) {
     head.textContent = `${id} · locked`;
     m.appendChild(head);
     item('Unlock', () => {
-      pushHistory();
-      layout.locked = lockedList().filter(x => x !== id);
-      if (!layout.locked.length) delete layout.locked;
-      markDirty(); paintSel(d);
+      changeDoc(() => {
+        layout.locked = lockedList().filter(x => x !== id);
+        if (!layout.locked.length) delete layout.locked;
+      }, { render: false });
+      paintSel(d);
     });
     d.body.appendChild(m); menuUp(true);
     return;
@@ -8047,10 +8043,8 @@ function layerMenu(d, el, e) {
     if (clip) item('Paste in place', () => pasteClip(d, true));
     if (boxOf(id) && /[\t|,]/.test(boxOf(id).md || '') && !/!\[/.test(boxOf(id).md || ''))
       item('Convert text to table', async () => {
-        pushHistory();
-        const r = textToTable(id);
-        if (r.error) { withdrawStep(); $('stat').textContent = r.error; return; }
-        markDirty(); await render();
+        const r = await changeDoc(() => { const t = textToTable(id); return t.error ? { ...t, ok: false } : t; });
+        if (r.error) { $('stat').textContent = r.error; return; }
         setSel($('out').contentDocument, [r.id]);
         $('stat').textContent = `${r.rows} rows × ${r.cols} columns`;
       });
@@ -8100,7 +8094,7 @@ function layerMenu(d, el, e) {
        ['Flip horizontal', o => turnObjects(d, turnIds, { flip: 'h' })],
        ['Flip vertical', o => turnObjects(d, turnIds, { flip: 'v' })],
        ['Clear transformations', async o => {
-         pushHistory(); const n = clearTransforms(turnIds); markDirty(); await render();
+         const n = await changeDoc(() => clearTransforms(turnIds));
          $('stat').textContent = n ? `straightened ${n}` : 'nothing was turned, skewed, flipped or scaled';
        }]].forEach(([label, fn]) => {
         const b = d.createElement('button'); b.textContent = label;
@@ -8118,11 +8112,11 @@ function layerMenu(d, el, e) {
       });
     item('Select next below', () => { setSel(d, [id]); selectNextObject(d, -1); });
     item(isLocked(id) ? 'Unlock' : 'Lock', () => {
-      pushHistory();
-      layout.locked = isLocked(id) ? lockedList().filter(x => x !== id)
-                                   : [...lockedList(), id];
-      if (!layout.locked.length) delete layout.locked;
-      markDirty();
+      changeDoc(() => {
+        layout.locked = isLocked(id) ? lockedList().filter(x => x !== id)
+                                     : [...lockedList(), id];
+        if (!layout.locked.length) delete layout.locked;
+      }, { render: false });
       paintSel(d);
     });
     // Opacity, live while sliding, committed through the renderer on release.
@@ -8345,9 +8339,9 @@ function layerMenu(d, el, e) {
           const b = d.createElement('button');
           b.textContent = label;
           b.addEventListener('click', async () => {
-            closeMenu(d); pushHistory();
-            const r = _pathfinderApply(sel, op);
-            markDirty(); await render(); setSel($('out').contentDocument, [r.id]);
+            closeMenu(d);
+            const r = await changeDoc(() => _pathfinderApply(sel, op));
+            setSel($('out').contentDocument, [r.id]);
           });
           sub.appendChild(b);
         });
@@ -8382,7 +8376,7 @@ function layerMenu(d, el, e) {
       });
     });
     if (one && one.kind === 'compound') item('Release compound', async () => {
-      pushHistory(); const r = _releaseApply(id); markDirty(); await render();
+      const r = await changeDoc(() => _releaseApply(id));
       setSel($('out').contentDocument, r.released);
     });
     if (one && one.kind === 'path') item('Edit points', () => {
@@ -8393,15 +8387,15 @@ function layerMenu(d, el, e) {
     if (one && shapeTakesImage(one)) {
       const pic = [...selIds].map(i => boxPictureSrc(i) && i).find(Boolean);
       if (pic && selIds.size === 2) item('Put the picture inside this shape', async () => {
-        closeMenu(d); pushHistory();
-        const r = _pasteIntoApply(id, pic);
-        markDirty(); await render(); setSel($('out').contentDocument, [r.id]);
+        closeMenu(d);
+        const r = await changeDoc(() => _pasteIntoApply(id, pic));
+        setSel($('out').contentDocument, [r.id]);
         $('stat').textContent = 'the picture is inside the shape — right-click it for Fill or Fit';
       });
       submenuRow(d, m, 'Picture inside ▸', sub => {
         const btn = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
           b.addEventListener('click', async () => { closeMenu(d); await fn(); }); sub.appendChild(b); };
-        const put = async im => { pushHistory(); _shapeImageApply(id, im); markDirty(); await render(); };
+        const put = async im => { await changeDoc(() => { _shapeImageApply(id, im); }); };
         projectImages().slice(0, 30).forEach(n => btn(n, () => put({ ...(one.image || {}), src: 'assets/' + n })));
         btn('Upload a picture…', () => uploadImageFile($('out').contentDocument, path => put({ ...(one.image || {}), src: path })));
         if (one.image) {
@@ -8420,10 +8414,8 @@ function layerMenu(d, el, e) {
     const b = inchBox(el, pg);
     const mount = pg && pg.querySelector('[data-ds-mount]');
     const pid = mount ? (/^\d+$/.test(mount.dataset.dsMount) ? +mount.dataset.dsMount : mount.dataset.dsMount) : visiblePageId();
-    pushHistory();
-    const r = _pilotApplyAddTextBox({ page: pid, x: +b.x.toFixed(2), y: +(b.y + b.h + 0.06).toFixed(2), w: +b.w.toFixed(2),
-      md: `{caption:${id}}`, style: { italic: true, size: 12 } });
-    markDirty(); await render();
+    const r = await changeDoc(() => _pilotApplyAddTextBox({ page: pid, x: +b.x.toFixed(2), y: +(b.y + b.h + 0.06).toFixed(2), w: +b.w.toFixed(2),
+      md: `{caption:${id}}`, style: { italic: true, size: 12 } }));
     $('stat').textContent = 'caption added — it shows the image\'s description (right-click the image ▸ Description to change it)';
     void r;
   });
@@ -8451,9 +8443,8 @@ function layerMenu(d, el, e) {
             const b = d.createElement('button');
             b.title = a2; b.className = (cur.align || 'center') === a2 ? 'on' : '';
             b.addEventListener('click', async () => {
-              closeMenu(d); pushHistory();
-              _pilotApplyFit(id, cur.fit, a2 === 'center' ? null : a2);
-              markDirty(); await render();
+              closeMenu(d);
+              await changeDoc(() => { _pilotApplyFit(id, cur.fit, a2 === 'center' ? null : a2); });
             });
             grid.appendChild(b);
           });
@@ -8508,9 +8499,7 @@ function layerMenu(d, el, e) {
       });
     } else {
       item('Break thread after this frame', async () => {
-        pushHistory();
-        const r = _unthreadApply(id);
-        markDirty(); await render();
+        const r = await changeDoc(() => _unthreadApply(id));
         $('stat').textContent = r.removed
           ? `thread broken — ${r.removed} empty frame${r.removed === 1 ? '' : 's'} after it removed`
           : 'thread broken';
@@ -10056,13 +10045,12 @@ $('ar-table').addEventListener('click', () => openTablePanel(selectedTableId()))
 
 $('table').onclick = async () => {
   const page = visiblePageId();
-  pushHistory();
   const id = freeTableId();
-  tables().push(wearDefaults('table', { id, page, x: placeX(3.5), y: 2, w: 3.5, z: 2, header: true,
-                  rows: [['Column 1', 'Column 2'], ['', ''], ['', '']] }));
-  setSel($('out').contentDocument, ['table.' + id]);
-  markDirty();
-  await render();
+  await changeDoc(() => {
+    tables().push(wearDefaults('table', { id, page, x: placeX(3.5), y: 2, w: 3.5, z: 2, header: true,
+                    rows: [['Column 1', 'Column 2'], ['', ''], ['', '']] }));
+    setSel($('out').contentDocument, ['table.' + id]);
+  });
   // Land on the styling panel, the way Canva drops you into the new table's
   // controls rather than making you hunt for them.
   openTablePanel('table.' + id);
@@ -10170,13 +10158,12 @@ function tableCellKey(e) {
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
-    pushHistory();
-    cellKeys(t).forEach(k => {
-      const [rr, cc] = k.split(',').map(Number);
-      t.rows[rr][cc] = '';
-    });
-    markDirty();
-    render().then(() => { paintCells($('out').contentDocument); renderTablePanel(); });
+    changeDoc(() => {
+      cellKeys(t).forEach(k => {
+        const [rr, cc] = k.split(',').map(Number);
+        t.rows[rr][cc] = '';
+      });
+    }).then(() => { paintCells($('out').contentDocument); renderTablePanel(); });
     return true;
   }
   // Any printable character starts editing WITH that character.
@@ -10358,9 +10345,7 @@ function editCell(d, td, seed) {
       if (moved && settled === 'mine') {
         await collabFieldFirstTheirs();
         const tt = tableOf(tid) || t;      // re-found: see collabFieldFirstTheirs
-        pushHistory();
-        if (tt.rows[ri]) tt.rows[ri][ci] = newVal;
-        markDirty();
+        await changeDoc(() => { if (tt.rows[ri]) tt.rows[ri][ci] = newVal; }, { render: false });
       }
       await render();
       collabFieldNote(settled, 'table cell');
@@ -10529,8 +10514,8 @@ function tableMenu(d, td, e) {
       for (let r = rg.r0; r <= rg.r1; r++) for (let c = rg.c0; c <= rg.c1; c++) keys.push(`${r},${c}`);
       const cur = ((t.cells || {})[`${ri},${ci}`] || {}).use;
       const row = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
-        b.addEventListener('click', async () => { closeMenu(d); pushHistory(); const ok = await fn(); if (ok === false) { withdrawStep(); return; }
-          markDirty(); await render(); paintCells($('out').contentDocument); }); sub.appendChild(b); };
+        b.addEventListener('click', async () => { closeMenu(d); const ok = await changeDoc(fn); if (ok === false) return;
+          paintCells($('out').contentDocument); }); sub.appendChild(b); };
       Object.keys(cellStyles()).sort().forEach(n => row((cur === n ? '✓ ' : '') + n, () => applyCellStyle(t, keys, n)));
       row('No cell style', () => applyCellStyle(t, keys, null));
       row('Save this cell’s look as…', async () => {
@@ -11960,11 +11945,11 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
             placeholder: 'e.g. Budget figure', required: true },
         ]);
         if (!got || !got.name.trim()) return;
-        pushHistory();
-        layout.chartStyles = Object.assign({}, layout.chartStyles);
-        layout.chartStyles[got.name.trim()] = chartLookOf(c);
-        chartStyleName = got.name.trim();
-        markDirty();
+        await changeDoc(() => {
+          layout.chartStyles = Object.assign({}, layout.chartStyles);
+          layout.chartStyles[got.name.trim()] = chartLookOf(c);
+          chartStyleName = got.name.trim();
+        }, { render: false });
         renderChartPanel();
         $('stat').textContent = 'saved the look as "' + chartStyleName + '"';
       });
@@ -11974,23 +11959,23 @@ function renderChartCustomize(pop, s, c, isPie, mk) {
         if (!st) return;
         // One history entry and one redraw for the whole document — this is
         // "redefine across a report", and it should undo as one thing.
-        pushHistory();
-        const ids = layout.shapes.filter(x => x.kind === 'chart').map(x => x.id)
-          .concat(inlineChartIds());
-        ids.forEach(id => chartApply(id, ch => chartWearLook(ch, st)));
-        markDirty();
-        await render();
+        const ids = await changeDoc(() => {
+          const all = layout.shapes.filter(x => x.kind === 'chart').map(x => x.id)
+            .concat(inlineChartIds());
+          all.forEach(id => chartApply(id, ch => chartWearLook(ch, st)));
+          return all;
+        });
         renderChartPanel();
         $('stat').textContent = ids.length + ' charts now wear "'
           + chartStyleName + '"';
       }, !chartStyleName || !(layout.chartStyles || {})[chartStyleName]);
     mk(row2, 'Delete', 'Forget this saved look',
       () => {
-        pushHistory();
-        delete layout.chartStyles[chartStyleName];
-        if (!Object.keys(layout.chartStyles).length) delete layout.chartStyles;
-        chartStyleName = '';
-        markDirty();
+        changeDoc(() => {
+          delete layout.chartStyles[chartStyleName];
+          if (!Object.keys(layout.chartStyles).length) delete layout.chartStyles;
+          chartStyleName = '';
+        }, { render: false });
         renderChartPanel();
       }, !chartStyleName || !(layout.chartStyles || {})[chartStyleName]);
     const n = document.createElement('p');
@@ -12433,7 +12418,7 @@ function editChartText(d, node) {
         }
         const sh = layout.shapes.find(x => x.id === s.id && x.kind === 'chart')
           || s.shape;
-        pushHistory(); chartText(sh.chart, hook, val); markDirty();
+        await changeDoc(() => { chartText(sh.chart, hook, val); }, { render: false });
       }
       await render();
       renderChartPanel();
@@ -12477,20 +12462,19 @@ function dressNewChart(ch) {
 // is the bar chart; the Insert palette offers the others by name.
 async function addChartOfType(type = 'bar') {
   const page = visiblePageId();
-  pushHistory();
   const id = freeShapeId('chart');
-  layout.shapes.push({
-    id, page, kind: 'chart', x: placeX(4), y: 1.6, w: 4, h: 2.8, z: nextZ(2, page), fill: 'none',
-    chart: dressNewChart({
-      type,
-      labels: ['First', 'Second', 'Third'],
-      series: [{ name: 'Series 1', data: [12, 19, 8] }],
-      legend: false, values: true, grid: true,
-    }),
+  await changeDoc(() => {
+    layout.shapes.push({
+      id, page, kind: 'chart', x: placeX(4), y: 1.6, w: 4, h: 2.8, z: nextZ(2, page), fill: 'none',
+      chart: dressNewChart({
+        type,
+        labels: ['First', 'Second', 'Third'],
+        series: [{ name: 'Series 1', data: [12, 19, 8] }],
+        legend: false, values: true, grid: true,
+      }),
+    });
+    setSel($('out').contentDocument, [id]);
   });
-  setSel($('out').contentDocument, [id]);
-  markDirty();
-  await render();
   openChartPanel(id);
   $('stat').textContent = `${id} added to page ${page} — edit its data in the Chart panel`;
 }
@@ -12806,14 +12790,9 @@ async function removeCitationAt(where, sid, num) {
     $('stat').textContent = `could not tell which citation this is — click into the text and delete the ${num} there`;
     return false;
   }
-  pushHistory();
   const m = hits[k];
-  if (h.write(txt.slice(0, m.index) + txt.slice(m.index + m[0].length)) === false) {
-    withdrawStep();
-    return false;
-  }
-  markDirty();
-  await render();
+  const wrote = await changeDoc(() => h.write(txt.slice(0, m.index) + txt.slice(m.index + m[0].length)) !== false);
+  if (!wrote) return false;
   const left = citeCount(sid);
   $('stat').textContent = left
     ? `citation removed here; endnote [${sid}] is still cited ${left === 1 ? 'once' : left + ' times'} elsewhere`
@@ -13065,9 +13044,7 @@ function editEndnote(d, li, sid, at = null, opts = {}) {
       // Said past the render below, which would otherwise claim the row.
       sayNowAndAfterRender(emptyCitationRefusal(sid));
     } else if (keep && changed) {
-      pushHistory();
-      updateSource(sid, t, u);
-      markDirty();
+      await changeDoc(() => { updateSource(sid, t, u); }, { render: false });
     } else if (!endnoteRenderOwed) {
       // Nothing to write: put the entry back as it was drawn. A render here
       // redrew the whole report to show the same words.
@@ -13089,9 +13066,7 @@ function editEndnote(d, li, sid, at = null, opts = {}) {
     if (!t) { $('stat').textContent = emptyCitationRefusal(sid); return; }
     close();
     if (changed) {
-      pushHistory();
-      updateSource(sid, t, u);
-      markDirty();
+      changeDoc(() => { updateSource(sid, t, u); }, { render: false });
       endnoteRenderOwed = true;
       redraw(t, u);
     } else redraw();
@@ -13692,10 +13667,9 @@ async function findReplaceAll() {
   const n = findState.hits.length;
   // One history entry and one render for the whole change — a find/replace
   // that took forty undos to back out would not be one anybody trusted.
-  pushHistory();
   const done = new Set();
   let refused = 0, why = '';
-  findState.hits.forEach(h => {
+  await changeDoc(() => findState.hits.forEach(h => {
     if (done.has(h.target.key)) return;             // a target is rewritten once
     done.add(h.target.key);
     const ok = h.target.write(h.target.read().replace(findRe(findState.needle, findState),
@@ -13705,9 +13679,7 @@ async function findReplaceAll() {
     // line. "changed 1 hit in 1 place" then overwrote that, so the refusal
     // read as a success.
     if (ok === false) { refused++; why = $('stat').textContent; }
-  });
-  markDirty();
-  await render();
+  }));
   findRun();
   renderFindPanel();
   const changed = done.size - refused;
@@ -14665,13 +14637,14 @@ async function anchorSet(d, id, key, edge) {
   if (!hostEl) return { ok: false, error: `no paragraph '${key}' on this page` };
   if (hostEl === el || el.contains(hostEl) || hostEl.contains(el))
     return { ok: false, error: 'a thing cannot follow itself, or something inside it' };
-  pushHistory();
-  const st = ensureStore(d, el);        // a designed element is pinned where it stands
-  const box = inchBox(el, page), hb = anchorHostBox(d, page, key);
-  const from = edge === 'bottom' ? hb.y + hb.h : hb.y;
-  st.anchor = { to: key, dy: +(box.y - from).toFixed(3) };
-  if (edge === 'bottom') st.anchor.edge = 'bottom';
-  markDirty(); await render();
+  const st = await changeDoc(() => {
+    const st = ensureStore(d, el);        // a designed element is pinned where it stands
+    const box = inchBox(el, page), hb = anchorHostBox(d, page, key);
+    const from = edge === 'bottom' ? hb.y + hb.h : hb.y;
+    st.anchor = { to: key, dy: +(box.y - from).toFixed(3) };
+    if (edge === 'bottom') st.anchor.edge = 'bottom';
+    return st;
+  });
   const nd = $('out').contentDocument;
   // A designed element its renderer places through style() — a css string
   // with nowhere to hang an attribute — never receives data-anc, so the page
@@ -15132,29 +15105,30 @@ function renderBoxPanel() {
   bg.appendChild(small(eff.fill ? 'Change…' : 'Add…', false, () => openColorPanel(selected)));
   if (eff.fill) {
     bg.appendChild(small('None', false, async () => {
-      pushHistory();
-      // A fill that came from the style needs an explicit "none" to beat it;
-      // the box's own fill just goes.
-      delete bx.fill;
-      if (dressedObj(bx).fill) bx.fill = null;
-      await commit();
+      await changeDoc(() => {
+        // A fill that came from the style needs an explicit "none" to beat it;
+        // the box's own fill just goes.
+        delete bx.fill;
+        if (dressedObj(bx).fill) bx.fill = null;
+      });
+      refresh();
     }));
   }
 
   // Border: none, or a colour from the palette; then weight and which edge.
   const cur = eff.border && eff.border.style !== 'none' ? eff.border : null;
   const setBorder = async patch => {
-    pushHistory();
-    bx.border = { ...(cur || { w: 1, color: (M.palette || ['#52796F'])[0] }), ...patch };
-    await commit();
+    await changeDoc(() => { bx.border = { ...(cur || { w: 1, color: (M.palette || ['#52796F'])[0] }), ...patch }; });
+    refresh();
   };
   const br = row('Border');
   br.appendChild(small('None', !cur, async () => {
-    pushHistory();
-    delete bx.border;
-    // Wearing a style with a rule: the box says "no rule" of its own.
-    if (dressedObj(bx).border) bx.border = { style: 'none' };
-    await commit();
+    await changeDoc(() => {
+      delete bx.border;
+      // Wearing a style with a rule: the box says "no rule" of its own.
+      if (dressedObj(bx).border) bx.border = { style: 'none' };
+    });
+    refresh();
   }));
   const grid = document.createElement('div');
   grid.className = 'swgrid';
@@ -16221,10 +16195,11 @@ async function arApply(fid, v) {
   if (els.length !== 1 || typeof v !== 'number' || !isFinite(v)) return false;
   const el = els[0];
   const page = el.closest('section.page') || d.querySelector('section.page');
-  pushHistory();
-  const wantsRender = AR_APPLY[fid](d, el, page, v);
-  clearGuides(d);
-  markDirty();
+  const wantsRender = await changeDoc(() => {
+    const w = AR_APPLY[fid](d, el, page, v);
+    clearGuides(d);
+    return w;
+  }, { render: false });
   if (wantsRender) await render();
   paintSel($('out').contentDocument);
   return true;
@@ -16344,38 +16319,39 @@ function alignSel(d, mode, to = alignTo) {
     $('stat').textContent = 'no key object — click one of the selected things again to make it the key';
     return;
   }
-  pushHistory();
-  let ref;
-  if (key) {
-    ref = { ...key.b };
-  } else if (items.length === 1 || to === 'page') {
-    // The page as laid out, not PAGE_H_IN: a pageless document's PAGE_H_IN is
-    // a sentinel no report reaches (PAGELESS_H), so "align bottom" sent the
-    // piece a couple of hundred inches below the last line of the page.
-    const pageH = Math.min(PAGE_H_IN,
-      page.getBoundingClientRect().height / (DPI * zoomOf(page)));
-    ref = { x: MARGIN_IN, y: TOP_IN,
-            w: PAGE_W_IN - 2 * MARGIN_IN, h: pageH - TOP_IN - 0.9 };
-    if (mode === 'hcenter') { ref.x = 0; ref.w = PAGE_W_IN; }
-    if (mode === 'vcenter') { ref.y = 0; ref.h = pageH; }
-  } else {
-    const x1 = Math.min(...items.map(o => o.b.x)), y1 = Math.min(...items.map(o => o.b.y));
-    const x2 = Math.max(...items.map(o => o.b.x + o.b.w));
-    const y2 = Math.max(...items.map(o => o.b.y + o.b.h));
-    ref = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
-  }
-  items.forEach(u => {
-    if (u === key) return;                 // the key object stays still
-    const { b } = u;
-    let { x, y } = b;
-    if (mode === 'left') x = ref.x;
-    if (mode === 'hcenter') x = ref.x + (ref.w - b.w) / 2;
-    if (mode === 'right') x = ref.x + ref.w - b.w;
-    if (mode === 'top') y = ref.y;
-    if (mode === 'vcenter') y = ref.y + (ref.h - b.h) / 2;
-    if (mode === 'bottom') y = ref.y + ref.h - b.h;
-    moveUnit(u, x, y);
-  });
+  changeDoc(() => {
+    let ref;
+    if (key) {
+      ref = { ...key.b };
+    } else if (items.length === 1 || to === 'page') {
+      // The page as laid out, not PAGE_H_IN: a pageless document's PAGE_H_IN is
+      // a sentinel no report reaches (PAGELESS_H), so "align bottom" sent the
+      // piece a couple of hundred inches below the last line of the page.
+      const pageH = Math.min(PAGE_H_IN,
+        page.getBoundingClientRect().height / (DPI * zoomOf(page)));
+      ref = { x: MARGIN_IN, y: TOP_IN,
+              w: PAGE_W_IN - 2 * MARGIN_IN, h: pageH - TOP_IN - 0.9 };
+      if (mode === 'hcenter') { ref.x = 0; ref.w = PAGE_W_IN; }
+      if (mode === 'vcenter') { ref.y = 0; ref.h = pageH; }
+    } else {
+      const x1 = Math.min(...items.map(o => o.b.x)), y1 = Math.min(...items.map(o => o.b.y));
+      const x2 = Math.max(...items.map(o => o.b.x + o.b.w));
+      const y2 = Math.max(...items.map(o => o.b.y + o.b.h));
+      ref = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    items.forEach(u => {
+      if (u === key) return;                 // the key object stays still
+      const { b } = u;
+      let { x, y } = b;
+      if (mode === 'left') x = ref.x;
+      if (mode === 'hcenter') x = ref.x + (ref.w - b.w) / 2;
+      if (mode === 'right') x = ref.x + ref.w - b.w;
+      if (mode === 'top') y = ref.y;
+      if (mode === 'vcenter') y = ref.y + (ref.h - b.h) / 2;
+      if (mode === 'bottom') y = ref.y + ref.h - b.h;
+      moveUnit(u, x, y);
+    });
+  }, { render: false });
   clearGuides(d);
   paintSel(d);
 }
@@ -16392,49 +16368,51 @@ function distributeSel(d, axis, gap = arrangeGap()) {
     .sort((a, q) => axis === 'h' ? a.b.x - q.b.x : a.b.y - q.b.y);
   if (gap != null) {
     if (items.length < 2) return;
-    pushHistory();
-    const [P, S] = axis === 'h' ? ['x', 'w'] : ['y', 'h'];
-    const ai = Math.max(0, items.indexOf(keyUnit(items)));
-    const at = u => axis === 'h' ? (v => moveUnit(u, v, u.b.y)) : (v => moveUnit(u, u.b.x, v));
-    let next = items[ai].b[P] + items[ai].b[S] + gap;
-    for (let i = ai + 1; i < items.length; i++) {
-      at(items[i])(next); next += items[i].b[S] + gap;
-    }
-    let prev = items[ai].b[P] - gap;
-    for (let i = ai - 1; i >= 0; i--) {
-      at(items[i])(prev - items[i].b[S]); prev -= items[i].b[S] + gap;
-    }
+    changeDoc(() => {
+      const [P, S] = axis === 'h' ? ['x', 'w'] : ['y', 'h'];
+      const ai = Math.max(0, items.indexOf(keyUnit(items)));
+      const at = u => axis === 'h' ? (v => moveUnit(u, v, u.b.y)) : (v => moveUnit(u, u.b.x, v));
+      let next = items[ai].b[P] + items[ai].b[S] + gap;
+      for (let i = ai + 1; i < items.length; i++) {
+        at(items[i])(next); next += items[i].b[S] + gap;
+      }
+      let prev = items[ai].b[P] - gap;
+      for (let i = ai - 1; i >= 0; i--) {
+        at(items[i])(prev - items[i].b[S]); prev -= items[i].b[S] + gap;
+      }
+    }, { render: false });
     clearGuides(d);
     paintSel(d);
     return;
   }
   if (items.length < 3) return;          // a group and one other thing: nothing to space
-  pushHistory();
-  // The span is the selection's own extent — leftmost edge to rightmost edge
-  // — not the first and last pieces by position: with a wide piece early in
-  // the order (a full-width caption among two small callouts) "the last
-  // one's right edge" stopped short of where the selection ends, and the
-  // spacing came out uneven.
-  const lo = axis === 'h' ? Math.min(...items.map(o => o.b.x)) : Math.min(...items.map(o => o.b.y));
-  const hi = axis === 'h' ? Math.max(...items.map(o => o.b.x + o.b.w))
-                          : Math.max(...items.map(o => o.b.y + o.b.h));
-  if (axis === 'h') {
-    const gap = ((hi - lo)
-               - items.reduce((s, o) => s + o.b.w, 0)) / (items.length - 1);
-    let x = lo;
-    items.forEach(u => {
-      moveUnit(u, x, u.b.y);
-      x += u.b.w + gap;
-    });
-  } else {
-    const gap = ((hi - lo)
-               - items.reduce((s, o) => s + o.b.h, 0)) / (items.length - 1);
-    let y = lo;
-    items.forEach(u => {
-      moveUnit(u, u.b.x, y);
-      y += u.b.h + gap;
-    });
-  }
+  changeDoc(() => {
+    // The span is the selection's own extent — leftmost edge to rightmost edge
+    // — not the first and last pieces by position: with a wide piece early in
+    // the order (a full-width caption among two small callouts) "the last
+    // one's right edge" stopped short of where the selection ends, and the
+    // spacing came out uneven.
+    const lo = axis === 'h' ? Math.min(...items.map(o => o.b.x)) : Math.min(...items.map(o => o.b.y));
+    const hi = axis === 'h' ? Math.max(...items.map(o => o.b.x + o.b.w))
+                            : Math.max(...items.map(o => o.b.y + o.b.h));
+    if (axis === 'h') {
+      const gap = ((hi - lo)
+                 - items.reduce((s, o) => s + o.b.w, 0)) / (items.length - 1);
+      let x = lo;
+      items.forEach(u => {
+        moveUnit(u, x, u.b.y);
+        x += u.b.w + gap;
+      });
+    } else {
+      const gap = ((hi - lo)
+                 - items.reduce((s, o) => s + o.b.h, 0)) / (items.length - 1);
+      let y = lo;
+      items.forEach(u => {
+        moveUnit(u, u.b.x, y);
+        y += u.b.h + gap;
+      });
+    }
+  }, { render: false });
   clearGuides(d);
   paintSel(d);
 }
@@ -16444,66 +16422,65 @@ function distributeSel(d, axis, gap = arrangeGap()) {
  *  the design's own placement stands again. */
 async function deleteSel(d) {
   if (!selIds.size) return;
-  pushHistory();
-  let touched = false;
-  const gone = [];
-  [...selIds].filter(id => !isLocked(id)).forEach(id => {
-    if (masterItemOf(id)) {
-      $('stat').textContent = `that is on the shared layout "${masterItemOf(id).name}" — right-click it for Remove from shared layout, or detach the layout to this page`;
-      return;
-    }
-    if (!!shapeOf(id)) {
-      layout.shapes = layout.shapes.filter(s => s.id !== id); touched = true; gone.push(id);
-    } else if (boxOf(id)) {
-      unlinkFrame(id);
-      layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, '')); touched = true; gone.push(id);
-    } else if (tableOf(id)) {
-      layout.tables = tables().filter(t => t.id !== id.replace(/^table\./, '')); touched = true; gone.push(id);
-    } else if (isHidden(id)) {
-      // Deleting a ghost restores it — hiding is a toggle, not a loss.
-      layout.hidden = hiddenList().filter(x => x !== id);
-      if (!layout.hidden.length) delete layout.hidden;
-      touched = true;
-    } else if (layout.positions[id]) {
-      delete layout.positions[id]; touched = true;
-    } else if (d.querySelector(`[data-el="${CSS.escape(id)}"]`)) {
-      // A designed element in its designed place: Delete used to be a silent
-      // no-op here (nothing in layout.json matched, so there was nothing to
-      // remove). Now it hides — the element ghosts in the editor, publishes
-      // as display:none, and its markup keeps shipping so this is reversible.
-      hiddenList().push(id); touched = true;
-    }
-  });
-  forgetInGroups(gone);            // a group loses its deleted members
-  // A toggle whose CONTENT was just deleted must not survive as a wired
-  // button: its target would fail layout validation and the whole draft
-  // would refuse to build over one deletion. The button stays — nothing the
-  // person did not delete disappears — it just becomes a plain box again.
-  // Deleted ids by BARE store id, whatever the kind: boxes and tables carry
-  // prefixes in selIds, shapes do not — and a toggle's target list speaks
-  // bare ids for all three.
-  const goneBare = new Set(gone.map(x => x.replace(/^(text|table)\./, '')));
   let demoteNote = '';
-  if (goneBare.size) {
-    boxes().forEach(bx => {
-      if (bx.act !== 'toggle') return;
-      const kept = toggleTargets(bx).filter(t => !goneBare.has(t));
-      if (kept.length === toggleTargets(bx).length) return;
-      if (kept.length) {
-        bx.target = kept.length === 1 ? kept[0] : kept;
-        demoteNote = 'a revealed element was deleted — the button still '
-          + 'reveals the other' + (kept.length > 1 ? 's' : '');
-      } else {
-        delete bx.act; delete bx.target;
-        demoteNote = 'the section a button revealed was deleted — '
-          + 'the button is a plain text box now';
+  await changeDoc(() => {
+    let touched = false;
+    const gone = [];
+    [...selIds].filter(id => !isLocked(id)).forEach(id => {
+      if (masterItemOf(id)) {
+        $('stat').textContent = `that is on the shared layout "${masterItemOf(id).name}" — right-click it for Remove from shared layout, or detach the layout to this page`;
+        return;
+      }
+      if (!!shapeOf(id)) {
+        layout.shapes = layout.shapes.filter(s => s.id !== id); touched = true; gone.push(id);
+      } else if (boxOf(id)) {
+        unlinkFrame(id);
+        layout.boxes = boxes().filter(b => b.id !== id.replace(/^text\./, '')); touched = true; gone.push(id);
+      } else if (tableOf(id)) {
+        layout.tables = tables().filter(t => t.id !== id.replace(/^table\./, '')); touched = true; gone.push(id);
+      } else if (isHidden(id)) {
+        // Deleting a ghost restores it — hiding is a toggle, not a loss.
+        layout.hidden = hiddenList().filter(x => x !== id);
+        if (!layout.hidden.length) delete layout.hidden;
+        touched = true;
+      } else if (layout.positions[id]) {
+        delete layout.positions[id]; touched = true;
+      } else if (d.querySelector(`[data-el="${CSS.escape(id)}"]`)) {
+        // A designed element in its designed place: Delete used to be a silent
+        // no-op here (nothing in layout.json matched, so there was nothing to
+        // remove). Now it hides — the element ghosts in the editor, publishes
+        // as display:none, and its markup keeps shipping so this is reversible.
+        hiddenList().push(id); touched = true;
       }
     });
-  }
-  selIds.clear();
-  if (!touched) { withdrawStep(); return; }
-  markDirty();
-  await render();
+    forgetInGroups(gone);            // a group loses its deleted members
+    // A toggle whose CONTENT was just deleted must not survive as a wired
+    // button: its target would fail layout validation and the whole draft
+    // would refuse to build over one deletion. The button stays — nothing the
+    // person did not delete disappears — it just becomes a plain box again.
+    // Deleted ids by BARE store id, whatever the kind: boxes and tables carry
+    // prefixes in selIds, shapes do not — and a toggle's target list speaks
+    // bare ids for all three.
+    const goneBare = new Set(gone.map(x => x.replace(/^(text|table)\./, '')));
+    if (goneBare.size) {
+      boxes().forEach(bx => {
+        if (bx.act !== 'toggle') return;
+        const kept = toggleTargets(bx).filter(t => !goneBare.has(t));
+        if (kept.length === toggleTargets(bx).length) return;
+        if (kept.length) {
+          bx.target = kept.length === 1 ? kept[0] : kept;
+          demoteNote = 'a revealed element was deleted — the button still '
+            + 'reveals the other' + (kept.length > 1 ? 's' : '');
+        } else {
+          delete bx.act; delete bx.target;
+          demoteNote = 'the section a button revealed was deleted — '
+            + 'the button is a plain text box now';
+        }
+      });
+    }
+    selIds.clear();
+    if (!touched) return false;
+  });
   // AFTER the render: the pipeline writes its own status ("unsaved changes"),
   // and a note printed before it is a note nobody sees.
   if (demoteNote) $('stat').textContent = demoteNote;
@@ -16627,20 +16604,20 @@ async function duplicateSel(d) {
     }
   };
   if (!selIds.size) return;
-  pushHistory();
-  const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
-    && selGroups()[0].every(id => selIds.has(id));
-  [...selIds].forEach(dup);
-  if (!copies.length) { withdrawStep(); return; }
-  // Duplicating a whole group hands back a group — the copy stays together,
-  // as Canva's does.
-  if (wasGroup && copies.length > 1) {
-    layout.groups = layout.groups || [];
-    layout.groups.push(copies);
-  }
-  setSel(d, copies);                       // the copies become the selection
-  markDirty();
-  await render();
+  const made = await changeDoc(() => {
+    const wasGroup = selGroups().length === 1 && selGroups()[0].length === selIds.size
+      && selGroups()[0].every(id => selIds.has(id));
+    [...selIds].forEach(dup);
+    if (!copies.length) return false;
+    // Duplicating a whole group hands back a group — the copy stays together,
+    // as Canva's does.
+    if (wasGroup && copies.length > 1) {
+      layout.groups = layout.groups || [];
+      layout.groups.push(copies);
+    }
+    setSel(d, copies);                       // the copies become the selection
+  });
+  if (made === false) return;
   $('stat').textContent = asBoxCount
     ? `duplicated ${copies.length} — a designed element's copy is a floating text box`
     : `duplicated ${copies.length} element${copies.length > 1 ? 's' : ''}`;
@@ -16681,62 +16658,61 @@ function copySel(d) {
 
 async function pasteClip(d, inPlace = false) {
   if (!clip || !clip.items.length) return;
-  pushHistory();
   const page = visiblePageId();
   // Repeated pastes cascade; Paste in Place (⌥⇧⌘V) lands on the original's
   // own x/y, on the page in view (InDesign's Edit > Paste in Place).
   const off = inPlace ? 0 : 0.2 * (++clip.pastes);
   const copies = [];
   const idMap = new Map();                   // original box id -> its copy's
-  // Pasting is how an object crosses pages, and an anchor cannot cross one:
-  // `to` names a paragraph that lives on the page it was copied from, and the
-  // runtime measures hosts on the object's own sheet only. Landing back on
-  // that same page the anchor is still true, and is kept.
-  const placeByPage = x => {
-    if (String(x.page) !== String(page)) {
-      delete x.anchor; delete x.wrap; delete x.wrapPad;
+  await changeDoc(() => {
+    // Pasting is how an object crosses pages, and an anchor cannot cross one:
+    // `to` names a paragraph that lives on the page it was copied from, and the
+    // runtime measures hosts on the object's own sheet only. Landing back on
+    // that same page the anchor is still true, and is kept.
+    const placeByPage = x => {
+      if (String(x.page) !== String(page)) {
+        delete x.anchor; delete x.wrap; delete x.wrapPad;
+      }
+      x.page = page;
+      return x;
+    };
+    clip.items.forEach(it => {
+      if (it.kind === 'shape') {
+        const nid = freeShapeId(it.data.kind);
+        layout.shapes.push(placeByPage({ ...it.data, id: nid,
+          x: Math.min(it.data.x + off, PAGE_W_IN - Math.min(it.data.w, PAGE_W_IN)),
+          y: Math.min(it.data.y + off, PAGE_H_IN - Math.min(it.data.h, PAGE_H_IN)) }));
+        idMap.set(it.data.id, nid);   // a toggle's target may be a shape too
+        copies.push(nid);
+      } else {
+        const nid = freeBoxId();
+        boxes().push(placeByPage({ ...it.data, id: nid,
+          x: Math.min(it.data.x + off, PAGE_W_IN - Math.min(it.data.w, PAGE_W_IN)),
+          y: Math.min(it.data.y + off, PAGE_H_IN - 0.4) }));
+        idMap.set(it.data.id, nid);
+        copies.push('text.' + nid);
+      }
+    });
+    // A copied toggle whose CONTENT came along in the same paste controls the
+    // COPY, not the original — otherwise duplicating an expandable pair made a
+    // second button wired to the first button's content, which reads as broken
+    // the moment either is moved. A toggle pasted alone keeps its target: one
+    // section with two buttons is a legitimate thing to build.
+    copies.forEach(cid => {
+      if (!cid.startsWith('text.')) return;
+      const bx = boxes().find(x => x.id === cid.slice(5));
+      if (!bx || bx.act !== 'toggle') return;
+      const mapped = toggleTargets(bx).map(t => idMap.get(t) || t);
+      if (mapped.some((t, i) => t !== toggleTargets(bx)[i])) {
+        bx.target = mapped.length === 1 ? mapped[0] : mapped;
+      }
+    });
+    if (clip.wasGroup && copies.length > 1) {   // a copied group pastes as a group
+      layout.groups = layout.groups || [];
+      layout.groups.push(copies);
     }
-    x.page = page;
-    return x;
-  };
-  clip.items.forEach(it => {
-    if (it.kind === 'shape') {
-      const nid = freeShapeId(it.data.kind);
-      layout.shapes.push(placeByPage({ ...it.data, id: nid,
-        x: Math.min(it.data.x + off, PAGE_W_IN - Math.min(it.data.w, PAGE_W_IN)),
-        y: Math.min(it.data.y + off, PAGE_H_IN - Math.min(it.data.h, PAGE_H_IN)) }));
-      idMap.set(it.data.id, nid);   // a toggle's target may be a shape too
-      copies.push(nid);
-    } else {
-      const nid = freeBoxId();
-      boxes().push(placeByPage({ ...it.data, id: nid,
-        x: Math.min(it.data.x + off, PAGE_W_IN - Math.min(it.data.w, PAGE_W_IN)),
-        y: Math.min(it.data.y + off, PAGE_H_IN - 0.4) }));
-      idMap.set(it.data.id, nid);
-      copies.push('text.' + nid);
-    }
+    setSel(d, copies);
   });
-  // A copied toggle whose CONTENT came along in the same paste controls the
-  // COPY, not the original — otherwise duplicating an expandable pair made a
-  // second button wired to the first button's content, which reads as broken
-  // the moment either is moved. A toggle pasted alone keeps its target: one
-  // section with two buttons is a legitimate thing to build.
-  copies.forEach(cid => {
-    if (!cid.startsWith('text.')) return;
-    const bx = boxes().find(x => x.id === cid.slice(5));
-    if (!bx || bx.act !== 'toggle') return;
-    const mapped = toggleTargets(bx).map(t => idMap.get(t) || t);
-    if (mapped.some((t, i) => t !== toggleTargets(bx)[i])) {
-      bx.target = mapped.length === 1 ? mapped[0] : mapped;
-    }
-  });
-  if (clip.wasGroup && copies.length > 1) {   // a copied group pastes as a group
-    layout.groups = layout.groups || [];
-    layout.groups.push(copies);
-  }
-  setSel(d, copies);
-  markDirty();
-  await render();
   $('stat').textContent = `pasted ${copies.length} element${copies.length > 1 ? 's' : ''}`
     + `${inPlace ? ' in place' : ''} onto page ${page}`;
 }
@@ -16779,12 +16755,13 @@ async function stepRepeatDialog(d) {
   ], { okLabel: 'Repeat' });
   if (got == null) return;
   const n = Math.max(1, Math.min(100, Math.round(+got.count) || 1));
-  pushHistory();
-  const made = stepRepeatIds(ids, n, +got.dx || 0, +got.dy || 0);
-  if (!made.length) { withdrawStep(); return; }
-  setSel(d, [...ids, ...made]);
-  markDirty();
-  await render();
+  const made = await changeDoc(() => {
+    const m = stepRepeatIds(ids, n, +got.dx || 0, +got.dy || 0);
+    if (!m.length) return false;
+    setSel(d, [...ids, ...m]);
+    return m;
+  });
+  if (!made) return;
   $('stat').textContent = `made ${made.length} cop${made.length > 1 ? 'ies' : 'y'}`;
 }
 
@@ -16970,13 +16947,13 @@ function applyStyleClip(d, styleClip, targets) {
 
 function toggleLockSel(d) {
   if (!selIds.size) return;
-  pushHistory();
   const all = [...selIds];
   const locked = all.every(isLocked);
-  layout.locked = locked ? lockedList().filter(id => !selIds.has(id))
-                         : [...new Set([...lockedList(), ...all])];
-  if (!layout.locked.length) delete layout.locked;
-  markDirty();
+  changeDoc(() => {
+    layout.locked = locked ? lockedList().filter(id => !selIds.has(id))
+                           : [...new Set([...lockedList(), ...all])];
+    if (!layout.locked.length) delete layout.locked;
+  }, { render: false });
   paintSel(d);
   $('stat').textContent = locked ? 'unlocked' : 'locked — drag is off until unlocked';
 }
@@ -16989,13 +16966,13 @@ function toggleLockSel(d) {
 function groupSel(d) {
   const ids = [...selIds];
   if (ids.length < 2) return;
-  pushHistory();
   const set = new Set(ids);
-  layout.groups = (layout.groups || [])
-    .map(g => g.filter(m => !set.has(m)))
-    .filter(g => g.length >= 2);
-  layout.groups.push(ids);
-  markDirty();
+  changeDoc(() => {
+    layout.groups = (layout.groups || [])
+      .map(g => g.filter(m => !set.has(m)))
+      .filter(g => g.length >= 2);
+    layout.groups.push(ids);
+  }, { render: false });
   paintSel(d);
   $('stat').textContent = `grouped ${ids.length} elements — they move as one`;
 }
@@ -17003,10 +16980,10 @@ function groupSel(d) {
 function ungroupSel(d) {
   const gs = selGroups();
   if (!gs.length) return;
-  pushHistory();
-  layout.groups = (layout.groups || []).filter(g => !gs.includes(g));
-  if (!layout.groups.length) delete layout.groups;
-  markDirty();
+  changeDoc(() => {
+    layout.groups = (layout.groups || []).filter(g => !gs.includes(g));
+    if (!layout.groups.length) delete layout.groups;
+  }, { render: false });
   paintSel(d);
   $('stat').textContent = 'ungrouped';
 }
@@ -17854,9 +17831,9 @@ async function pageSectionDialog(pid) {
     validate: v => (+v.start >= 1 && +v.start <= 9999 && Number.isInteger(+v.start)) ? (/[<>&{}"'\\]/.test(v.prefix) || v.prefix.length > 12 ? 'a prefix is up to 12 plain characters' : '') : 'start at a whole number from 1',
   });
   if (got == null) return;
-  pushHistory();
-  setPageSection(n, got.remove === 'remove' ? null : { start: +got.start, style: got.style, prefix: got.prefix });
-  await render();
+  await changeDoc(() => {
+    setPageSection(n, got.remove === 'remove' ? null : { start: +got.start, style: got.style, prefix: got.prefix });
+  });
   railRender();
 }
 
@@ -18232,31 +18209,32 @@ function railInsert(at) {
  *  The strip's × asks first; the pilot's removePage says what went in its
  *  answer. Returns the ids that went with the page. */
 async function deleteBlankPage(pid) {
-  pushHistory();
-  const blanks = pageBlanks().filter(b => b.id !== pid);
-  writeOrder(pageOrder().filter(p => p !== pid), blanks);
-  if (layout.pageMasters) {
-    delete layout.pageMasters[String(pid)];
-    if (!Object.keys(layout.pageMasters).length) delete layout.pageMasters;
-  }
-  // Nothing can render on a page that no longer exists — orphaned shapes/
-  // boxes/tables would otherwise sit invisible in layout.json and silently
-  // reappear if a future blank page reused this same id.
-  const gone = [];
-  layout.shapes = layout.shapes.filter(s => {
-    if (s.page !== pid) return true; gone.push(s.id); return false;
+  const gone = await changeDoc(() => {
+    const blanks = pageBlanks().filter(b => b.id !== pid);
+    writeOrder(pageOrder().filter(p => p !== pid), blanks);
+    if (layout.pageMasters) {
+      delete layout.pageMasters[String(pid)];
+      if (!Object.keys(layout.pageMasters).length) delete layout.pageMasters;
+    }
+    // Nothing can render on a page that no longer exists — orphaned shapes/
+    // boxes/tables would otherwise sit invisible in layout.json and silently
+    // reappear if a future blank page reused this same id.
+    const gone = [];
+    layout.shapes = layout.shapes.filter(s => {
+      if (s.page !== pid) return true; gone.push(s.id); return false;
+    });
+    boxes().filter(b => b.page === pid).forEach(b => unlinkFrame(b.id));
+    layout.boxes = boxes().filter(b => {
+      if (b.page !== pid) return true; gone.push('text.' + b.id); return false;
+    });
+    layout.tables = tables().filter(t => {
+      if (t.page !== pid) return true; gone.push('table.' + t.id); return false;
+    });
+    forgetInGroups(gone);
+    gone.forEach(id => selIds.delete(id));
+    if (layout.locked) layout.locked = layout.locked.filter(id => !gone.includes(id));
+    return gone;
   });
-  boxes().filter(b => b.page === pid).forEach(b => unlinkFrame(b.id));
-  layout.boxes = boxes().filter(b => {
-    if (b.page !== pid) return true; gone.push('text.' + b.id); return false;
-  });
-  layout.tables = tables().filter(t => {
-    if (t.page !== pid) return true; gone.push('table.' + t.id); return false;
-  });
-  forgetInGroups(gone);
-  gone.forEach(id => selIds.delete(id));
-  if (layout.locked) layout.locked = layout.locked.filter(id => !gone.includes(id));
-  await render();
   $('stat').textContent = `page deleted`;
   return gone;
 }
@@ -18267,23 +18245,21 @@ async function deleteBlankPage(pid) {
  *  chrome no longer offers it (see chip()); the pilot does, for the connector,
  *  which otherwise had to reach into the page with a script to drop a page. */
 async function hideDesignedPage(pid) {
-  pushHistory();
-  writeOrder(pageOrder().filter(p => p !== pid), pageBlanks());
-  await render();
+  await changeDoc(() => { writeOrder(pageOrder().filter(p => p !== pid), pageBlanks()); });
   $('stat').textContent = `page ${pid} taken out of the report — the page strip's Hidden group shows it again`;
 }
 
 /** Put a hidden DESIGNED page back, at its designed position among the
  *  visible pages: the Hidden group's 👁, and the pilot's showPage. */
 async function showDesignedPage(pid) {
-  pushHistory();
-  const order = pageOrder().slice();
-  const before = designedPages.filter(p => p.id < pid).map(p => p.id);
-  let at = 0;
-  for (let k = 0; k < order.length; k++) if (before.includes(order[k])) at = k + 1;
-  order.splice(at, 0, pid);
-  writeOrder(order, pageBlanks());
-  await render();
+  await changeDoc(() => {
+    const order = pageOrder().slice();
+    const before = designedPages.filter(p => p.id < pid).map(p => p.id);
+    let at = 0;
+    for (let k = 0; k < order.length; k++) if (before.includes(order[k])) at = k + 1;
+    order.splice(at, 0, pid);
+    writeOrder(order, pageBlanks());
+  });
 }
 
 function chip(pid, pos, label, isHidden) {
@@ -18376,12 +18352,12 @@ function chip(pid, pos, label, isHidden) {
       const from = e.dataTransfer.getData('text/plain');
       const fromPid = /^\d+$/.test(from) ? +from : from;
       if (fromPid === pid) return;
-      pushHistory();
-      let order = pageOrder().filter(p => p !== fromPid);
-      const at = order.indexOf(pid);
-      order.splice(at, 0, fromPid);
-      writeOrder(order, pageBlanks());
-      await render();
+      await changeDoc(() => {
+        let order = pageOrder().filter(p => p !== fromPid);
+        const at = order.indexOf(pid);
+        order.splice(at, 0, fromPid);
+        writeOrder(order, pageBlanks());
+      });
     });
   }
   return c;
@@ -18481,18 +18457,18 @@ async function masterFromPage(pid, name) {
   c.tables = c.tables.filter(t => !t.flow);           // a flow table stays in its text
   if (!c.boxes.length && !c.shapes.length && !c.tables.length)
     return { ok: false, error: `nothing placed on page ${pageLabel(pid)} to share` };
-  pushHistory();
-  // A shared layout cannot thread; the page's frames leave their threads first.
-  c.boxes.forEach(b => unlinkFrame(b.id));
-  const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; delete y.next; return y; };
-  // Re-read: unlinking may have handed a story to a frame on this page.
-  masters()[name] = { boxes: pageContents(pid).boxes.map(strip), shapes: c.shapes.map(strip) };
-  if (c.tables.length) masters()[name].tables = c.tables.map(strip);
-  layout.boxes = boxes().filter(b => String(b.page) !== String(pid));
-  layout.shapes = layout.shapes.filter(s => String(s.page) !== String(pid));
-  layout.tables = tables().filter(t => t.flow || String(t.page) !== String(pid));
-  pageMasters()[String(pid)] = name;
-  markDirty(); await render();
+  await changeDoc(() => {
+    // A shared layout cannot thread; the page's frames leave their threads first.
+    c.boxes.forEach(b => unlinkFrame(b.id));
+    const strip = x => { const y = clone(x); delete y.page; delete y.anchor; delete y.wrap; delete y.act; delete y.target; delete y.next; return y; };
+    // Re-read: unlinking may have handed a story to a frame on this page.
+    masters()[name] = { boxes: pageContents(pid).boxes.map(strip), shapes: c.shapes.map(strip) };
+    if (c.tables.length) masters()[name].tables = c.tables.map(strip);
+    layout.boxes = boxes().filter(b => String(b.page) !== String(pid));
+    layout.shapes = layout.shapes.filter(s => String(s.page) !== String(pid));
+    layout.tables = tables().filter(t => t.flow || String(t.page) !== String(pid));
+    pageMasters()[String(pid)] = name;
+  });
   if (selPage != null) pageBar($('out').contentDocument);
   const n = c.boxes.length + c.shapes.length + c.tables.length;
   $('stat').textContent = `"${name}" is a shared layout now — ${n} item${n === 1 ? '' : 's'}; give it to other pages from their strip`;
@@ -18503,24 +18479,24 @@ async function masterFromPage(pid, name) {
 async function masterDetach(pid) {
   const name = masterNameOf(pid);
   if (!name) return { ok: false, error: `page ${pageLabel(pid)} uses no shared layout` };
-  pushHistory();
   const m = masters()[name];
   const label = pageLabel(pid);
   let n = 0;
-  (m.boxes || []).forEach(b => {
-    const x = clone(b); x.id = freeTId(); x.page = pid;
-    x.md = String(x.md || '').replace(/\{page\}/g, label);
-    boxes().push(x); n++;
+  await changeDoc(() => {
+    (m.boxes || []).forEach(b => {
+      const x = clone(b); x.id = freeTId(); x.page = pid;
+      x.md = String(x.md || '').replace(/\{page\}/g, label);
+      boxes().push(x); n++;
+    });
+    (m.shapes || []).forEach(sh => {
+      const x = clone(sh); x.id = freeTId(); x.page = pid; layout.shapes.push(x); n++;
+    });
+    (m.tables || []).forEach(t => {
+      const x = clone(t); x.id = freeTableId(); x.page = pid; tables().push(x); n++;
+    });
+    delete pageMasters()[String(pid)];
+    if (!Object.keys(pageMasters()).length) delete layout.pageMasters;
   });
-  (m.shapes || []).forEach(sh => {
-    const x = clone(sh); x.id = freeTId(); x.page = pid; layout.shapes.push(x); n++;
-  });
-  (m.tables || []).forEach(t => {
-    const x = clone(t); x.id = freeTableId(); x.page = pid; tables().push(x); n++;
-  });
-  delete pageMasters()[String(pid)];
-  if (!Object.keys(pageMasters()).length) delete layout.pageMasters;
-  markDirty(); await render();
   if (selPage != null) pageBar($('out').contentDocument);
   $('stat').textContent = `page ${label} has its own copies now — ${n} item${n === 1 ? '' : 's'} — and no shared layout`;
   return { ok: true, page: pid, items: n };
@@ -18734,25 +18710,24 @@ function adoptSnapshot(snap) {
  *  content too, as a copy the person can edit. */
 async function duplicatePage(pid) {
   const designed = designedPages.some(p2 => String(p2.id) === String(pid));
-  pushHistory();
   const order = pageOrder();
   const blanks = pageBlanks();
   let n = 1;
   while (blanks.some(b => b.id === 'p' + n)) n++;
   const bid = 'p' + n;
-  let snap = null;
-  if (designed) snap = await designedPageSnapshot(pid, bid);
-  else if (pageCopyOf(pid)) snap = copiedPageSnapshot(pid, bid);
-  const at = order.findIndex(x => String(x) === String(pid));
-  order.splice(at >= 0 ? at + 1 : order.length, 0, bid);
-  const entry = snap ? { id: bid, copy: { of: pid, html: snap.html } } : { id: bid };
-  writeOrder(order, [...blanks, entry]);
-  const c = pageContents(pid);
-  const moved = pastePageContents(bid, c);
-  if (snap) adoptSnapshot(snap);
-  if (masterNameOf(pid)) pageMasters()[bid] = masterNameOf(pid);
-  markDirty();
-  await render();
+  let snap = null, moved = 0;
+  await changeDoc(async () => {
+    if (designed) snap = await designedPageSnapshot(pid, bid);
+    else if (pageCopyOf(pid)) snap = copiedPageSnapshot(pid, bid);
+    const at = order.findIndex(x => String(x) === String(pid));
+    order.splice(at >= 0 ? at + 1 : order.length, 0, bid);
+    const entry = snap ? { id: bid, copy: { of: pid, html: snap.html } } : { id: bid };
+    writeOrder(order, [...blanks, entry]);
+    const c = pageContents(pid);
+    moved = pastePageContents(bid, c);
+    if (snap) adoptSnapshot(snap);
+    if (masterNameOf(pid)) pageMasters()[bid] = masterNameOf(pid);
+  });
   setSelPage($('out').contentDocument, bid);
   $('stat').textContent = snap
     ? `page duplicated — everything on it is a copy you can edit here; a chart in the copy `
@@ -18765,19 +18740,19 @@ async function duplicatePage(pid) {
 }
 
 async function addBlankPage(at) {
-  pushHistory();
-  const order = pageOrder();
-  const blanks = pageBlanks();
-  let n = 1;
-  while (blanks.some(b => b.id === 'p' + n)) n++;
-  const bid = 'p' + n;
-  if (at === undefined) {
-    const i = order.indexOf(visiblePageId());
-    at = i >= 0 ? i + 1 : order.length;
-  }
-  order.splice(Math.max(0, Math.min(at, order.length)), 0, bid);
-  writeOrder(order, [...blanks, { id: bid }]);
-  await render();
+  await changeDoc(() => {
+    const order = pageOrder();
+    const blanks = pageBlanks();
+    let n = 1;
+    while (blanks.some(b => b.id === 'p' + n)) n++;
+    const bid = 'p' + n;
+    if (at === undefined) {
+      const i = order.indexOf(visiblePageId());
+      at = i >= 0 ? i + 1 : order.length;
+    }
+    order.splice(Math.max(0, Math.min(at, order.length)), 0, bid);
+    writeOrder(order, [...blanks, { id: bid }]);
+  });
   $('stat').textContent = `blank page added — drag boxes, shapes and images onto it`;
 }
 
@@ -19357,8 +19332,8 @@ function guideLine(d, pg, axis, idx, pos) {
 function addGuideHere(axis, at) {
   if (!guidesOn) toggleGuides();
   if (!guidesShown) { guidesShown = true; try { localStorage.setItem('ds-guides-vis', '1'); } catch (e) { /* file: */ } }
-  pushHistory();
-  const v = addGuide(axis, at);
+  let v;
+  changeDoc(() => { v = addGuide(axis, at); }, { render: false });
   drawGuideLayer($('out').contentDocument);
   chromeSync();
   $('stat').textContent = `${axis === 'x' ? 'vertical' : 'horizontal'} guide at ${v}in — drag it to move, drag it onto a ruler to remove it`;
@@ -19366,10 +19341,8 @@ function addGuideHere(axis, at) {
 /** Right-click ▸ Add a spacer here: a gap marker with its top-left corner where you clicked. */
 async function addSpacerHere(pid, x, y) {
   const w = 3, h = SPACER_IN;
-  pushHistory();
-  const r = _pilotApplyAddShape({ kind: 'spacer', page: pid, x: round2(Math.max(0, Math.min(PAGE_W_IN - w, x))),
-                                  y: round2(Math.max(0, Math.min(PAGE_H_IN - h, y))), w, h });
-  markDirty(); await render();
+  const r = await changeDoc(() => _pilotApplyAddShape({ kind: 'spacer', page: pid, x: round2(Math.max(0, Math.min(PAGE_W_IN - w, x))),
+                                  y: round2(Math.max(0, Math.min(PAGE_H_IN - h, y))), w, h }));
   setSel($('out').contentDocument, [r.id]);
   $('stat').textContent = `spacer holding ${h}in — drag its edge to size the gap; things it touches keep it when one moves`;
 }
@@ -19416,9 +19389,10 @@ async function moveGuideDialog(axis, idx) {
     validate: v => { const n = parseLen(v.at); return isFinite(n) && n >= 0 && n <= span ? '' : `a position from 0 to ${span} inches`; },
   });
   if (got == null) return;
-  pushHistory();
-  arr[idx] = round2(parseLen(got.at));
-  if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+  await changeDoc(() => {
+    arr[idx] = round2(parseLen(got.at));
+    if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+  }, { render: false });
   drawGuideLayer($('out').contentDocument);
 }
 /** View ▸ Add a guide…: type the line's place instead of dragging it. */
@@ -19434,8 +19408,7 @@ async function addGuideDialog() {
   if (got == null) return;
   if (!guidesOn) toggleGuides();
   if (!guidesShown) { guidesShown = true; try { localStorage.setItem('ds-guides-vis', '1'); } catch (e) { /* file: */ } }
-  pushHistory();
-  const v = addGuide(got.axis === 'v' ? 'x' : 'y', parseLen(got.at));
+  const v = await changeDoc(() => addGuide(got.axis === 'v' ? 'x' : 'y', parseLen(got.at)), { render: false });
   drawGuideLayer($('out').contentDocument);
   chromeSync();
   $('stat').textContent = `${got.axis === 'v' ? 'vertical' : 'horizontal'} guide at ${v}in`;
@@ -19443,9 +19416,10 @@ async function addGuideDialog() {
 function clearAllGuides() {
   const n = guidesX().length + guidesY().length;
   if (!n) { $('stat').textContent = 'no guides to clear'; return; }
-  pushHistory();
-  selGuide = null;
-  setGuides([], []);
+  changeDoc(() => {
+    selGuide = null;
+    setGuides([], []);
+  }, { render: false });
   drawGuideLayer($('out').contentDocument);
   $('stat').textContent = `${n} guide${n === 1 ? '' : 's'} cleared — ⌘Z brings ${n === 1 ? 'it' : 'them'} back`;
 }
@@ -19465,10 +19439,12 @@ function deleteSelGuide() {
   const { axis, idx } = selGuide;
   const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
   if (idx >= arr.length) { selGuide = null; return false; }
-  pushHistory();
-  const [gone] = arr.splice(idx, 1);
-  selGuide = null;
-  if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+  let gone;
+  changeDoc(() => {
+    [gone] = arr.splice(idx, 1);
+    selGuide = null;
+    if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+  }, { render: false });
   drawGuideLayer($('out').contentDocument);
   $('stat').textContent = `guide at ${gone}in removed`;
   return true;
@@ -19776,8 +19752,7 @@ function startRulerGuide(axis, e0) {
     guideTip(null);
     if (ghost) ghost.remove();
     if (pos == null) { $('stat').textContent = 'no guide placed'; return; }
-    pushHistory();
-    addGuide(axis === 'v' ? 'x' : 'y', pos);
+    changeDoc(() => { addGuide(axis === 'v' ? 'x' : 'y', pos); }, { render: false });
     drawGuideLayer(d);
     $('stat').textContent = `guide at ${pos}in — objects snap to it; drag it onto a ruler to remove`;
   };
@@ -19801,8 +19776,8 @@ function startRulerGuide(axis, e0) {
   if (along < 0 || along > span) { $('stat').textContent = 'double-click on the page’s own stretch of the ruler to add a guide'; return; }
   const d = F.d;
   const snap = guideSnap(pgInfo.pg, horiz ? 'v' : 'h', along, e, -1, pgInfo.pxIn / (DPI * zoomOf(pgInfo.pg)));
-  pushHistory();
-  const v = addGuide(horiz ? 'x' : 'y', snap.v);
+  let v;
+  changeDoc(() => { v = addGuide(horiz ? 'x' : 'y', snap.v); }, { render: false });
   drawGuideLayer(d);
   $('stat').textContent = `${horiz ? 'vertical' : 'horizontal'} guide at ${v}in — double-click it to retype, right-click for more`;
 }));
@@ -20075,9 +20050,10 @@ async function marginsDialog(pid) {
     options: [{ value: 'master', label: `Pages using “${name}”` }, { value: 'all', label: 'The whole report' }] });
   const got = await dsForm('Margins and columns', fields, { okLabel: 'Apply' });
   if (got == null) return;
-  pushHistory();
-  const { scope, ...mg } = got;
-  setMargins(mg, name && scope === 'master' ? name : null);
+  await changeDoc(() => {
+    const { scope, ...mg } = got;
+    setMargins(mg, name && scope === 'master' ? name : null);
+  }, { render: false });
   showGuidesNow();
   drawGuideLayer($('out').contentDocument);
   $('stat').textContent = 'margins and columns set — objects snap to them while guides show';
@@ -20115,10 +20091,8 @@ async function readingOrderDialog(pid) {
     },
   });
   if (got == null) return;
-  pushHistory();
   const ids = got.ids.split('\n').map(x => x.trim()).filter(Boolean);
-  setReadingOrder(pid, ids.join() === all.join() ? null : ids);
-  await render();
+  await changeDoc(() => { setReadingOrder(pid, ids.join() === all.join() ? null : ids); });
   $('stat').textContent = ids.length ? `reading order set for page ${pageLabel(pid)}` : 'reading order cleared';
 }
 async function createGuidesDialog(pid) {
@@ -20130,9 +20104,8 @@ async function createGuidesDialog(pid) {
       options: [{ value: 'margins', label: 'Margins' }, { value: 'page', label: 'Page' }] },
   ], { okLabel: 'Create' });
   if (got == null) return;
-  pushHistory();
-  const n = createGuides({ rows: Math.round(+got.rows) || 0, columns: Math.round(+got.columns) || 0,
-                           gutter: Math.max(0, +got.gutter || 0), fit: got.fit, pid });
+  const n = await changeDoc(() => createGuides({ rows: Math.round(+got.rows) || 0, columns: Math.round(+got.columns) || 0,
+                           gutter: Math.max(0, +got.gutter || 0), fit: got.fit, pid }), { render: false });
   showGuidesNow();
   drawGuideLayer($('out').contentDocument);
   $('stat').textContent = `added ${n.x + n.y} guide${n.x + n.y === 1 ? '' : 's'}`;
@@ -21293,10 +21266,11 @@ function ctlTextRead(inp) {
  *  type card's own handlers take none (an edit there joins the step its
  *  selection opened); a value set from the bar is an act of its own. */
 function ctlTextWrite(src, value) {
-  pushHistory();
-  if (src.type === 'checkbox') src.checked = !!value; else src.value = value;
-  src.dispatchEvent(new Event('input', { bubbles: true }));
-  src.dispatchEvent(new Event('change', { bubbles: true }));
+  changeDoc(() => {
+    if (src.type === 'checkbox') src.checked = !!value; else src.value = value;
+    src.dispatchEvent(new Event('input', { bubbles: true }));
+    src.dispatchEvent(new Event('change', { bubbles: true }));
+  }, { render: false });
 }
 // ---- the selected words (phase 5)
 // With words selected in an open text, size, leading, tracking and kerning
@@ -21838,33 +21812,33 @@ function pieceFromSelection(name) {
  *  report lacks first, then the objects with fresh ids — one undo step. */
 async function placePiece(piece, at) {
   const d = $('out').contentDocument;
-  pushHistory();
-  const merged = mergeStyles(piece.styles || {}, { textStyles: 'add', objectStyles: 'add', cellStyles: 'add', swatches: 'add' });
-  const page = visiblePageId();
-  const ox = at && at.x != null ? +at.x : Math.max(0, (PAGE_W_IN - (piece.w || 0)) / 2);
-  const oy = at && at.y != null ? +at.y : 1;
   const ids = [];
-  piece.items.forEach(it => {
-    const x = +Math.min(Math.max(0, ox + it.data.x), PAGE_W_IN - Math.min(+it.data.w || 0.5, PAGE_W_IN)).toFixed(3);
-    const y = +Math.min(Math.max(0, oy + it.data.y), PAGE_H_IN - Math.min(+it.data.h || 0.4, PAGE_H_IN)).toFixed(3);
-    if (it.kind === 'shape') {
-      const nid = freeShapeId(it.data.kind);
-      layout.shapes = layout.shapes || [];
-      layout.shapes.push({ ...clone(it.data), id: nid, page, x, y });
-      ids.push(nid);
-    } else if (it.kind === 'box') {
-      const nid = freeBoxId();
-      boxes().push({ ...clone(it.data), id: nid, page, x, y });
-      ids.push('text.' + nid);
-    } else if (it.kind === 'table') {
-      const nid = freeTableId();
-      tables().push({ ...clone(it.data), id: nid, page, x, y });
-      ids.push('table.' + nid);
-    }
+  const merged = await changeDoc(() => {
+    const merged = mergeStyles(piece.styles || {}, { textStyles: 'add', objectStyles: 'add', cellStyles: 'add', swatches: 'add' });
+    const page = visiblePageId();
+    const ox = at && at.x != null ? +at.x : Math.max(0, (PAGE_W_IN - (piece.w || 0)) / 2);
+    const oy = at && at.y != null ? +at.y : 1;
+    piece.items.forEach(it => {
+      const x = +Math.min(Math.max(0, ox + it.data.x), PAGE_W_IN - Math.min(+it.data.w || 0.5, PAGE_W_IN)).toFixed(3);
+      const y = +Math.min(Math.max(0, oy + it.data.y), PAGE_H_IN - Math.min(+it.data.h || 0.4, PAGE_H_IN)).toFixed(3);
+      if (it.kind === 'shape') {
+        const nid = freeShapeId(it.data.kind);
+        layout.shapes = layout.shapes || [];
+        layout.shapes.push({ ...clone(it.data), id: nid, page, x, y });
+        ids.push(nid);
+      } else if (it.kind === 'box') {
+        const nid = freeBoxId();
+        boxes().push({ ...clone(it.data), id: nid, page, x, y });
+        ids.push('text.' + nid);
+      } else if (it.kind === 'table') {
+        const nid = freeTableId();
+        tables().push({ ...clone(it.data), id: nid, page, x, y });
+        ids.push('table.' + nid);
+      }
+    });
+    if (piece.wasGroup && ids.length > 1) { layout.groups = layout.groups || []; layout.groups.push(ids); }
+    return merged;
   });
-  if (piece.wasGroup && ids.length > 1) { layout.groups = layout.groups || []; layout.groups.push(ids); }
-  markDirty();
-  await render();
   setSel($('out').contentDocument, ids);
   const added = Object.values(merged).reduce((n, v) => n + v.added.length, 0);
   $('stat').textContent = `${piece.name} placed — ${ids.length} object${ids.length === 1 ? '' : 's'}`
@@ -22007,11 +21981,12 @@ function openStoryEditor() {
       ta.addEventListener('input', () => size(ta));
       ta.addEventListener('change', async () => {
         if (ta.value === ta.dataset.was) return;
-        pushHistory();
-        if (!storyWrite(it.key, ta.value)) { withdrawStep(); box.classList.add('bad'); return; }
-        box.classList.remove('bad');
-        ta.dataset.was = ta.value;
-        markDirty(); await render();
+        const ok = await changeDoc(() => {
+          if (!storyWrite(it.key, ta.value)) return false;
+          box.classList.remove('bad');
+          ta.dataset.was = ta.value;
+        });
+        if (ok === false) box.classList.add('bad');
       });
       box.append(lab, ta);
       list.appendChild(box);
@@ -22501,10 +22476,10 @@ async function addNoteDialog(k, i = null) {
   const got = await dsForm(i == null ? `Note on ${k}` : `Edit note on ${k}`, [{ name: 'text', type: 'textarea',
     label: 'Only the editor shows it — never the page, the PDF or the web', value: i == null ? '' : cur[i] }], { okLabel: 'Save' });
   if (got == null) return;
-  pushHistory();
-  if (i == null) cur.push(got.text); else cur[i] = got.text;
-  setSlotNotes(k, cur);
-  await render();
+  await changeDoc(() => {
+    if (i == null) cur.push(got.text); else cur[i] = got.text;
+    setSlotNotes(k, cur);
+  });
   if (!$('notespop').hidden) notesRender();
 }
 /** Marks are placed by measuring their words, so they are measured again
@@ -22558,7 +22533,7 @@ function notesRender() {
       const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); acts.appendChild(b); };
       btn('Go to', () => { const el = $('out').contentDocument.querySelector(`[data-slot="${CSS.escape(n.key)}"]`); if (el) el.scrollIntoView({ block: 'center' }); });
       btn('Edit…', () => addNoteDialog(n.key, i));
-      btn('Delete', async () => { pushHistory(); const cur = slotNotes(n.key).map(NOTE_BODY); cur.splice(i, 1); setSlotNotes(n.key, cur); await render(); notesRender(); });
+      btn('Delete', async () => { await changeDoc(() => { const cur = slotNotes(n.key).map(NOTE_BODY); cur.splice(i, 1); setSlotNotes(n.key, cur); }); notesRender(); });
       row.appendChild(acts);
     }
     box.appendChild(row);
@@ -22960,9 +22935,7 @@ async function loadStylesDialog() {
   if (!fields.length) { $('stat').textContent = `${name(pick.pid)} has no styles to load`; return; }
   const how = await dsForm(`Load from ${name(pick.pid)}`, fields, { okLabel: 'Load' });
   if (how == null) return;
-  pushHistory();
-  const r = mergeStyles(src, how);
-  markDirty(); await render();
+  const r = await changeDoc(() => mergeStyles(src, how));
   const n = Object.values(r).reduce((a, x) => a + x.added.length + x.replaced.length, 0);
   $('stat').textContent = `loaded ${n} from ${name(pick.pid)}`;
 }
@@ -23185,9 +23158,7 @@ async function deleteUnusedDialog() {
   if (!how) return;
   const kinds = Object.keys(how).filter(k => how[k] === 'delete');
   if (!kinds.length) return;
-  pushHistory();
-  const gone = deleteUnusedStyles(kinds);
-  markDirty(); await render();
+  const gone = await changeDoc(() => deleteUnusedStyles(kinds));
   const n = Object.values(gone).reduce((a, x) => a + x.length, 0);
   $('stat').textContent = `deleted ${n} unused`;
 }
@@ -23807,9 +23778,10 @@ $('ar-border').addEventListener('click', () => {
   grid.innerHTML = '';
   const strokePaint = async c => {
     $('ar-borderpop').hidden = true;
-    pushHistory();
-    shp.stroke = c;
-    if (c !== 'none' && (shp.sw ?? 0) < 0.005) shp.sw = 0.02;
+    await changeDoc(() => {
+      shp.stroke = c;
+      if (c !== 'none' && (shp.sw ?? 0) < 0.005) shp.sw = 0.02;
+    }, { render: false });
     await commit();
   };
   const none = document.createElement('button');
@@ -23843,9 +23815,10 @@ $('ar-border').addEventListener('click', () => {
     b.textContent = kk;
     b.classList.toggle('on', kk === cur);
     b.addEventListener('click', async () => {
-      pushHistory();
-      if (presets[kk]) shp.dash = presets[kk]; else delete shp.dash;
-      $('ar-borderpop').hidden = true;
+      await changeDoc(() => {
+        if (presets[kk]) shp.dash = presets[kk]; else delete shp.dash;
+        $('ar-borderpop').hidden = true;
+      }, { render: false });
       await commit();
     });
     drow.appendChild(b);
@@ -23916,9 +23889,11 @@ function fxExtras(body, owner, commit, isShape, rebuild) {
     const r = document.createElement('input'); r.type = 'range'; r.min = 0.02; r.max = 0.5; r.step = 0.01;
     r.value = (owner[k] || defs[k]).size; r.disabled = !owner[k];
     cb.addEventListener('change', async () => {
-      pushHistory();
-      if (cb.checked) owner[k] = { ...defs[k] }; else delete owner[k];
-      rebuild(); await commit();
+      await changeDoc(() => {
+        if (cb.checked) owner[k] = { ...defs[k] }; else delete owner[k];
+        rebuild();
+      }, { render: false });
+      await commit();
     });
     r.addEventListener('pointerdown', () => pushHistory());
     r.addEventListener('change', async () => { owner[k].size = +r.value; await commit(); });
@@ -23949,11 +23924,13 @@ function fxExtras(body, owner, commit, isShape, rebuild) {
     fr.value = owner.fade ? owner.fade.from ?? 0.4 : 0.4;
     dir.disabled = fr.disabled = !owner.fade;
     fcb.addEventListener('change', async () => {
-      pushHistory();
-      if (fcb.checked) owner.fade = { angle: +dir.value, from: +fr.value, to: 1 }; else delete owner.fade;
-      rebuild(); await commit();
+      await changeDoc(() => {
+        if (fcb.checked) owner.fade = { angle: +dir.value, from: +fr.value, to: 1 }; else delete owner.fade;
+        rebuild();
+      }, { render: false });
+      await commit();
     });
-    dir.addEventListener('change', async () => { pushHistory(); owner.fade.angle = +dir.value; await commit(); });
+    dir.addEventListener('change', async () => { await changeDoc(() => { owner.fade.angle = +dir.value; }, { render: false }); await commit(); });
     fr.addEventListener('pointerdown', () => pushHistory());
     fr.addEventListener('change', async () => { owner.fade.from = +fr.value; await commit(); });
     fw.append(fcb, document.createTextNode('Fade to clear'), dir, fr);
@@ -23982,9 +23959,11 @@ $('ar-fxbtn').addEventListener('click', () => {
       add.className = 'sw-default';
       add.textContent = 'Add shadow';
       add.addEventListener('click', async () => {
-        pushHistory();
-        owner.shadow = { offset: 0.06, direction: 135, blur: 0.08, alpha: 0.35 };
-        build(); await commit();
+        await changeDoc(() => {
+          owner.shadow = { offset: 0.06, direction: 135, blur: 0.08, alpha: 0.35 };
+          build();
+        }, { render: false });
+        await commit();
       });
       body.appendChild(add);
       fxExtras(body, owner, commit, !!shapeOf(id), build);
@@ -24014,11 +23993,13 @@ $('ar-fxbtn').addEventListener('click', () => {
     rm.className = 'sw-default';
     rm.textContent = 'Remove shadow';
     rm.addEventListener('click', async () => {
-      pushHistory();
-      delete owner.shadow;
-      // A shadow that came from the style needs an explicit no to beat it.
-      if (shadowOf()) owner.shadow = null;
-      build(); await commit();
+      await changeDoc(() => {
+        delete owner.shadow;
+        // A shadow that came from the style needs an explicit no to beat it.
+        if (shadowOf()) owner.shadow = null;
+        build();
+      }, { render: false });
+      await commit();
     });
     body.appendChild(rm);
     fxExtras(body, owner, commit, !!shapeOf(id), build);
@@ -24129,8 +24110,7 @@ function openColorPanel(id) {
   // moment a colour exists to clear, instead of staying stuck on whatever
   // was true when the panel opened.
   const apply = async v => {
-    pushHistory(); fillTargets(id).set(v); markDirty();
-    await render();
+    await changeDoc(() => { fillTargets(id).set(v); });
     paintSel($('out').contentDocument);
     // Refresh which swatch reads as current — but NOT by rebuilding the
     // panel, which would tear down an open picker the user is still using.
@@ -26521,9 +26501,7 @@ function penWire(d) {
     d.querySelectorAll('.ds-penpreview').forEach(x => x.remove());
     d.documentElement.classList.remove('ds-pen-arm');
     if (!p || p.pts.length < 2) { $('stat').textContent = 'pen put away — a path needs two points'; return; }
-    pushHistory();
-    const r = _pilotApplyAddPath({ page: p.pid, points: p.pts, closed });
-    markDirty(); await render();
+    const r = await changeDoc(() => _pilotApplyAddPath({ page: p.pid, points: p.pts, closed }));
     setSel($('out').contentDocument, [r.id]);
     $('stat').textContent = `path drawn — ${p.pts.length} points; double-click it to move its points`;
   };
@@ -26961,16 +26939,12 @@ $('shapepop').querySelector('[data-qr]').addEventListener('click', async () => {
     { okLabel: 'Add', validate: v => !v.data.trim() || v.data.trim() === 'https://' ? 'what should it open?'
       : new TextEncoder().encode(v.data.trim()).length > 213 ? 'that is longer than a QR code here carries (213 bytes)' : '' });
   if (got == null) return;
-  pushHistory();
-  const r = _pilotApplyAddShape({ kind: 'qr', data: got.data.trim(), w: 1.2, h: 1.2 });
-  markDirty(); await render();
+  const r = await changeDoc(() => _pilotApplyAddShape({ kind: 'qr', data: got.data.trim(), w: 1.2, h: 1.2 }));
   setSel($('out').contentDocument, [r.id]);
 });
 $('shapepop').querySelector('[data-spacer]').addEventListener('click', async () => {
   const d = $('out').contentDocument;
-  pushHistory();
-  const r = _pilotApplyAddShape(spacerUnder(d) || spacerInView(d) || { kind: 'spacer' });
-  markDirty(); await render();
+  const r = await changeDoc(() => _pilotApplyAddShape(spacerUnder(d) || spacerInView(d) || { kind: 'spacer' }));
   setSel($('out').contentDocument, [r.id]);
   const sh = shapeOf(r.id);
   $('stat').textContent = `spacer holding ${sh.h}in — size it to the gap you want; things it touches keep it when one moves`;
@@ -31605,8 +31579,8 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
       return b;
     };
     const sibs = extraKeys(pageOf(key)), pos = sibs.indexOf(key);
-    const up = mk('↑', 'Move section up', '', () => { pushHistory(); moveExtra(key, -1); markDirty(); render(); });
-    const dn = mk('↓', 'Move section down', '', () => { pushHistory(); moveExtra(key, 1); markDirty(); render(); });
+    const up = mk('↑', 'Move section up', '', () => { changeDoc(() => { moveExtra(key, -1); }); });
+    const dn = mk('↓', 'Move section down', '', () => { changeDoc(() => { moveExtra(key, 1); }); });
     mk('⇄', 'Move to another page', '', async () => {
       const r = await dsForm('Move this section', [{
         name: 'page', label: `Move to which page? (now on: ${pageOf(key)})`, type: 'select',
@@ -31614,11 +31588,11 @@ stroke-width="2" stroke-linecap="round"/></svg>') 10 10, grab; }
         options: EXTRA_PAGES.map(([id, l]) => ({ value: id, label: l })),
       }], { okLabel: 'Move' });
       if (!r) return;
-      pushHistory(); moveSectionToPage(key, r.page); markDirty(); render();
+      changeDoc(() => { moveSectionToPage(key, r.page); });
     });
     mk('✕', 'Delete this section', 'del', async () => {
       if (!await dsConfirm('Delete this whole section?', { okLabel: 'Delete', danger: true })) return;
-      pushHistory(); removeExtra(key); markDirty(); render();
+      changeDoc(() => { removeExtra(key); });
     });
     up.disabled = pos <= 0;
     dn.disabled = pos === sibs.length - 1;
@@ -31734,11 +31708,8 @@ const isStandInEndnote = el =>
 async function addEndnotesSection({ silent = false } = {}) {
   const existing = endnotesBox();
   if (existing) return existing;
-  pushHistory();
   const pageless = isPageless();
-  const box = makeEndnotesSection();
-  markDirty();
-  await render();
+  const box = await changeDoc(() => makeEndnotesSection());
   if (!silent) {
     $('stat').textContent = pageless
       ? 'endnotes section added at the end — every citation you make lists itself here'
@@ -32027,9 +31998,9 @@ function renderSources() {
     // that is the order on show: in endnote order a press moved nothing.
     if (!srcByNumber) {
       mkb('↑', 'Move up', idx === 0, () => {
-        pushHistory(); moveSource(s.id, -1); markDirty(); render(); renderSources(); });
+        changeDoc(() => { moveSource(s.id, -1); }); renderSources(); });
       mkb('↓', 'Move down', idx === all.length - 1, () => {
-        pushHistory(); moveSource(s.id, 1); markDirty(); render(); renderSources(); });
+        changeDoc(() => { moveSource(s.id, 1); }); renderSources(); });
     }
     mkb('rename', 'Rename this id everywhere it is cited', false, async () => {
       const r = await dsForm(`Rename [${s.id}]`, [{
@@ -32044,7 +32015,7 @@ function renderSources() {
       if (!r) return;
       const neu = r.id.trim();
       if (neu === s.id) return;
-      pushHistory(); renameSource(s.id, neu); markDirty(); render(); renderSources();
+      changeDoc(() => { renameSource(s.id, neu); }); renderSources();
     });
     // Delete joins the hover cluster instead of holding a column open on every
     // row. Class and disabled-when-cited behaviour are unchanged.
@@ -32088,7 +32059,7 @@ function renderSources() {
       // The citation must say something; the LINK is optional — a book or an
       // interview has none, and a source that had one must be able to lose it.
       if (!t) { $('stat').textContent = emptyCitationRefusal(s.id); txt.value = s.text; return; }
-      pushHistory(); updateSource(s.id, t, u); markDirty(); render();
+      changeDoc(() => { updateSource(s.id, t, u); });
     };
     txt.addEventListener('change', commit);       // fires on blur only when changed
     url.addEventListener('change', commit);
@@ -32096,7 +32067,7 @@ function renderSources() {
     del.addEventListener('click', async () => {
       if (!await dsConfirm(`Delete source [${s.id}]? This cannot be undone from here.`,
           { okLabel: 'Delete', danger: true })) return;
-      pushHistory(); deleteSource(s.id); markDirty(); render(); renderSources();
+      changeDoc(() => { deleteSource(s.id); }); renderSources();
     });
     row.append(id, txt, urlWrap);
     list.appendChild(row);
@@ -32233,11 +32204,10 @@ $('add').onclick = async () => {
   if (!slug) return;
   const base = slug;
   for (let n = 2; source.includes(`[[extra.${page}.${slug}]]`); n++) slug = `${base}-${n}`;
-  pushHistory();
-  pendingEdit = addExtra(page, slug);
-  markDirty();
-  $('stat').textContent = `new section on ${label} — write it below`;
-  render();
+  changeDoc(() => {
+    pendingEdit = addExtra(page, slug);
+    $('stat').textContent = `new section on ${label} — write it below`;
+  });
 };
 
 /** True Canva-style editing: a contenteditable surface that shows exactly
@@ -35083,15 +35053,14 @@ async function suggestAccept(c) {
       { okLabel: 'Apply anyway', danger: true })) return;
   suggestApplying = true;
   try {
-    pushHistory();
-    for (const [k, v] of Object.entries(ch.content || {})) {
-      if (v.after == null || !cur.has(k)) continue;   // a slot cannot be removed or invented from here
-      writeSlot(k, v.after);
-    }
-    for (const e of ch.layout || []) suggestApplyLayout(e);
-    syncPageSize();
-    markDirty();
-    await render();
+    await changeDoc(() => {
+      for (const [k, v] of Object.entries(ch.content || {})) {
+        if (v.after == null || !cur.has(k)) continue;   // a slot cannot be removed or invented from here
+        writeSlot(k, v.after);
+      }
+      for (const e of ch.layout || []) suggestApplyLayout(e);
+      syncPageSize();
+    });
     await hubCommentPatch(c.id, { status: 'accepted' });
     $('stat').textContent = 'suggestion accepted — it is on the page for everyone; Save keeps it';
   } finally { suggestApplying = false; }
@@ -40374,9 +40343,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     const next = order.filter(p => p !== pid);
     next.splice(n, 0, pid);
     if (next.every((v, i) => v === order[i])) return { ...docsync.api.status(), page: pid, unchanged: true, pageOrder: order };
-    pushHistory();
-    writeOrder(next, pageBlanks());
-    await render();
+    await changeDoc(() => { writeOrder(next, pageBlanks()); });
     return { ...docsync.api.status(), page: pid, pageOrder: pageOrder() };
   },
 
@@ -40413,8 +40380,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       }
     }
     if (!d) return { ok: false, error: `setPageSize: one of ${DOC_SIZES.map(x => x.id).join(', ')}, or {w, h} in inches from 2 to 60 (h null for no fixed height)` };
-    pushHistory();
-    await applyDocSize(d);
+    await changeDoc(async () => { await applyDocSize(d); }, { render: false });
     const pg = layout.page || M.page || {};
     return { ...docsync.api.status(), page: { w: pg.w, h: pg.h ?? null } };
   },
@@ -40435,10 +40401,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async editSource(id, patch) {
     const v = _pilotValidateEditSource(id, patch);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyEditSource(id, patch);
-    markDirty();
-    await render();
+    const r = await changeDoc(() => _pilotApplyEditSource(id, patch));
     return { ...docsync.api.status(), source: r };
   },
 
@@ -40685,11 +40648,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async fitFrame(id) {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     if (!fitKind(id)) return { ok: false, error: `'${id}' is not an image` };
-    pushHistory();
-    const r = _pilotApplyFitFrame(id);
+    const r = await changeDoc(() => _pilotApplyFitFrame(id));
     if (r.ok === false) return r;
-    markDirty();
-    await render();
     return { ...docsync.api.status(), ...r };
   },
 
@@ -41059,9 +41019,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateExists(id);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyLock(id, on);
-    markDirty();
+    let r;
+    changeDoc(() => (r = _pilotApplyLock(id, on)), { render: false });
     paintSel($('out').contentDocument);   // lock is chrome, not content — no render
     return { ...docsync.api.status(), ...r };
   },
@@ -41073,9 +41032,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateGroup(ids);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyGroup(ids);
-    markDirty();
+    let r;
+    changeDoc(() => (r = _pilotApplyGroup(ids)), { render: false });
     paintSel($('out').contentDocument);
     return { ...docsync.api.status(), ...r };
   },
@@ -41083,9 +41041,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     if (editing) return { ok: false, error: 'an inline text editor is open — close it first' };
     const v = _pilotValidateUngroup(id);
     if (!v.ok) return v;
-    pushHistory();
-    const r = _pilotApplyUngroup(id);
-    markDirty();
+    let r;
+    changeDoc(() => (r = _pilotApplyUngroup(id)), { render: false });
     paintSel($('out').contentDocument);
     return { ...docsync.api.status(), ...r };
   },
