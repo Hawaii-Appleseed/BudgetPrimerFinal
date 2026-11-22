@@ -647,6 +647,20 @@
   :is(#leftrail > button, #rail-pins > button) svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.5;
                      stroke-linecap:round; stroke-linejoin:round; }
   :is(#leftrail > button, #rail-pins > button) svg .fl { fill:currentColor; stroke:none; }
+  /* Three kinds of thing live on the rail, and each now looks like what it is.
+     The TOOLS are one choice of three, so they are one segmented control: a
+     shared ground with the tool in use filled, where they were three loose
+     buttons that looked like the insert buttons under them. The + and what is
+     pinned from it ADD something. And the control that puts the rail away sits
+     at its foot, where the right dock keeps its own. Every button is still
+     34px; the tools only close the 3px between them. */
+  #leftrail > .tool { background:rgba(255,255,255,.07); border-radius:0; }
+  #leftrail > .tool + .tool { margin-top:-3px; }
+  #leftrail > #tool-select { border-radius:var(--r-ctl) var(--r-ctl) 0 0; }
+  #leftrail > #tool-hand { border-radius:0 0 var(--r-ctl) var(--r-ctl); }
+  #leftrail > .tool:hover { background:rgba(255,255,255,.16); }
+  #leftrail > .tool.on, #leftrail > .tool.on:hover { background:var(--sage); border-radius:var(--r-ctl); }
+  #leftrail > .rail-end { margin-top:auto; }
   /* + : the way into everything else. Filled, so it reads as the one action. */
   #leftrail #insert { width:38px; height:38px; border-radius:var(--r-card); color:#fff;
                      background:linear-gradient(180deg,#7DB08A,#5E906E);
@@ -661,7 +675,8 @@
     :is(#leftrail > button, #rail-pins > button) svg { width:17px; height:17px; }
     #leftrail #insert { width:34px; height:34px; border-radius:var(--r-card); }
     #leftrail .rsep { margin:2px 0; }
-    #leftrail .rail-end { height:20px; margin-top:0; }
+    #leftrail .rail-end { height:20px; }
+    #leftrail > .tool + .tool { margin-top:-1px; }
     #rail-pins { gap:1px; }
   }
 
@@ -671,7 +686,7 @@
   #palette[hidden] { display:none; }
   #pal-scrim { position:absolute; inset:0; background:rgba(33,46,52,.16); }
   #pal-card { position:absolute; left:calc(var(--rail-w) + var(--ruler-w) + 10px); top:calc(var(--ruler-w) + 12px); width:min(500px, calc(100% - var(--rail-w) - var(--ruler-w) - 24px));
-              max-height:calc(100% - 24px); display:flex; flex-direction:column; background:#fff; color:var(--ink);
+              max-height:calc(100% - 24px - var(--strip-h, 0px)); display:flex; flex-direction:column; background:#fff; color:var(--ink);
               border-radius:var(--r-card); overflow:hidden;
               box-shadow:var(--shadow-modal); }
   #pal-search { flex:none; display:flex; align-items:center; gap:12px; height:60px; padding:0 18px;
@@ -1366,6 +1381,8 @@
   #dock-body .ty-seg button:disabled, #dock-body .ar-posrows > button:disabled { opacity:.45; cursor:default; }
   #dock-body .ar-posrows select { height:26px; padding:0 6px; font:12.5px system-ui; color:var(--ink);
           border:1px solid var(--edge); border-radius:var(--r-ctl); background:var(--surface); }
+  #dock-body .ar-posrows > .ar-pos:not(.ar-multi) { flex-basis:calc((100% - 8px) / 2); }
+  #dock-body .ar-posrows > .ty-sep:not(#ar-possep) { display:none; }   /* a rule that ends a wrapped row divides nothing */
   #dock .pop-h.dk-dup { display:none; }   /* the dock's head already says it */
   body.ds-dock #rail { right:var(--dock-w); }
   body.ds-dock #context { right:var(--dock-w); }
@@ -1442,7 +1459,10 @@
      67px thumbnail, its label, and the band's own padding). Without this the
      bottom section of a long panel is visible and unclickable, which is worse
      than being hidden. */
-  #side-body { flex:1; min-height:0; overflow-y:auto; padding:0 14px 24px; }
+  #side-body { flex:1; min-height:0; overflow-y:auto; padding:0 14px 24px;
+          /* the last row fades out at the scroll edge instead of being cut through its letters */
+          -webkit-mask-image:linear-gradient(#000 calc(100% - 20px), transparent);
+          mask-image:linear-gradient(#000 calc(100% - 20px), transparent); }
   #side-body h4 { display:flex; align-items:center; gap:7px; font:600 12.5px system-ui;
           margin:16px 0 9px; color:var(--ink); }
   #side-search { width:100%; box-sizing:border-box; font:13px system-ui;
@@ -1756,6 +1776,16 @@
   .ar-dashrow button.on { background:#2F3E46; color:#fff; border-color:#2F3E46; }
   #ar-pospop { width:430px; }
   .ar-posrows { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  /* The numbers are a table, not a run of words: the rule before them is a line break, and
+     the fields sit in equal columns (four in the pop-up: place and size, then the turns; two
+     in the dock's narrow panel), each a fixed column for its letter and the rest for its box.
+     Wrapped as words, the last field sat alone on a row and X ended a row of buttons. */
+  .ar-posrows > [hidden] { display:none; }   /* out of #arrange (docked) nothing else hides them */
+  .ar-posrows > #ar-possep { flex:0 0 100%; height:0; margin:0; background:none; }
+  .ar-posrows > .ar-pos:not(.ar-multi) { display:grid; grid-template-columns:14px minmax(0, 1fr); gap:4px;
+        flex:0 0 calc((100% - 24px) / 4); min-width:0; margin:2px 0; box-sizing:border-box; }
+  .ar-posrows > .ar-pos:not(.ar-multi) input { width:100% !important; min-width:0; box-sizing:border-box; }
+  .ar-posrows > .ar-pos:not(.ar-multi)[hidden] { display:none; }
   #type[hidden], #arrange[hidden] { display:none; }
   /* Same trap one level down: a styled button's display beats the hidden
      attribute's UA display:none, so a "hidden" control kept rendering. */
@@ -2522,6 +2552,7 @@
   .dsdlg-btns button { font:600 12.5px system-ui; padding:7px 15px; border-radius:var(--r-ctl);
         cursor:pointer; border:1px solid var(--edge); background:#fff; color:var(--ink); }
   .dsdlg-btns button:hover { border-color:var(--sage); background:var(--hover); }
+  .dsdlg-btns button:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
   .dsdlg .dsdlg-ok, .dsdlg-btns button.dsdlg-ok { background:var(--sage); border-color:var(--sage); color:#fff; }
   .dsdlg .dsdlg-ok:hover, .dsdlg-btns button.dsdlg-ok:hover { background:var(--deep); border-color:var(--deep); }
   .dsdlg .dsdlg-ok.danger, .dsdlg-btns button.dsdlg-ok.danger { background:#C0392B; border-color:#C0392B; }
@@ -2559,6 +2590,81 @@
     #pal-list .pal-grp, #pal-foot { display:none; }
   }
 
+  /* ---- the menu bar and what it opens ------------------------------------
+     The top row is a MENU BAR and a few actions, and it was drawn as one run
+     of identical outlined buttons. Now: the menus (File, View, Check, the
+     zoom level, the editing mode) are plain names on the chrome that take a
+     ground when reached for and keep it while their menu is open; the acts
+     (Save, Push, Publish and the notices) keep their filled or outlined
+     shapes, so the eye finds them. Heights and gaps are unchanged. */
+  #bar > :is(#file, #view, #check, #zoombtn, #mode) { background:transparent; border-color:transparent;
+        font-size:13px; font-weight:500; padding:5px 9px; }
+  #bar > :is(#file, #view, #check, #zoombtn, #mode):hover { background:var(--chrome-hover); border-color:transparent; }
+  #bar:has(#filepop:not([hidden]), #openpop:not([hidden]), #resizepop:not([hidden]), #downloadpop:not([hidden])) > #file,
+  #bar:has(#viewpop:not([hidden])) > #view, #bar:has(#checkpop:not([hidden])) > #check,
+  #bar:has(#zoompop:not([hidden])) > #zoombtn { background:var(--ctl-hover); border-color:var(--ctl-line); color:#fff; }
+  #bar > button:focus-visible { outline:2px solid #BFE0C7; outline-offset:1px; }
+  /* Undo and redo: drawn arrows. The two characters they were (U+21B6, U+21B7)
+     come from whatever font has them, and here that was a thin hook a third
+     the size of its button. The characters stay in the markup for a reader
+     without the stylesheet; the button's name is its aria-label. */
+  #bar > :is(#undo, #redo) { font-size:0; width:30px; justify-content:center; padding:0;
+        background:transparent; border-color:transparent; }
+  #bar > :is(#undo, #redo):hover:not(:disabled) { background:var(--chrome-hover); border-color:transparent; }
+  #bar > :is(#undo, #redo):disabled { background:transparent; border-color:transparent; opacity:.38; }
+  #bar > :is(#undo, #redo)::before { content:''; width:16px; height:16px; background:currentColor;
+        -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M6 3.5L3 6.5l3 3%27/%3E%3Cpath d=%27M3.2 6.5h6.3a3.5 3.5 0 0 1 0 7H7%27/%3E%3C/svg%3E") center/contain no-repeat;
+        mask:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M6 3.5L3 6.5l3 3%27/%3E%3Cpath d=%27M3.2 6.5h6.3a3.5 3.5 0 0 1 0 7H7%27/%3E%3C/svg%3E") center/contain no-repeat; }
+  #bar > #redo::before { -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M10 3.5l3 3-3 3%27/%3E%3Cpath d=%27M12.8 6.5H6.5a3.5 3.5 0 0 0 0 7H9%27/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M10 3.5l3 3-3 3%27/%3E%3Cpath d=%27M12.8 6.5H6.5a3.5 3.5 0 0 0 0 7H9%27/%3E%3C/svg%3E"); }
+  /* Check's count sits IN the button, after its name. Hung on the corner of a
+     button that no longer has an outline, it lay over the menu's own arrow. */
+  #check-count { position:static; min-width:17px; height:17px; padding:0 5px; margin-left:1px; border-radius:99px;
+        font:600 10.5px/17px system-ui, sans-serif; }
+  .pop.menu .shp-k { font:500 11.5px system-ui; color:#7C9188; letter-spacing:.4px;
+        padding:1px 5px; border-radius:5px; background:var(--surface-2); }
+  .pop.menu .shp:hover .shp-k { background:var(--surface); }
+  /* History: a time is one line. */
+  #histpop .hrow .ht { width:auto; min-width:74px; white-space:nowrap; }
+  /* The panels Check opens, the Download footer and Find & Change: every small
+     button and field in them is the editor's own light control. They were the
+     browser's (a grey bevel, a black outline, a blue ring) beside styled rows. */
+  :is(#hl-tools, .hl-acts, #cl-tools, .cl-acts, .lk-acts, .nt-acts, .dl-pages) button {
+        flex:none; height:26px; padding:0 10px; font:600 11.5px system-ui; white-space:nowrap; cursor:pointer;
+        border:1px solid var(--edge); border-radius:var(--r-ctl); background:var(--surface); color:var(--ink);
+        transition:background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+  :is(#hl-tools, .hl-acts, #cl-tools, .cl-acts, .lk-acts, .nt-acts, .dl-pages) button:hover:not(:disabled) {
+        background:var(--hover); border-color:var(--sage); }
+  :is(#hl-tools, .hl-acts, #cl-tools, .cl-acts, .lk-acts, .nt-acts, .dl-pages) button:active:not(:disabled) { background:var(--pressed); }
+  :is(#hl-tools, .hl-acts, #cl-tools, .cl-acts, .lk-acts, .nt-acts, .dl-pages) button:disabled { opacity:.5; cursor:default; }
+  #hl-tools { display:flex; gap:6px; margin:2px 0 8px; }
+  .pop.menu .dl-pages input, #findpop select {
+        height:28px; box-sizing:border-box; padding:0 8px; font:12.5px system-ui; color:var(--ink);
+        border:1px solid var(--edge); border-radius:var(--r-ctl); background:var(--surface); }
+  .pop.menu .dl-pages input:focus, #findpop select:focus, #findpop input.ch-title:focus {
+        outline:2px solid var(--focus); outline-offset:-1px; border-color:var(--sage); }
+  .pop.menu .dl-pages { gap:8px; }
+  .pop.menu .dl-pages input { flex:1; min-width:0; width:auto; }
+  /* A long address gives way to its button: 1fr alone is as wide as the
+     address, which pushed Change… out of the panel. */
+  .hl-row { grid-template-columns:minmax(0, 1fr) auto; gap:8px; padding:7px 4px; align-items:center; }
+  .hl-row > :first-child, .lk-row > :nth-child(2) { min-width:0; }
+  .lk-row, .cl-row, .nt-row { padding-left:4px; padding-right:4px; }
+  .pf-row { padding:5px 6px; border-radius:var(--r-ctl); }
+  .pf-group { margin:10px 0 3px; font-size:11.5px; }
+  .pf-row:hover { background:var(--hover); }
+  /* Find & Change sits in the 252px tray: its rows wrap, its fields take the
+     tray's width and no more (they ran under its right edge), and a choice of
+     style is a full-width field. */
+  #findpop.docked { min-width:0; }
+  #findpop .tp-row { flex-wrap:wrap; gap:8px 12px; margin-bottom:10px; }
+  #findpop .find-opt { flex:0 1 auto; min-width:0; font-size:12px; }
+  #findpop .find-opt:has(select) { flex:1 1 100%; }
+  #findpop select { width:100%; min-width:0; }
+  #findpop input.ch-title { width:100%; box-sizing:border-box; }
+  #findpop .find-font { flex-wrap:nowrap; }
+  #findpop .find-font > .find-opt { flex:0 0 40%; }
+  #findpop .find-font > select { flex:1 1 0; width:auto; }
+  #findpop #find-all { flex:1 1 100%; }
   /* ---- motion -------------------------------------------------------------
      What moves, and how. A surface ARRIVES with a short fade (--dur-2); the
      veiled cards and dialogs also rise 3% to size. A surface leaves at once:
@@ -3772,8 +3878,10 @@
          binds to them. railPins() moves a pinned one up into #rail-pins and
          back here when it is unpinned, so an unpinned one is simply hidden. -->
     <div id="rail-cmds">
+      <!-- A heading over lines of body: text STYLES. It wore the Type tool's T,
+           so a rail with Text pinned showed the same letter twice, four buttons apart. -->
       <button id="text" aria-label="Text styles: heading, subheading, body">
-        <svg viewBox="0 0 14 14"><path d="M2 3.2V2h10v1.2M7 2v10M5.2 12h3.6"/></svg></button>
+        <svg viewBox="0 0 14 14"><path d="M2 3h8" stroke-width="2.3"/><path d="M2 6.9h10M2 9.5h10M2 12.1h6"/></svg></button>
       <button id="shape" aria-label="Shapes: pick one to place on the page in view">
         <svg viewBox="0 0 14 14"><rect x="1.2" y="3.4" width="8" height="8" rx="1.4"/><circle cx="10" cy="4.4" r="2.9"/></svg></button>
       <button id="icon" aria-label="Icons: search thousands of open-source icons">
@@ -5958,6 +6066,19 @@ function endnoteMenu(d, host, e) {
   if (r.bottom > vh) m.style.top = (e.clientY + (d.defaultView || window).scrollY - r.height) + 'px';
 }
 
+/** Spelling. The browser underlines a word it does not know, and its
+ *  corrections are in ITS right-click menu, which a page can neither read nor
+ *  open. This editor's text menu took that right-click, so a misspelled word
+ *  was underlined with no way to take the correction. The browser's menu is
+ *  let through instead: with Shift held, or on the next right-click after the
+ *  text menu's "Spelling suggestions…" row (for a quarter of a minute). */
+let spellPassUntil = 0;
+function spellingWanted(e) {
+  if (!e.shiftKey && Date.now() >= spellPassUntil) return false;
+  spellPassUntil = 0;
+  return true;
+}
+
 /** Right-clicking prose. It used to open the endnote menu and nothing else,
  *  which made "insert a citation" the only thing the report's own text could
  *  be asked to do. The formatting the toolbar carries belongs here too — a
@@ -6050,6 +6171,12 @@ function textMenu(d, host, e) {
   });
   // An open text box's words answer the right-click, so the box's own menu
   // (and its Delete text box) was out of reach until the words were closed.
+  sep();
+  item('Spelling suggestions…', () => {
+    restoreRange(d, range);
+    spellPassUntil = Date.now() + 15000;
+    $('stat').textContent = 'right-click the underlined word again for spelling suggestions (or hold Shift and right-click any time)';
+  }).title = 'The browser’s own corrections for an underlined word';
   const openBox = !host.dataset.slot && boxOf(host.dataset.el || '');
   if (openBox && !masterItemOf('text.' + openBox.id)) {
     sep();
@@ -7404,6 +7531,7 @@ function pageMenu(d, pg, e) {
     const n = pageClip.boxes.length + pageClip.tables.length + pageClip.shapes.length;
     $('stat').textContent = `page ${pageLabel(pid)} copied — ${n} item${n === 1 ? '' : 's'}`;
   });
+  item('Copy page as picture', () => copyAsPicture(d, pg, null, `page ${pageLabel(pid)}`));
   item('Copy page style', () => {
     pageStyleClip = { fill: (layout.fill || {})[pageFillId(pid)] };
     $('stat').textContent = 'page style copied — paste it onto another page';
@@ -7704,6 +7832,19 @@ async function menuAfterRender(e, target) {
   to.dispatchEvent(ev);
 }
 
+/** Another picture in this one's place: the frame, the fit and the filters stay. */
+function replaceImage(d, id) {
+  uploadImageFile(d, async path => {
+    await changeDoc(() => {
+      layout.img = layout.img || {};
+      const g = layout.img[id] = layout.img[id] || {};
+      g.src = path;
+      // The crop framed the OLD picture: laid over one of another shape it
+      // shows the wrong part, or zooms in on nothing. The new picture starts uncropped.
+      delete g.crop;
+    });
+  });
+}
 function layerMenu(d, el, e) {
   closeMenu(d);
   const id = el.dataset.shape || el.dataset.el || el.dataset.fill;
@@ -7775,6 +7916,14 @@ function layerMenu(d, el, e) {
     if (inGroup || (selIds.has(id) && selIds.size > 1)) {
       if (inGroup) item('Ungroup', () => ungroupSel(d));
       else item('Group', () => groupSel(d));
+      // Several things: the same size as the one right-clicked, and even gaps.
+      if (selIds.has(id) && selIds.size > 1) {
+        item('Same width', () => matchSizeSel(d, 'w', id));
+        item('Same height', () => matchSizeSel(d, 'h', id));
+        item('Same size', () => matchSizeSel(d, 'wh', id));
+        item('Space evenly across', () => distributeSel(d, 'h', null), selIds.size > 2);
+        item('Space evenly down', () => distributeSel(d, 'v', null), selIds.size > 2);
+      }
       const sep = d.createElement('div'); sep.className = 'ds-menu-sep'; m.appendChild(sep);
     }
   }
@@ -7893,6 +8042,7 @@ function layerMenu(d, el, e) {
   if (!surface) {
     const clonable = !!shapeOf(id) || !!boxOf(id);
     item('Copy', () => { if (!selIds.has(id)) setSel(d, [id]); copySel(d); }, clonable);
+    item('Copy as picture', () => { if (!selIds.has(id)) setSel(d, [id]); return copySelAsPicture(d); });
     if (clip) item('Paste', () => pasteClip(d));
     if (clip) item('Paste in place', () => pasteClip(d, true));
     if (boxOf(id) && /[\t|,]/.test(boxOf(id).md || '') && !/!\[/.test(boxOf(id).md || ''))
@@ -8167,18 +8317,7 @@ function layerMenu(d, el, e) {
     slider('contrast', 0.3, 1.7, 0.05, igNow.filter?.contrast ?? 1, v => setF('contrast', v));
     slider('colour', 0, 2, 0.05, igNow.filter?.sat ?? 1, v => setF('sat', v));
     slider('mono', 0, 1, 0.05, igNow.filter?.gray ?? 0, v => setF('gray', v));
-    item('Replace image…', () => {
-      closeMenu(d);
-      uploadImageFile(d, async path => {
-        await changeDoc(() => {
-          ig().src = path;
-          // The crop framed the OLD picture: laid over one of another shape it
-          // shows the wrong part, or zooms in on nothing. The frame, the fit
-          // and the filters stay; the new picture starts uncropped.
-          delete ig().crop;
-        });
-      });
-    });
+    item('Replace image…', () => { closeMenu(d); replaceImage(d, id); });
     item('Crop… (or double-click)', () => { closeMenu(d); cropMode(d, el); });
     if (igNow.crop) {
       item('Reset crop', async () => {
@@ -12532,6 +12671,7 @@ function editBox(d, el, at) {
     typeKey(d, e, 'text.' + b.id);
   });
   host.addEventListener('contextmenu', e => {
+    if (spellingWanted(e)) { e.stopPropagation(); return; }
     e.preventDefault();
     e.stopPropagation();
     textMenu(d, host, e);
@@ -15730,6 +15870,34 @@ function showMini(d, els) {
       () => hubCommentStart(null));
     if (hasCmt) cmtB.classList.add('on');
   }
+  // What THIS selection is most likely to want, ahead of the three every
+  // selection gets: a picture is replaced or cropped, several things are
+  // grouped, sized alike and spaced. They were all a right-click away, which
+  // is not where a person making a flyer looks first.
+  const one = mine.length === 1 ? mine[0] : null;
+  if (one && !allLocked && (one.tagName === 'IMG' || one.classList.contains('ds-cropw'))) {
+    btn('Replace image…', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1.4"/><path d="M4.6 8.6 7 6.2l2.4 2.4M7 6.4v4"/></svg>',
+      () => replaceImage(d, idOf(one)));
+    btn('Crop (or double-click)', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.8 1.5v8.7h8.7M1.5 3.8h8.7v8.7"/></svg>',
+      () => cropMode(d, one));
+    bar.appendChild(Object.assign(d.createElement('i'), { className: 'ds-mini-sep' }));
+  }
+  if (selIds.size > 1 && !allLocked) {
+    const grouped = [...selIds].every(id => groupOf(id)) && new Set([...selIds].map(id => groupOf(id))).size === 1;
+    btn(grouped ? 'Ungroup (⌘⇧G)' : 'Group (⌘G)', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="1.6" width="6" height="6" rx="1"/><rect x="6.4" y="6.4" width="6" height="6" rx="1"/></svg>',
+      () => grouped ? ungroupSel(d) : groupSel(d)).classList.toggle('on', grouped);
+    btn('Same size as the first one selected', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3" width="4.6" height="8" rx=".8"/><rect x="7.9" y="3" width="4.6" height="8" rx=".8"/></svg>',
+      () => matchSizeSel(d, 'wh', [...selIds][0]));
+    if (selIds.size > 2) {
+      btn('Space evenly across', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 2v10M12.5 2v10M7 4.5v5"/></svg>',
+        () => distributeSel(d, 'h', null));
+      btn('Space evenly down', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 1.5h10M2 12.5h10M4.5 7h5"/></svg>',
+        () => distributeSel(d, 'v', null));
+    }
+    bar.appendChild(Object.assign(d.createElement('i'), { className: 'ds-mini-sep' }));
+  }
+  btn('Copy as picture', '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="8" height="7" rx="1.2"/><path d="M3 8.6l2-2 1.6 1.6 1-1 1.4 1.4M11 5.5h1.5v6.5H5.5"/></svg>',
+    () => copySelAsPicture(d));
   const dupDisabled = ![...selIds].every(id => dupModeOf(d, id));
   btn(dupDisabled ? 'Duplicate — an endnote reorders instead: drag it up or down the list'
                   : 'Duplicate (⌘D)',
@@ -28837,20 +29005,22 @@ async function inlineHubFonts(doc) {
   const used = Object.keys(hubFonts || {}).filter(fam =>
     doc.documentElement.outerHTML.includes(`'${fam}'`));
   if (!used.length) return;
-  const uris = {};
+  const uris = {}, files = [];
   for (const [fam, f] of Object.entries(hubFonts)) {
-    if (!used.includes(fam)) continue;
-    for (const [file] of f.faces) {
-      try {
-        const r = await fetchWithin(f.dir + file);
-        if (!r.ok) continue;
+    if (used.includes(fam)) for (const [file] of f.faces) files.push(f.dir + file);
+  }
+  await Promise.all(files.map(async u => {            // together, and once a session
+    try {
+      uris[u] = await fetchedOnce('hub ' + u, async () => {
+        const r = await fetchWithin(u);
+        if (!r.ok) throw new Error('font ' + r.status);
         const buf = await r.blob();
-        uris[f.dir + file] = await new Promise(ok => {
+        return new Promise(ok => {
           const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(buf);
         });
-      } catch (e) { swallowed('inlineHubFonts', e); }
-    }
-  }
+      });
+    } catch (e) { swallowed('inlineHubFonts', e); }
+  }));
   const css = hubFontCss(used, u => uris[u] || u);
   const st = doc.createElement('style');
   st.setAttribute('data-ds-fonts', '');
@@ -30984,6 +31154,7 @@ function wire(roots) {
     .ds-mini button:hover:not(:disabled) { background:#52796F; }
     .ds-mini button.on { background:#6B9E78; }
     .ds-mini button:disabled { opacity:.35; cursor:default; }
+    .ds-mini .ds-mini-sep { width:1px; height:16px; margin:0 3px; align-self:center; background:rgba(255,255,255,.22); flex:none; }
     .ds-marquee { position:absolute; z-index:9998; pointer-events:none;
        border:1.5px dashed #6B9E78; background:rgba(107,158,120,.08);
        border-radius:2px; }
@@ -32504,6 +32675,7 @@ function edit(d, key, clicked, at) {
   // path, without hunting for the Cite button. (Inline single-line fields — a
   // heading, a caption — take no footnotes, so they keep the native menu.)
   if (allowMd && !inline) host.addEventListener('contextmenu', e => {
+    if (spellingWanted(e)) { e.stopPropagation(); return; }
     e.preventDefault();
     e.stopPropagation();   // else it bubbles to an ancestor's fill/colour menu
     textMenu(d, host, e);
@@ -36778,7 +36950,9 @@ open('/repo/' + OUT).read()
 }
 
 const asDataUrl = async url => {
-  const r = await fetch(url);
+  // It gives up: one picture that never answers held the whole export, with
+  // the status line saying "making the PDF" for as long as the browser waited.
+  const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error(url);
   const blob = await r.blob();
   return new Promise(res => {
@@ -36814,19 +36988,23 @@ async function inlineEverything(doc, opts = {}) {
       link.replaceWith(st);
     } catch (e) { /* leave the <link>: a broken style beats a broken export */ }
   }
-  for (const img of [...doc.querySelectorAll('img')]) {
+  // Every picture is asked for at once, and a file used twice is fetched once.
+  // One after another, a report of forty pictures waited forty round trips.
+  const jobs = [];
+  for (const img of doc.querySelectorAll('img')) {
     const src = img.getAttribute('src') || '';
-    if (/^(data:|https?:)/i.test(src)) continue;
-    try {
-      img.setAttribute('src', localImages.get(src) || await asDataUrl(withBase(src)));
-    } catch (e) { /* keep the relative path rather than lose the image tag */ }
+    if (!/^(data:|https?:)/i.test(src)) jobs.push({ el: img, attr: 'src', src });
   }
-  for (const img of [...doc.querySelectorAll('image[href]')]) {     // a picture in a shape (58)
+  for (const img of doc.querySelectorAll('image[href]')) {          // a picture in a shape (58)
     const src = img.getAttribute('href') || '';
-    if (/^(data:|https?:|#)/i.test(src)) continue;
-    try { img.setAttribute('href', localImages.get(src) || await asDataUrl(withBase(src))); }
-    catch (e) { /* keep the relative path */ }
+    if (!/^(data:|https?:|#)/i.test(src)) jobs.push({ el: img, attr: 'href', src });
   }
+  const got = new Map();
+  await Promise.all([...new Set(jobs.map(j => j.src))].map(async src => {
+    try { got.set(src, localImages.get(src) || await asDataUrl(withBase(src))); }
+    catch (e) { /* keep the relative path rather than lose the image tag */ }
+  }));
+  for (const j of jobs) if (got.has(j.src)) j.el.setAttribute(j.attr, got.get(j.src));
   return res;
 }
 
@@ -36846,45 +37024,70 @@ async function inlineEverything(doc, opts = {}) {
 // README says so, exactly as for a refusal.
 let FONT_FETCH_MS = 10000;
 const fetchWithin = (url, ms = FONT_FETCH_MS) => fetch(url, { signal: AbortSignal.timeout(ms) });
+// A font file never changes at its address, so it is fetched once a session:
+// the second Download in a sitting asks the network for no font at all. A
+// fetch that failed is forgotten, so the next export tries again.
+const fontFetched = new Map();
+function fetchedOnce(key, get) {
+  let p = fontFetched.get(key);
+  if (!p) {
+    p = get();
+    fontFetched.set(key, p);
+    p.catch(() => fontFetched.delete(key));
+  }
+  return p;
+}
 async function inlineWebFonts(doc, res) {
-  for (const link of [...doc.querySelectorAll('link[rel~="stylesheet"]')]) {
+  // The stylesheets together, and each one's faces together: a report with
+  // two families in six weights is some thirty files, which came one by one.
+  const links = [...doc.querySelectorAll('link[rel~="stylesheet"]')].filter(link =>
+    /^(https?:)?\/\/fonts\.googleapis\.com\//i.test(link.getAttribute('href') || ''));
+  const done = await Promise.all(links.map(async link => {
     const href = link.getAttribute('href') || '';
-    if (!/^(https?:)?\/\/fonts\.googleapis\.com\//i.test(href)) continue;
     try {
-      const r = await fetchWithin(href.startsWith('//') ? 'https:' + href : href);
-      if (!r.ok) throw new Error('css ' + r.status);
-      const css = await r.text();
-      const faces = [];
+      const cssUrl = href.startsWith('//') ? 'https:' + href : href;
+      const css = await fetchedOnce('css ' + cssUrl, async () => {
+        const r = await fetchWithin(cssUrl);
+        if (!r.ok) throw new Error('css ' + r.status);
+        return r.text();
+      });
+      const specs = [];
       for (const m of css.matchAll(/(?:\/\*\s*([\w-]+)\s*\*\/\s*)?@font-face\s*{([^}]*)}/g)) {
         if (m[1] && !/^latin(-ext)?$/.test(m[1])) continue;
         const body = m[2];
         const get = k => ((new RegExp(k + '\\s*:\\s*([^;]+)', 'i')).exec(body) || [])[1];
         const url = /url\((['"]?)(https?:[^'")]+)\1\)/.exec(body);
         if (!url) continue;
-        const fr = await fetchWithin(url[2]);
-        if (!fr.ok) throw new Error('font ' + fr.status);
-        const buf = new Uint8Array(await fr.arrayBuffer());
-        faces.push({ family: (get('font-family') || 'font').replace(/['"]/g, '').trim(),
+        specs.push({ family: (get('font-family') || 'font').replace(/['"]/g, '').trim(),
                      weight: (get('font-weight') || '400').trim(),
                      style: (get('font-style') || 'normal').trim(),
-                     subset: m[1] || '', url: url[2], bytes: buf, rule: m[0].replace(/^\/\*[^*]*\*\/\s*/, '') });
+                     subset: m[1] || '', url: url[2], rule: m[0].replace(/^\/\*[^*]*\*\/\s*/, '') });
       }
-      if (!faces.length) throw new Error('no faces');
-      let inline = '';
-      for (const f of faces) {
-        const uri = await new Promise(ok => {
-          const fr = new FileReader();
-          fr.onload = () => ok(fr.result);
-          fr.readAsDataURL(new Blob([f.bytes], { type: 'font/woff2' }));
+      if (!specs.length) throw new Error('no faces');
+      const faces = await Promise.all(specs.map(async f => {
+        const got = await fetchedOnce('face ' + f.url, async () => {
+          const fr = await fetchWithin(f.url);
+          if (!fr.ok) throw new Error('font ' + fr.status);
+          const bytes = new Uint8Array(await fr.arrayBuffer());
+          const uri = await new Promise(ok => {
+            const rd = new FileReader();
+            rd.onload = () => ok(rd.result);
+            rd.readAsDataURL(new Blob([bytes], { type: 'font/woff2' }));
+          });
+          return { bytes, uri };
         });
-        inline += f.rule.replace(f.url, uri) + '\n';
-      }
-      const st = doc.createElement('style');
-      st.setAttribute('data-ds-fonts', '');
-      st.textContent = inline;
-      link.replaceWith(st);
-      res.fonts.push(...faces);
-    } catch (e) { res.fontsLinked.push(href); }     // keep the <link>
+        return { ...f, bytes: got.bytes, uri: got.uri };
+      }));
+      return { link, faces, inline: faces.map(f => f.rule.replace(f.url, f.uri) + '\n').join('') };
+    } catch (e) { return { link, href }; }          // keep the <link>
+  }));
+  for (const d of done) {                           // in the document's order, as before
+    if (!d.faces) { res.fontsLinked.push(d.href); continue; }
+    const st = doc.createElement('style');
+    st.setAttribute('data-ds-fonts', '');
+    st.textContent = d.inline;
+    d.link.replaceWith(st);
+    res.fonts.push(...d.faces.map(({ uri, ...f }) => f));
   }
 }
 
@@ -37579,25 +37782,48 @@ function canvasSignature(cv) {
  *  moment later is right. So it is painted again, after `settle` ms and then
  *  every 40, until two paints in a row are the same pixels. */
 async function drawSvg(svg, cw, ch, settle = 80) {
+  // As a blob: the picture is megabytes (the report's fonts ride in it), and a
+  // data: address made of it had to be percent-encoded, three bytes for one,
+  // for every page. Some browsers also refuse an address that long, which is
+  // one way a page "could not be drawn". A browser that will not read a
+  // canvas painted from a blob gets the data: address, as before.
+  const blobUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    try { return await paintSvg(blobUrl, cw, ch, settle); }
+    catch (e) {
+      return await paintSvg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg), cw, ch, settle);
+    }
+  } finally { URL.revokeObjectURL(blobUrl); }
+}
+async function paintSvg(src, cw, ch, settle) {
   const img = new Image();
   const loaded = new Promise((ok, no) => {
     img.onload = ok;
     img.onerror = () => no(new Error('the browser could not draw this page'));
   });
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  img.src = src;
   await loaded;
-  const cv = document.createElement('canvas');
-  cv.width = cw; cv.height = ch;
-  const g = cv.getContext('2d', { willReadFrequently: true });
+  // Whether two paints agree is asked of a SMALL painting (a quarter of the
+  // sheet's width at most): reading back the full 288 dpi canvas, some thirty
+  // megabytes, up to eight times a page was most of the time a page took.
+  const k = Math.min(1, 640 / cw);
+  const probe = document.createElement('canvas');
+  probe.width = Math.max(1, Math.round(cw * k)); probe.height = Math.max(1, Math.round(ch * k));
+  const pg = probe.getContext('2d', { willReadFrequently: true });
   let last = null;
-  for (let i = 0; i < 8; i++) {
-    g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch);    // a JPEG has no transparency
-    g.drawImage(img, 0, 0, cw, ch);
-    const sig = canvasSignature(cv);
+  for (let i = 0; i < 20; i++) {
+    pg.fillStyle = '#fff'; pg.fillRect(0, 0, probe.width, probe.height);
+    pg.drawImage(img, 0, 0, probe.width, probe.height);
+    const sig = canvasSignature(probe);            // throws if the canvas may not be read
     if (sig === last) break;
     last = sig;
     await new Promise(r => setTimeout(r, i ? 40 : settle));
   }
+  const cv = document.createElement('canvas');
+  cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch);      // a JPEG has no transparency
+  g.drawImage(img, 0, 0, cw, ch);
   return cv;
 }
 
@@ -37737,90 +37963,209 @@ function buildPdf(pages, title) {
   return new Blob(parts, { type: 'application/pdf' });
 }
 
+/** The published report, loaded in a hidden frame and ready to be drawn sheet
+ *  by sheet: what a print would see (the page's own width as the viewport,
+ *  @media print on), every font and picture inside the document. The PDF and
+ *  Copy as picture both draw from it. The caller removes `frame`. */
+async function openPrintFrame() {
+  const doc = new DOMParser().parseFromString(await renderClean(), 'text/html');
+  const inl = await inlineEverything(doc, { fonts: true, scripts: true });
+  await inlineHubFonts(doc);
+  // What a print would see: the page's own width as the viewport, @media
+  // print on and @media screen off. Resolved here, once, so the SVG a sheet
+  // is drawn in (whose viewport is whatever it is) cannot answer them again.
+  const pw = Math.round(PAGE_W_IN * 96), missed = [];
+  for (const st of doc.querySelectorAll('style')) {
+    st.textContent = await inlineCssUrls(freezeViewportUnits(flattenMedia(st.textContent, pw, 'print'), pw), missed);
+  }
+  for (const el of doc.querySelectorAll('[style]')) {
+    const s = el.getAttribute('style') || '';
+    if (/vw\b|url\(/i.test(s)) el.setAttribute('style', await inlineCssUrls(freezeViewportUnits(s, pw), missed));
+  }
+  // The printed sheet has no screen margin, no shadow and no background
+  // beside it, and its picture starts at the sheet's own corner. And text
+  // is measured the same way in the page and in the picture: without
+  // geometricPrecision, Chrome sets text in an SVG image with different
+  // glyph widths from the same text in a page (measured on a Retina Mac: a
+  // line that fits in the page wraps in the picture, and the words laid over
+  // it no longer sit on their words).
+  const base = doc.createElement('style');
+  base.textContent = 'html,body{margin:0!important;padding:0!important}html{overflow:hidden}'
+    + 'section.page{margin:0!important;box-shadow:none!important}'
+    + '*{text-rendering:geometricPrecision!important}';
+  doc.head.appendChild(base);
+
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = `position:fixed;left:-99999px;top:0;border:0;visibility:hidden;width:${pw}px;height:2000px`;
+  document.body.appendChild(frame);
+  await new Promise(res => {
+    frame.addEventListener('load', res, { once: true });
+    frame.srcdoc = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  });
+  const d = frame.contentDocument;
+  void d.body.offsetHeight;                          // lay out, so the fonts start loading
+  // …and wait for them, but not for ever: a face that never arrives left
+  // this promise pending and the export with it.
+  try { await Promise.race([d.fonts.ready, new Promise(r => setTimeout(r, 8000))]); }
+  catch (e) { /* an engine without it: draw anyway */ }
+  await Promise.all([...d.images].map(im => im.complete ? 0
+    : new Promise(r => { im.onload = im.onerror = r; setTimeout(r, 8000); })));
+  await new Promise(r => setTimeout(r, 150));        // a script's first paint
+
+  const sheets = [...d.querySelectorAll('section.page')];
+  if (!sheets.length) { frame.remove(); throw new Error('this report has no pages to print'); }
+  const rootPx = parseFloat(d.defaultView.getComputedStyle(d.documentElement).fontSize) || 16;
+  // The head (every style, and the fonts inside them) is the same for every
+  // sheet: written out once, where it was cloned and written per page.
+  const ser = new XMLSerializer();
+  const headCopy = d.head.cloneNode(true);
+  headCopy.querySelectorAll('script').forEach(s => s.remove());
+  const headXml = ser.serializeToString(headCopy);
+  const htmlOpen = ser.serializeToString(d.documentElement.cloneNode(false)).replace(/(\s*\/>|><\/html>)$/, '>');
+  return { frame, d, sheets, pw, rootPx, inl, missed, ser, headXml, htmlOpen };
+}
+/** Sheet `n` (from 1) of a print frame as a canvas, with its words and links:
+ *  { cv, w, h (CSS px), cw, ch (picture pixels), words, links }, or null for a
+ *  sheet that is not drawn. `first` waits longer: its fonts are the ones nobody
+ *  has loaded yet. */
+async function drawSheet(pf, n, first) {
+  const { d, sheets, pw, rootPx, ser, headXml, htmlOpen } = pf;
+  const sheet = sheets[n - 1];
+  // Show only this sheet, so it sits at the top and is measured there.
+  const was = sheets.map(s => s.getAttribute('style'));
+  sheets.forEach(s => { if (s !== sheet) s.style.setProperty('display', 'none', 'important'); });
+  const sr = sheet.getBoundingClientRect();
+  const words = sheetWords(d, sheet, sr), links = sheetLinks(sheet, sr);
+  const copy = d.body.cloneNode(true);
+  sheets.forEach((s, j) => { was[j] === null ? s.removeAttribute('style') : s.setAttribute('style', was[j]); });
+  if (sr.width < 1 || sr.height < 1) return null;  // a sheet that is not drawn is not printed
+  copy.querySelectorAll('script').forEach(s => s.remove());
+  copy.querySelectorAll('section.page').forEach((s, j) => { if (j !== n - 1) s.textContent = ''; });
+  const w = sr.width, h = sr.height;
+  const k = Math.min(PDF_SCALE, Math.sqrt(PDF_MAX_PIXELS / (w * h)), PDF_MAX_SIDE / Math.max(w, h));
+  const cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cw}" height="${ch}" `
+    + `viewBox="${sr.left} ${sr.top} ${w} ${h}" style="font-size:${rootPx}px">`
+    + `<foreignObject x="0" y="0" width="${Math.max(pw, Math.ceil(sr.left + w))}" height="${Math.ceil(sr.top + h)}">`
+    + htmlOpen + headXml + ser.serializeToString(copy) + '</html></foreignObject></svg>';
+  // The first sheet waits longest: its fonts are the ones nobody has loaded.
+  // A sheet that would not draw is tried once more before the export fails.
+  let cv;
+  try { cv = await drawSvg(svg, cw, ch, first ? 250 : 80); }
+  catch (e) { await new Promise(r => setTimeout(r, 300)); cv = await drawSvg(svg, cw, ch, 250); }
+  return { cv, w, h, cw, ch, words, links };
+}
+
+/** Copy as picture: what is selected (or a whole page) onto the clipboard as
+ *  a PNG, to paste into Slack, an email or a slide. Drawn from the published
+ *  page, as the PDF is, so nothing of the editor (handles, guides, the frame
+ *  edges) is in it; a selection is the part of its page inside its bounds,
+ *  with whatever lies behind it. The clipboard is handed a promise at once, in
+ *  the click, which is the only moment Safari lets a page write to it. */
+function pagePicture(d, page, boxIn) {
+  return (async () => {
+    const n = [...d.querySelectorAll('section.page')].indexOf(page) + 1;
+    const pf = await openPrintFrame();
+    try {
+      if (n < 1 || n > pf.sheets.length) throw new Error('that page is not in the published report');
+      const got = await drawSheet(pf, n, true);
+      if (!got) throw new Error('that page is not drawn');
+      let cv = got.cv;
+      if (boxIn) {
+        const k = got.cw / PAGE_W_IN, pad = 0.04;
+        const x = Math.max(0, Math.round((boxIn.x - pad) * k)), y = Math.max(0, Math.round((boxIn.y - pad) * k));
+        const w = Math.min(got.cw - x, Math.round((boxIn.w + 2 * pad) * k)), h = Math.min(got.ch - y, Math.round((boxIn.h + 2 * pad) * k));
+        if (w < 2 || h < 2) throw new Error('the selection is off the page');
+        const cut = document.createElement('canvas');
+        cut.width = w; cut.height = h;
+        cut.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, w, h);
+        cv = cut;
+      }
+      return await new Promise((ok, no) => cv.toBlob(b => b ? ok(b) : no(new Error('the picture could not be made')), 'image/png'));
+    } finally { pf.frame.remove(); }
+  })();
+}
+let pictureBusy = false;
+async function copyAsPicture(d, page, boxIn, what) {
+  if (pictureBusy) return { ok: false, error: 'still copying the last picture' };
+  if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
+    $('stat').textContent = 'this browser cannot copy a picture: use File > Download instead';
+    return { ok: false, error: 'no clipboard' };
+  }
+  pictureBusy = true;
+  $('stat').textContent = `copying ${what} as a picture…`;
+  try {
+    const blob = pagePicture(d, page, boxIn);
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    const b = await blob;
+    $('stat').textContent = `${what} copied as a picture: paste it anywhere`;
+    return { ok: true, bytes: b.size };
+  } catch (e) {
+    $('stat').textContent = 'could not copy the picture: ' + (e.message || e);
+    return { ok: false, error: String(e.message || e) };
+  } finally { pictureBusy = false; }
+}
+/** The selection's bounds on its page, in inches, or null with nothing selected. */
+function selBounds(d) {
+  const els = selEls(d);
+  if (!els.length) return null;
+  const page = els[0].closest('section.page') || d.querySelector('section.page');
+  const mine = els.filter(el => el.closest('section.page') === page);
+  let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+  mine.forEach(el => {
+    const b = shapeBox(el, page);
+    x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h);
+  });
+  return { page, box: { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }, n: mine.length };
+}
+function copySelAsPicture(d) {
+  const sb = selBounds(d);
+  if (!sb) { $('stat').textContent = 'select something to copy as a picture'; return; }
+  return copyAsPicture(d, sb.page, sb.box, sb.n === 1 ? 'the selection' : `${sb.n} objects`);
+}
+
+/** Several things made the width, the height or both of one of them: three
+ *  photographs or three stat cards in a row, sized by eye until now. The one
+ *  right-clicked is the one the others follow (the first selected, from the
+ *  strip); a locked thing is left alone. One undo step. */
+async function matchSizeSel(d, what, refId) {
+  const { page, els } = pageMembers(d);
+  if (els.length < 2) return { ok: false, error: 'select two or more things' };
+  const ref = els.find(el => idOf(el) === refId) || els[0];
+  const rb = shapeBox(ref, page);
+  const others = els.filter(el => el !== ref);
+  await changeDoc(() => {
+    others.forEach(el => commitSize(d, el, { w: what === 'h' ? undefined : rb.w, h: what === 'w' ? undefined : rb.h }));
+  });
+  $('stat').textContent = `${others.length + 1} things made the same ${what === 'w' ? 'width' : what === 'h' ? 'height' : 'size'}`;
+  return { ok: true, changed: others.length };
+}
+
 /** File > Download > PDF without a server. `pages` is the sorted list of
  *  sheet numbers (null: all), `spec` what the person typed for them. */
 async function exportPdfInBrowser(pages, spec) {
-  if (pdfBusy) return;
+  if (pdfBusy) { $('stat').textContent = 'still making the PDF… it will download when it is ready'; return; }
   pdfBusy = true;
   const stat = t => { $('stat').textContent = t; };
   const tick = () => new Promise(r => setTimeout(r, 0));
   const name = `${exportBasename()}${spec ? '-p' + spec.replace(/,/g, '_') : ''}.pdf`;
-  let frame = null;
+  let pf = null;
   try {
     stat('making the PDF… (a full report takes a moment)');
     await tick();
-    const doc = new DOMParser().parseFromString(await renderClean(), 'text/html');
-    const inl = await inlineEverything(doc, { fonts: true, scripts: true });
-    await inlineHubFonts(doc);
-    // What a print would see: the page's own width as the viewport, @media
-    // print on and @media screen off. Resolved here, once, so the SVG a sheet
-    // is drawn in (whose viewport is whatever it is) cannot answer them again.
-    const pw = Math.round(PAGE_W_IN * 96), missed = [];
-    for (const st of doc.querySelectorAll('style')) {
-      st.textContent = await inlineCssUrls(freezeViewportUnits(flattenMedia(st.textContent, pw, 'print'), pw), missed);
-    }
-    for (const el of doc.querySelectorAll('[style]')) {
-      const s = el.getAttribute('style') || '';
-      if (/vw\b|url\(/i.test(s)) el.setAttribute('style', await inlineCssUrls(freezeViewportUnits(s, pw), missed));
-    }
-    // The printed sheet has no screen margin, no shadow and no background
-    // beside it, and its picture starts at the sheet's own corner. And text
-    // is measured the same way in the page and in the picture: without
-    // geometricPrecision, Chrome sets text in an SVG image with different
-    // glyph widths from the same text in a page (measured on a Retina Mac: a
-    // line that fits in the page wraps in the picture, and the words laid over
-    // it no longer sit on their words).
-    const base = doc.createElement('style');
-    base.textContent = 'html,body{margin:0!important;padding:0!important}html{overflow:hidden}'
-      + 'section.page{margin:0!important;box-shadow:none!important}'
-      + '*{text-rendering:geometricPrecision!important}';
-    doc.head.appendChild(base);
-
-    frame = document.createElement('iframe');
-    frame.setAttribute('aria-hidden', 'true');
-    frame.style.cssText = `position:fixed;left:-99999px;top:0;border:0;visibility:hidden;width:${pw}px;height:2000px`;
-    document.body.appendChild(frame);
-    await new Promise(res => {
-      frame.addEventListener('load', res, { once: true });
-      frame.srcdoc = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
-    });
-    const d = frame.contentDocument;
-    void d.body.offsetHeight;                          // lay out, so the fonts start loading
-    try { await d.fonts.ready; } catch (e) { /* an engine without it: draw anyway */ }
-    await Promise.all([...d.images].map(im => im.complete ? 0
-      : new Promise(r => { im.onload = im.onerror = r; setTimeout(r, 8000); })));
-    await new Promise(r => setTimeout(r, 150));        // a script's first paint
-
-    const sheets = [...d.querySelectorAll('section.page')];
-    if (!sheets.length) throw new Error('this report has no pages to print');
+    pf = await openPrintFrame();
+    const { sheets, inl, missed } = pf;
     const want = pages || sheets.map((s, i) => i + 1);
     if (want.some(n => n > sheets.length)) throw new Error(`the report has ${sheets.length} page${sheets.length === 1 ? '' : 's'}`);
-    const rootPx = parseFloat(d.defaultView.getComputedStyle(d.documentElement).fontSize) || 16;
     const out = [];
     let blank = 0;
     for (const [i, n] of want.entries()) {
       stat(`making the PDF… page ${i + 1} of ${want.length}`);
       await tick();
-      const sheet = sheets[n - 1];
-      // Show only this sheet, so it sits at the top and is measured there.
-      const was = sheets.map(s => s.getAttribute('style'));
-      sheets.forEach(s => { if (s !== sheet) s.style.setProperty('display', 'none', 'important'); });
-      const sr = sheet.getBoundingClientRect();
-      const words = sheetWords(d, sheet, sr), links = sheetLinks(sheet, sr);
-      const copy = d.documentElement.cloneNode(true);
-      sheets.forEach((s, j) => { was[j] === null ? s.removeAttribute('style') : s.setAttribute('style', was[j]); });
-      if (sr.width < 1 || sr.height < 1) continue;     // a sheet that is not drawn is not printed
-      copy.querySelectorAll('script').forEach(s => s.remove());
-      copy.querySelectorAll('section.page').forEach((s, j) => { if (j !== n - 1) s.textContent = ''; });
-      const w = sr.width, h = sr.height;
-      const k = Math.min(PDF_SCALE, Math.sqrt(PDF_MAX_PIXELS / (w * h)), PDF_MAX_SIDE / Math.max(w, h));
-      const cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cw}" height="${ch}" `
-        + `viewBox="${sr.left} ${sr.top} ${w} ${h}" style="font-size:${rootPx}px">`
-        + `<foreignObject x="0" y="0" width="${Math.max(pw, Math.ceil(sr.left + w))}" height="${Math.ceil(sr.top + h)}">`
-        + new XMLSerializer().serializeToString(copy) + '</foreignObject></svg>';
-      // The first sheet waits longest: its fonts are the ones nobody has loaded.
-      const cv = await drawSvg(svg, cw, ch, out.length ? 80 : 250);
+      const got = await drawSheet(pf, n, !out.length);
+      if (!got) continue;
+      const { cv, w, h, cw, ch, words, links } = got;
       if (words.length && looksBlank(cv)) blank++;
       const jpeg = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
       out.push({ w, h, iw: cw, ih: ch, words, links, jpeg: new Uint8Array(await jpeg.arrayBuffer()) });
@@ -37837,10 +38182,10 @@ async function exportPdfInBrowser(pages, spec) {
     $('stat').textContent += ` — ${out.length} page${out.length === 1 ? '' : 's'}, ${(blob.size / 1048576).toFixed(1)} MB`
       + (notes.length ? '; ' + notes.join('; ') : '');
   } catch (e) {
-    stat('PDF failed: ' + (e.message || e));
+    stat('PDF failed: ' + (e.message || e) + '. Try again, or download one page at a time (PDF pages)');
     $('stat').title = String(e && e.stack || e);
   } finally {
-    if (frame) frame.remove();
+    if (pf) pf.frame.remove();
     pdfBusy = false;
   }
 }
