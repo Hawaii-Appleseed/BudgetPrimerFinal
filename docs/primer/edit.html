@@ -3994,6 +3994,76 @@ const activated = () => (document.prerendering
   ? new Promise(res => document.addEventListener('prerenderingchange', () => res(), { once: true }))
   : Promise.resolve());
 
+// --- the keymap: every keyboard shortcut has one owner ------------------------
+// About forty keydown/keyup listeners on the window, the document, the report's
+// iframe and its sheets used to decide for themselves which keys they took,
+// whether they ran while somebody typed in a field, and whether they stopped
+// the event, so two of them could act on one key (Escape cancelled the pen
+// AND dropped the selection). Now there is one pair of listeners per document
+// (this one, and the report's iframe through attach(), which keysFor calls on
+// each fresh document) and a table of bindings:
+//
+//   const off = keymap.bind((e, d) => { ... }, { scope, inText, when, doc, phase, type })
+//
+//   scope   'popup' (a menu, a dialog, a mode that has the keys: the pen, a
+//           crop, an armed anchor), then 'text', then 'global'. Within a phase
+//           bindings run in that order, then in the order they were bound.
+//   inText  false (the default) skips the binding while the key is going into
+//           a field: keymap.inText(e) is the one place that decides that.
+//   when    (e, d) => bool, checked before the binding runs.
+//   doc     'top' (the chrome), 'page' (the report's iframe), 'both', or one
+//           document (a transient binding for one render's page).
+//   phase   'capture' (default; before the focused element hears the key) or
+//           'bubble' (after it, so a field that stops a key keeps it).
+//   type    'keydown' (default) or 'keyup'.
+//
+// A binding that returns true has the key: preventDefault + stopPropagation.
+// One that stops the event itself ends the run too. bind() returns `off`.
+// Listeners on ONE element owned by one popup or one open field (its Enter and
+// Escape) stay on that element; tools/key-ratchet.mjs counts the rest.
+const keymap = (() => {
+  const RANK = { popup: 0, text: 1, global: 2 };
+  const binds = [];
+  let seq = 0;
+  const inText = e => {
+    const t = e.target;
+    return !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || !!t.isContentEditable);
+  };
+  function bind(fn, o = {}) {
+    const b = { fn, type: o.type || 'keydown', phase: o.phase || 'capture', scope: o.scope || 'global',
+      inText: !!o.inText, when: o.when || null, doc: o.doc || 'both', name: o.name || fn.name || '', seq: seq++ };
+    if (!(b.scope in RANK)) throw new Error(`keymap: unknown scope ${b.scope}`);
+    binds.push(b);
+    binds.sort((x, y) => RANK[x.scope] - RANK[y.scope] || x.seq - y.seq);
+    return () => { const i = binds.indexOf(b); if (i >= 0) binds.splice(i, 1); };
+  }
+  function run(e, d, phase) {
+    const top = d === document;
+    for (const b of binds.slice()) {
+      if (b.type !== e.type || b.phase !== phase) continue;
+      if (b.doc === 'top' ? !top : b.doc === 'page' ? top : (b.doc !== 'both' && b.doc !== d)) continue;
+      if (!b.inText && inText(e)) continue;
+      if (b.when && !b.when(e, d)) continue;
+      if (b.fn(e, d) === true) { e.preventDefault(); e.stopPropagation(); }
+      if (e.cancelBubble) return;
+    }
+  }
+  function attach(d) {
+    if (!d || d.__dsKeymap) return;
+    d.__dsKeymap = true;
+    const at = d === document ? window : d;
+    ['keydown', 'keyup'].forEach(type => {
+      at.addEventListener(type, e => run(e, d, 'capture'), true);
+      at.addEventListener(type, e => run(e, d, 'bubble'));
+    });
+  }
+  const list = () => binds.map(b => ({ name: b.name, type: b.type, phase: b.phase, scope: b.scope, inText: b.inText,
+    doc: typeof b.doc === 'string' ? b.doc : 'one page' }));
+  return { bind, attach, inText, list };
+})();
+keymap.attach(document);
+window.__dsKeymap = () => keymap.list();
+
 // This editor knows nothing about any particular report. Everything specific —
 // which renderer to run, what it reads, where it writes, how big a page is —
 // comes from engine/manifest.json, staged beside this file from docsync.yml by
@@ -6535,7 +6605,7 @@ function buildEndnoteRows(d, m, host, range) {
       }
     };
     const onKey = ev => {
-      if (!sub.isConnected) { d.removeEventListener('keydown', onKey, true); return; }
+      if (!sub.isConnected) { offKey(); return; }
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
       const vis = shown();
       if (ev.key === 'Backspace') { if (!typed) return; typed = typed.slice(0, -1); apply(); }
@@ -6557,7 +6627,7 @@ function buildEndnoteRows(d, m, host, range) {
       else return;
       ev.preventDefault(); ev.stopPropagation();
     };
-    d.addEventListener('keydown', onKey, true);
+    const offKey = keymap.bind(onKey, { doc: d, scope: 'popup', inText: true, name: 'endnote picker' });
     ids.forEach(id => {
       const b = d.createElement('button');
       b.className = 'ds-note';
@@ -9369,7 +9439,7 @@ function cropMode(d, el) {
   }, { passive: false });
 
   const finish = async keep => {
-    d.removeEventListener('keydown', keys, true);
+    offKeys();
     ov.remove();
     if (!keep) { await step.rollback({ render: true }); return; }
     g.crop = { imgW: +c.imgW.toFixed(2), dx: +c.dx.toFixed(2), dy: +c.dy.toFixed(2) };
@@ -9377,11 +9447,10 @@ function cropMode(d, el) {
     await step.commit();
     tell(`${id} cropped — the resize handles size the window`);
   };
-  const keys = e => {
+  const offKeys = keymap.bind(e => {
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
-  };
-  d.addEventListener('keydown', keys, true);
+  }, { doc: d, scope: 'popup', inText: true, name: 'crop' });
 }
 
 // -------------------------------------------------------------------- fit
@@ -9749,7 +9818,7 @@ addEventListener('mousedown', e => closeOnOutsideClick(e.target, true));
 // modal is up, and not from a field inside a pop (Find's box, Glyphs' search
 // have their own Escape); first, so the same key does not also drop the
 // selection.
-addEventListener('keydown', e => {
+keymap.bind(e => {
   if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
   const open = [...document.querySelectorAll('.pop:not(.docked):not([hidden])')];
   const t = e.target;
@@ -9762,7 +9831,7 @@ addEventListener('keydown', e => {
   open.forEach(p => { if (p.id === 'glyphpop') closeGlyphs(); else p.hidden = true; });
   const back = inside && inside.__opener;
   if (back && back.isConnected) back.focus();
-}, true);
+}, { doc: 'top', scope: 'popup', inText: true, name: 'close menus' });
 
 /** The same rule, for clicks on the REPORT. The canvas is an iframe, and a
  *  mousedown inside one does not bubble to this document at all — so clicking
@@ -14557,13 +14626,13 @@ function threadWire(d) {
     const r = await changeDoc(() => _threadApply(from, hit.dataset.el));
     tell(`text now flows through ${r.frames.length} frames`);
   }, true);
-  d.addEventListener('keydown', e => {
-    if (threadArm && e.key === 'Escape') {
-      threadArm = null; d.documentElement.classList.remove('ds-thread-arm');
-      tell('threading cancelled');
-    }
-  });
 }
+// Escape cancels an armed thread, and only that: it used to drop the selection too.
+keymap.bind((e, d) => {
+  threadArm = null; d.documentElement.classList.remove('ds-thread-arm');
+  tell('threading cancelled');
+  e.stopPropagation();
+}, { doc: 'page', phase: 'bubble', scope: 'popup', inText: true, when: e => !!threadArm && e.key === 'Escape', name: 'thread: cancel' });
 
 const anchorable = id => !!id && !(id.startsWith('table.') && (!tableOf(id) || tableOf(id).flow)) && !!!shapeOf(id)
   && !!$('out').contentDocument.querySelector(`[data-el="${CSS.escape(id)}"]`);
@@ -14785,17 +14854,11 @@ function anchorWire(d) {
     }
     anchorSet(d, id, host.dataset.slot);
   }, true);
-  d.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && anchorArm) {
-      anchorArm = null; tell(''); anchorButtonsPaint();
-    }
-  }, true);
 }
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && anchorArm) {
-    anchorArm = null; tell(''); anchorButtonsPaint();
-  }
-});
+// Escape disarms the anchor click, in the page or the chrome, and only that:
+// in the chrome it used to drop the selection as well.
+keymap.bind(e => { anchorArm = null; tell(''); anchorButtonsPaint(); e.stopPropagation(); },
+  { scope: 'popup', inText: true, when: e => e.key === 'Escape' && !!anchorArm, name: 'anchor: cancel' });
 
 // ------------------------------------------------------- object styles
 // InDesign's object styles: the same idea as a text style, for the things
@@ -17357,7 +17420,6 @@ function handGrabs(t) {
   return !isLocked(idOf(el));
 }
 function wirePan(d) {
-  d.addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
   d.addEventListener('mousedown', e => {
     if (!(spaceHeld || tool === 'hand') || e.button !== 0) return;
     // The Hand tool (not Space, which is a pure pan) moves an item it presses
@@ -17694,10 +17756,10 @@ $('pal-q').addEventListener('keydown', e => {
 railPins();
 
 
-function keysFor(d) {
-  wireFindKey(d);
-  d.addEventListener('keydown', saveKey, true);    // capture: see saveKey
-  d.addEventListener('keydown', e => {
+function keysFor(d) { keymap.attach(d); }
+// The page's keys: what the chrome's listener below does, for keys that land
+// in the report's iframe (which the chrome never hears).
+keymap.bind((e, d) => {
     // Before the `editing` guard too — see the top-level listener.
     if (zoomKey(e)) return;
     if (spaceKey(e)) return;
@@ -17726,8 +17788,7 @@ function keysFor(d) {
     if (inField(e.target)) return;
     if (tableCellKey(e)) return;
     objectChord(d, e);                     // the one table, shared with the chrome
-  });
-}
+}, { doc: 'page', phase: 'bubble', inText: true, name: 'page keys' });
 
 // ------------------------------------------------------------------- pages
 // The rail is the page-order editor. layout.pages holds order + blanks and IS
@@ -22180,12 +22241,12 @@ async function qaRun(it) {
   catch (e) { tell(`${it.label}: ${e.message}`); }
 }
 const qaKey = e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === 'Enter';
-window.addEventListener('keydown', e => {
+keymap.bind(e => {
   if (!qaKey(e) || $('qa') || document.querySelector('dialog[open]')) return;
   // A comment box and a dialog keep their own ⌘↩ (send, OK).
   if (e.target && e.target.closest && e.target.closest('textarea, #cpanel, dialog')) return;
   e.preventDefault(); quickApply();
-});
+}, { doc: 'top', phase: 'bubble', inText: true, name: 'quick apply' });
 
 // Layer housekeeping (INDESIGN_PARITY.md 85). Merge: everything on `names`
 // goes onto `into`, which keeps its own place, visibility and lock, and the
@@ -24857,12 +24918,13 @@ function measureBetween(s, t) {
 function bindPageOnce(d) {
   if (!d || d.__dsPageOnce) return;
   d.__dsPageOnce = true;
-  d.addEventListener('keydown', e => {
-    if (!qaKey(e) || $('qa')) return;
-    e.preventDefault(); e.stopPropagation(); quickApply();
-  }, true);
   bindMeasure(d);
 }
+keymap.bind(() => { quickApply(); return true; },
+  { doc: 'page', inText: true, when: e => qaKey(e) && !$('qa'), name: 'quick apply (page)' });
+// Letting go of ⌥ takes the measure down.
+keymap.bind((e, d) => { d.querySelectorAll('.ds-guide.mx, .ds-guide.my').forEach(g => g.remove()); },
+  { doc: 'page', type: 'keyup', phase: 'bubble', inText: true, when: e => e.key === 'Alt', name: 'measure off' });
 /** Bind ⌥-hover measuring on a rendered page document. */
 function bindMeasure(d) {
   const clear = () => d.querySelectorAll('.ds-guide.mx, .ds-guide.my').forEach(g => g.remove());
@@ -24886,7 +24948,7 @@ function bindMeasure(d) {
     d.querySelectorAll('.ds-guide.v, .ds-guide.h, .ds-guide.gx, .ds-guide.gy').forEach(g => g.remove());
     tell(ms.map(m => `${(m.b - m.a).toFixed(2)}in ${m.axis === 'x' ? 'across' : 'down'}`).join(' · '));
   });
-  d.addEventListener('keyup', e => { if (e.key === 'Alt') clear(); });
+
   (d.defaultView || window).addEventListener('blur', clear);
 }
 
@@ -26627,11 +26689,6 @@ function penWire(d) {
   // The pen's clicks do not take focus (pointerdown is prevented), so Enter
   // and Escape usually reach the editor's own window: it calls this.
   d.__dsPenFinish = closed => finish(closed);
-  d.addEventListener('keydown', e => {
-    if (!pen) return;
-    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-  }, true);
   // Double-click a path: its points as handles to drag (Alt-click removes one).
   d.addEventListener('dblclick', e => {
     const n = e.target.closest && e.target.closest('[data-shape]');
@@ -26648,11 +26705,12 @@ function pathPointEdit(d, sh, node) {
   const before = JSON.stringify(sh.points);
   const done = async () => {
     d.querySelectorAll('.ds-pathdot').forEach(x => x.remove());
-    d.removeEventListener('keydown', esc, true);
+    offEsc();
     await step.commit({ render: JSON.stringify(sh.points) !== before });
   };
-  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
-  d.addEventListener('keydown', esc, true);
+  // Escape ends the point editing, and only that (it used to drop the selection too).
+  const offEsc = keymap.bind(() => { done(); return true; },
+    { doc: d, scope: 'popup', inText: true, when: e => e.key === 'Escape', name: 'path points: done' });
   const step = beginChange();
   sh.points.forEach((p, i) => {
     const dot = d.createElement('div');
@@ -27014,11 +27072,15 @@ $('icon-q').addEventListener('input', iconDebounced);
 $('icon-set').addEventListener('change', () => iconSearch($('icon-q').value));
 
 $('shape').onclick = () => dockPanel('shape', 'Shapes');
-document.addEventListener('keydown', e => {
-  if (!pen || (e.key !== 'Enter' && e.key !== 'Escape')) return;
+// Enter closes the pen's path, Escape leaves it open; from the page or the
+// chrome, and only that (in the page they used to reach the object keys too:
+// Escape dropped the selection, Enter opened a box's words).
+keymap.bind(e => {
   const d = $('out').contentDocument;
-  if (d && d.__dsPenFinish) { e.preventDefault(); d.__dsPenFinish(e.key === 'Enter'); }
-}, true);
+  if (!d || !d.__dsPenFinish) return;
+  d.__dsPenFinish(e.key === 'Enter');
+  return true;
+}, { scope: 'popup', inText: true, when: e => !!pen && (e.key === 'Enter' || e.key === 'Escape'), name: 'pen: finish' });
 $('shapepop').querySelector('[data-qr]').addEventListener('click', async () => {
   $('shapepop').hidden = true;
   const got = await dsForm('QR code', [{ name: 'data', type: 'text', label: 'The link it opens', value: 'https://' }],
@@ -27067,25 +27129,22 @@ document.querySelectorAll('#shapepop .shp[data-k]').forEach(b => b.addEventListe
   tell(`${id} on page ${page} — drag to place, recolour with the Fill button`);
 }));
 
-addEventListener('keydown', saveKey, true);       // capture: see saveKey
-addEventListener('keyup', e => { if (e.code === 'Space') spaceUp(); });
+keymap.bind(saveKey, { inText: true, name: 'save' });   // capture: see saveKey
+keymap.bind(e => { if (e.code === 'Space') spaceUp(); }, { type: 'keyup', phase: 'bubble', inText: true, name: 'space up' });
 addEventListener('blur', spaceUp);
-addEventListener('keydown', e => {
-  // Zoom first, and before the text-field guards below: ⌘+/⌘- mean the same
-  // thing wherever focus happens to be, and a caret sitting in a field is no
-  // reason for them to fall through to Chrome's page zoom.
-  if (zoomKey(e)) return;
-  if (spaceKey(e)) return;
-  const t = e.target;
-  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT')) return;
-  if (t && t.isContentEditable) return;
+// Zoom first, and while typing too: ⌘+/⌘- mean the same thing wherever focus
+// happens to be, and a caret sitting in a field is no reason for them to fall
+// through to Chrome's page zoom.
+keymap.bind(e => { if (zoomKey(e) || spaceKey(e)) e.stopPropagation(); },
+  { doc: 'top', phase: 'bubble', inText: true, name: 'zoom, space' });
+keymap.bind(e => {
   if (tableCellKey(e)) return;
   // The same table as the page's own listener: after a click the keyboard
   // focus may sit on the chrome rather than the iframe, and a chord that
   // lived in one listener only worked in one of the two places.
   const d = $('out').contentDocument;
   if (d) objectChord(d, e);
-});
+}, { doc: 'top', phase: 'bubble', name: 'chrome keys' });
 
 // --- hover tooltips ---------------------------------------------------------
 // Native `title` never shows on a disabled button — which is exactly the
@@ -28767,8 +28826,10 @@ function collabFollowWire(d) {
   d.addEventListener('wheel', stop, { capture: true, passive: true });
   d.addEventListener('touchmove', stop, { capture: true, passive: true });
   d.addEventListener('pointerdown', stop, true);
-  d.addEventListener('keydown', e => { if (/^(Arrow(Up|Down)|Page(Up|Down)|Home|End| )$/.test(e.key)) stop(); }, true);
 }
+// Scrolling by keyboard stops following a collaborator, as the wheel does.
+keymap.bind(() => { if (collabFollow) collabFollowStop(); },
+  { doc: 'page', inText: true, when: e => /^(Arrow(Up|Down)|Page(Up|Down)|Home|End| )$/.test(e.key), name: 'stop following' });
 
 /** Who this session is, by the door's own account (the hub's /api/me echoes
  *  the Access identity). For presence only: the ROOM learns the login from
@@ -32935,23 +32996,15 @@ document.addEventListener('fullscreenchange', () => {
 // Capturing, because the browser's own find bar would otherwise take it — and
 // the browser's find searches the RENDERED page, which is not what a replace
 // can write back to.
-function wireFindKey(target) {
-  target.addEventListener('keydown', e => {
-    if (!((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') || e.altKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    openFindPanel();
-  }, true);
-}
-wireFindKey(document);
+keymap.bind(() => { openFindPanel(); return true; },
+  { inText: true, when: e => (e.metaKey || e.ctrlKey) && (e.key || '').toLowerCase() === 'f' && !e.altKey, name: 'find' });
 
-document.addEventListener('keydown', e => {
-  if (!presenting) return;
+keymap.bind(e => {
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); exitPresent(); return; }
   const fwd = ['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key);
   const back = ['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key);
   if (fwd || back) { e.preventDefault(); e.stopPropagation(); presentGo(fwd ? 1 : -1); }
-}, true);
+}, { doc: 'top', scope: 'popup', inText: true, when: () => !!presenting, name: 'present' });
 
 // --- the document store (the hub, step 04) ---------------------------------
 // A hub-served editor does not keep its document in git. The door that
@@ -34112,7 +34165,6 @@ function hubCommentsBind(d) {
     if (hit) hubCommentFocus(hit.id, { scrollPage: false });
   }, true);
   d.addEventListener('selectionchange', () => hubCommentPlus(d));
-  d.addEventListener('keydown', e => { if (hubCommentKey(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
 
   // The cards in the margin ride with the page: repositioned, not rebuilt.
   if (d.defaultView) (d.defaultView || window).addEventListener('scroll', () => hubMarginQueue(false), { passive: true });
@@ -35964,7 +36016,8 @@ $('cpanel-text').addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); hubCommentAdd(); }
   if (e.key === 'Escape' && !e.defaultPrevented) $('cpanel-cancel').click();
 });
-window.addEventListener('keydown', e => { if (hubCommentKey(e)) e.preventDefault(); });
+keymap.bind(e => { if (hubCommentKey(e)) e.preventDefault(); }, { doc: 'top', phase: 'bubble', inText: true, name: 'comment' });
+keymap.bind(e => hubCommentKey(e) || undefined, { doc: 'page', inText: true, name: 'comment (page)' });
 // A collaborator's selection ring, the peer marks, and now the comment
 // cards follow the page: re-sort when the panel is open and the page moved.
 window.addEventListener('resize', () => { const d = $('out') && $('out').contentDocument; if (d) hubCommentPlus(d); });
