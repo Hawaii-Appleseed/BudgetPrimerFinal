@@ -7940,11 +7940,11 @@ function layerMenu(d, el, e) {
     // InDesign's override: change this one page's copy and leave the layout,
     // and every other page, as they are. Undone by putting it back.
     if (!mi.overridden) item('Change on this page only', async () => {
-      await changeDoc(() => { masterOverride(id, true); });
+      if (!await uiVerb('masterOverride', id, true)) return;
       tell('changes to this item now stay on this page');
     });
     else item('Back to the shared layout', async () => {
-      await changeDoc(() => { masterOverride(id, false); });
+      if (!await uiVerb('masterOverride', id, false)) return;
       tell('this page follows the shared layout again');
     });
     item('Remove from shared layout', () => masterRemoveItem(id));
@@ -8116,8 +8116,8 @@ function layerMenu(d, el, e) {
     if (clip) item('Paste in place', () => pasteClip(d, true));
     if (boxOf(id) && /[\t|,]/.test(boxOf(id).md || '') && !/!\[/.test(boxOf(id).md || ''))
       item('Convert text to table', async () => {
-        const r = await changeDoc(() => { const t = textToTable(id); return t.error ? { ...t, ok: false } : t; });
-        if (r.error) { tell(r.error); return; }
+        const r = await uiVerb('textToTable', id);
+        if (!r) return;
         setSel($('out').contentDocument, [r.id]);
         tell(`${r.rows} rows × ${r.cols} columns`);
       });
@@ -8167,7 +8167,9 @@ function layerMenu(d, el, e) {
        ['Flip horizontal', o => turnObjects(d, turnIds, { flip: 'h' })],
        ['Flip vertical', o => turnObjects(d, turnIds, { flip: 'v' })],
        ['Clear transformations', async o => {
-         const n = await changeDoc(() => clearTransforms(turnIds));
+         const r = await uiVerb('clearTransforms', turnIds);
+         if (!r) return;
+         const n = r.cleared;
          tell(n ? `straightened ${n}` : 'nothing was turned, skewed, flipped or scaled');
        }]].forEach(([label, fn]) => {
         const b = d.createElement('button'); b.textContent = label;
@@ -8418,8 +8420,8 @@ function layerMenu(d, el, e) {
           b.textContent = label;
           b.addEventListener('click', async () => {
             closeMenu(d);
-            const r = await changeDoc(() => _pathfinderApply(sel, op));
-            setSel($('out').contentDocument, [r.id]);
+            const r = await uiVerb('pathfinder', sel, op);
+            if (r) setSel($('out').contentDocument, [r.id]);
           });
           sub.appendChild(b);
         });
@@ -8454,8 +8456,8 @@ function layerMenu(d, el, e) {
       });
     });
     if (one && one.kind === 'compound') item('Release compound', async () => {
-      const r = await changeDoc(() => _releaseApply(id));
-      setSel($('out').contentDocument, r.released);
+      const r = await uiVerb('release', id);
+      if (r) setSel($('out').contentDocument, r.released);
     });
     if (one && one.kind === 'path') item('Edit points', () => {
       closeMenu(d);
@@ -8466,14 +8468,15 @@ function layerMenu(d, el, e) {
       const pic = [...selIds].map(i => boxPictureSrc(i) && i).find(Boolean);
       if (pic && selIds.size === 2) item('Put the picture inside this shape', async () => {
         closeMenu(d);
-        const r = await changeDoc(() => _pasteIntoApply(id, pic));
+        const r = await uiVerb('pasteInto', id, pic);
+        if (!r) return;
         setSel($('out').contentDocument, [r.id]);
         tell('the picture is inside the shape — right-click it for Fill or Fit');
       });
       submenuRow(d, m, 'Picture inside ▸', sub => {
         const btn = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
           b.addEventListener('click', async () => { closeMenu(d); await fn(); }); sub.appendChild(b); };
-        const put = async im => { await changeDoc(() => { _shapeImageApply(id, im); }); };
+        const put = async im => { await uiVerb('shapeImage', id, im); };
         projectImages().slice(0, 30).forEach(n => btn(n, () => put({ ...(one.image || {}), src: 'assets/' + n })));
         btn('Upload a picture…', () => uploadImageFile($('out').contentDocument, path => put({ ...(one.image || {}), src: path })));
         if (one.image) {
@@ -8577,7 +8580,8 @@ function layerMenu(d, el, e) {
       });
     } else {
       item('Break thread after this frame', async () => {
-        const r = await changeDoc(() => _unthreadApply(id));
+        const r = await uiVerb('unthread', id);
+        if (!r) return;
         tell(r.removed
           ? `thread broken — ${r.removed} empty frame${r.removed === 1 ? '' : 's'} after it removed`
           : 'thread broken');
@@ -10529,6 +10533,19 @@ function tableMenu(d, td, e) {
     return b;
   };
   const sep = () => { const s = d.createElement('div'); s.className = 'ds-menu-sep'; m.appendChild(s); };
+  /** A row that is a pilot verb: validated, one undo step, refused in words
+   *  (uiVerb). `after` runs on success with the verb's result. */
+  const tid = 'table.' + t.id;
+  const verbItem = (icon, label, key, verb, args, on = true, after = null) =>
+    item(icon, label, key, async () => {
+      const r = verb === 'tableRow' || verb === 'tableCol'
+        ? await tableLine(t, verb === 'tableRow' ? 'row' : 'col', ...args.slice(1))
+        : await uiVerb(verb, ...args);
+      if (!r) return;
+      if (after) after(r);
+      paintCells($('out').contentDocument);
+      renderTablePanel();
+    }, on, true);
 
   // --- the object ----------------------------------------------------------
   item('copy', 'Copy', '⌘C', () => copySel(d), true, true);
@@ -10541,15 +10558,15 @@ function tableMenu(d, td, e) {
   }, true, true);
   sep();
   // --- structure -----------------------------------------------------------
-  item('delcol', 'Delete column', '', () => tableDeleteCol(t, ci), cols > 1);
-  item('delrow', 'Delete row', '', () => tableDeleteRow(t, ri), rows > 1);
-  item('plus', 'Add column', '', () => tableInsertCol(t, ci + 1));
-  item('plus', 'Add row', '', () => tableInsertRow(t, ri + 1));
+  verbItem('delcol', 'Delete column', '', 'tableCol', [tid, 'delete', ci], cols > 1);
+  verbItem('delrow', 'Delete row', '', 'tableRow', [tid, 'delete', ri], rows > 1);
+  verbItem('plus', 'Add column', '', 'tableCol', [tid, 'insert', ci + 1]);
+  verbItem('plus', 'Add row', '', 'tableRow', [tid, 'insert', ri + 1]);
   sep();
   // --- sizing --------------------------------------------------------------
   // Rows already size to their content — there are no row heights to fit —
   // so the pair here is the two that mean something for this schema.
-  item('fit', 'Fit columns to content', '', () => tableFitColumns(t, tableEl));
+  verbItem('fit', 'Fit columns to content', '', 'tableCol', [tid, 'fit']);
   item('fit', 'Even column widths', '', () => { delete t.colw; }, !!t.colw);
   sep();
   // --- column alignment (INDESIGN_PARITY.md 15) ------------------------------
@@ -10562,53 +10579,58 @@ function tableMenu(d, td, e) {
       () => setColAlign(t, ci, curA === a2 ? null : a2)));
   sep();
   // --- reorder -------------------------------------------------------------
-  item('up', 'Move row up', '', () => tableMoveRow(t, ri, -1), ri > 0);
-  item('down', 'Move row down', '', () => tableMoveRow(t, ri, 1), ri < rows - 1);
-  item('left', 'Move column left', '', () => tableMoveCol(t, ci, -1), ci > 0);
-  item('right', 'Move column right', '', () => tableMoveCol(t, ci, 1), ci < cols - 1);
+  verbItem('up', 'Move row up', '', 'tableRow', [tid, 'move', ri, ri - 1], ri > 0);
+  verbItem('down', 'Move row down', '', 'tableRow', [tid, 'move', ri, ri + 1], ri < rows - 1);
+  verbItem('left', 'Move column left', '', 'tableCol', [tid, 'move', ci, ci - 1], ci > 0);
+  verbItem('right', 'Move column right', '', 'tableCol', [tid, 'move', ci, ci + 1], ci < cols - 1);
   sep();
   item('grid', t.header ? 'Remove header row' : 'Make first row a header', '',
     () => { t.header = !t.header; });
   {
     const rg = cellRange() || { r0: ri, r1: ri, c0: ci, c1: ci };
     const many = rg.r1 > rg.r0 || rg.c1 > rg.c0;
-    item('grid', 'Merge cells', '', () => {
-      const err = tableMerge(t, rg.r0, rg.c0, rg.r1, rg.c1);
-      if (err) tell(err);
-      else selectCell(idOf(tableEl), rg.r0, rg.c0);
-    }, many);
-    item('grid', 'Unmerge cells', '', () => tableUnmerge(t, ri, ci), !!mergeAt(t, ri, ci));
-    item('grid', 'Split cell horizontally', '', () => tableSplit(t, ri, ci, 'h'));
-    item('grid', 'Split cell vertically', '', () => tableSplit(t, ri, ci, 'v'));
-    item('fit', 'Distribute rows evenly', '', () => tableDistributeRows(t, tableEl,
-      many ? rg.r0 : 0, many ? rg.r1 : rows - 1), rows > 1);
+    verbItem('grid', 'Merge cells', '', 'mergeCells',
+      [tid, rg.r0, rg.c0, rg.r1 - rg.r0 + 1, rg.c1 - rg.c0 + 1], many,
+      () => selectCell(idOf(tableEl), rg.r0, rg.c0));
+    verbItem('grid', 'Unmerge cells', '', 'unmergeCells', [tid, ri, ci], !!mergeAt(t, ri, ci));
+    verbItem('grid', 'Split cell horizontally', '', 'splitCell', [tid, ri, ci, 'h']);
+    verbItem('grid', 'Split cell vertically', '', 'splitCell', [tid, ri, ci, 'v']);
+    // The whole table is the verb's 'even'; a range of rows is the menu's
+    // own (the verb has no range), so it keeps its changeDoc.
+    if (many) item('fit', 'Distribute rows evenly', '', () => tableDistributeRows(t, tableEl, rg.r0, rg.r1), rows > 1);
+    else verbItem('fit', 'Distribute rows evenly', '', 'tableRow', [tid, 'even'], rows > 1);
     // Cell styles: the selection (or this cell) wears one; Save as… makes
     // one from this cell's own look.
     submenuRow(d, m, 'Cell style ▸', sub => {
-      const keys = [];
-      for (let r = rg.r0; r <= rg.r1; r++) for (let c = rg.c0; c <= rg.c1; c++) keys.push(`${r},${c}`);
+      const cells = [];
+      for (let r = rg.r0; r <= rg.r1; r++) for (let c = rg.c0; c <= rg.c1; c++) cells.push([r, c]);
       const cur = ((t.cells || {})[`${ri},${ci}`] || {}).use;
-      const row = (label, fn) => { const b = d.createElement('button'); b.textContent = label;
-        b.addEventListener('click', async () => { closeMenu(d); const ok = await changeDoc(fn); if (ok === false) return;
+      // Each row hands back the ops to run (or null when it was called off).
+      const row = (label, ops) => { const b = d.createElement('button'); b.textContent = label;
+        b.addEventListener('click', async () => { closeMenu(d);
+          const list = await ops(); if (!list || !await uiOps(list)) return;
           paintCells($('out').contentDocument); }); sub.appendChild(b); };
-      Object.keys(cellStyles()).sort().forEach(n => row((cur === n ? '✓ ' : '') + n, () => applyCellStyle(t, keys, n)));
-      row('No cell style', () => applyCellStyle(t, keys, null));
+      Object.keys(cellStyles()).sort().forEach(n => row((cur === n ? '✓ ' : '') + n,
+        () => [{ verb: 'cellStyle', args: [tid, cells, n] }]));
+      row('No cell style', () => [{ verb: 'cellStyle', args: [tid, cells, null] }]);
+      // The dialog first, then the edit: the step used to stay open across
+      // the dialog, so a cancel had to be judged after the fact.
       row('Save this cell’s look as…', async () => {
         const look = pick({ ...((t.cells || {})[`${ri},${ci}`] || {}) }, CELL_STYLE_KEYS);
-        if (!Object.keys(look).length) { tell('this cell has no look of its own to save — give it a fill or bold first'); return false; }
+        if (!Object.keys(look).length) { tell('this cell has no look of its own to save — give it a fill or bold first'); return null; }
         const got = await dsForm('New cell style', [{ name: 'name', label: 'Name', value: '' }], { okLabel: 'Save',
           validate: v => /^[A-Za-z0-9 _-]{1,30}$/.test(asciiName(v.name)) ? '' : 'a name of letters, digits, spaces, - and _' });
-        if (got == null) return false;
-        defineCellStyle(asciiName(got.name), look);
-        applyCellStyle(t, keys, asciiName(got.name));
+        if (got == null) return null;
+        const n = asciiName(got.name);
+        return [{ verb: 'defineCellStyle', args: [n, look] }, { verb: 'cellStyle', args: [tid, cells, n] }];
       });
     });
   }
   item('sliders', 'Table options…', '', () => tableOptionsDialog(t, ri), true, true);
-  item('grid', 'Convert table to text', '', () => {
-    const r = tableToText('table.' + t.id);
-    if (r.error) tell(r.error);
-  }, !t.flow);
+  item('grid', 'Convert table to text', '', async () => {
+    const r = await uiVerb('tableToText', tid);
+    if (r) setSel($('out').contentDocument, [r.id]);
+  }, !t.flow, true);
   item('sliders', 'Table styles…', '', () => openTablePanel(idOf(tableEl)), true, true);
 
   d.body.appendChild(m); menuUp(true);
@@ -10897,9 +10919,7 @@ function tableInsertRow(t, at) {
  *  filled by typing through it, as in Word, Docs and InDesign. It used to
  *  close the words and drop the keyboard on the page. */
 async function tableAppendRow(t) {
-  await changeDoc(() => {
-    tableInsertRow(t, t.rows.length);
-  });
+  if (!await tableLine(t, 'row', 'insert', t.rows.length)) return;
   const d = $('out').contentDocument;
   const id = 'table.' + t.id, r = t.rows.length - 1;
   if (!selIds.has(id)) setSel(d, [id]);
@@ -11031,6 +11051,24 @@ async function tableWrite(fn) {
   paintCells($('out').contentDocument);
   renderTablePanel();
 }
+/** A row or column edit (insert, delete, move, even, fit) through tableRow /
+ *  tableCol. A FLOW table (one content.md lays out with the words) is not
+ *  something those verbs take, and the menu and panel offer the same rows on
+ *  it, so it gets the verb's own apply in a changeDoc: the same edit, without
+ *  the verb's validation. */
+async function tableLine(t, kind, op, at, to) {
+  const id = 'table.' + t.id;
+  if (!t.flow) return uiVerb(kind === 'row' ? 'tableRow' : 'tableCol', id, op, at, to);
+  return changeDoc(() => _pilotApplyTableLine(kind, id, op, at, to));
+}
+/** The panel's table, one row or column edit (tableLine), then repaint. */
+async function tableVerb(kind, op, at) {
+  const t = tableOfId(tablePanelId || '');
+  if (!t) return;
+  if (!await tableLine(t, kind, op, at)) return;
+  paintCells($('out').contentDocument);
+  renderTablePanel();
+}
 
 function renderTablePanel() {
   const pop = $('tablepop');
@@ -11114,17 +11152,17 @@ function renderTablePanel() {
   const ac = rg ? rg.c0 : cols - 1, ac2 = rg ? rg.c1 : cols - 1;
   h('Rows & columns');
   const rr = row();
-  btn(rr, '↑ Row', 'Insert a row above', () => tableWrite(t2 => tableInsertRow(t2, ar)));
-  btn(rr, '↓ Row', 'Insert a row below', () => tableWrite(t2 => tableInsertRow(t2, ar2 + 1)));
+  btn(rr, '↑ Row', 'Insert a row above', () => tableVerb('row', 'insert', ar));
+  btn(rr, '↓ Row', 'Insert a row below', () => tableVerb('row', 'insert', ar2 + 1));
   const delR = btn(rr, '− Row', 'Delete this row',
-    () => tableWrite(t2 => tableDeleteRow(t2, ar)));
+    () => tableVerb('row', 'delete', ar));
   delR.disabled = rows <= 1;
   delR.classList.add('danger');
   const cr = row();
-  btn(cr, '← Col', 'Insert a column to the left', () => tableWrite(t2 => tableInsertCol(t2, ac)));
-  btn(cr, '→ Col', 'Insert a column to the right', () => tableWrite(t2 => tableInsertCol(t2, ac2 + 1)));
+  btn(cr, '← Col', 'Insert a column to the left', () => tableVerb('col', 'insert', ac));
+  btn(cr, '→ Col', 'Insert a column to the right', () => tableVerb('col', 'insert', ac2 + 1));
   const delC = btn(cr, '− Col', 'Delete this column',
-    () => tableWrite(t2 => tableDeleteCol(t2, ac)));
+    () => tableVerb('col', 'delete', ac));
   delC.disabled = cols <= 1;
   delC.classList.add('danger');
   const or = row();
@@ -13642,10 +13680,12 @@ function replaceFont(from, to) {
       const k = el.dataset.slot;
       if (seen.has(k)) return;
       seen.add(k);
-      layout.text = layout.text || {};
-      if ((layout.text[k] || {}).font) return;
+      if (((layout.text || {})[k] || {}).font) return;
       const raw = ((d.defaultView || window).getComputedStyle(el).fontFamily || '').split(',')[0].trim().replace(/^["']|["']$/g, '');
       if (raw.toLowerCase() !== from.toLowerCase()) return;
+      // Made only when written: making it up front turned a font used
+      // nowhere into a changed document (an empty, unsaved undo step).
+      layout.text = layout.text || {};
       layout.text[k] = { ...(layout.text[k] || {}), font: to };
       n++;
     });
@@ -13674,8 +13714,10 @@ function renderFindFonts(pop) {
     });
     sel.addEventListener('change', async () => {
       if (!sel.value) return;
-      const n = await changeDoc(() => replaceFont(family, sel.value));
+      const r = await uiVerb('replaceFont', family, sel.value);
       renderFindPanel();
+      if (!r) return;
+      const n = r.replaced;
       tell(`${family} → ${sel.value} in ${n} place${n === 1 ? '' : 's'}`);
     });
     row.append(lab, sel);
@@ -14217,10 +14259,9 @@ function renderStylePop() {
   const own = styleOverrides().find(o => o.key === selected);
   row3.appendChild(btn('Clear overrides', own ? `Back to "${worn}" — drops ${own.keys.join(', ')}` : 'This text looks exactly like its style',
     async () => {
-      await changeDoc(() => {
-        clearOverrides(selected);
-      }); showType(selected); renderStylePop();
-      tell(`back to "${worn}"`);
+      const r = await uiVerb('clearOverrides', selected);
+      showType(selected); renderStylePop();
+      if (r) tell(`back to "${worn}"`);
     }, !own));
   const hi = btn(showOverrides ? 'Highlighting overrides ✓' : 'Highlight overrides',
     'Outline every piece of text that differs from the style it wears', () => { toggleOverrides(); renderStylePop(); });
@@ -14229,8 +14270,8 @@ function renderStylePop() {
   row3.appendChild(btn(isDef ? 'New text boxes wear this ✓' : 'Use for new text boxes',
     isDef ? 'Stop giving this style to new text boxes' : `Every text box added from now on wears "${worn}"`,
     async () => {
-      await changeDoc(() => { setDefaultStyle('text', isDef ? null : worn); }); renderStylePop();
-      tell(isDef ? 'new text boxes wear no style' : `new text boxes wear "${worn}"`);
+      const r = await uiVerb('setDefaultStyle', 'text', isDef ? null : worn); renderStylePop();
+      if (r) tell(isDef ? 'new text boxes wear no style' : `new text boxes wear "${worn}"`);
     }, !worn));
   styleHousekeeping(host, 'text', worn, () => { showType(selected); renderStylePop(); });
 
@@ -14621,9 +14662,8 @@ function threadWire(d) {
     const from = threadArm; threadArm = null;
     d.documentElement.classList.remove('ds-thread-arm');
     if (!hit) { tell('threading cancelled'); return; }
-    const v = _threadValidate(from, hit.dataset.el);
-    if (!v.ok) { tell(v.error); return; }
-    const r = await changeDoc(() => _threadApply(from, hit.dataset.el));
+    const r = await uiVerb('thread', from, hit.dataset.el);
+    if (!r) return;
     tell(`text now flows through ${r.frames.length} frames`);
   }, true);
 }
@@ -15044,8 +15084,8 @@ function renderObjStyleVerbs(host, obj, kind, after) {
   row2.appendChild(btn(isDef ? `New ${noun}s wear this ✓` : `Use for new ${noun}s`,
     isDef ? `Stop giving this style to new ${noun}s` : `Every ${noun} added from now on wears "${worn}"`,
     async () => {
-      await changeDoc(() => { setDefaultStyle(kind, isDef ? null : worn); }); after();
-      tell(isDef ? `new ${noun}s wear no style` : `new ${noun}s wear "${worn}"`);
+      const r = await uiVerb('setDefaultStyle', kind, isDef ? null : worn); after();
+      if (r) tell(isDef ? `new ${noun}s wear no style` : `new ${noun}s wear "${worn}"`);
     }, !worn));
   styleHousekeeping(host, 'object', worn, after);
   const n = document.createElement('p');
@@ -15309,11 +15349,30 @@ $('ty-box').addEventListener('click', () => {
 /** input -> paint (fast, local). change -> commit and re-render, because the
  *  cascade and is_light_bg are the renderer's job, not something to fake. */
 function wireType() {
+  // Every type control is ONE undo step. They used to write setStyle() and
+  // markDirty() and render with no step at all, so ⌘Z after a size change
+  // undid the edit before it. A one-shot control (a button, a select) is a
+  // step start to finish; a live one (a field's input, a slider's drag)
+  // opens its step on the first write and closes it on change. Either way a
+  // step that changed nothing is taken back (beginChange's commit).
+  const typeSet = async fn => {
+    const s = beginChange();
+    try { fn(); } catch (e) { await s.rollback(); throw e; }
+    await s.commit(); showType(selected);
+  };
+  let liveStep = null;
+  const liveWrite = patch => {
+    if (!liveStep) liveStep = beginChange();
+    setStyle(selected, patch); paintText(selected);
+  };
+  const liveCommit = async patch => {
+    const s = liveStep || beginChange(); liveStep = null;
+    if (patch) setStyle(selected, patch);
+    await s.commit(); showType(selected);
+  };
   const live = (el, read) => {
-    el.addEventListener('input', () => { setStyle(selected, read()); paintText(selected); });
-    el.addEventListener('change', async () => {
-      setStyle(selected, read()); markDirty(); await render(); showType(selected);
-    });
+    el.addEventListener('input', () => liveWrite(read()));
+    el.addEventListener('change', () => liveCommit(read()));
   };
   live($('ty-size'), () => ({ size: $('ty-size').value === '' ? null : +$('ty-size').value }));
   live($('ty-track'), () => ({ tracking: $('ty-track').value === '' ? null : +$('ty-track').value }));
@@ -15331,8 +15390,7 @@ function wireType() {
     // floor is enforced in _check_text(), so a hand-edited layout.json or a
     // pilot verb cannot get under it either.
     const next = Math.max(10.5, Math.min(200, Math.round((cur + dir) * 2) / 2));
-    setStyle(selected, { size: next });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { size: next }));
   };
   $('ty-down').addEventListener('click', step(-1));
   $('ty-up').addEventListener('click', step(1));
@@ -15342,12 +15400,9 @@ function wireType() {
     const r = $(rid), n = $(nid);
     r.addEventListener('input', () => {
       n.value = r.value;
-      setStyle(selected, { [prop]: +r.value });
-      paintText(selected);
+      liveWrite({ [prop]: +r.value });
     });
-    r.addEventListener('change', async () => {
-      markDirty(); await render(); showType(selected);
-    });
+    r.addEventListener('change', () => liveCommit(null));
   };
   slider('ty-track-r', 'ty-track', 'tracking');
   slider('ty-lead-r', 'ty-lead', 'leading');
@@ -15359,8 +15414,7 @@ function wireType() {
     colorExtras(document, host, (styleOf(selected).color || ''), async c => {
       if (ctlRunColour(c)) return;          // the selected words, not the box
       $('ty-colorpop').hidden = true;
-      setStyle(selected, { color: c });
-      markDirty(); await render(); showType(selected);
+      await typeSet(() => setStyle(selected, { color: c }));
     });
     togglePop($('ty-colorpop'), $('ty-colorbtn'));
   });
@@ -15388,9 +15442,9 @@ function wireType() {
   }, true);
   // One write path for the whole panel: a patch through setStyle, a render,
   // and the type bar re-read — exactly what the case picker does.
-  const paraSet = async patch => {
-    setStyle(selected, patch);
-    markDirty(); await render(); showType(selected); fillParaPop(selected);
+  const paraSet = async (patch, also = null) => {
+    await typeSet(() => { if (also) also(); setStyle(selected, patch); });
+    fillParaPop(selected);
   };
   const paraSel = (id, key, num) => $(id).addEventListener('change', () => {
     const v = $(id).value;
@@ -15487,8 +15541,9 @@ function wireType() {
   // Opting in with no grid yet makes one: 12pt from the top margin's usual
   // 0.75in, which the two fields then adjust.
   $('ty-grid').addEventListener('change', async () => {
-    if ($('ty-grid').checked && !layout.grid) layout.grid = { increment: 12, start: 0.75 };
-    paraSet({ grid: $('ty-grid').checked || null });
+    // The grid's default goes in the same step as the slot's own switch.
+    paraSet({ grid: $('ty-grid').checked || null },
+      () => { if ($('ty-grid').checked && !layout.grid) layout.grid = { increment: 12, start: 0.75 }; });
   });
   const gridField = async () => {
     const inc = +$('ty-ginc').value, st = +$('ty-gst').value;
@@ -15531,9 +15586,10 @@ function wireType() {
     // slot you ever styled by hand would ignore the style you just gave it,
     // which reads as the feature not working.
     const st = styleOf(selected) || {};
-    setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
-    setStyle(selected, { use: name });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => {
+      setStyle(selected, Object.fromEntries(Object.keys(bareStyle(st)).map(k => [k, null])));
+      setStyle(selected, { use: name });
+    });
   });
   $('ty-style-more').addEventListener('click', () => {
     renderStylePop();
@@ -15542,8 +15598,7 @@ function wireType() {
   $('ty-colordefault').addEventListener('click', async () => {
     if (ctlRunColour(null)) return;         // the words' own colour off
     $('ty-colorpop').hidden = true;
-    setStyle(selected, { color: null });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { color: null }));
   });
 
   $('ty-font').addEventListener('change', async () => {
@@ -15552,43 +15607,39 @@ function wireType() {
     // the engine refuses it at load — so drop it rather than carry it over.
     const w = fam && fonts[fam] && fonts[fam].includes(+styleOf(selected).weight)
       ? styleOf(selected).weight : null;
-    setStyle(selected, { font: fam, weight: w });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { font: fam, weight: w }));
   });
   $('ty-weight').addEventListener('change', async () => {
-    setStyle(selected, { weight: $('ty-weight').value === '' ? null : +$('ty-weight').value });
-    markDirty(); await render(); showType(selected);
+    const w = $('ty-weight').value === '' ? null : +$('ty-weight').value;
+    await typeSet(() => setStyle(selected, { weight: w }));
   });
   $('ty-case').addEventListener('change', async () => {
     const v = $('ty-case').value;
-    setStyle(selected, { case: v === 'none' ? null : v });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { case: v === 'none' ? null : v }));
   });
   const toggle = (id, prop) => $(id).addEventListener('click', async () => {
-    setStyle(selected, { [prop]: !styleOf(selected)[prop] || null });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { [prop]: !styleOf(selected)[prop] || null }));
   });
   toggle('ty-i', 'italic');
   toggle('ty-u', 'underline');
   document.querySelectorAll('.ty-al').forEach(b => b.addEventListener('click', async () => {
     const a = styleOf(selected).align === b.dataset.a ? null : b.dataset.a;
-    setStyle(selected, { align: a });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { align: a }));
   }));
   $('ty-fx').addEventListener('change', async () => {
     const kind = $('ty-fx').value || null;
     // Drop the old effect's parameters rather than carrying them across: they
     // mean different things per effect, and 'width' on a shadow is noise.
-    setStyle(selected, { effect: kind ? { kind } : null });
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => setStyle(selected, { effect: kind ? { kind } : null }));
   });
   $('ty-reset').addEventListener('click', async () => {
     // Back to what the report designed — which means the style it wears goes
     // too. "Reset" that left a slot silently following Body would be a lie.
     const b = selected && selected.startsWith('text.') ? boxOf(selected) : null;
-    if (b) delete b.style;
-    else if (layout.text) delete layout.text[selected];
-    markDirty(); await render(); showType(selected);
+    await typeSet(() => {
+      if (b) delete b.style;
+      else if (layout.text) delete layout.text[selected];
+    });
   });
 }
 
@@ -16829,13 +16880,10 @@ async function stepRepeatDialog(d) {
   ], { okLabel: 'Repeat' });
   if (got == null) return;
   const n = Math.max(1, Math.min(100, Math.round(+got.count) || 1));
-  const made = await changeDoc(() => {
-    const m = stepRepeatIds(ids, n, +got.dx || 0, +got.dy || 0);
-    if (!m.length) return false;
-    setSel(d, [...ids, ...m]);
-    return m;
-  });
-  if (!made) return;
+  const r = await uiVerb('stepRepeat', ids, n, +got.dx || 0, +got.dy || 0);
+  const made = r && r.copies;
+  if (!made || !made.length) return;
+  setSel($('out').contentDocument, [...ids, ...made]);
   tell(`made ${made.length} cop${made.length > 1 ? 'ies' : 'y'}`);
 }
 
@@ -17896,9 +17944,7 @@ async function pageSectionDialog(pid) {
     validate: v => (+v.start >= 1 && +v.start <= 9999 && Number.isInteger(+v.start)) ? (/[<>&{}"'\\]/.test(v.prefix) || v.prefix.length > 12 ? 'a prefix is up to 12 plain characters' : '') : 'start at a whole number from 1',
   });
   if (got == null) return;
-  await changeDoc(() => {
-    setPageSection(n, got.remove === 'remove' ? null : { start: +got.start, style: got.style, prefix: got.prefix });
-  });
+  await uiVerb('setPageSection', n, got.remove === 'remove' ? null : { start: +got.start, style: got.style, prefix: got.prefix });
   railRender();
 }
 
@@ -20158,7 +20204,7 @@ async function readingOrderDialog(pid) {
   });
   if (got == null) return;
   const ids = got.ids.split('\n').map(x => x.trim()).filter(Boolean);
-  await changeDoc(() => { setReadingOrder(pid, ids.join() === all.join() ? null : ids); });
+  if (!await uiVerb('setReadingOrder', pid, ids.join() === all.join() ? null : ids)) return;
   tell(ids.length ? `reading order set for page ${pageLabel(pid)}` : 'reading order cleared');
 }
 async function createGuidesDialog(pid) {
@@ -22287,8 +22333,9 @@ function selectLayer(name) {
   setSel(d, ids);
   return { ok: true, selected: ids };
 }
-async function layerWrite(fn) {
-  await changeDoc(() => { fn(); });
+/** A layers-panel edit, through its pilot verb (defineLayer, toLayer, …). */
+async function layerWrite(verb, ...args) {
+  await uiVerb(verb, ...args);
   docLayersRender(); if (!$('layerspop').hidden) layersRender();
 }
 function docLayersRender() {
@@ -22310,13 +22357,13 @@ function docLayersRender() {
     const c = document.createElement('span'); c.className = 'lrow-kind'; c.textContent = String(count);
     r.append(
       btn(L.hidden ? '◌' : '👁', L.hidden ? 'Show this layer' : 'Hide this layer — not drawn, not printed',
-        () => layerWrite(() => _defineLayer(L.name, { hidden: !L.hidden })), !L.hidden),
+        () => layerWrite('defineLayer', L.name, { hidden: !L.hidden }), !L.hidden),
       btn(L.locked ? '🔒' : '🔓', L.locked ? 'Unlock' : 'Lock — nothing on it can be selected or moved',
-        () => layerWrite(() => _defineLayer(L.name, { locked: !L.locked })), !!L.locked),
+        () => layerWrite('defineLayer', L.name, { locked: !L.locked }), !!L.locked),
       n, c,
       btn('⇣', 'Put the selection on this layer', () => {
         if (!selIds.size) { tell('select something first'); return; }
-        layerWrite(() => _toLayer([...selIds], L.name));
+        layerWrite('toLayer', [...selIds], L.name);
       }),
       btn('◎', 'Select everything on this layer', () => {
         const r = selectLayer(L.name);
@@ -22329,9 +22376,9 @@ function docLayersRender() {
           label: `${count} thing${count === 1 ? '' : 's'} move there, and “${L.name}” goes`,
           options: [...others].reverse().map(x => ({ value: x.name, label: x.name })) }], { okLabel: 'Merge' });
         if (got == null) return;
-        layerWrite(() => _mergeLayers([L.name], got.into));
+        layerWrite('mergeLayers', [L.name], got.into);
       }),
-      btn('✕', 'Delete the layer (what is on it stays, on no layer)', () => layerWrite(() => _dropLayer(L.name))));
+      btn('✕', 'Delete the layer (what is on it stays, on no layer)', () => layerWrite('dropLayer', L.name)));
     host.appendChild(r);
   });
   const add = document.createElement('button');
@@ -22341,7 +22388,7 @@ function docLayersRender() {
       { okLabel: 'Add', validate: v => !v.name.trim() ? 'a layer needs a name'
         : docLayers().some(x => x.name === v.name.trim()) ? 'there is already a layer called that' : '' });
     if (got == null) return;
-    layerWrite(() => _defineLayer(got.name.trim()));
+    layerWrite('defineLayer', got.name.trim());
   });
   host.appendChild(add);
   const unused = _unusedLayers();
@@ -22350,7 +22397,7 @@ function docLayersRender() {
     du.className = 'sw-default'; du.id = 'layers-dropunused';
     du.textContent = `Delete ${unused.length} unused layer${unused.length === 1 ? '' : 's'}`;
     du.title = unused.join(', ');
-    du.addEventListener('click', () => layerWrite(() => _dropUnusedLayers()));
+    du.addEventListener('click', () => layerWrite('dropUnusedLayers'));
     host.appendChild(du);
   }
 }
@@ -22542,10 +22589,8 @@ async function addNoteDialog(k, i = null) {
   const got = await dsForm(i == null ? `Note on ${k}` : `Edit note on ${k}`, [{ name: 'text', type: 'textarea',
     label: 'Only the editor shows it — never the page, the PDF or the web', value: i == null ? '' : cur[i] }], { okLabel: 'Save' });
   if (got == null) return;
-  await changeDoc(() => {
-    if (i == null) cur.push(got.text); else cur[i] = got.text;
-    setSlotNotes(k, cur);
-  });
+  if (i == null) cur.push(got.text); else cur[i] = got.text;
+  await uiVerb('setNotes', k, cur);
   if (!$('notespop').hidden) notesRender();
 }
 /** Marks are placed by measuring their words, so they are measured again
@@ -22599,7 +22644,7 @@ function notesRender() {
       const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); acts.appendChild(b); };
       btn('Go to', () => { const el = $('out').contentDocument.querySelector(`[data-slot="${CSS.escape(n.key)}"]`); if (el) el.scrollIntoView({ block: 'center' }); });
       btn('Edit…', () => addNoteDialog(n.key, i));
-      btn('Delete', async () => { await changeDoc(() => { const cur = slotNotes(n.key).map(NOTE_BODY); cur.splice(i, 1); setSlotNotes(n.key, cur); }); notesRender(); });
+      btn('Delete', async () => { const cur = slotNotes(n.key).map(NOTE_BODY); cur.splice(i, 1); await uiVerb('setNotes', n.key, cur); notesRender(); });
       row.appendChild(acts);
     }
     box.appendChild(row);
@@ -22896,8 +22941,8 @@ function coloursRender() {
   b.textContent = `Name ${unnamed} unnamed as swatches`;
   b.disabled = !cs.some(c => c.raw);
   b.addEventListener('click', async () => {
-    const r = await changeDoc(() => nameAllColours()); coloursRender();
-    tell(`${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`);
+    const r = await uiVerb('nameAllColours'); coloursRender();
+    if (r) tell(`${r.made} swatch${r.made === 1 ? '' : 'es'} made, ${r.linked} use${r.linked === 1 ? '' : 's'} linked`);
   });
   tools.appendChild(b);
   const du = document.createElement('button');
@@ -22930,7 +22975,9 @@ function coloursRender() {
       const got = await dsForm(`Replace ${c.hex} everywhere`, [{ name: 'to', label: 'With (a #hex, or @Swatch)', value: c.hex }], {
         okLabel: 'Replace', validate: v => (HEX_RE.test(v.to.trim()) || (/^@/.test(v.to.trim()) && (layout.swatches || {})[v.to.trim().slice(1)])) ? '' : 'a colour like #1E6194, or @ and a swatch name' });
       if (got == null) return;
-      const n = await changeDoc(() => replaceColour(c.hex, got.to.trim())); coloursRender();
+      const r = await uiVerb('replaceColour', c.hex, got.to.trim()); coloursRender();
+      if (!r) return;
+      const n = r.replaced;
       tell(`replaced in ${n} place${n === 1 ? '' : 's'}`);
     });
     acts.append(sel, rp);
@@ -23108,7 +23155,7 @@ function setDefaultStyle(kind, name) {
 function pruneDefaults() {
   Object.entries(defaultStyles()).forEach(([k, n]) => {
     const ok = k === 'text' ? !!textStyles()[n] : (objectStyles()[n] || {}).kind === k;
-    if (!ok) setDefaultStyle(k, null);
+    if (!ok) setDefaultStyle(k, null); // verb-ratchet: part of a core's edit
   });
 }
 /** Dress something just made in the report's defaults. Its own keys that
@@ -23204,8 +23251,8 @@ function styleHousekeeping(host, scope, name, after) {
     const got = await dsForm(`Duplicate "${name}"`, [{ name: 'as', label: 'Name', value: `${name} copy`, required: true }],
       { okLabel: 'Duplicate', validate: v => (layout[STYLE_STORES[scope]] || {})[v.as.trim()] ? 'that name is taken' : '' });
     if (!got) return;
-    const nn = await changeDoc(() => duplicateStyle(scope, name, got.as.trim())); after();
-    tell(`"${nn}" made from "${name}"`);
+    const r = await uiVerb('duplicateStyle', scope, name, got.as.trim()); after();
+    if (r) tell(`"${r.name}" made from "${name}"`);
   }, !name);
   btn('Delete unused…', 'Styles and swatches nothing in this report uses', () => deleteUnusedDialog().then(after));
 }
@@ -23220,8 +23267,9 @@ async function deleteUnusedDialog() {
   if (!how) return;
   const kinds = Object.keys(how).filter(k => how[k] === 'delete');
   if (!kinds.length) return;
-  const gone = await changeDoc(() => deleteUnusedStyles(kinds));
-  const n = Object.values(gone).reduce((a, x) => a + x.length, 0);
+  const r = await uiVerb('dropUnusedStyles', kinds);
+  if (!r) return;
+  const n = Object.values(r.deleted).reduce((a, x) => a + x.length, 0);
   tell(`deleted ${n} unused`);
 }
 
@@ -23508,9 +23556,11 @@ function hyperlinksRender() {
     tell(r.ok ? `checked ${r.checked} link${r.checked === 1 ? '' : 's'}` : r.error);
     hyperlinksRender();
   }, local && links.some(l => !l.internal));
-  const bare = linkBareUrls(true);
+  const bare = linkBareUrls(true); // verb-ratchet: a count, not an edit
   btn(`Link bare addresses (${bare})`, async () => {
-    const n = await changeDoc(() => linkBareUrls()); hyperlinksRender();
+    const r = await uiVerb('linkBareUrls'); hyperlinksRender();
+    if (!r) return;
+    const n = r.linked;
     tell(`linked ${n} address${n === 1 ? '' : 'es'}`);
   }, bare > 0);
   if (!links.length) { list.textContent = 'No links.'; return; }
@@ -23531,7 +23581,9 @@ function hyperlinksRender() {
     ch.addEventListener('click', async () => {
       const got = await dsForm('Change link', [{ name: 'url', label: `Everywhere ${l.url} is written`, value: l.url }], { okLabel: 'Change' });
       if (got == null || !got.url.trim() || got.url.trim() === l.url) return;
-      const n = await changeDoc(() => changeLink(l.url, got.url.trim())); hyperlinksRender();
+      const r = await uiVerb('changeLink', l.url, got.url.trim()); hyperlinksRender();
+      if (!r) return;
+      const n = r.changed;
       tell(`changed in ${n} place${n === 1 ? '' : 's'}`);
     });
     acts.appendChild(ch);
@@ -23646,8 +23698,10 @@ function linksRender() {
     const re = document.createElement('button');
     re.textContent = 'Relink…';
     re.addEventListener('click', () => uploadImageFile(d, async path => {
-      const n = await changeDoc(() => relinkSource($('out').contentDocument, e.src, path));
+      const r = await uiVerb('relink', e.src, path);
       linksRender();
+      if (!r) return;
+      const n = r.relinked;
       tell(`relinked ${e.src.split('/').pop()} → ${path.split('/').pop()} in ${n} place${n === 1 ? '' : 's'}`);
     }));
     acts.append(go, re);
@@ -38483,6 +38537,38 @@ async function doExport(fmt) {
 // open (`editing`) — matching edit()'s own rule — rather than committing
 // over someone's caret.
 
+// ---- the editor's own UI, through the verbs. A menu row, panel button or
+// dialog that makes an edit a pilot verb already makes calls the verb, not
+// the verb's core inside its own changeDoc(): one code path per action, so
+// the UI's edit is validated before anything is touched (a refusal leaves no
+// undo step and no unsaved mark), rolled back when the engine will not build
+// it, and covered by the pilot's tests. tools/verb-ratchet.mjs counts the UI
+// calls to a core still outside this section; docs/ui-pilot-verbs.md lists
+// what goes through here and what is left alone, and why.
+let uiBatching = false;
+/** Run ops through batch() for the UI. On a refusal, say the verb's words in
+ *  red and return null; otherwise the batch's results, one per op. */
+async function uiOps(ops) {
+  let r;
+  uiBatching = true;
+  try { r = await docsync.api.batch(ops); }
+  finally { uiBatching = false; }
+  if (!r || !r.ok) {
+    const why = String(r && r.error || 'nothing was changed')
+      .replace(/^op \d+ \([^)]*\): /, '');
+    tell(why, { kind: 'error' });
+    return null;
+  }
+  return r.results.map(({ verb: _v, ...out }) => out);
+}
+/** One verb for the UI: what the verb returned (`{replaced: 3}`), or null
+ *  when it refused (and the refusal has been said). */
+async function uiVerb(verb, ...args) {
+  const r = await uiOps([{ verb, args }]);
+  return r ? r[0] : null;
+}
+
+// pilot verbs: begin (tools/verb-ratchet.mjs: calls to a verb's core belong here)
 // ---- shared cores, so a single verb call and the same verb inside batch()
 // can never disagree about what it does. Each mutating verb splits into a
 // pure VALIDATE (reads only — can it apply?) and a pure APPLY (the actual
@@ -40681,8 +40767,11 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
   async batch(ops) {
     // Someone is typing: give them a few seconds to click out (a person asking
     // Claude for a change is usually mid-sentence in a box) before refusing.
-    for (let i = 0; editing && i < 30; i++) await new Promise(r => setTimeout(r, 250));
-    if (editing) return { ok: false, error: 'an inline text editor is open — close it first (click outside the box, or press Esc), then send the same call again' };
+    // The editor's own menus and panels (uiVerb) skip the wait: a person
+    // clicking a menu row is not mid-sentence somewhere else, and the row
+    // they clicked made the same edit through changeDoc() before it came here.
+    for (let i = 0; !uiBatching && editing && i < 30; i++) await new Promise(r => setTimeout(r, 250));
+    if (editing && !uiBatching) return { ok: false, error: 'an inline text editor is open — close it first (click outside the box, or press Esc), then send the same call again' };
     if (!Array.isArray(ops) || !ops.length)
       return { ok: false, error: 'batch needs a non-empty array of {verb, args}' };
     // An op may carry `as: 'name'`; later ops may say '@name' where an id
@@ -41633,6 +41722,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     return { ...docsync.api.status(), note: 'save requested — poll status() until dirty is false' };
   },
 } });
+// pilot verbs: end
 
 addEventListener('beforeunload', e => { if (dirty) e.preventDefault(); });
 // Registered here, not blocking boot() — the editor works with no service
