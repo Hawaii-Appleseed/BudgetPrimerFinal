@@ -3337,7 +3337,11 @@ with _tempfile.TemporaryDirectory() as _d:
     (_hub / "primer").mkdir()
     _hub_vendor(_hub, [], dry=False)
     _ver = (_hub / "primer" / "editor-version.txt").read_text().strip()
-    _want = _hashlib.sha256(_EDITOR.read_bytes())
+    # The editor as shipped: edit.html with its parts inlined (editor_source).
+    from docsync.editor_source import assembled_bytes as _assembled_bytes  # noqa: PLC0415
+    _want = _hashlib.sha256(_assembled_bytes(_EDITOR))
+    check_eq("the hub gets the ASSEMBLED editor (its parts inlined)",
+             (_hub / "primer" / "edit.html").read_bytes() == _assembled_bytes(_EDITOR), True)
     if _COLLAB_CLIENT.is_file():
         _want.update(_COLLAB_CLIENT.read_bytes())
     check_eq("the hub gets editor-version.txt: the editor and its client, fingerprinted",
@@ -4054,8 +4058,9 @@ check_eq("a strict binding fails on it, and names the key",
 # One classic script of ~20,000 lines, where a function declared twice is not
 # an error: the later declaration silently wins, and a fix made to the earlier
 # copy does nothing. slotsOf was declared twice (identically, luckily).
-_decls = re.findall(r"^(?:async )?function\*? ?([A-Za-z_$][\w$]*)",
-                    (Path(__file__).parent / "editor" / "edit.html").read_text(), re.M)
+from docsync.editor_source import assembled as _editor_assembled
+_EDITOR_TEXT = _editor_assembled()          # edit.html with its parts inlined, as served
+_decls = re.findall(r"^(?:async )?function\*? ?([A-Za-z_$][\w$]*)", _EDITOR_TEXT, re.M)
 check_eq("no function is declared twice in the editor's script",
          sorted({n for n in _decls if _decls.count(n) > 1}), [])
 
@@ -4063,11 +4068,53 @@ check_eq("no function is declared twice in the editor's script",
 # so a second #x is dead and the first one runs the second's handlers too.
 # The undo History button (⏱) and the hub's saved-versions History were both
 # #history: the hub's never showed, and ⏱ also opened the versions panel.
-_markup = re.sub(r"<(script|style)\b.*?</\1>", "",
-                 (Path(__file__).parent / "editor" / "edit.html").read_text(), flags=re.S)
+_markup = re.sub(r"<(script|style)\b.*?</\1>", "", _EDITOR_TEXT, flags=re.S)
 _ids = re.findall(r'<[a-zA-Z][^>]*?\sid="([^"]+)"', _markup)
 check_eq("no id is given twice in the editor's markup",
          sorted({n for n in _ids if _ids.count(n) > 1}), [])
+
+# ---- the editor's parts, put together ----------------------------------------
+# edit.html includes its areas from docsync/editor/parts/ and is served as ONE
+# file. Python (stage, the hub) and Node (ratchets, typecheck, the test picker)
+# each assemble it; if they ever disagreed, a tool would check a different
+# editor from the one the browser runs.
+import shutil as _shutil_es  # noqa: E402
+import subprocess as _sp_es  # noqa: E402
+from docsync import editor_source as _es  # noqa: E402
+
+_parts = {"parts/a.js": "A1\nA2\n", "parts/b.css": "B\n"}
+check_eq("an include line is replaced by the part, newline and all",
+         _es.assemble("x\n  //@include parts/a.js\ny\n/*@include parts/b.css*/\nz", _parts.get),
+         "x\nA1\nA2\ny\nB\nz")
+for _bad, _why in [("//@include parts/zz.js\n", "does not exist"),
+                   ("//@include parts/a.js\n//@include parts/a.js\n", "twice"),
+                   ("//@include ../a.js\n", "under parts/")]:
+    try:
+        _es.assemble(_bad, _parts.get)
+        check(f"a bad include is refused ({_why})", "accepted", _why)
+    except _es.AssembleError as _e:
+        check(f"a bad include is refused ({_why})", str(_e), _why)
+check_eq("every part edit.html includes exists, and none is left out",
+         sorted(n for n, _ in _es.segments(_es.EDITOR.read_text(), lambda n: (_es.EDITOR_DIR / n).read_text()
+                                           if (_es.EDITOR_DIR / n).is_file() else None) if n != "edit.html"),
+         sorted(f"parts/{p.name}" for p in _es.PARTS.glob("*") if p.is_file()) if _es.PARTS.is_dir() else [])
+# A tool that reads the raw edit.html sees an editor with its parts missing: a
+# ratchet that counts nothing in them, a typecheck that checks half a script.
+# Every Node tool that names the file and reads files reads it assembled.
+_root_es = Path(__file__).resolve().parent.parent
+_raw_readers = []
+for _f in sorted([*(_root_es / "tools").glob("*.mjs"), *(_root_es / "tools").glob("*.js"),
+                  *(_root_es / "tests" / "editor" / "fixtures").glob("*.js")]):
+    _t = _f.read_text()
+    _code = re.sub(r"^\s*(//|\*|/\*).*$", "", _t, flags=re.M)
+    if re.search(r"docsync/editor/edit\.html'|'editor', 'edit\.html'", _code) and "readFileSync" in _code and "editor-source" not in _t:
+        _raw_readers.append(str(_f.relative_to(_root_es)))
+check_eq("every tool that reads the editor reads it assembled (tools/editor-source.cjs)", _raw_readers, [])
+if _shutil_es.which("node"):
+    _node = _sp_es.run(["node", "-e", "process.stdout.write(require('./tools/editor-source.cjs').assembled().text)"],
+                           cwd=Path(__file__).resolve().parent.parent, capture_output=True)
+    check_eq("Node's assembled editor is Python's, byte for byte",
+             _node.stdout == _es.assembled_bytes(), True)
 
 # ---- every attribute said once -------------------------------------------------
 # A start tag naming an attribute twice keeps the first and drops the rest,

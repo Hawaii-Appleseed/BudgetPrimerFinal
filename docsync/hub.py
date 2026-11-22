@@ -103,6 +103,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from docsync.registry import ROOT, RegistryError, load_registry  # noqa: E402
+from docsync.editor_source import assembled_bytes  # noqa: E402
 from docsync.stage import COLLAB_CLIENT, EDITOR, SERVICE_WORKER, _origin_slug, stage  # noqa: E402
 from docsync.vendor import VENDOR_LOCAL, VENDOR_YML, consumers, restage_cmd  # noqa: E402
 
@@ -332,7 +333,7 @@ def _write(dst: Path, data: bytes, changed: list[str], *, dry: bool) -> None:
 def editor_version() -> str:
     """What an open tab on the hub compares to know it is running a superseded
     editor: the editor and its client together, since either changes alone."""
-    h = hashlib.sha256(EDITOR.read_bytes())
+    h = hashlib.sha256(assembled_bytes(EDITOR))        # what is served, parts inlined
     if COLLAB_CLIENT.is_file():
         h.update(COLLAB_CLIENT.read_bytes())
     return h.hexdigest()[:16]
@@ -380,7 +381,8 @@ def vendor(hub: Path, projects: list[dict], *, dry: bool,
     missing = missing if missing is not None else []
 
     # The editor and its client, once.
-    _write(primer / "edit.html", EDITOR.read_bytes(), changed, dry=dry)
+    # The editor ships as ONE file, its parts (docsync/editor/parts/) inlined.
+    _write(primer / "edit.html", assembled_bytes(EDITOR), changed, dry=dry)
     if COLLAB_CLIENT.is_file():
         _write(primer / "collab-client.js", COLLAB_CLIENT.read_bytes(), changed, dry=dry)
     # Their fingerprint, beside them. A tab open on the hub polls it to learn

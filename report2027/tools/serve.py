@@ -243,6 +243,7 @@ def _watch_patterns(root: Path, b) -> list[str]:
     pats.extend(str(root / w) for w in b.watch)
     pats.append(str(root / "docsync" / "*.py"))
     pats.append(str(root / "docsync" / "editor" / "edit.html"))
+    pats.append(str(root / "docsync" / "editor" / "parts" / "*"))   # its areas, inlined at stage
     return pats
 
 

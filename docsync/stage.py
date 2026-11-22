@@ -34,7 +34,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from docsync.registry import ROOT, Binding, RegistryError, get, load_registry  # noqa: E402
+from docsync.editor_source import assembled_bytes  # noqa: E402
 
+# The editor's SOURCE: edit.html includes its areas from editor/parts/. What is
+# staged (and served) is always the assembled file — docsync/editor_source.py.
 EDITOR = Path(__file__).resolve().parent / "editor" / "edit.html"
 COLLAB_CLIENT = EDITOR.parent / "collab-client.js"
 # The editor's service worker: Pyodide's ~30MB runtime cache-first in Cache
@@ -198,7 +201,8 @@ def stage(b: Binding, repo: str = "") -> None:
     # which the renderer never needs and Pyodide would have to install.
     (eng / "docsync" / "__init__.py").write_text("")
     (eng / "manifest.json").write_text(json.dumps(m, indent=2) + "\n")
-    shutil.copy2(EDITOR, e.dir / "edit.html")
+    # One file, its parts inlined: byte for byte what a browser always got.
+    (e.dir / "edit.html").write_bytes(assembled_bytes(EDITOR))
     # The real-time collaboration client (collab/build-client.mjs bundles it
     # from collab/client/session.mjs). The editor import()s it beside itself
     # only when a project has a collab relay configured, so it costs nothing

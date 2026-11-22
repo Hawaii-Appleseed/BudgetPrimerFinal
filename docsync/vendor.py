@@ -270,7 +270,7 @@ def vendor_one(repo: Path, files: list[str], *, dry: bool, force: bool,
             print("  nothing new to commit" if "nothing" in r.stdout
                   else f"  commit failed: {r.stderr.strip()}")
 
-    if any(rel.endswith(("serve.py", "edit.html")) for rel in changed):
+    if any(rel.endswith(("serve.py", "edit.html")) or "/editor/parts/" in rel for rel in changed):
         print("  NOTE: if this repo's live editor server is running, relaunch "
               "its app to pick up the new engine (never restart it from here).")
     return True
