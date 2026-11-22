@@ -7981,7 +7981,9 @@ function layerMenu(d, el, e) {
             const r = d.createElement('input');
             r.type = 'range'; r.min = min; r.max = max; r.step = 0.05;
             r.value = cur[key] != null ? cur[key] : (key === 'duration' ? 0.6 : 0);
-            r.addEventListener('pointerdown', () => pushHistory());
+            const knob = slideStep();
+            r.addEventListener('pointerdown', knob.grab);
+            r.addEventListener('pointerup', knob.settle);
             r.addEventListener('input', () => {
               const st = ensureStore(d, el);
               st.anim = { ...(st.anim || cur), [key]: +r.value };
@@ -7991,6 +7993,7 @@ function layerMenu(d, el, e) {
                 key === 'duration' ? 'data-ds-ad' : 'data-ds-aw', String(+r.value));
             });
             r.addEventListener('change', async () => {
+              knob.settle();
               markDirty(); closeMenu(d); await render();
               previewAnim(id);      // hear the timing you just chose
             });
@@ -8126,7 +8129,9 @@ function layerMenu(d, el, e) {
     const oin = d.createElement('input');
     oin.type = 'range'; oin.min = '0.1'; oin.max = '1'; oin.step = '0.05';
     oin.value = (storeOf(id) || {}).alpha ?? 1;
-    oin.addEventListener('pointerdown', () => pushHistory());
+    const oknob = slideStep();
+    oin.addEventListener('pointerdown', oknob.grab);
+    oin.addEventListener('pointerup', oknob.settle);
     oin.addEventListener('input', () => {
       const st = ensureStore(d, el);
       const v = +oin.value;
@@ -8138,6 +8143,7 @@ function layerMenu(d, el, e) {
       }
     });
     oin.addEventListener('change', async () => {
+      oknob.settle();
       markDirty(); closeMenu(d); await render();
     });
     orow.appendChild(oin);
@@ -8151,9 +8157,11 @@ function layerMenu(d, el, e) {
     w.textContent = label;
     const r = d.createElement('input');
     r.type = 'range'; r.min = min; r.max = max; r.step = step; r.value = val;
-    r.addEventListener('pointerdown', () => pushHistory());
+    const knob = slideStep();
+    r.addEventListener('pointerdown', knob.grab);
+    r.addEventListener('pointerup', knob.settle);
     r.addEventListener('input', () => live(+r.value));
-    r.addEventListener('change', async () => { markDirty(); closeMenu(d); await render(); });
+    r.addEventListener('change', async () => { knob.settle(); markDirty(); closeMenu(d); await render(); });
     w.appendChild(r);
     m.appendChild(w);
   };
@@ -8829,7 +8837,6 @@ function wireSections(d, roots) {
       const page = el.closest('section.page') || d.querySelector('section.page');
       const px = DPI * zoomOf(page);
       if (!px) return;
-      pushHistory();
       // Natural height = what the section stands at with no override; the
       // clear threshold, measured live so content edits are always honoured.
       const was = el.style.minHeight;
@@ -8853,10 +8860,11 @@ function wireSections(d, roots) {
         dragUnlisten(d, move, up);
         grip.classList.remove('ds-active');
         d.body.classList.remove('ds-resizing');
-        layout.sections = layout.sections || {};
-        if (cleared) delete layout.sections[id];
-        else layout.sections[id] = { h: +Math.max(0.2, hIn).toFixed(2) };
-        markDirty();
+        changeDoc(() => {
+          layout.sections = layout.sections || {};
+          if (cleared) delete layout.sections[id];
+          else layout.sections[id] = { h: +Math.max(0.2, hIn).toFixed(2) };
+        }, { render: false });
         reportFit(d);                 // the page may have grown under it
       };
       dragListen(d, move, up);
@@ -8900,7 +8908,7 @@ function unionBox(bs) {
 function startGroupResize(d, members, page, U, e0, dir) {
   const pr = page.getBoundingClientRect();
   if (!pr.width) return;
-  pushHistory();
+  const step = beginChange();
   const px = DPI * zoomOf(page);
   const grab = { x: e0.clientX, y: e0.clientY };
   // Each piece as its kind keeps it: a shape by its own x/y/w/h; everything
@@ -8970,8 +8978,7 @@ function startGroupResize(d, members, page, U, e0, dir) {
       const had = p.bx ? p.bx.h != null : (layout.positions[p.id] || {}).h != null;
       commitSize(d, p.el, { w: p.now.w, h: had ? p.now.h : undefined });
     });
-    markDirty();
-    render().then(() => paintSel($('out').contentDocument));
+    step.commit().then(() => paintSel($('out').contentDocument));
   };
   dragListen(d, move, up);
 }
@@ -8980,7 +8987,7 @@ function startResize(d, el, e0, dir) {
   const page = el.closest('section.page') || d.querySelector('section.page');
   const pr = page.getBoundingClientRect();
   if (!pr.width) return;
-  pushHistory();
+  const step = beginChange();
   const px = DPI * zoomOf(page);
   const shapeId = el.dataset.shape;
   const id = shapeId || el.dataset.el;
@@ -9066,9 +9073,7 @@ function startResize(d, el, e0, dir) {
     dragUnlisten(d, move, up);
     el.classList.remove('ds-lifted');
     d.body.classList.remove('ds-resizing');
-    if (graphic) {
-      markDirty();                        // the scale is already on the store
-    } else if (!shapeId) {
+    if (!graphic && !shapeId) {           // a graphic's scale and a shape's box are already on the store
       P.commit({ x: size.x, y: size.y });
       const vertical = dir.includes('s') || dir.includes('n');
       commitSize(d, el, { w: size.w, h: vertical ? size.h : undefined });
@@ -9080,9 +9085,8 @@ function startResize(d, el, e0, dir) {
       if (vertical && wordy && st.h == null) el.style.minHeight = '';
       // Sized with the words open: ⌘Z there undoes the size, as for a move.
       if (editing && richHost && priorSize) undoMoveFromWords(richHost, priorSize);
-    } else {
-      markDirty();
     }
+    step.commit({ render: false });
     const kept = spacerFollow(spPre, [id]);
     if (kept) render().then(() => { $('stat').textContent = kept; });
     else paintSel(d);                     // ring + handles + mini follow the new box
@@ -9228,7 +9232,7 @@ const isGraphic = el => !el.dataset.shape && !el.matches('[data-slot]')
 
 function startRotate(d, el, e0) {
   const page = el.closest('section.page') || d.querySelector('section.page');
-  pushHistory();
+  const step = beginChange();
   const st = ensureStore(d, el);
   const id = idOf(el);
   const b = inchBox(el, page);           // rotation preserves the centre
@@ -9255,7 +9259,7 @@ function startRotate(d, el, e0) {
     dragUnlisten(d, move, up);
     const turned = (st.rot || 0) - start;
     if (turned) lastXform = { kind: 'rot', deg: Math.round(turned * 10) / 10 };
-    markDirty();
+    step.commit({ render: false });
     paintSel(d);
   };
   dragListen(d, move, up);
@@ -9300,7 +9304,7 @@ function cropMode(d, el) {
   if (editing) return;
   const id = idOf(el);
   const page = el.closest('section.page') || d.querySelector('section.page');
-  pushHistory();
+  const step = beginChange();
   const b = inchBox(el, page);
   const st = ensureStore(d, el);          // the window must be a fixed frame
   st.w = +b.w.toFixed(2);
@@ -9367,11 +9371,10 @@ function cropMode(d, el) {
   const finish = async keep => {
     d.removeEventListener('keydown', keys, true);
     ov.remove();
-    if (!keep) { await undo(); return; }
+    if (!keep) { await step.rollback({ render: true }); return; }
     g.crop = { imgW: +c.imgW.toFixed(2), dx: +c.dx.toFixed(2), dy: +c.dy.toFixed(2) };
     delete g.fit; delete g.fitAlign; delete g.h;   // crop and fit are two ways to frame one image
-    markDirty();
-    await render();
+    await step.commit();
     $('stat').textContent = `${id} cropped — the resize handles size the window`;
   };
   const keys = e => {
@@ -9986,12 +9989,15 @@ function openTglSpeedPopover(d, anchorBtn, tb) {
   const r = d.createElement('input');
   r.type = 'range'; r.min = 0.1; r.max = 2; r.step = 0.05;
   r.value = tb.tglSpeed != null ? tb.tglSpeed : 0.3;
-  r.addEventListener('pointerdown', () => pushHistory());
+  const knob = slideStep();
+  r.addEventListener('pointerdown', knob.grab);
+  r.addEventListener('pointerup', knob.settle);
   // The value tracks the drag; the render (and the preview it triggers) waits
   // for release — the same reasoning the Animate sliders use: restarting a
   // transition on every input tick means it never once plays to completion.
   r.addEventListener('input', () => { tb.tglSpeed = +r.value; });
   r.addEventListener('change', async () => {
+    knob.settle();
     markDirty(); closeMenu(d); await render();
     previewToggle(tb);            // hear the timing you just chose
   });
@@ -12544,7 +12550,9 @@ function editBox(d, el, at) {
     b = head;
   }
   editing = true;
-  pushHistory();
+  // The step opens with the editor (words typed, a move made with them open)
+  // and closes with it; opened and closed with nothing changed, it goes.
+  const boxStep = beginChange();
   // The editor opens WHERE THE BOX IS. A bare host is static, and static
   // means it flows to wherever the box's markup happens to sit in the DOM —
   // on the cover that was the top of the page, nowhere near the words being
@@ -12625,15 +12633,16 @@ function editBox(d, el, at) {
         // `b` pointed into the layout this editor opened on; a collaborator's
         // change that just landed replaced it.
         const box = (layout.boxes || []).find(x => x.id === b.id) || b;
-        if (box.md !== want) { box.md = want; markDirty(); }
+        if (box.md !== want) box.md = want;
       }
       settleEndnotesSection();
-      await render();
+      await boxStep.commit();
       collabFieldNote(settled, 'text box');
       return;
     } else {
       collabFieldSettle(null, 'text box');   // nothing to settle; clear the record
     }
+    boxStep.cancel();
     await render();
   };
   host.addEventListener('blur', () => {
@@ -15094,9 +15103,11 @@ function renderBoxPanel() {
     val.className = 'bx-val';
     const show = () => { val.textContent = (+inp.value).toFixed(unit === 'px' ? 0 : 2) + unit; };
     show();
-    inp.addEventListener('pointerdown', () => pushHistory());
+    const knob = slideStep();
+    inp.addEventListener('pointerdown', knob.grab);
+    inp.addEventListener('pointerup', knob.settle);
     inp.addEventListener('input', () => { show(); write(+inp.value); paint(+inp.value); });
-    inp.addEventListener('change', commit);
+    inp.addEventListener('change', () => { knob.settle(); return commit(); });
     r.appendChild(inp); r.appendChild(val);
   };
 
@@ -16998,7 +17009,7 @@ const canUngroup = () => selGroups().length > 0;
 // mouseup AND a dblclick, and both want to act on the same gesture.
 let lastDrill = { id: null, t: 0 };
 
-let lastNudge = 0, nudgeSeq = -1;
+const nudgeBurst = { at: 0, seq: -1 };   // changeDoc's burst: a run of nudges is one step
 /** THE object chords, one table for both documents. The page's keys arrive
  *  in the iframe's document and the chrome's in the outer one, each with
  *  its own listener; for years every chord lived in both by hand, and one
@@ -17132,22 +17143,15 @@ function enterOpensBox(d, e) {
 function nudgeSel(d, d4) {
   const els = outermost(selEls(d).filter(el => !isLocked(idOf(el))));
   if (!els.length) return;
-  // One undo step per burst of presses, not one per pixel of progress — but
-  // only while the burst's own step is still the latest. Timing alone merged
-  // a nudge into whatever came before it: nudge, ⌘Z, nudge again inside the
-  // 0.9s and the second nudge had no step at all, so the next ⌘Z found
-  // nothing to undo or took back an older, unrelated change.
-  const now = Date.now();
-  if (now - lastNudge > 900 || nudgeSeq !== historySeq) {
-    pushHistory();
-    nudgeSeq = historySeq;
-  }
-  lastNudge = now;
-  els.forEach(el => {
-    const page = el.closest('section.page') || d.querySelector('section.page');
-    const P = placer(d, el, page);
-    P.commit(P.put(P.box.x + d4[0], P.box.y + d4[1], false));
-  });
+  // One undo step per burst of presses, not one per pixel of progress
+  // (changeDoc's `burst`: only while the burst's own step is the latest).
+  changeDoc(() => {
+    els.forEach(el => {
+      const page = el.closest('section.page') || d.querySelector('section.page');
+      const P = placer(d, el, page);
+      P.commit(P.put(P.box.x + d4[0], P.box.y + d4[1], false));
+    });
+  }, { render: false, burst: nudgeBurst });
   clearGuides(d);
   paintSel(d);
 }
@@ -19803,7 +19807,6 @@ function startGuideDrag(d, pg, axis, idx, e0) {
     if (!started) {
       if (Math.abs(e.clientX - grab.x) < 3 && Math.abs(e.clientY - grab.y) < 3) return;
       started = true;
-      pushHistory();
     }
     pos = raw(e);
     if (e.shiftKey) pos = Math.round(pos * 8) / 8;     // ⇧ lands on the ruler's eighths
@@ -19831,11 +19834,13 @@ function startGuideDrag(d, pg, axis, idx, e0) {
       $('stat').textContent = `guide at ${(axis === 'v' ? guidesX() : guidesY())[idx]}in selected — Delete removes it`;
       return;
     }
-    const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
-    if (gone()) arr.splice(idx, 1);
-    else arr[idx] = round2(Math.max(0, Math.min(span, pos)));
-    selGuide = null;
-    if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+    changeDoc(() => {
+      const arr = (axis === 'v' ? guidesX() : guidesY()).slice();
+      if (gone()) arr.splice(idx, 1);
+      else arr[idx] = round2(Math.max(0, Math.min(span, pos)));
+      selGuide = null;
+      if (axis === 'v') setGuides(arr, guidesY()); else setGuides(guidesX(), arr);
+    }, { render: false });
     drawGuideLayer(d);
   };
   dragListen(d, move, up);
@@ -22675,7 +22680,7 @@ $('hiddenchars').addEventListener('click', toggleHidden);
 // shift. A style here belongs to the whole slot or box, so the change does
 // too. Painted live; the page catches up when the edit closes. With a text
 // object selected and nobody typing, ⇧⌘> / ⇧⌘< resize its text.
-let typeKeySeq = -1, typeKeyAt = 0;
+const typeBurst = { at: 0, seq: -1 };   // changeDoc's burst: a run of type-step keys is one step
 function typeStep(d, e) {
   const mod = e.metaKey || e.ctrlKey;
   const sel = d.getSelection();
@@ -22693,17 +22698,13 @@ function typeStep(d, e) {
   return null;
 }
 function applyTypeStep(key, step) {
-  const now = Date.now();
-  if (now - typeKeyAt > 900 || typeKeySeq !== historySeq) { pushHistory(); typeKeySeq = historySeq; }
-  typeKeyAt = now;
   const cur = { ...computedType(key), ...resolvedStyle(styleOf(key)) };
   const patch = {};
   if (step.size) patch.size = Math.max(6, Math.min(200, Math.round((+cur.size || 16) + step.size)));
   if (step.tracking) patch.tracking = +Math.max(-5, Math.min(20, (+cur.tracking || 0) + step.tracking)).toFixed(2);
   if (step.leading) patch.leading = +Math.max(0.7, Math.min(3, (+cur.leading || 1.45) + step.leading)).toFixed(2);
   if (step.shift) { const v = Math.max(-24, Math.min(24, (+cur.shift || 0) + step.shift)); patch.shift = v || null; }
-  setStyle(key, patch);
-  markDirty();
+  changeDoc(() => { setStyle(key, patch); }, { render: false, burst: typeBurst });
   const k = Object.keys(patch)[0];
   $('stat').textContent = `${k} ${patch[k] ?? 0}${k === 'size' || k === 'tracking' ? 'px' : k === 'shift' ? 'pt' : ''}`;
   return patch;
@@ -23799,13 +23800,15 @@ $('ar-border').addEventListener('click', () => {
   });
   const bw = $('ar-bw');
   bw.value = dsh.sw ?? 0.02;
-  bw.onpointerdown = () => pushHistory();
+  const bwKnob = slideStep();
+  bw.onpointerdown = bwKnob.grab;
+  bw.onpointerup = bwKnob.settle;
   bw.oninput = () => {
     shp.sw = +bw.value;
     const node = d.querySelector(`[data-shape="${CSS.escape(shp.id)}"]`);
     if (node) node.setAttribute('stroke-width', bw.value);
   };
-  bw.onchange = commit;
+  bw.onchange = () => { bwKnob.settle(); return commit(); };
   const presets = { Solid: null, Dashed: [0.08, 0.05], Dotted: [0.02, 0.04] };
   const cur = !dsh.dash ? 'Solid' : (dsh.dash[0] <= 0.03 ? 'Dotted' : 'Dashed');
   const drow = $('ar-dashrow');
@@ -23835,7 +23838,9 @@ $('ar-alpha').addEventListener('click', () => {
   const el = els[0], id = idOf(el);
   const ain = $('ar-alphain');
   ain.value = dressedObj(storeOf(id) || tableOf(id) || (layout.positions || {})[id] || {}).alpha ?? 1;
-  ain.onpointerdown = () => pushHistory();
+  const aKnob = slideStep();
+  ain.onpointerdown = aKnob.grab;
+  ain.onpointerup = aKnob.settle;
   // Blend: a shape, box or table (a designed element has no store for it).
   const bkind = objKindOf(id);
   $('ar-blendrow').hidden = !bkind;
@@ -23868,7 +23873,7 @@ $('ar-alpha').addEventListener('click', () => {
       el.style.opacity = v >= 0.999 ? '' : v;
     }
   };
-  ain.onchange = async () => { markDirty(); await render(); paintSel($('out').contentDocument); };
+  ain.onchange = async () => { aKnob.settle(); markDirty(); await render(); paintSel($('out').contentDocument); };
   togglePop($('ar-alphapop'), $('ar-alpha'));
 });
 
@@ -23895,8 +23900,10 @@ function fxExtras(body, owner, commit, isShape, rebuild) {
       }, { render: false });
       await commit();
     });
-    r.addEventListener('pointerdown', () => pushHistory());
-    r.addEventListener('change', async () => { owner[k].size = +r.value; await commit(); });
+    r.addEventListener('change', async () => {
+      await changeDoc(() => { owner[k].size = +r.value; }, { render: false });
+      await commit();
+    });
     w.append(cb, document.createTextNode(label[k]), r);
     body.appendChild(w);
   });
@@ -23904,8 +23911,10 @@ function fxExtras(body, owner, commit, isShape, rebuild) {
     const w = document.createElement('label'); w.className = 'ar-slide';
     const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 0.6; r.step = 0.02;
     r.value = owner.feather || 0;
-    r.addEventListener('pointerdown', () => pushHistory());
-    r.addEventListener('change', async () => { if (+r.value) owner.feather = +r.value; else delete owner.feather; await commit(); });
+    r.addEventListener('change', async () => {
+      await changeDoc(() => { if (+r.value) owner.feather = +r.value; else delete owner.feather; }, { render: false });
+      await commit();
+    });
     w.append(document.createTextNode('Feather'), r);
     body.appendChild(w);
     // Fade to clear (INDESIGN_PARITY 64, InDesign's gradient feather): opaque
@@ -23931,8 +23940,10 @@ function fxExtras(body, owner, commit, isShape, rebuild) {
       await commit();
     });
     dir.addEventListener('change', async () => { await changeDoc(() => { owner.fade.angle = +dir.value; }, { render: false }); await commit(); });
-    fr.addEventListener('pointerdown', () => pushHistory());
-    fr.addEventListener('change', async () => { owner.fade.from = +fr.value; await commit(); });
+    fr.addEventListener('change', async () => {
+      await changeDoc(() => { owner.fade.from = +fr.value; }, { render: false });
+      await commit();
+    });
     fw.append(fcb, document.createTextNode('Fade to clear'), dir, fr);
     body.appendChild(fw);
   }
@@ -23976,12 +23987,14 @@ $('ar-fxbtn').addEventListener('click', () => {
       const r = document.createElement('input');
       r.type = 'range'; r.min = min; r.max = max; r.step = step;
       r.value = shadowOf()[key];
+      const knob = slideStep();
       r.addEventListener('pointerdown', () => {
-        pushHistory();
+        knob.grab();
         if (!owner.shadow) owner.shadow = { ...shadowOf() };
       });
+      r.addEventListener('pointerup', knob.settle);
       r.addEventListener('input', () => { owner.shadow[key] = +r.value; });
-      r.addEventListener('change', commit);
+      r.addEventListener('change', () => { knob.settle(); return commit(); });
       w.appendChild(r);
       body.appendChild(w);
     };
@@ -24979,21 +24992,92 @@ function withdrawStep() {
  *  changeDoc() returns its promise, so a caller that cannot await loses nothing.
  *  New code calls this, not pushHistory(): tools/edit-ratchet.mjs counts the
  *  bare calls that are left and fails when the count goes up. */
-async function changeDoc(change, { render: draw = true } = {}) {
-  const before = pushHistory();
-  const untouched = () => { try { return snapshot() === before; } catch (e) { return false; } };
+async function changeDoc(change, { render: draw = true, burst = null } = {}) {
+  // A burst ({ at, seq }, one per kind of repeated key: nudges, type steps)
+  // makes a run of presses ONE step: a press joins the step the burst opened
+  // while that step is still the latest and the last press was under 0.9s
+  // ago. Timing alone merged a nudge into whatever came before it (nudge, ⌘Z,
+  // nudge again inside the 0.9s: the second nudge had no step at all).
+  const now = Date.now();
+  const joined = !!burst && now - burst.at <= 900 && burst.seq === historySeq;
+  if (burst) burst.at = now;
+  const before = joined ? null : pushHistory();
+  if (burst && !joined) burst.seq = historySeq;
+  // A joined press never takes a step back: the step is the burst's, and the
+  // presses before this one are in it.
+  const untouched = () => { if (joined) return false; try { return snapshot() === before; } catch (e) { return false; } };
+  const withdraw = () => { withdrawStep(); if (burst) burst.seq = -1; };
   let out;
   try {
     out = change();
     if (out && typeof out.then === 'function') out = await out;
   } catch (e) {
-    if (untouched()) withdrawStep(); else markDirty();
+    if (untouched()) withdraw(); else markDirty();
     throw e;
   }
-  if ((out === false || (out && out.ok === false)) && untouched()) { withdrawStep(); return out; }
+  if ((out === false || (out && out.ok === false)) && untouched()) { withdraw(); return out; }
   markDirty();
   if (draw) await render();
   return out;
+}
+/** ONE undoable change that starts at one moment and ends at another, for the
+ *  edits changeDoc() cannot take whole: a drag (press … release), a slider
+ *  (grab … let go), crop mode and point editing (open … Enter or Escape), an
+ *  open text box (open … close). The document changes live, a move at a time,
+ *  between the two events, so the step has to be taken when the gesture
+ *  starts and closed when it ends:
+ *
+ *      const step = beginChange();          // pointerdown
+ *      …live edits to layout…                // pointermove / input
+ *      await step.commit();                  // release: marked for saving, redrawn
+ *      step.commit({ render: false });       // a release that patches in place
+ *      step.cancel();                        // called off, nothing to redraw
+ *      await step.rollback();                // put the document back as it was
+ *      await step.rollback({ render: true }); // …and redraw it (crop mode's Escape)
+ *
+ *  commit() and cancel() take the step back when the document ended where it
+ *  started (a press that never became a drag, a slider let go where it was
+ *  grabbed), so neither leaves an empty undo step; commit() still redraws, as
+ *  the release always did. rollback() is for a change judged AFTER it is made
+ *  (the pilot's batch() and guarded verbs, which ask the engine): it restores
+ *  the snapshot, takes the step back and, when the change had already been
+ *  committed (or `render: true` asks), marks and redraws again. Only the first commit or cancel counts. */
+function beginChange() {
+  const before = pushHistory();
+  let open = true, kept = true, committed = false;
+  const untouched = () => { try { return snapshot() === before; } catch (e) { return false; } };
+  return {
+    async commit({ render: draw = true } = {}) {
+      if (open) {
+        open = false; committed = true;
+        if (untouched()) { withdrawStep(); kept = false; } else markDirty();
+      }
+      if (draw) await render();
+      return kept;
+    },
+    cancel() {
+      if (!open) return;
+      open = false;
+      if (untouched()) { withdrawStep(); kept = false; } else markDirty();
+    },
+    async rollback({ render: draw = committed } = {}) {
+      const st = JSON.parse(before);
+      source = st.source; layout = st.layout;
+      if (kept) withdrawStep();
+      open = false; kept = false;
+      if (draw) { markDirty(); await render(); }
+    },
+  };
+}
+/** A range input as one undo step from grab to let-go (beginChange). Wire
+ *  `grab` to its pointerdown and call `settle` first thing in its `change`
+ *  handler; settle also runs on pointerup, so a grab that moved nothing
+ *  leaves no empty step. A change from the keyboard never grabbed, so it has
+ *  no step to settle, as before. */
+function slideStep() {
+  let step = null;
+  const settle = () => { const s = step; step = null; if (s) s.commit({ render: false }); };
+  return { grab: () => { settle(); step = beginChange(); }, settle };
 }
 async function restore(json) {
   const st = JSON.parse(json);
@@ -26086,7 +26170,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
   // than inches. Below it, the click stays a click; the logo neither scales
   // nor jumps.
   const DEAD_PX = 4;
-  let started = false, cloned = false, spPre = null;
+  let started = false, cloned = false, spPre = null, step = null;
   let Ps, starts, group, glines, gheld, at, priorPlace = null;
   let lastPt = { x: e0.clientX, y: e0.clientY };   // where the drop landed
 
@@ -26099,7 +26183,7 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     // still be undone. Said when the move starts, not on the press: a click
     // that types into the words moves nothing.
     collabWarnHeld(idOf(el));
-    pushHistory();
+    step = beginChange();
     // What this move will change, so ⌘Z with the words open can put back
     // exactly that and leave the words alone (undoMoveFromWords).
     priorPlace = placementOf(members.map(idOf));
@@ -26238,13 +26322,14 @@ function startDrag(d, el, e0, drillIn = false, clickTo = null) {
     // reads, and the list (and every <sup> marker pointing into it) renumbers.
     if (members.length === 1 && (idOf(members[0]) || '').startsWith('endnote.')) {
       const moved = reorderEndnote(d, members[0]);
-      if (moved) markDirty(); else withdrawStep();   // no change: no undo entry
+      step.commit({ render: false });            // no change: no undo entry
       clearGuides(d);
       await render();                            // snaps it back into the flow
       if (moved) $('stat').textContent = moved;  // after render, so it survives
       return;
     }
     Ps.forEach((P, i) => P.commit(at[i]));
+    step.commit({ render: false });
     const kept = cloned ? '' : spacerFollow(spPre, members.map(idOf));
     if (cloned || kept) await render();    // clones need real, wired nodes; a push redraws
     else paintSel(d);
@@ -26329,13 +26414,14 @@ function keyDrag(d, el, e) {
   if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault();
     if (!picked) {
-      pushHistory();
+      const change = beginChange();
       const P = placer(d, el, page);
-      held.set(el, { P, at: { x: P.box.x, y: P.box.y } });
+      held.set(el, { P, at: { x: P.box.x, y: P.box.y }, change });
       el.classList.add('ds-lifted');
       $('stat').textContent = `${P.id} picked up — arrows to move, Space to drop, Esc to cancel`;
     } else {
       picked.P.commit(picked.at);
+      picked.change.commit({ render: false });
       el.classList.remove('ds-lifted');
       held.delete(el);
       $('stat').textContent = 'dropped';
@@ -26348,7 +26434,7 @@ function keyDrag(d, el, e) {
     el.classList.remove('ds-lifted');
     held.delete(el);
     clearGuides(d);
-    undo();                                  // put it back where it was
+    picked.change.rollback({ render: true }); // put it back where it was
     return;
   }
   const step = e.shiftKey ? NUDGE_BIG_IN : NUDGE_IN;
@@ -26563,11 +26649,11 @@ function pathPointEdit(d, sh, node) {
   const done = async () => {
     d.querySelectorAll('.ds-pathdot').forEach(x => x.remove());
     d.removeEventListener('keydown', esc, true);
-    if (JSON.stringify(sh.points) !== before) { markDirty(); await render(); }
+    await step.commit({ render: JSON.stringify(sh.points) !== before });
   };
   const esc = e => { if (e.key === 'Escape') { e.preventDefault(); done(); } };
   d.addEventListener('keydown', esc, true);
-  pushHistory();
+  const step = beginChange();
   sh.points.forEach((p, i) => {
     const dot = d.createElement('div');
     dot.className = 'ds-pathdot';
@@ -32578,12 +32664,9 @@ function edit(d, key, clicked, at) {
         // but the slot editor didn't, so ⌘Z after editing prose found nothing
         // to undo (or undid an earlier move instead). Push only on a real
         // change, so opening and closing a slot without editing adds nothing.
-        pushHistory();
-        writeSlot(key, newVal);
-        dirty = source !== original || JSON.stringify(layout) !== JSON.stringify(JSON.parse(layoutOrig || '{}'));
-        if (local || docStore()) $('save').disabled = !dirty;
-        $('revert').disabled = !dirty;
-        $('save').classList.toggle('dirty', dirty);
+        // (markDirty, run by changeDoc, is what the text box and table cell
+        // editors' finish already run; this one used to work `dirty` out by hand.)
+        changeDoc(() => writeSlot(key, newVal), { render: false });
       }
       settleEndnotesSection();
     } else {
@@ -33482,19 +33565,19 @@ async function hubRestore(v) {
         j.__merged = m;
       } catch (e) { j.__merged = null; }
     }
-    pushHistory();
-    source = j.__merged ? j.__merged.content : j.content;
-    if (M.layout && j.layout != null) {
-      layout = j.__merged ? j.__merged.layout : JSON.parse(j.layout);
-      layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
-      syncPageSize();
-    }
-    // The saved baseline is the restored version itself; `source` may carry
-    // colleagues' unsaved words the diff kept, and those stay unsaved.
-    original = j.content; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
-    docVersion = j.version;
-    hubMarkSeen(j.version);
-    await render();
+    await changeDoc(() => {
+      source = j.__merged ? j.__merged.content : j.content;
+      if (M.layout && j.layout != null) {
+        layout = j.__merged ? j.__merged.layout : JSON.parse(j.layout);
+        layout.positions = layout.positions || {}; layout.shapes = layout.shapes || []; layout.sections = layout.sections || {};
+        syncPageSize();
+      }
+      // The saved baseline is the restored version itself; `source` may carry
+      // colleagues' unsaved words the diff kept, and those stay unsaved.
+      original = j.content; layoutOrig = M.layout && j.layout != null ? j.layout : layoutOrig;
+      docVersion = j.version;
+      hubMarkSeen(j.version);
+    });
     // The room's undo steps are from BEFORE the restore: undoing one now
     // re-inserts old words beside the restored copy, for everyone. Forgotten
     // here and, through the flag on the version, in every other editor.
@@ -39400,18 +39483,13 @@ async function _pilotArrange(ids, o, run) {
  *  build" (setStyle('x', {size: 'abc'}) and setChart(id, {series: []}) did).
  *  A draft that was already broken is left alone: this may be the fix. */
 async function _pilotGuarded(apply) {
-  const before = snapshot(), wasFailed = renderFailed;
-  pushHistory();
+  const wasFailed = renderFailed;
+  const step = beginChange();
   const r = apply();
-  markDirty();
-  await render();
+  await step.commit();
   if (renderFailed && !wasFailed) {
     const why = renderError;
-    const st = JSON.parse(before);
-    source = st.source; layout = st.layout;
-    withdrawStep();
-    markDirty();
-    await render();
+    await step.rollback();
     return { ok: false, error: 'the engine would not build the result, so nothing was changed'
       + (why ? ` — ${why}` : '') };
   }
@@ -40511,8 +40589,8 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         pendingStyles.add('cell:' + args[0]);
       if (op.as) defined.add(String(op.as));
     }
-    const before = snapshot(), wasFailed = renderFailed;
-    pushHistory();
+    const wasFailed = renderFailed;
+    const step = beginChange();
     const named = {};
     const applied = [];
     for (let i = 0; i < ops.length; i++) {
@@ -40523,9 +40601,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
         args = args.map(a => resolve(a, named));
       } catch (e) {
         // unknown ref can't happen (checked above) — belt and braces
-        withdrawStep();
-        const rolled = JSON.parse(before);
-        source = rolled.source; layout = rolled.layout;
+        step.rollback();
         return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
       }
       if (deferred.has(i)) {
@@ -40534,9 +40610,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
           // Nothing has rendered yet: put source/layout back exactly as the
           // snapshot holds them and withdraw the history entry. dirty was
           // never set, so the document is untouched by every measure.
-          withdrawStep();
-          const rolled = JSON.parse(before);
-          source = rolled.source; layout = rolled.layout;
+          step.rollback();
           return { ok: false, error: `op ${i} (${op.verb}): ${v.error}` };
         }
       }
@@ -40545,16 +40619,13 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
       catch (e) {
         // A verb that finds, mid-apply, that it cannot (a merge across
         // another's edge): the whole batch is undone, as a failed check is.
-        withdrawStep();
-        const rolled = JSON.parse(before);
-        source = rolled.source; layout = rolled.layout;
+        step.rollback();
         return { ok: false, error: `op ${i} (${op.verb}): ${e.message}` };
       }
       if (op.as && r.id != null) named[String(op.as)] = r.id;
       applied.push(r);
     }
-    markDirty();
-    await render();
+    await step.commit();
     // The verbs check what they can cheaply; the ENGINE is the last word (a
     // chart spec, a table's column widths, a position with no x). A result it
     // will not build used to come back ok:true over "This draft does not
@@ -40570,11 +40641,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     const unseen = renderFailed ? [] : applied.filter(a => MADE.includes(a.verb) && a.id && outD
       && !outD.querySelector(`[data-el="${CSS.escape(a.id)}"], [data-shape="${CSS.escape(a.id)}"]`));
     if (unseen.length) {
-      const st = JSON.parse(before);
-      source = st.source; layout = st.layout;
-      withdrawStep();
-      markDirty();
-      await render();
+      await step.rollback();
       const drawn = _pilotDrawnPages();
       return { ok: false, error: `${unseen.map(a => a.id).join(', ')} would be saved and never seen: page `
         + `${unseen[0].page} does not draw ${unseen[0].verb.replace(/^add/, '').toLowerCase()}s, so nothing was changed`
@@ -40582,11 +40649,7 @@ window.docsync = Object.assign(window.docsync || {}, { api: {
     }
     if (renderFailed && !wasFailed) {
       const why = renderError;
-      const st = JSON.parse(before);
-      source = st.source; layout = st.layout;
-      withdrawStep();
-      markDirty();
-      await render();
+      await step.rollback();
       return { ok: false, error: 'the engine would not build the result, so nothing was changed'
         + (why ? ` — ${why}` : '') };
     }
