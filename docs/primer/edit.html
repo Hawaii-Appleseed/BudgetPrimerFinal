@@ -29079,7 +29079,26 @@ async function startCollab() {
   // Y.UndoManager keeps the steps instead.
   undoHistory = collabHistory(collab);
   syncHistoryButtons();
-  window.addEventListener('pagehide', () => { if (collab) collab.close(); });
+  // Leaving the page closes the session — except into the back/forward
+  // cache. A page restored from there keeps every script and variable as it
+  // was, so `collab` is still set and startCollab will not make another; a
+  // CLOSED session there showed the report, said nothing, and counted as
+  // nobody in the room, so the connector told people "nobody has it open"
+  // about a tab on their screen (2026-11-22). Into the cache it goes asleep
+  // instead (the socket let go, as an idle tab's is), and coming back wakes
+  // it: the session's own visibility listener does, and pageshow below says
+  // so outright. A session that could not sleep (not yet in the room) is
+  // closed, and a page restored with a closed one reloads.
+  window.addEventListener('pagehide', e => {
+    if (!collab) return;
+    if (e.persisted && collab.sleep()) return;
+    collab.close();
+  });
+  window.addEventListener('pageshow', e => {
+    if (!e.persisted || !collab) return;
+    if (collab.state.status === 'closed') location.reload();
+    else collab.wake();
+  });
 }
 
 // --- the version underneath ---------------------------------------------------
