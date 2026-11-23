@@ -6309,6 +6309,31 @@ for _slug, _wh in (("blank-document", (8.5, 11.0)), ("slides", (10.0, 7.5)),
             check_eq(f"{_slug}: no endnotes list", 'class="endnotes"' in _h, False)
             check(f"{_slug}: its page size", _h, f"width:{_wh[0]}in")
 
+# --- fact ledger (docsync.facts) ---------------------------------------------
+from docsync import facts as _facts   # noqa: E402
+
+_cl = _facts.claims("r", "slot:x", "Over 70 percent of capital gains flow to households "
+                    "making more than $400,000. HB 2010 passed in 2026, see page 35.")
+check_eq("facts: figures found, identifiers and years skipped",
+         sorted(c.shown for c in _cl), ["$400,000", "70 percent"])
+check_eq("facts: units", {c.shown: c.unit for c in _cl}, {"70 percent": "pct", "$400,000": "usd"})
+_m = _facts.claims("r", "s", "That is $43M from the EITC.")[0]
+check_eq("facts: $43M is 43 million, rounded to the million", (_m.value, _m.precision), (43e6, 1e6))
+check_eq("facts: an address line is not a figure",
+         _facts.claims("r", "s", "733 Bishop Street, Suite 1180, Honolulu, HI 96813"), [])
+_led = [_facts.Fact(id="cg", says="", value=77, unit="pct", match=r"capital gains.*\$400,000")]
+_uses = _facts.check(_led, _cl + _facts.claims("w", "box:t", "About 77 percent of capital gains "
+                                               "income goes to filers earning more than $400,000."))
+check_eq("facts: the ledger flags the stale figure and passes the current one",
+         sorted((u.report, u.shown, u.ok) for u in _uses), [("r", "70 percent", False), ("w", "77 percent", True)])
+_led2 = [_facts.Fact(id="e", says="", value=42.8e6, unit="usd", match="EITC")]
+check_eq("facts: a rounded figure agrees ($43M for 42.8 million), a different one does not ($41.7 million)",
+         [u.ok for u in _facts.check(_led2, _facts.claims("a", "s", "That is $43M from the EITC.")
+                                     + _facts.claims("b", "s", "Families lose $41.7 million in EITC."))],
+         [True, False])
+check_eq("facts: the shipped ledger parses", len(_facts.read_ledger(
+    Path(__file__).resolve().parents[1] / "facts.yml")) > 0, True)
+
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
     print(f"\n{len(FAILS)} failed")
