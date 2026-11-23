@@ -51,7 +51,15 @@ SERVICE_WORKER = EDITOR.parent / "sw.js"
 # this list is explicit, so a new shared module has to be added here too or the
 # draft build dies with ModuleNotFoundError while the published page is fine.
 PACKAGE = ("content.py", "layout.py", "blocks.py", "okina.py",
-           "pagecopy.py", "qr.py")
+           "pagecopy.py", "qr.py", "ledger.py")
+# The fact ledger's data, one file per issue area (docsync/ledger.py): staged
+# with the engine, so a {fact:…} token resolves in the draft as it does in the
+# published build, and the editor's Insert fact menu reads the same files.
+LEDGER_DIR = Path(__file__).resolve().parent / "ledger"
+
+
+def ledger_files() -> list[str]:
+    return sorted("ledger/" + p.name for p in LEDGER_DIR.glob("*.json"))
 
 
 def rel(p: Path) -> str:
@@ -66,7 +74,7 @@ def manifest(b: Binding) -> dict:
     written for a repo checkout, so the browser has to rebuild one.
     """
     e = b.editor
-    files = {"engine/docsync/" + n: "docsync/" + n for n in PACKAGE}
+    files = {"engine/docsync/" + n: "docsync/" + n for n in (*PACKAGE, *ledger_files())}
     files["engine/" + rel(e.render)] = rel(e.render)
     files["engine/" + rel(b.content)] = rel(b.content)
     if e.layout:

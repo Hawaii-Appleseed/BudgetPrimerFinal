@@ -9,6 +9,8 @@
     "engine/docsync/okina.py": "docsync/okina.py",
     "engine/docsync/pagecopy.py": "docsync/pagecopy.py",
     "engine/docsync/qr.py": "docsync/qr.py",
+    "engine/docsync/ledger.py": "docsync/ledger.py",
+    "engine/docsync/ledger/tax-and-budget.json": "docsync/ledger/tax-and-budget.json",
     "engine/report2027/tools/render_report.py": "report2027/tools/render_report.py",
     "engine/report2027/content.md": "report2027/content.md",
     "engine/report2027/layout.json": "report2027/layout.json",

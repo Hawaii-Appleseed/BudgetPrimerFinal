@@ -1,0 +1,73 @@
+{
+  "area": "tax-and-budget",
+  "name": "Taxes & Budget",
+  "facts": [
+    {
+      "id": "capgains-share-over-400k",
+      "says": "Share of Hawaiʻi residents' net long-term capital gains reported by filers with Hawaiʻi AGI of $400,000 or more",
+      "value": 77,
+      "unit": "pct",
+      "shown": "77 percent",
+      "as_of": "tax year 2023",
+      "since": "2025-12",
+      "source": "Hawaiʻi Department of Taxation, Hawaiʻi Individual Income Tax Statistics, Tax Year 2023, Table 21",
+      "url": "https://tax.hawaii.gov/stats/a5_1annual/a5_5ind_inc/",
+      "match": "capital gains.*\\$400,000|\\$400,000.*capital gains",
+      "status": "confirmed",
+      "checked": "Claude against the TY2023 XLSX ($2,041.4M of $2,645.7M, residents), 2026-11-23",
+      "note": "Residents and nonresidents together in TY2023 are also 77 percent.",
+      "history": [
+        {"value": 70, "shown": "70 percent", "as_of": "tax year 2022", "since": "2024-12", "until": "2025-11",
+         "note": "TY2022 Table 21, residents and nonresidents together ($3,110.6M of $4,420.9M)."}
+      ]
+    },
+    {
+      "id": "top-income-tax-rate",
+      "says": "Hawaiʻi's top individual income tax rate",
+      "value": 13,
+      "unit": "pct",
+      "shown": "13 percent",
+      "as_of": "tax year 2027 (Act 24, SLH 2026)",
+      "since": "2027-01-01",
+      "source": "Act 24, SLH 2026 (SB 3125); brackets as presented by the Department of Taxation to the Tax Review Commission, May 2026",
+      "url": "https://www.capitol.hawaii.gov/session/measure_indiv.aspx?billtype=SB&billnumber=3125&year=2026",
+      "match": "top (income tax )?rate|wages are taxed up to|income from wages|taxed up to",
+      "unless": "typical state|effective|paid about|GET|general excise",
+      "status": "confirmed",
+      "checked": "Claude against the DOTAX presentation, slides 12-15, 2026-11-23 (the Act text itself was not opened)",
+      "note": "13 percent applies above $500,000 of taxable income for single and married-filing-separately filers, $750,000 for heads of household and $1,000,000 for joint filers. The act is Act 24, not Act 25.",
+      "history": [
+        {"value": 11, "shown": "11 percent", "as_of": "tax years 2009-2026", "since": "2009-01-01", "until": "2026-12-31",
+         "note": "Pin words about 2026 law to a 2026 date and they keep saying 11 percent."}
+      ]
+    },
+    {
+      "id": "millionaires-count",
+      "says": "Number of Hawaiʻi residents with $1 million or more in net wealth",
+      "value": 81814,
+      "unit": "count",
+      "shown": "81,814",
+      "as_of": "2024",
+      "since": "2025-11-09",
+      "source": "Altrata (formerly Wealth-X), Market Sizing Wealth Data for Hawaiʻi, November 9, 2025",
+      "match": "millionaire",
+      "status": "confirmed",
+      "checked": "Claude against the Altrata export, $1m+ row, 2026-11-23",
+      "note": "Altrata's tiers are cumulative ($1m+ includes $20m+ and $50m+). 83,059 and 83,424 were double-counted totals from older dashboard versions."
+    },
+    {
+      "id": "wfc-eitc-loss-2028",
+      "says": "State EITC that working families would lose in tax year 2028 if the Act 163 expansions lapse",
+      "value": 41700000,
+      "unit": "usd",
+      "shown": "$41.7 million",
+      "as_of": "tax year 2028 estimate",
+      "since": "2026-11-22",
+      "source": "Hawaiʻi Appleseed microsimulation of the working family credits (90 percent range $41.1 million to $42.3 million)",
+      "match": "earned income tax credit loss|from the (state )?(earned income tax credit|EITC)|EITC loss",
+      "status": "confirmed",
+      "checked": "Claude against Census-Forecaster site/data/working-family-credits/by_credit_ty2028.csv, run of 2026-11-22, 2026-11-23",
+      "note": "The same run gives $33.8 million from the food/excise credit and $84.6 million in all. wfc-credits' Table 8 (42.8) and the fact sheet's $43M come from an earlier run."
+    }
+  ]
+}

@@ -1507,6 +1507,7 @@ function dragUnlisten(d, move, up) {
 }
 
 //@include parts/dialogs.js
+//@include parts/facts.js
 // --- the engine's files, speculated from the manifest last seen --------------
 // The manifest names the engine's files, and the manifest arrives behind the
 // registry and, on the hub, behind Pyodide's ~300-500ms instantiate block:
@@ -1909,7 +1910,7 @@ function charRunEditMd(md, sel, patch) {
   return { ok: true, md: out.map(g => g.run ? `[${g.t}]{${charRunSpec(g.run)}}` : g.t).join('') };
 }
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|state:[^{}\n]{1,40})\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|fact:[a-z0-9][a-z0-9-]{0,63}(?:@\d{4}(?:-\d{2}(?:-\d{2})?)?)?(?:\|[A-Za-z$%0-9]{1,12})?|state:[^{}\n]{1,40})\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
@@ -1934,12 +1935,14 @@ const specialChipHtml = ch => {
 const varToken = (name, ref) => name === 'pageof' ? `{pageof:${ref}}` : `{${name}}`;
 const varChipHtml = (name, ref) =>
   `<span class="ds-chip ds-varchip" contenteditable="false" data-var="${escAttr(name)}"`
-  + (ref ? ` data-ref="${escAttr(ref)}"` : '') + ` title="${escAttr(varToken(name, ref))}">`
+  + (ref ? ` data-ref="${escAttr(ref)}"` : '')
+  + ` title="${escAttr(name.startsWith('fact:') ? factChipTitle(name) : varToken(name, ref))}">`
   + `${escAttr(name.startsWith('caption:') ? 'caption of ' + name.slice(8)
              : name.startsWith('var:') ? userVarLabel(name.slice(4))
              : name.startsWith('text:') ? '⇄ ' + linkedPreview(name.slice(5))
              : name.startsWith('titleof:') ? '“' + titlePreview(name.slice(8)) + '”'
              : name.startsWith('state:') ? '⇥ tab: ' + name.slice(6).trim()
+             : name.startsWith('fact:') ? factChipLabel(name)
 
              : VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
 // A variable of your own (INDESIGN_PARITY.md 60) shows its text, so the chip
@@ -3344,6 +3347,7 @@ function textMenu(d, host, e) {
   buildVarRows(d, m, host, range);
   buildSpecialRows(d, m, host, range);
   buildVariableRows(d, m, host, range);
+  buildFactRows(d, m, host, range);
   submenuRow(d, m, 'Show only in ▸', sub => {
     const add = (label, name) => {
       const b = d.createElement('button'); b.textContent = label;
@@ -20405,14 +20409,16 @@ async function deleteUnusedDialog() {
 // text), and web fonts that failed to load. Errors (would be wrong in print
 // or refused at publish) and warnings; the toolbar badge counts them a beat
 // after each render; click a row to go to it.
-const PF_ERRORS = new Set(['print-overflow', 'overset', 'uncited-source', 'missing-image', 'font-failed']);
+const PF_ERRORS = new Set(['print-overflow', 'overset', 'uncited-source', 'missing-image', 'font-failed', 'fact-unknown']);
 const PF_LABEL = { 'print-overflow': 'Cut off in print', 'off-sheet': 'Off the page', overlap: 'Overlapping',
   'covers-flow': 'Covering the text', 'rule-through-glyph': 'A rule through the letters',
   'orphaned-group-member': 'A group names a missing object', 'uncited-source': 'Source never cited',
   'alt-is-filename': 'Described by its file name', 'overset': 'Text runs out of frames',
   'immovable-text': 'Text that cannot be moved', 'missing-image': 'Missing picture',
   'low-res': 'Low resolution for print', 'no-alt': 'No description', 'low-contrast': 'Low contrast',
-  'font-failed': 'Font did not load', cramped: 'Text squeezed in its box' };
+  'font-failed': 'Font did not load', cramped: 'Text squeezed in its box',
+  'fact-unknown': 'A fact the ledger does not have', 'fact-proposed': 'A fact not yet confirmed',
+  'fact-changed': 'A fact changed in the ledger' };
 const rgbaOf = c => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null;
   const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v[3] ?? 1]; };
 const lumOf = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
@@ -20520,6 +20526,7 @@ function preflightIssues() {
       note: `${imgSrcOf(img).split('/').pop()} — a screen reader has nothing to say for it` });
   });
   issues.push(...contrastIssues(d));
+  issues.push(...factIssues());
   try {
     [...d.fonts].filter(f => f.status === 'error').forEach(f =>
       issues.push({ kind: 'font-failed', ids: [], note: `${f.family.replace(/^["']|["']$/g, '')} ${f.weight} ${f.style} — the page shows a fallback` }));
@@ -20578,6 +20585,19 @@ function preflightRender(list = preflightIssues()) {
       a.textContent = (i.ids || []).join(', ') || (i.page != null ? `page ${i.page}` : '');
       const nt = document.createElement('div'); nt.className = 'pf-note'; nt.textContent = i.note || '';
       t.append(a, nt);
+      if (k === 'fact-changed' && i.fact) {
+        // The draft already says the new number; this records that someone
+        // read it, so the row goes until the ledger moves again.
+        const ok = document.createElement('button');
+        ok.className = 'pf-act';
+        ok.textContent = 'Mark reviewed';
+        ok.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          await factsSeenRecord([i.fact]);
+          preflightRender();
+        });
+        t.appendChild(ok);
+      }
       r.append(dot, t);
       r.addEventListener('click', () => goToIssue(i));
       box.appendChild(r);
@@ -24756,6 +24776,7 @@ async function boot() {
     py.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
     py.FS.writeFile(path, files[i]);
   });
+  ledgerAdopt(urls, files);
   py.FS.mkdirTree('/repo/' + M.out.slice(0, M.out.lastIndexOf('/')));
   await pycRestore();           // compiled engine from the last open, before the first import
   source = original = files[urls.indexOf('engine/' + M.content)];
@@ -27083,6 +27104,7 @@ async function refreshEngineFiles() {
     py.FS.writeFile(path, datas[i]);
     changed = true;
   });
+  if (changed) ledgerAdopt(urls, datas);
   return changed;
 }
 

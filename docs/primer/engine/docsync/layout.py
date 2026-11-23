@@ -4284,7 +4284,7 @@ def html_attr(s: str) -> str:
 
 
 # Words that resolve_text() rewrites; a text holding none is left alone.
-RESOLVE_TOKENS = ("{caption:", "{var:", "{text:", "{titleof:")
+RESOLVE_TOKENS = ("{caption:", "{var:", "{text:", "{titleof:", "{fact:")
 # The ids an internal link [words](#key) names (content.XREF_RE): the target
 # is hooked with data-anc-host (or is a text box's data-el), and this gives it
 # the id the link points at — or points the link at the id it already has —
@@ -5904,6 +5904,11 @@ class Layout:
             text = self.resolve_captions(text)
         if "{var:" in text:
             text = USERVAR_RE.sub(lambda m: self.variables.get(m.group(1), m.group(0)), text)
+        if "{fact:" in text:
+            # The fact ledger (docsync/ledger.py): last, so a linked or
+            # variable text that holds a fact token is filled too.
+            from . import ledger as _ledger
+            text = _ledger.resolve(text)
         return text
 
     def linked_source(self, ref: str):

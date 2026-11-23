@@ -267,10 +267,11 @@ def pairs(cs: list[Claim], min_sim: float = 0.45):
 
 
 # --- the ledger -------------------------------------------------------------------
-# facts.yml: one entry per fact the organisation states, with the number it
-# stands behind, where that number comes from and as of when. `match` says
-# which sentences are about it (a regex, any case); `unless` drops sentences
-# that match but are about something else.
+# The ledger (docsync/ledger/<issue area>.json, read by docsync.ledger): one
+# entry per fact the organisation states, with the number it stands behind,
+# where that number comes from and as of when. `match` says which sentences are
+# about it (a regex, any case); `unless` drops sentences that match but are
+# about something else.
 
 @dataclass
 class Fact:
@@ -285,18 +286,20 @@ class Fact:
     match: str = ""
     unless: str = ""
     status: str = "proposed"
+    checked: str = ""       # who checked it against the source, and when
     note: str = ""
+    area: str = ""
+    history: list = field(default_factory=list)
 
 
-def read_ledger(path: Path) -> list[Fact]:
-    import yaml                                         # noqa: PLC0415
-    raw = yaml.safe_load(path.read_text()) or []
+def read_ledger(directory: Path | None = None) -> list[Fact]:
+    """The ledger's facts, area by area (docsync.ledger does the reading and
+    refuses a malformed file)."""
+    from docsync import ledger as _ledger              # noqa: PLC0415
     out = []
-    for r in raw:
-        f = Fact(**{k: v for k, v in r.items() if k in Fact.__dataclass_fields__})
-        f.value = float(f.value)
-        re.compile(f.match)
-        out.append(f)
+    for f in _ledger.load(directory).values():
+        out.append(Fact(**{k: v for k, v in f.items() if k in Fact.__dataclass_fields__}))
+        out[-1].value = float(out[-1].value)
     return out
 
 
@@ -308,6 +311,7 @@ class Use:
     shown: str
     sentence: str
     ok: bool
+    was: str = ""           # the earlier ledger value it matches, if any
 
 
 def check(ledger: list[Fact], cs: list[Claim]) -> list[Use]:
@@ -333,7 +337,10 @@ def check(ledger: list[Fact], cs: list[Claim]) -> list[Use]:
             close = [c for c in mine if near(c, probe)]
             if close:
                 best = min(close, key=lambda c: abs(math.log(abs(c.value) / abs(f.value))))
-                out.append(Use(f.id, rep, where, best.shown, sent, False))
+                old = next((h for h in f.history
+                            if agree(best, Claim("", "", float(h["value"]), f.unit, "", "", [], [], 0.0))), None)
+                was = f"the ledger's earlier value ({old.get('as_of') or old.get('since', '')})" if old else ""
+                out.append(Use(f.id, rep, where, best.shown, sent, False, was))
     return out
 
 
@@ -342,7 +349,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     ck = sub.add_parser("check", help="where each ledgered fact is stated, and where a report says otherwise")
     ck.add_argument("dirs", nargs="+", type=Path)
-    ck.add_argument("--ledger", type=Path, default=Path(__file__).resolve().parents[1] / "facts.yml")
+    ck.add_argument("--ledger", type=Path, default=None,
+                    help="a ledger folder of <area>.json files (default: the packaged one)")
     ck.add_argument("--json", action="store_true")
     sc = sub.add_parser("scan")
     sc.add_argument("dirs", nargs="+", type=Path)
@@ -358,15 +366,16 @@ def main(argv=None) -> int:
             json.dump([asdict(u) for u in uses], sys.stdout, ensure_ascii=False, indent=1)
             return 0
         bad = 0
-        for f in ledger:
+        for f in sorted(ledger, key=lambda f: (f.area, f.id)):
             us = [u for u in uses if u.fact == f.id]
             wrong = [u for u in us if not u.ok]
             bad += len(wrong)
-            print(f"{f.id}: {f.shown or f.value} ({f.as_of}) [{f.status}]")
+            print(f"[{f.area}] {f.id}: {f.shown or f.value} ({f.as_of}) [{f.status}]")
             print(f"   stated alike in {len({u.report for u in us if u.ok})} report(s)"
                   f"{': ' + ', '.join(sorted({u.report for u in us if u.ok})) if us else ''}")
             for u in wrong:
-                print(f"   DIFFERS  {u.report} {u.where}: {u.shown} — {u.sentence[:200]}")
+                print(f"   DIFFERS  {u.report} {u.where}: {u.shown}"
+                      f"{' = ' + u.was if u.was else ''} — {u.sentence[:200]}")
             print()
         print(f"{bad} place(s) state a ledgered fact with another number")
         return 1 if bad else 0

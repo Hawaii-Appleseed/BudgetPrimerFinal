@@ -643,6 +643,30 @@ def paragraphs(block: str) -> list[str]:
             for c in chunks]
 
 
+class FactSources(dict):
+    """The [[sources]] block, plus every fact in the ledger as a source named
+    `fact.<id>`: a citation [^fact.<id>] needs no line of its own, because the
+    ledger carries the source (docsync/ledger.py). A fact source joins the
+    dict the first time something asks for it, so one nothing cites is never
+    listed — and never reported as an unused source."""
+
+    def __contains__(self, sid) -> bool:
+        if dict.__contains__(self, sid):
+            return True
+        if isinstance(sid, str) and sid.startswith("fact."):
+            from . import ledger as _ledger
+            f = _ledger.facts().get(sid[5:])
+            if f is not None:
+                self[sid] = _ledger.source_line(f)
+                return True
+        return False
+
+    def __missing__(self, sid):
+        if sid in self:
+            return dict.__getitem__(self, sid)
+        raise KeyError(sid)
+
+
 class Footnotes:
     """Assigns numbers to [^id] refs in order of first appearance."""
 
@@ -879,7 +903,7 @@ class Content:
         self._raw = parse_content(path)
         if "sources" not in self._raw:
             raise ContentError(f"{path.name}: missing the '[[sources]]' section")
-        self.sources = parse_sources(self._raw.pop("sources"))
+        self.sources = FactSources(parse_sources(self._raw.pop("sources")))
         self.fn = Footnotes(self.sources)
         self._used: set[str] = set()
         self._new: set[str] = set()
@@ -923,10 +947,14 @@ class Content:
                 f"  The Google Doc must keep every [[key]] marker intact.")
         self._used.add(key)
         v = self._raw[key]
+        if "{fact:" in v and self._styles is None:
+            from . import ledger as _ledger     # no Layout to do it (resolve_text below)
+            v = _ledger.resolve(v)
         # Live captions (INDESIGN_PARITY.md 43): {caption:<image id>} is that
         # image's own description, resolved now, so a caption follows the
         # description it shows.
-        if ("{caption:" in v or "{var:" in v or "{text:" in v or "{titleof:" in v) and self._styles is not None:
+        if ("{caption:" in v or "{var:" in v or "{text:" in v or "{titleof:" in v
+                or "{fact:" in v) and self._styles is not None:
             v = self._styles.resolve_text(v)
         _served(key, v)
         return v

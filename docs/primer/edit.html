@@ -4383,6 +4383,198 @@ async function getBytes(u) {
   return new Uint8Array(await r.arrayBuffer());
 }
 
+// ------------------------------------------------------------ fact ledger
+// The figures Hawaiʻi Appleseed stands behind, one place (docsync/ledger.py).
+// A slot or box says {fact:<id>} (optionally @<date> to pin, |<format> to
+// write it another way); the engine writes the number in at build, so the
+// published page carries plain words. Here the editor only needs to SHOW a
+// token as a chip, offer the ledger in Insert fact, and say in Preflight when
+// a fact is unknown, unconfirmed, or changed since someone last reviewed it.
+//
+// The ledger's files are staged with the engine (stage.ledger_files), one per
+// issue area; ledgerAdopt() reads them whenever the engine files load.
+let LEDGER = { areas: {}, facts: {} };
+const LEDGER_URL = 'engine/docsync/ledger/';
+const FACT_TOKEN_RE = /\{fact:([a-z0-9][a-z0-9-]{0,63})(?:@(\d{4}(?:-\d{2}(?:-\d{2})?)?))?(?:\|([A-Za-z$%0-9]{1,12}))?\}/g;
+// ledger.py's AREAS, in the hub's order (the issue_brief keys).
+const LEDGER_AREAS = [['tax-and-budget', 'Taxes & Budget'], ['housing', 'Affordable Housing'],
+  ['food-equity', 'Food Equity'], ['labor', 'Wages & Labor'], ['transportation', 'Transportation Equity'],
+  ['public-health', 'Public Health'], ['education', 'Education'], ['social-justice', 'Social Justice'],
+  ['criminal-justice', 'Criminal Justice'], ['native-hawaiian', 'Native Hawaiian Equity']];
+
+function ledgerAdopt(urls, datas) {
+  const facts = {};
+  urls.forEach((u, i) => {
+    if (!u.startsWith(LEDGER_URL) || !u.endsWith('.json')) return;
+    try {
+      const raw = typeof datas[i] === 'string' ? datas[i] : new TextDecoder().decode(datas[i]);
+      const area = JSON.parse(raw);
+      (area.facts || []).forEach(f => { facts[f.id] = { ...f, area: area.area }; });
+    } catch (e) { swallowed('ledger file ' + u, e); }
+  });
+  LEDGER = { areas: Object.fromEntries(LEDGER_AREAS), facts };
+}
+
+// ledger.py's FORMATS, for the chip's preview only — the engine writes the
+// words that are published.
+const fmtG = v => Math.abs(v) >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 10 }) : String(+v.toPrecision(10));
+const fmtMoney = (v, div, digits, word) => {
+  let s = (v / div).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  if (digits && s.endsWith('.' + '0'.repeat(digits))) s = s.slice(0, -(digits + 1));
+  return `$${s}${word}`;
+};
+const FACT_FORMATS = {
+  pct: [v => fmtG(v) + '%', 'pct'], percent: [v => fmtG(v) + ' percent', 'pct'],
+  n: [v => Math.round(v).toLocaleString('en-US'), 'count'],
+  $M: [v => fmtMoney(v, 1e6, 0, 'M'), 'usd'], $M1: [v => fmtMoney(v, 1e6, 1, 'M'), 'usd'],
+  $million: [v => fmtMoney(v, 1e6, 1, ' million'), 'usd'], $billion: [v => fmtMoney(v, 1e9, 1, ' billion'), 'usd'],
+};
+const FACT_DEFAULT_FMT = { pct: 'percent', usd: '$million', count: 'n' };
+
+/** The ledger entry in force on `date` (ledger.value_on's twin). */
+function factEntryOn(f, date) {
+  if (!date || !f.since || date >= f.since) return f;
+  const hist = [...(f.history || [])].sort((a, b) => (a.since || '').localeCompare(b.since || ''));
+  for (let i = hist.length - 1; i >= 0; i--) if ((hist[i].since || '') <= date) return hist[i];
+  return hist[0] || f;
+}
+/** {text, error} for one token's parts. */
+function factWords(id, date, fmt) {
+  const f = LEDGER.facts[id];
+  if (!f) return { error: `no fact "${id}" in the ledger` };
+  const e = factEntryOn(f, date);
+  if (!fmt && e.shown) return { text: e.shown, f };
+  const k = fmt || FACT_DEFAULT_FMT[f.unit];
+  const spec = FACT_FORMATS[k];
+  if (!spec) return { error: `no format "${fmt}"`, f };
+  if (spec[1] !== f.unit) return { error: `${fmt} is for ${spec[1]} figures; this one is ${f.unit}`, f };
+  return { text: spec[0](Number(e.value)), f };
+}
+/** A chip's name is everything inside the braces: fact:<id>[@date][|fmt]. */
+function factParts(name) {
+  const m = ('{' + name + '}').match(new RegExp(FACT_TOKEN_RE.source));
+  return m ? { id: m[1], date: m[2] || null, fmt: m[3] || null } : null;
+}
+function factChipLabel(name) {
+  const p = factParts(name);
+  if (!p) return name;
+  const w = factWords(p.id, p.date, p.fmt);
+  return w.error ? `⚠ ${p.id}` : `ⓕ ${w.text}${p.date ? ' · ' + p.date : ''}`;
+}
+function factChipTitle(name) {
+  const p = factParts(name);
+  const f = p && LEDGER.facts[p.id];
+  if (!f) return `{${name}} — not in the ledger`;
+  return `${f.says}\n${f.source || ''}${f.as_of ? ' · ' + f.as_of : ''}\n`
+    + `${f.status === 'confirmed' ? 'Confirmed' : 'Proposed — not yet checked against its source'}`
+    + `${p.date ? `\nPinned to ${p.date}: keeps the value it had then` : ''}`;
+}
+
+/** Testimony keeps what it said: its facts go in pinned to today. */
+const factPinsByDefault = () => /testimony/i.test(M.id || '') || /testimony/i.test(M.name || '');
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** Insert fact ▸ — the ledger, issue area by issue area. */
+function buildFactRows(d, m, host, range) {
+  const ids = Object.keys(LEDGER.facts);
+  if (!ids.length) return;
+  submenuRow(d, m, 'Insert fact ▸', sub => {
+    const pin = factPinsByDefault();
+    LEDGER_AREAS.forEach(([area, areaName]) => {
+      const mine = ids.filter(id => LEDGER.facts[id].area === area)
+        .sort((a, b) => LEDGER.facts[a].says.localeCompare(LEDGER.facts[b].says));
+      if (!mine.length) return;
+      const h = d.createElement('div');
+      h.className = 'ds-menu-head';
+      h.textContent = areaName;
+      sub.appendChild(h);
+      mine.forEach(id => {
+        const f = LEDGER.facts[id];
+        const b = d.createElement('button');
+        b.dataset.fact = id;
+        b.textContent = `${f.shown || f.value} — ${f.says.length > 60 ? f.says.slice(0, 59) + '…' : f.says}`
+          + (f.status === 'confirmed' ? '' : ' (proposed)');
+        b.title = `${f.source || ''}${f.as_of ? ' · ' + f.as_of : ''}`;
+        b.addEventListener('click', async () => {
+          closeMenu(d);
+          const name = `fact:${id}${pin ? '@' + todayIso() : ''}`;
+          await insertNodeAt(d, host, range, makeVarChip(d, name));
+          factsSeenRecord([id]);
+        });
+        sub.appendChild(b);
+      });
+    });
+    if (pin) {
+      const n = d.createElement('div');
+      n.className = 'ds-menu-head';
+      n.textContent = 'Testimony: pinned to today';
+      sub.appendChild(n);
+    }
+  });
+}
+
+/** Every fact token in the document: {id, date, fmt, where}. */
+function factUses() {
+  const out = [];
+  let key = null;
+  String(source || '').split('\n').forEach(line => {
+    const k = line.match(/^\[\[([^\]]+)\]\]\s*$/);
+    if (k) { key = k[1]; return; }
+    for (const m of line.matchAll(FACT_TOKEN_RE)) out.push({ id: m[1], date: m[2] || null, fmt: m[3] || null, where: key });
+  });
+  const walk = (v, where) => {
+    if (typeof v === 'string') {
+      for (const m of v.matchAll(FACT_TOKEN_RE)) out.push({ id: m[1], date: m[2] || null, fmt: m[3] || null, where });
+    } else if (Array.isArray(v)) v.forEach(x => walk(x, where));
+    else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, v.id || where || k));
+  };
+  walk(layout, null);
+  return out;
+}
+
+/** What the report last agreed each fact said: layout.factsSeen[id]. Written
+ *  when a fact goes in and when someone marks a change reviewed. */
+function factsSeenRecord(ids) {
+  const seen = { ...(layout.factsSeen || {}) };
+  let moved = false;
+  ids.forEach(id => {
+    const f = LEDGER.facts[id];
+    if (f && seen[id] !== Number(f.value)) { seen[id] = Number(f.value); moved = true; }
+  });
+  if (!moved) return;
+  return changeDoc(() => { layout.factsSeen = seen; }, { render: false });
+}
+
+/** Preflight's fact rows: unknown (error), proposed, and changed since the
+ *  report last reviewed it — the draft already says the new number. */
+function factIssues() {
+  const issues = [];
+  const seen = layout.factsSeen || {};
+  const by = new Map();
+  factUses().forEach(u => {
+    const k = u.id + '|' + (u.date || '') + '|' + (u.fmt || '');
+    if (!by.has(k)) by.set(k, { ...u, wheres: new Set() });
+    if (u.where) by.get(k).wheres.add(u.where);
+  });
+  const said = new Set();
+  by.forEach(u => {
+    const ids = [...u.wheres];
+    const w = factWords(u.id, u.date, u.fmt);
+    if (w.error) { issues.push({ kind: 'fact-unknown', ids, note: `{fact:${u.id}…}: ${w.error}` }); return; }
+    if (said.has(u.id)) return;
+    said.add(u.id);
+    const f = w.f;
+    if (f.status !== 'confirmed') issues.push({ kind: 'fact-proposed', ids, fact: u.id,
+      note: `${f.shown || f.value} (${f.says}) is not yet checked against its source` });
+    if (!u.date && seen[u.id] != null && Number(seen[u.id]) !== Number(f.value)) {
+      const was = (f.history || []).find(h => Number(h.value) === Number(seen[u.id]));
+      issues.push({ kind: 'fact-changed', ids, fact: u.id,
+        note: `the ledger changed: ${was && was.shown ? was.shown : seen[u.id]} → ${f.shown || f.value}. `
+          + 'This draft now says the new number; republish to update the published copy' });
+    }
+  });
+  return issues;
+}
 // --- the engine's files, speculated from the manifest last seen --------------
 // The manifest names the engine's files, and the manifest arrives behind the
 // registry and, on the hub, behind Pyodide's ~300-500ms instantiate block:
@@ -4785,7 +4977,7 @@ function charRunEditMd(md, sel, patch) {
   return { ok: true, md: out.map(g => g.run ? `[${g.t}]{${charRunSpec(g.run)}}` : g.t).join('') };
 }
 // content.py's VAR_RE, and the one place the editor spells it.
-const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|state:[^{}\n]{1,40})\}/g;
+const VAR_RE_G = /\{(page|pages|section|title|date|contents|pageof:([A-Za-z0-9._-]+)|break:(?:line|optional|column|frame)|span|caption:[A-Za-z0-9._@-]+|var:[A-Za-z0-9_-]{1,30}|text:[A-Za-z0-9._@-]+|titleof:[A-Za-z0-9._@-]+|fact:[a-z0-9][a-z0-9-]{0,63}(?:@\d{4}(?:-\d{2}(?:-\d{2})?)?)?(?:\|[A-Za-z$%0-9]{1,12})?|state:[^{}\n]{1,40})\}/g;
 const VAR_LABEL = { page: 'page no.', pages: 'page count', section: 'section', title: 'title',
                     date: 'date', contents: 'contents', pageof: 'page of',
                     'break:line': '↵ line break', 'break:optional': '⁝ may break',
@@ -4810,12 +5002,14 @@ const specialChipHtml = ch => {
 const varToken = (name, ref) => name === 'pageof' ? `{pageof:${ref}}` : `{${name}}`;
 const varChipHtml = (name, ref) =>
   `<span class="ds-chip ds-varchip" contenteditable="false" data-var="${escAttr(name)}"`
-  + (ref ? ` data-ref="${escAttr(ref)}"` : '') + ` title="${escAttr(varToken(name, ref))}">`
+  + (ref ? ` data-ref="${escAttr(ref)}"` : '')
+  + ` title="${escAttr(name.startsWith('fact:') ? factChipTitle(name) : varToken(name, ref))}">`
   + `${escAttr(name.startsWith('caption:') ? 'caption of ' + name.slice(8)
              : name.startsWith('var:') ? userVarLabel(name.slice(4))
              : name.startsWith('text:') ? '⇄ ' + linkedPreview(name.slice(5))
              : name.startsWith('titleof:') ? '“' + titlePreview(name.slice(8)) + '”'
              : name.startsWith('state:') ? '⇥ tab: ' + name.slice(6).trim()
+             : name.startsWith('fact:') ? factChipLabel(name)
 
              : VAR_LABEL[name] + (ref ? ' ' + ref : ''))}</span>`;
 // A variable of your own (INDESIGN_PARITY.md 60) shows its text, so the chip
@@ -6220,6 +6414,7 @@ function textMenu(d, host, e) {
   buildVarRows(d, m, host, range);
   buildSpecialRows(d, m, host, range);
   buildVariableRows(d, m, host, range);
+  buildFactRows(d, m, host, range);
   submenuRow(d, m, 'Show only in ▸', sub => {
     const add = (label, name) => {
       const b = d.createElement('button'); b.textContent = label;
@@ -23281,14 +23476,16 @@ async function deleteUnusedDialog() {
 // text), and web fonts that failed to load. Errors (would be wrong in print
 // or refused at publish) and warnings; the toolbar badge counts them a beat
 // after each render; click a row to go to it.
-const PF_ERRORS = new Set(['print-overflow', 'overset', 'uncited-source', 'missing-image', 'font-failed']);
+const PF_ERRORS = new Set(['print-overflow', 'overset', 'uncited-source', 'missing-image', 'font-failed', 'fact-unknown']);
 const PF_LABEL = { 'print-overflow': 'Cut off in print', 'off-sheet': 'Off the page', overlap: 'Overlapping',
   'covers-flow': 'Covering the text', 'rule-through-glyph': 'A rule through the letters',
   'orphaned-group-member': 'A group names a missing object', 'uncited-source': 'Source never cited',
   'alt-is-filename': 'Described by its file name', 'overset': 'Text runs out of frames',
   'immovable-text': 'Text that cannot be moved', 'missing-image': 'Missing picture',
   'low-res': 'Low resolution for print', 'no-alt': 'No description', 'low-contrast': 'Low contrast',
-  'font-failed': 'Font did not load', cramped: 'Text squeezed in its box' };
+  'font-failed': 'Font did not load', cramped: 'Text squeezed in its box',
+  'fact-unknown': 'A fact the ledger does not have', 'fact-proposed': 'A fact not yet confirmed',
+  'fact-changed': 'A fact changed in the ledger' };
 const rgbaOf = c => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null;
   const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [v[0], v[1], v[2], v[3] ?? 1]; };
 const lumOf = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
@@ -23396,6 +23593,7 @@ function preflightIssues() {
       note: `${imgSrcOf(img).split('/').pop()} — a screen reader has nothing to say for it` });
   });
   issues.push(...contrastIssues(d));
+  issues.push(...factIssues());
   try {
     [...d.fonts].filter(f => f.status === 'error').forEach(f =>
       issues.push({ kind: 'font-failed', ids: [], note: `${f.family.replace(/^["']|["']$/g, '')} ${f.weight} ${f.style} — the page shows a fallback` }));
@@ -23454,6 +23652,19 @@ function preflightRender(list = preflightIssues()) {
       a.textContent = (i.ids || []).join(', ') || (i.page != null ? `page ${i.page}` : '');
       const nt = document.createElement('div'); nt.className = 'pf-note'; nt.textContent = i.note || '';
       t.append(a, nt);
+      if (k === 'fact-changed' && i.fact) {
+        // The draft already says the new number; this records that someone
+        // read it, so the row goes until the ledger moves again.
+        const ok = document.createElement('button');
+        ok.className = 'pf-act';
+        ok.textContent = 'Mark reviewed';
+        ok.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          await factsSeenRecord([i.fact]);
+          preflightRender();
+        });
+        t.appendChild(ok);
+      }
       r.append(dot, t);
       r.addEventListener('click', () => goToIssue(i));
       box.appendChild(r);
@@ -27632,6 +27843,7 @@ async function boot() {
     py.FS.mkdirTree(path.slice(0, path.lastIndexOf('/')));
     py.FS.writeFile(path, files[i]);
   });
+  ledgerAdopt(urls, files);
   py.FS.mkdirTree('/repo/' + M.out.slice(0, M.out.lastIndexOf('/')));
   await pycRestore();           // compiled engine from the last open, before the first import
   source = original = files[urls.indexOf('engine/' + M.content)];
@@ -29959,6 +30171,7 @@ async function refreshEngineFiles() {
     py.FS.writeFile(path, datas[i]);
     changed = true;
   });
+  if (changed) ledgerAdopt(urls, datas);
   return changed;
 }
 

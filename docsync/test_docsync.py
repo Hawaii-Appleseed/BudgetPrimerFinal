@@ -6331,8 +6331,80 @@ check_eq("facts: a rounded figure agrees ($43M for 42.8 million), a different on
          [u.ok for u in _facts.check(_led2, _facts.claims("a", "s", "That is $43M from the EITC.")
                                      + _facts.claims("b", "s", "Families lose $41.7 million in EITC."))],
          [True, False])
-check_eq("facts: the shipped ledger parses", len(_facts.read_ledger(
-    Path(__file__).resolve().parents[1] / "facts.yml")) > 0, True)
+check_eq("facts: the shipped ledger parses", len(_facts.read_ledger()) > 0, True)
+_led3 = [_facts.Fact(id="cg", says="", value=77, unit="pct", match=r"capital gains.*\$400,000",
+                     history=[{"value": 70, "as_of": "tax year 2022"}])]
+check_eq("facts: a stale figure is named as the ledger's earlier value",
+         [u.was for u in _facts.check(_led3, _cl)], ["the ledger's earlier value (tax year 2022)"])
+
+# --- fact ledger tokens (docsync.ledger) ---------------------------------------
+from docsync import ledger as _ledger   # noqa: E402
+
+_L = {"cg": {"id": "cg", "value": 77, "unit": "pct", "shown": "77 percent", "since": "2025-12",
+             "history": [{"value": 70, "shown": "70 percent", "since": "2024-12", "until": "2025-11"}]},
+      "eitc": {"id": "eitc", "value": 41.7e6, "unit": "usd", "shown": "$41.7 million"},
+      "mil": {"id": "mil", "value": 81814, "unit": "count", "shown": "81,814"},
+      "bare": {"id": "bare", "value": 13, "unit": "pct"}}
+check_eq("ledger: a token writes the fact as the ledger shows it",
+         _ledger.resolve("Over {fact:cg} of gains", _L), "Over 77 percent of gains")
+check_eq("ledger: formats",
+         [_ledger.resolve(t, _L) for t in ("{fact:cg|pct}", "{fact:eitc|$M}", "{fact:eitc|$M1}",
+                                           "{fact:eitc|$million}", "{fact:mil|n}", "{fact:bare}")],
+         ["77%", "$42M", "$41.7M", "$41.7 million", "81,814", "13 percent"])
+check_eq("ledger: a pinned token keeps the value of its date",
+         [_ledger.resolve(t, _L) for t in ("{fact:cg@2025-06}", "{fact:cg@2026-01}", "{fact:cg@2025-06|pct}")],
+         ["70 percent", "77 percent", "70%"])
+_old_edit = os.environ.pop("DOCSYNC_EDIT", None)
+for _bad, _why in (("{fact:nope}", "unknown fact"), ("{fact:cg|$M}", "format for another unit"),
+                   ("{fact:cg|zz}", "unknown format")):
+    try:
+        _ledger.resolve(_bad, _L)
+        FAILS.append(f"ledger: {_why} must refuse a published build")
+    except _ledger.LedgerError:
+        pass
+os.environ["DOCSYNC_EDIT"] = "1"
+check_eq("ledger: in the editor an unknown fact shows, marked",
+         _ledger.resolve("x {fact:nope} y", _L), "x ⚠ {fact:nope} y")
+if _old_edit is None:
+    os.environ.pop("DOCSYNC_EDIT", None)
+else:
+    os.environ["DOCSYNC_EDIT"] = _old_edit
+_real = _ledger.load()
+check_eq("ledger: every packaged fact sits in a hub issue area",
+         all(f["area"] in _ledger.AREAS for f in _real.values()) and len(_real) >= 4, True)
+check_eq("ledger: the seeded facts are confirmed and in Taxes & Budget",
+         sorted((f["id"], f["area"], f["status"]) for f in _real.values())[:1],
+         [("capgains-share-over-400k", "tax-and-budget", "confirmed")])
+check_eq("ledger: testimony pinned to May 2026 still says 11 percent",
+         _ledger.resolve("{fact:top-income-tax-rate@2026-05}"), "11 percent")
+with tempfile.TemporaryDirectory() as _ltd:
+    (Path(_ltd) / "housing.json").write_text(json.dumps({"area": "tax-and-budget", "facts": []}))
+    try:
+        _ledger.load(Path(_ltd))
+        FAILS.append("ledger: a file must be named for its area")
+    except _ledger.LedgerError:
+        pass
+    (Path(_ltd) / "housing.json").write_text(json.dumps({"area": "parks", "facts": []}))
+    try:
+        _ledger.load(Path(_ltd))
+        FAILS.append("ledger: an area the hub does not have is refused")
+    except _ledger.LedgerError:
+        pass
+# Through the engine: a slot and a citation of the fact's own source.
+with tempfile.TemporaryDirectory() as _ltd:
+    _cp = Path(_ltd) / "content.md"
+    _cp.write_text("[[a]]\nOver {fact:capgains-share-over-400k}[^fact.capgains-share-over-400k] flow up.\n\n"
+                   "[[sources]]\n")
+    _C = Content(_cp)
+    _h = _C.fn.resolve(_C("a"))
+    check_eq("ledger: a slot's token is written in", "77 percent" in _h and "{fact:" not in _h, True)
+    check_eq("ledger: [^fact.<id>] cites the ledger's source with no [[sources]] line",
+             (_C.fn.order, _C.fn.endnotes()[0][0].startswith("Hawaiʻi Department of Taxation")),
+             (["fact.capgains-share-over-400k"], True))
+    check_eq("ledger: an uncited fact is not an unused source", _C.fn.unused(), [])
+check_eq("ledger: staged with the engine",
+         [k in _staged(None)["files"]
+          for k in ("engine/docsync/ledger.py", "engine/docsync/ledger/tax-and-budget.json")], [True, True])
 
 if FAILS:
     print("\n\n".join("FAIL: " + f for f in FAILS))
