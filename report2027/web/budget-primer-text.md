@@ -369,7 +369,7 @@ PAGE 8
 
 # FUNDING THE BUDGET
 
-**Figure 4.** Hawaiʻi Budget Means of Finance, FY2027 ($Billions)[^18]
+**Figure 4.** Hawaiʻi Budget Means of Finance, FY2027 ($Billions)[^2]
 
 KEY: General Funds | Special Funds | Federal Funds | Other Funds
 
@@ -396,7 +396,7 @@ PAGE 9
 
 ## Taxes
 
-**Figure 5.** Projected Hawaiʻi State Tax Revenue, FY2027 ($Billions)[^19]
+**Figure 5.** Projected Hawaiʻi State Tax Revenue, FY2027 ($Billions)[^18]
 
 KEY: General Excise Tax | Individual Income Tax | Transient Accommodations Tax | All Other Taxes | Corporate Income Tax
 
@@ -406,7 +406,7 @@ KEY: General Excise Tax | Individual Income Tax | Transient Accommodations Tax |
 
 #### Individual Income Tax
 
-- Hawaiʻi taxes those with high incomes at a progressively higher marginal rates. With the passage of Act 25, the new top rate for people earning over $1 million will be set at 13 percent.
+- Hawaiʻi taxes those with high incomes at progressively higher marginal rates. With the passage of Act 24, the new top rate for joint filers with taxable income over $1 million ($500,000 for single filers) will be set at 13 percent.
 
 #### Transient Accommodations Tax
 
@@ -419,7 +419,7 @@ PAGE 10
 
 ### Who Pays These Taxes?
 
-**Figure 6.** Percentage of Income Paid in State and Local Taxes by Household Income Quintile (2024)[^20]
+**Figure 6.** Percentage of Income Paid in State and Local Taxes by Household Income Quintile (2024)[^19]
 
 DATA:
   Lowest 20% Less than $21,900: 14.1%
@@ -432,13 +432,13 @@ DATA:
 
 In Hawaiʻi, low- and middle-income families spend a larger share of their already stretched income on state and local taxes than wealthy families do. This is mostly due to the GET: a low-income and a wealthy person pay the same dollar amount on the same purchase, but that amount is a far larger share of a low-income paycheck—making it harder to budget for, and often trapping families in cycles of poverty and debt.
 
-This reality is particularly difficult for Native Hawaiians and Pacific Islanders, who report poverty rates of 20 percent—double the state average for Hawaiʻi.[^21] Historically, Native Hawaiians have faced systemic issues rooted in colonization: throughout the 1800s, large tracts of land that once provided for communities were taken by Western settlers, who built plantations and then resorts for their own benefit. For many Native Hawaiians, this shift led to a rise in food insecurity and reduced access to affordable housing.
+This reality is particularly difficult for Native Hawaiians and Pacific Islanders, who report poverty rates of 20 percent—double the state average for Hawaiʻi.[^20] Historically, Native Hawaiians have faced systemic issues rooted in colonization: throughout the 1800s, large tracts of land that once provided for communities were taken by Western settlers, who built plantations and then resorts for their own benefit. For many Native Hawaiians, this shift led to a rise in food insecurity and reduced access to affordable housing.
 
 Hawaiʻi must build a tax system that supports these marginalized groups, by reducing their taxes and investing tax dollars in policies that lower the cost of living. Tax credits (and other forms of assistance) are an excellent way to give people of color and low-income communities more leeway to pay for their basic necessities.
 
 **Act 46**
 
-Although Act 46 (2024) lowered income taxes for most people in Hawaiʻi, wealthier taxpayers benefited the most. In addition, these tax cuts would have eventually cost the state $1.45 billion every year by 2031.[^22] This path was not sustainable—it would have led to severe budget cuts, including programs such as SNAP and Medicaid.
+Although Act 46 (2024) lowered income taxes for most people in Hawaiʻi, wealthier taxpayers benefited the most. In addition, these tax cuts would have eventually cost the state $1.45 billion every year by 2031.[^21] This path was not sustainable—it would have led to severe budget cuts, including programs such as SNAP and Medicaid.
 
 With the passage of Act 24 in 2026, the Legislature decided to keep these planned tax cuts for low- to middle-income residents, while raising taxes on people earning over $1 million. Unfortunately, these changes will not recover all of the revenue lost from Act 46. Hawaiʻi also needs to prepare for deep federal spending cuts. In order to do that, the state must consider all the revenue tools at its disposal.
 
@@ -453,25 +453,25 @@ These three policies would raise revenue from those best able to pay more, witho
 
 #### 1. Tax Investment Profits Like Paychecks  [Up to $132M a year]
 
-Hawaiʻi taxes long-term capital gains at 7.25 percent, while wages are taxed up to 13 percent. As a result, someone who earns their income working a regular job pays potentially more than an investor who profits off their stocks.[^23]
+Hawaiʻi taxes long-term capital gains at 7.25 percent, while wages are taxed up to 13 percent. As a result, someone who earns their income working a regular job pays potentially more than an investor who profits off their stocks.[^22]
 
-Over 70 percent of capital gains flow to households making more than $400,000. Taxing them as ordinary income would raise around $85 million to $132 million in new revenue a year, with 88 percent of it coming from the top 1 percent.
+About 77 percent of capital gains flow to households making more than $400,000. Taxing them as ordinary income would raise around $85 million to $132 million in new revenue a year, with 88 percent of it coming from the top 1 percent.
 
 #### 2. Modernize the Conveyance Tax  [$70M - $80M a year]
 
-Paid when a property changes hands, the conveyance tax is one of the few tools that allows the state to capture revenue from Hawaiʻi’s real estate market.[^24] Its rates have not moved since 2009, even though out-of-state buyers have continued to drive up housing prices by turning homes into investment properties.
+Paid when a property changes hands, the conveyance tax is one of the few tools that allows the state to capture revenue from Hawaiʻi’s real estate market.[^23] Its rates have not moved since 2009, even though out-of-state buyers have continued to drive up housing prices by turning homes into investment properties.
 
-House Bill 2049 (2026) would have shifted the tax to marginal rates—cutting it for most residents, while raising it on high-value investment properties. The bill would have directed up to $300 million a year to the General Fund, various affordable housing funds, and the Department of Hawaiian Homelands.[^25]
+House Bill 2049 (2026) would have shifted the tax to marginal rates—cutting it for most residents, while raising it on high-value investment properties. The bill would have directed up to $300 million a year to the General Fund, various affordable housing funds, and the Department of Hawaiian Homelands.[^24]
 
 #### 3. Close Corporate Loopholes  [+$85M a year]
 
-Multinational corporations are able to shift profits they earn in Hawaiʻi to other jurisdictions to avoid being taxed on them.[^26] Worldwide Combined Reporting would close that loophole, holding large corporations to the same standard as small businesses and working families.[^27]
+Multinational corporations are able to shift profits they earn in Hawaiʻi to other jurisdictions to avoid being taxed on them.[^25] Worldwide Combined Reporting would close that loophole, holding large corporations to the same standard as small businesses and working families.[^26]
 
 #### Tax Credits
 
 Tax credits can lower or even eliminate the taxes that people or businesses owe to the state. These tax credits stimulate the economy by reducing costs either for businesses or struggling families that need help purchasing their basic necessities.
 
-In 2022, the state gave out $433.9 million in tax credits.[^28] Only $111 million went to tax credits for lower-income households, such as the Earned Income Tax Credit and Refundable Food/Excise Tax Credit, while a larger $168 million went to tax credits for wealthier taxpayers and businesses, such as the Film/Media Production Credit.
+In 2022, the state gave out $433.9 million in tax credits.[^27] Only $111 million went to tax credits for lower-income households, such as the Earned Income Tax Credit and Refundable Food/Excise Tax Credit, while a larger $168 million went to tax credits for wealthier taxpayers and businesses, such as the Film/Media Production Credit.
 
 The state should be investing more money in tax credits and other means of lifting up working families. It could, for example, create a state-level Child Tax Credit (CTC). At the national level, the CTC brought 2.9 million children out of poverty in 2021. Other options include programs like RxKids—which has successfully delivered millions of dollars in no-strings-attached benefits to mothers with infants throughout Michigan.
 
@@ -499,14 +499,13 @@ PAGE 12
 15. “Act 139,” State of Hawaiʻi, May 30, 2025 (SB1300 CD1), §3–4. https://www.capitol.hawaii.gov/sessions/session2025/bills/SB1300_CD1_.HTM
 16. “Act 26,” State of Hawaiʻi, May 22, 2026 (HB2272 CD1). https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2272_CD1_.HTM
 17. “Act 21” Part I and “Act 33,” State of Hawaiʻi, May 2026 (HB2310 CD1; HB2271 CD1). https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2271_CD1_.HTM
-18. “Act 175,” State of Hawaiʻi, June 26, 2026 (HB1800 CD1). https://www.capitol.hawaii.gov/sessions/session2026/bills/HB1800_CD1_.HTM
-19. “State Receipt and Revenue Plans FB25–27,” Department of Budget and Finance, September 2024. https://budget.hawaii.gov/wp-content/uploads/2024/12/05.-State-Receipt-and-Revenue-Plans-FB25-27-PFP7Lt.pdf
-20. “Hawaiʻi: Who Pays? 7th Edition,” Institute on Taxation and Economic Policy, 2024. Note: Includes all family sizes. https://itep.org/whopays/hawaii-who-pays-7th-edition
-21. “Poverty Status in the Past 12 Months,” American Community Survey 1-Year Estimates (Table S1701), U.S. Census Bureau, 2024. https://data.census.gov/table/ACSST1Y2024.S1701?q=poverty+ethnicity&g=040XX00US15&moe=false
-22. Kawafuchi, Kurt, “General Fund Forecast,” Council on Revenues, March 12, 2025. https://files.hawaii.gov/tax/useful/cor/2025gf03-12_with0416_Rpt2Gov.pdf
-23. “Hawaiʻi’s Two-Tier Tax System,” Hawaiʻi Appleseed. https://hiappleseed.org/blog/hawaii-two-tier-tax-system-glaring-loophole-rich-pay-less
-24. “Modernize the Conveyance Tax,” Hawaiʻi Appleseed. https://hiappleseed.org/blog/fair-share-hawaii-future-modernize-conveyance-tax
-25. “House Bill 2049,” Hawaiʻi State Legislature, 2026. https://www.capitol.hawaii.gov/session/measure_indiv.aspx?billtype=HB&billnumber=2049&year=2026
-26. “Tax Loopholes for Multinational Corporations,” Hawaiʻi Appleseed. https://hiappleseed.org/blog/hawaii-tax-loopholes-multinational-corporations
-27. “Revenue Effect of Mandatory Worldwide Combined Reporting by State,” Institute on Taxation and Economic Policy. https://itep.org/revenue-effect-of-mandatory-worldwide-combined-reporting-by-state/
-28. “Tax Credits Claimed by Hawaiʻi Taxpayers: Tax Year 2022,” Hawaiʻi Department of Taxation, p. 5, December 2024. https://files.hawaii.gov/tax/stats/stats/credits/2022credit.pdf
+18. “State Receipt and Revenue Plans FB25–27,” Department of Budget and Finance, September 2024. https://budget.hawaii.gov/wp-content/uploads/2024/12/05.-State-Receipt-and-Revenue-Plans-FB25-27-PFP7Lt.pdf
+19. “Hawaiʻi: Who Pays? 7th Edition,” Institute on Taxation and Economic Policy, 2024. Note: Includes all family sizes. https://itep.org/whopays/hawaii-who-pays-7th-edition
+20. “Poverty Status in the Past 12 Months,” American Community Survey 1-Year Estimates (Table S1701), U.S. Census Bureau, 2024. https://data.census.gov/table/ACSST1Y2024.S1701?q=poverty+ethnicity&g=040XX00US15&moe=false
+21. Kawafuchi, Kurt, “General Fund Forecast,” Council on Revenues, March 12, 2025. https://files.hawaii.gov/tax/useful/cor/2025gf03-12_with0416_Rpt2Gov.pdf
+22. “Hawaiʻi’s Two-Tier Tax System,” Hawaiʻi Appleseed. https://hiappleseed.org/blog/hawaii-two-tier-tax-system-glaring-loophole-rich-pay-less
+23. “Modernize the Conveyance Tax,” Hawaiʻi Appleseed. https://hiappleseed.org/blog/fair-share-hawaii-future-modernize-conveyance-tax
+24. “House Bill 2049,” Hawaiʻi State Legislature, 2026. https://www.capitol.hawaii.gov/session/measure_indiv.aspx?billtype=HB&billnumber=2049&year=2026
+25. “Tax Loopholes for Multinational Corporations,” Hawaiʻi Appleseed. https://hiappleseed.org/blog/hawaii-tax-loopholes-multinational-corporations
+26. “Revenue Effect of Mandatory Worldwide Combined Reporting by State,” Institute on Taxation and Economic Policy. https://itep.org/revenue-effect-of-mandatory-worldwide-combined-reporting-by-state/
+27. “Tax Credits Claimed by Hawaiʻi Taxpayers: Tax Year 2022,” Hawaiʻi Department of Taxation, p. 5, December 2024. https://files.hawaii.gov/tax/stats/stats/credits/2022credit.pdf
