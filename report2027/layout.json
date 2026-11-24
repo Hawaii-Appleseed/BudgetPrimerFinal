@@ -16,7 +16,7 @@
       "x": 0.62,
       "y": 4.83,
       "w": 7.26,
-      "reserve": 2.79
+      "reserve": 2.91
     }
   },
   "shapes": [],
@@ -80,5 +80,10 @@
     "x": [
       7.63
     ]
+  },
+  "masters": {},
+  "factsSeen": {
+    "top-income-tax-rate": 13,
+    "capgains-share-over-400k": 77
   }
 }

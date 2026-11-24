@@ -239,11 +239,6 @@ The total FY{fy} Capital Improvement Projects (CIP) budget is {cip_total}. Trans
 [[onetime.h3]]
 ### One-Time and Emergency Appropriations
 
-[[onetime.brief.items]]
-- **$700M** Transportation & Budget/Finance — county-surcharge transit funding ($600M) and a new major disaster fund ($100M), under Act 99.[^act99]
-- **$200M** Accounting, Transportation, Land — Maui wildfire insurance proceeds, to rebuild King Kamehameha III Elementary and restore Lahaina’s harbor.[^act123]
-- **$49.5M** DBEDT — the New Aloha Stadium district.[^act184]
-
 [[onetime.brief]]
 Plus further one-time appropriations for UH student housing, ACA premium support and school meals, and $2.9 million in FY27 emergency appropriations.
 
@@ -275,7 +270,7 @@ View all appropriations
 Hawaiʻi Budget Means of Finance,
 
 [[funding.fig4.caption.suffix]]
-($Billions)[^act175-mof]
+($Billions)[^act175-exec]
 
 [[funding.fig4.note]]
 Note: A few smaller related categories, including “other federal funds,” are currently grouped into “Other Funds”
@@ -320,7 +315,7 @@ Projected Hawaiʻi State Tax Revenue,
 ### Individual Income Tax
 
 [[taxes.cards.iit.bullets]]
-- Hawaiʻi taxes those with high incomes at a progressively higher marginal rates. With the passage of Act 25, the new top rate for people earning over $1 million will be set at 13 percent.
+- Hawaiʻi taxes those with high incomes at progressively higher marginal rates. With the passage of Act 24, the new top rate for joint filers with taxable income over $1 million ($500,000 for single filers) will be set at {fact:top-income-tax-rate}.
 
 [[taxes.cards.tat.title]]
 ### Transient Accommodations Tax
@@ -354,9 +349,9 @@ These three policies would raise revenue from those best able to pay more, witho
 Up to $132M a year
 
 [[taxfair.items.capgains.body]]
-Hawaiʻi taxes long-term capital gains at 7.25 percent, while wages are taxed up to 13 percent. As a result, someone who earns their income working a regular job pays potentially more than an investor who profits off their stocks.[^capgains-loophole]
+Hawaiʻi taxes long-term capital gains at 7.25 percent, while wages are taxed up to {fact:top-income-tax-rate}. As a result, someone who earns their income working a regular job pays potentially more than an investor who profits off their stocks.[^capgains-loophole]
 
-Over 70 percent of capital gains flow to households making more than $400,000. Taxing them as ordinary income would raise around $85 million to $132 million in new revenue a year, with 88 percent of it coming from the top 1 percent.
+About {fact:capgains-share-over-400k} of capital gains flow to households making more than $400,000. Taxing them as ordinary income would raise around $85 million to $132 million in new revenue a year, with 88 percent of it coming from the top 1 percent.
 
 [[taxfair.items.conveyance.title]]
 ### Modernize the Conveyance Tax
@@ -421,7 +416,6 @@ OHA[^act248][^act32]
 [act139]: “Act 139,” State of Hawaiʻi, May 30, 2025 (SB1300 CD1), §3–4. — https://www.capitol.hawaii.gov/sessions/session2025/bills/SB1300_CD1_.HTM
 [act26]: “Act 26,” State of Hawaiʻi, May 22, 2026 (HB2272 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2272_CD1_.HTM
 [act21-parti-act33]: “Act 21” Part I and “Act 33,” State of Hawaiʻi, May 2026 (HB2310 CD1; HB2271 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB2271_CD1_.HTM
-[act175-mof]: “Act 175,” State of Hawaiʻi, June 26, 2026 (HB1800 CD1). — https://www.capitol.hawaii.gov/sessions/session2026/bills/HB1800_CD1_.HTM
 [revenue-plans]: “State Receipt and Revenue Plans FB25–27,” Department of Budget and Finance, September 2024. — https://budget.hawaii.gov/wp-content/uploads/2024/12/05.-State-Receipt-and-Revenue-Plans-FB25-27-PFP7Lt.pdf
 [cor-forecast]: Kawafuchi, Kurt, “General Fund Forecast,” Council on Revenues, March 12, 2025. — https://files.hawaii.gov/tax/useful/cor/2025gf03-12_with0416_Rpt2Gov.pdf
 [capgains-loophole]: “Hawaiʻi’s Two-Tier Tax System,” Hawaiʻi Appleseed. — https://hiappleseed.org/blog/hawaii-two-tier-tax-system-glaring-loophole-rich-pay-less
