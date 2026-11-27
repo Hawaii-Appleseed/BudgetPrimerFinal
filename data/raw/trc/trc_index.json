@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-19T23:24:58+00:00",
+  "checked_at": "2026-11-27T00:56:42+00:00",
   "documents": {
     "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-01-15-TRC_Presentation-DOTAX-TRP.pdf": {
       "doc_type": "presentation",
@@ -97,6 +97,41 @@
       "pdf": "data/raw/trc/pdfs/2026-11-24-Jessica-Enos-Proposed-Recommendation-1031-Clawback.pdf",
       "text": "data/raw/trc/extracted/2026-11-24-Jessica-Enos-Proposed-Recommendation-1031-Clawback.txt",
       "title": "Jessica Enos-Proposed Recommendation-1031 Clawback"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-11-24-UHERO-Final-Report-2026-11-21.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026-11-24-UHERO-Final-Report-2026-11-21.pdf",
+      "text": "data/raw/trc/extracted/2026-11-24-UHERO-Final-Report-2026-11-21.txt",
+      "title": "UHERO Final Report"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-11-24_Jeffrey_Ueoka-Recommendation-Marginal_Conveyance_Tax.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026-11-24_Jeffrey_Ueoka-Recommendation-Marginal_Conveyance_Tax.pdf",
+      "text": "data/raw/trc/extracted/2026-11-24_Jeffrey_Ueoka-Recommendation-Marginal_Conveyance_Tax.txt",
+      "title": "Jeffrey Ueoka-Proposed Recommendation-Marginal Conveyance Tax"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-11-24_Jonathan_White-Recommendation-NCTI.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026-11-24_Jonathan_White-Recommendation-NCTI.pdf",
+      "text": "data/raw/trc/extracted/2026-11-24_Jonathan_White-Recommendation-NCTI.txt",
+      "title": "Jonathan White-Proposed Recommendation-Worldwide Combined Reporting-NCTI"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-11-24_Jonathan_White-VDA-Administrative-Recommendation.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026-11-24_Jonathan_White-VDA-Administrative-Recommendation.pdf",
+      "text": "data/raw/trc/extracted/2026-11-24_Jonathan_White-VDA-Administrative-Recommendation.txt",
+      "title": "Jonathan White-Voluntary Disclosure Agreement (VDA) and Administrative Recommendation"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/docs2025/2026-11-24_TRC_Report.pdf": {
+      "doc_type": "presentation",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026-11-24_TRC_Report.pdf",
+      "text": "data/raw/trc/extracted/2026-11-24_TRC_Report.txt",
+      "title": "TRC Report Template \u2013 11-20-26"
     },
     "https://files.hawaii.gov/tax/stats/trc/docs2025/HCR _82.pdf": {
       "doc_type": "presentation",
@@ -324,17 +359,34 @@
       "meeting_date": "2026-11-18",
       "title": "November 18, 2026 at 2:00 P.M."
     },
-    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-18_min_draft.pdf": {
-      "doc_type": "minutes_draft",
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-18_min.pdf": {
+      "doc_type": "minutes_final",
       "meeting_date": "2026-11-18",
-      "pdf": "data/raw/trc/pdfs/2026trc11-18_min_draft.pdf",
-      "text": "data/raw/trc/extracted/2026trc11-18_min_draft.txt",
-      "title": "November 18, 2026 \u2013 DRAFT"
+      "pdf": "data/raw/trc/pdfs/2026trc11-18_min.pdf",
+      "text": "data/raw/trc/extracted/2026trc11-18_min.txt",
+      "title": "November 18, 2026"
     },
     "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-24.pdf": {
       "doc_type": "notice",
       "meeting_date": "2026-11-24",
       "title": "November 24, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-24_min_draft.pdf": {
+      "doc_type": "minutes_final",
+      "meeting_date": "2026-11-24",
+      "pdf": "data/raw/trc/pdfs/2026trc11-24_min_draft.pdf",
+      "text": "data/raw/trc/extracted/2026trc11-24_min_draft.txt",
+      "title": "November 24, 2026 Minutes"
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc11-30.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-11-30",
+      "title": "November 30, 2026 at 2:00 P.M."
+    },
+    "https://files.hawaii.gov/tax/stats/trc/mins2025/2026trc12-04.pdf": {
+      "doc_type": "notice",
+      "meeting_date": "2026-12-04",
+      "title": "December 4, 2026 at 2:00 P.M."
     },
     "https://www.youtube.com/watch?v=-YIVfkYDMSE": {
       "doc_type": "video",
@@ -396,6 +448,11 @@
       "meeting_date": "2026-09-29",
       "title": "September 29, 2026 VIDEO"
     },
+    "https://youtu.be/P2oE4v6CyGw": {
+      "doc_type": "video",
+      "meeting_date": "2026-11-24",
+      "title": "November 24, 2026 VIDEO"
+    },
     "https://youtu.be/QCFnGrP3QYY": {
       "doc_type": "video",
       "meeting_date": "2026-11-18",
@@ -422,5 +479,5 @@
       "title": "September 1, 2026 VIDEO"
     }
   },
-  "page_last_updated": "November 19, 2026"
+  "page_last_updated": "November 25, 2026"
 }

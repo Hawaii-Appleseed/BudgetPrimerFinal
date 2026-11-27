@@ -1,0 +1,706 @@
+
+===== page 1 =====
+CONTENTS
+INTRODUCTION ......................................................................................................................................... 2
+The Role and Authorization of the Tax Review Commission .......................................................... 2
+Themes .................................................................................................................................................... 3
+Macroeconomic Context ...................................................................................................................... 3
+PRINCIPLES OF SOUND TAX POLICY ...................................................................................................... 4
+Good Reason to Violate Principles of Sound Tax Policy ................................................................. 5
+DISCUSSION OF THE 2024 TAX REFORM – ACT 46, SLH 2024 ............................................................. 7
+THE TAX REVIEW COMMISSION’S RECOMMENDATIONS ................................................................... 7
+A SERIES ON COMPETITIVENESS ........................................................................................................ 8
+Recommendation: placeholder ...................................................................................................... 8
+Recommendation: placeholder ...................................................................................................... 9
+Recommendation: placeholder ...................................................................................................... 9
+STANDALONE RECOMMENDATIONS................................................................................................ 10
+Develop and Utilize a Framework for Analyzing Credits and Exemptions ............................. 10
+Transition Hawai‘i’s Corporate Income Tax to Single-sales Factor Apportionment ........... 12
+Improve Compliance with, and Collect Data for, Hawai‘i’s Pension Income Exemption .. 12
+Enact a Clawback Provision to apply to Section 1031 Exchanges .......................................... 12
+Insert a Controlling Interest Provision in Hawai‘i’s Conveyance Tax ..................................... 13
+AREAS FOR FURTHER STUDY ............................................................................................................. 13
+Placeholder for wealth attraction topic....................................................................................... 13
+Worldwide Combined Reporting, or, Net CFC-tested Income ................................................ 13
+CONCLUSION ........................................................................................................................................... 14
+1
+
+--- page 1 table 1 ---
+
+===== page 2 =====
+Note to members: This is a template and everything is on the table. I’ve done some
+research and drafting on the setup sections that come before our recommendations, that’s
+on the table too. I encourage you to look at prior reports for what the final report might
+look like as far as tables, figures, and graphs as there is not much like that in this template
+yet.
+REPORT OF THE 2025-2027 TAX REVIEW COMMISSION
+INTRODUCTION
+The Role and Authorization of the Tax Review Commission
+The Tax Review Commission’s role is clear. Evaluate the State’s tax structure and recommend
+revenue and tax policy to the Legislature. The Tax Review Commission (Commission) is then
+dissolved and reconstituted after five years’ time.1 The Hawaii Revised Statutes, Chapter 232E
+provides further guidance and directs the Tax Review Commission to systematically review Hawai‘i’s
+tax structure using standards such as equity and efficiency.2
+The Commission received further guidance from the Legislature. The Senate adopted Resolution 193
+and the Legislature adopted House Concurrent Resolution 182.4
+Senate Resolution 19 requested the Commission to “identify possible means by which the Hawaii
+Long-Term Care Financing Program can be implemented.” While the Commission was deliberating,
+Act 2495 was signed into law July 14, 2026 and directs the Executive Office on Aging to develop a
+framework and scope of work for a proposed study to examine public and private financing options
+for long-term care services. The Act also appropriates funds to the Executive Office on Aging for this
+purpose. The Commission considers its role in developing recommendations for long-term care
+financing to be superseded by Act 249. The Commission has chosen to leave further study of this
+topic to the Executive Office on Aging.
+House Concurrent Resolution 182 requested the Commission to consider a number of goals and
+topics, including considering the provisions of the Internal Revenue Code and other federal policies
+and activities; ensuring non-residents and visitors contribute appropriately to our tax system;
+studying the appropriateness and effectiveness of tax credits and exemptions; evaluating the
+1 HAW. CONST., art. VII, § 3.
+2 HAW. REV. STAT. Ch. 232E (the Commission remains a going concern until adjournment of the legislature to
+which it submits its recommendations).
+3 S.R. 19, 33rd Leg., Reg. Sess. (Haw. 2025).
+4 H.C.R. 182, 33rd Leg., Reg. Sess. (Haw. 2025).
+5 Act 249, H.B. 1804, 33rd Leg., Reg. Sess. (Haw. 2026).
+2
+
+--- page 2 table 1 ---
+Note to members: This is a template and everything is on the table. I’ve done some
+research and drafting on the setup sections that come before our recommendations, that’s
+on the table too. I encourage you to look at prior reports for what the final report might
+look like as far as tables, figures, and graphs as there is not much like that in this template
+yet.
+REPORT OF THE 2025-2027 TAX REVIEW COMMISSION
+
+--- page 2 table 2 ---
+The Tax Review Commission’s role is clear. Evaluate the State’s tax structure and recommend
+revenue and tax policy to the Legislature. The Tax Review Commission (Commission) is then
+dissolved and reconstituted after five years’ time.1 The Hawaii Revised Statutes, Chapter 232E
+provides further guidance and directs the Tax Review Commission to systematically review Hawai‘i’s
+tax structure using standards such as equity and efficiency.2
+The Commission received further guidance from the Legislature. The Senate adopted Resolution 193
+and the Legislature adopted House Concurrent Resolution 182.4
+Senate Resolution 19 requested the Commission to “identify possible means by which the Hawaii
+Long-Term Care Financing Program can be implemented.” While the Commission was deliberating,
+Act 2495 was signed into law July 14, 2026 and directs the Executive Office on Aging to develop a
+framework and scope of work for a proposed study to examine public and private financing options
+for long-term care services. The Act also appropriates funds to the Executive Office on Aging for this
+purpose. The Commission considers its role in developing recommendations for long-term care
+financing to be superseded by Act 249. The Commission has chosen to leave further study of this
+topic to the Executive Office on Aging.
+House Concurrent Resolution 182 requested the Commission to consider a number of goals and
+topics, including considering the provisions of the Internal Revenue Code and other federal policies
+and activities; ensuring non-residents and visitors contribute appropriately to our tax system;
+studying the appropriateness and effectiveness of tax credits and exemptions; evaluating the
+
+===== page 3 =====
+features and impacts of one-time versus recurring tax revenue sources; and the general factors that
+drive revenue generation and enforcement.
+The Commission took House Concurrent Resolution 182 into consideration and believes its efforts
+address the Resolution’s requests adequately, though in some cases, not directly.
+Themes
+The Commission’s vision for its overall package is competitiveness of Hawai‘i’s greater economy.
+Within this vision, and regarding the principles of sound tax policy put forth below, the Commission
+has been guided by the principle of tax adequacy. The Commission has tried to design its package to
+avoid creating revenue losses that will add to the already difficult decisions the Legislature must
+make. The Commission acknowledges the annual duty of the Legislature to provide for the State’s
+residents while balancing the State’s budget.
+More granularly, the Commission’s recommendations are guided by the principles of tax equity and
+efficiency. Guidance from these two principles can lead to discovery of some tax policy changes that
+may not seem like much, but in aggregate can add up over time.
+Accompanying the Commission’s package on competitiveness is a set of standalone
+recommendations addressing specific issues within Hawai‘i’s tax structure. Following that, the
+Commission describes some less granular, but more grand, ideas that may be worthwhile but
+ultimately require research and study beyond the Commission’s scope.
+Macroeconomic Context
+The Commission began its work in early 2026. Notably, this is after the passage of Public Law 119-
+21. This federal law, also known as the One Big Beautiful Bill Act, made numerous changes to federal
+income tax law but also made drastic cuts to the federal funding offered to the states.6
+Contrasting with the cuts enacted by Public Law 119-21, the American Rescue Plan Act (ARPA),7
+from 2021, transferred significant funds to the states, including approximately $1.6 billion for direct
+6 See generally, RANDY A. AUSSENBERG, CONG. RSCH. SERV., R48552, SUPPLEMENTAL NUTRITION ASSISTANCE
+PROGRAM (SNAP) AND RELATED NUTRITION PROGRAMS IN P.L. 119-21 (2025); GEORGETOWN UNIVERSITY, MCCOURT
+SCHOOL OF PUBLIC POLICY, MEDICAID, CHIP, AND AFFORDABLE CARE ACT MARKETPLACE CUTS AND OTHER HEALTH
+PROVISIONS IN THE BUDGET RECONCILIATION LAW, EXPLAINED 1 (2025); PREETHI RAO, ET AL., RAND, STATE-LEVEL IMPACTS
+OF KEY MEDICAID PROVISIONS IN THE ONE BIG BEAUTIFUL BILL ACT 10-12 (2026).
+7 Public Law No. 117-2 (“ARPA”).
+3
+
+--- page 3 table 1 ---
+features and impacts of one-time versus recurring tax revenue sources; and the general factors that
+drive revenue generation and enforcement.
+The Commission took House Concurrent Resolution 182 into consideration and believes its efforts
+address the Resolution’s requests adequately, though in some cases, not directly.
+
+--- page 3 table 2 ---
+The Commission’s vision for its overall package is competitiveness of Hawai‘i’s greater economy.
+Within this vision, and regarding the principles of sound tax policy put forth below, the Commission
+has been guided by the principle of tax adequacy. The Commission has tried to design its package to
+avoid creating revenue losses that will add to the already difficult decisions the Legislature must
+make. The Commission acknowledges the annual duty of the Legislature to provide for the State’s
+residents while balancing the State’s budget.
+
+--- page 3 table 3 ---
+The Commission began its work in early 2026. Notably, this is after the passage of Public Law 119-
+21. This federal law, also known as the One Big Beautiful Bill Act, made numerous changes to federal
+income tax law but also made drastic cuts to the federal funding offered to the states.6
+Contrasting with the cuts enacted by Public Law 119-21, the American Rescue Plan Act (ARPA),7
+from 2021, transferred significant funds to the states, including approximately $1.6 billion for direct
+
+===== page 4 =====
+assistance to Hawai‘i.8 The allowed use of the funds was limited,9 but general enough to allow use
+for states’ immediate budget shortfalls.10 However, the ARPA funding has run its course.11
+The influx and drawdown of ARPA funds, accompanied by the reduction of funds under Public Law
+119-21, justifies the Commission’s insistence on revenue adequacy and stability within its umbrella
+focus on competitiveness. At times, these two things pull in opposite directions. The Commission
+believes this report and its recommendations provide a balance.
+Table 1 – To Demonstrate the Macroeconomic Context, to be developed
+This table below is just a placeholder from the 2021 report. We can work with Baybars on
+something to demonstrate our intro points, whatever they end up being.
+FY 2020 FY 2021 FY 2022 FY 2023 FY 2024 FY 2025 FY 2026 FY 20-26
+1/9/2020 Forecast $7,434,603 $7,731,987 $7,963,947 $8,202,865 $8,530,980 $8,872,219 $9,227,108 $57,963,709
+4.1% 4.0% 3.0% 3.0% 4.0% 4.0% 4.0%
+FY 2020 FY 2021 FY 2022 FY 2023 FY 2024 FY 2025 FY 2026 FY 20-26
+9/09/2021 Forecast $ 6 ,694,808 $ 7 ,250,477 $ 7 ,707,257 $ 8 ,477,982.8 $ 8 ,817,102 $ 9 ,169,786 $ 9 ,536,578 $57,653,991
+-6.3% 8.3% 6.3% 10.0% 4.0% 4.0% 4.0% -1%
+Difference $ (739,795) $ (481,510) $ (256,690) $ 275,118 $ 286,122 $ 297,567 $ 309,470 $ (309,718)
+PRINCIPLES OF SOUND TAX POLICY
+Nearly every prior Tax Review Commission has expounded on principles of sound tax policy. The
+Commission is influenced by their guidance and chooses to join the fray. Below is a partial survey of
+the principles that the Commission has relied upon.
+Adequacy
+Adequacy is the ability of the tax system to produce enough revenue to fund government services.
+The tax system must raise enough revenue, whatever enough is. This is particularly important for
+states as they typically have balanced budget requirements and cannot utilize deficit financing.12
+Related to the principle of tax adequacy is how robust the tax system is. The concern is whether the
+tax system break down over time due to changes to the economy. This is always possible, but in
+some situations it is foreseeable. For example, the tax base of a typical sales tax has been reduced
+8 STATE OF HAW., EXEC. OFF. OF THE GOVERNOR, EXECUTIVE CHAMBERS, EXECUTIVE MEMORANDUM NO. 23-04 (2023);
+see also State of Hawaii Recovery Plan, State and Local Fiscal Recovery Funds, 2025 Report, at 5 (undated),
+https://home.treasury.gov/system/files/136/State-of-Hawaii-2025-Recovery-Plan-SLT-0637.pdf.
+9 U.S. DEP’T OF THE TREAS., COMPLIANCE AND REPORTING REQUIREMENTS: STATE AND LOCAL FISCAL RECOVERY FUNDS, 4-5
+(2025) https://home.treasury.gov/system/files/136/SLFRF-Compliance-and-Reporting-Guidance.pdf.
+10 Lisa Murayama & Melissa Unemori Hampe, The American Rescue Plan is a Boon to Hawaii’s People and
+Nonprofits, Civil Beat (September 15, 2021), https://www.civilbeat.org/2021/09/the-american-rescue-plan-
+is-a-boon-to-hawaiis-people-and-nonprofits/.
+11 Need cite for the ARPA funds expiring
+12 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 13 (5th ed. 2022).
+4
+
+--- page 4 table 1 ---
+assistance to Hawai‘i.8 The allowed use of the funds was limited,9 but general enough to allow use |  |  |  |  |  |  |  | 
+for states’ immediate budget shortfalls.10 However, the ARPA funding has run its course.11 |  |  |  |  |  |  |  | 
+The influx and drawdown of ARPA funds, accompanied by the reduction of funds under Public Law |  |  |  |  |  |  |  | 
+119-21, justifies the Commission’s insistence on revenue adequacy and stability within its umbrella |  |  |  |  |  |  |  | 
+focus on competitiveness. At times, these two things pull in opposite directions. The Commission |  |  |  |  |  |  |  | 
+believes this report and its recommendations provide a balance. |  |  |  |  |  |  |  | 
+Table 1 – To Demonstrate the Macroeconomic Context, to be developed |  |  |  |  |  |  |  | 
+This table below is just a placeholder from the 2021 report. We can work with Baybars on |  |  |  |  |  |  |  | 
+something to demonstrate our intro points, whatever they end up being. |  |  |  |  |  |  |  | 
+ | FY 2020 | FY 2021 | FY 2022 | FY 2023 | FY 2024 | FY 2025 | FY 2026 | FY 20-26
+1/9/2020 Forecast | $7,434,603 | $7,731,987 | $7,963,947 | $8,202,865 | $8,530,980 | $8,872,219 | $9,227,108 | $57,963,709
+ | 4.1% | 4.0% | 3.0% | 3.0% | 4.0% | 4.0% | 4.0% | 
+ | FY 2020 | FY 2021 | FY 2022 | FY 2023 | FY 2024 | FY 2025 | FY 2026 | FY 20-26
+9/09/2021 Forecast | $ 6 ,694,808 | $ 7 ,250,477 | $ 7 ,707,257 | $ 8 ,477,982.8 | $ 8 ,817,102 | $ 9 ,169,786 | $ 9 ,536,578 | $57,653,991
+ | -6.3% | 8.3% | 6.3% | 10.0% | 4.0% | 4.0% | 4.0% | -1%
+Difference | $ (739,795) | $ (481,510) | $ (256,690) | $ 275,118 | $ 286,122 | $ 297,567 | $ 309,470 | $ (309,718)
+
+--- page 4 table 2 ---
+Nearly every prior Tax Review Commission has expounded on principles of sound tax policy. The
+Commission is influenced by their guidance and chooses to join the fray. Below is a partial survey of
+the principles that the Commission has relied upon.
+Adequacy
+Adequacy is the ability of the tax system to produce enough revenue to fund government services.
+The tax system must raise enough revenue, whatever enough is. This is particularly important for
+states as they typically have balanced budget requirements and cannot utilize deficit financing.12
+Related to the principle of tax adequacy is how robust the tax system is. The concern is whether the
+tax system break down over time due to changes to the economy. This is always possible, but in
+some situations it is foreseeable. For example, the tax base of a typical sales tax has been reduced
+
+===== page 5 =====
+as a share of the economy by transition to a service-based economy.13 This may not have been
+foreseeable in the 1930s when sales taxes were being enacted, but its continuance is foreseeable
+today. Hawai‘i’s General Excise Tax does not have this weakness.14
+Additionally, adequacy and robustness are important at this time due to the reduction in federal
+funding provided to the states, described earlier.15
+Neutrality
+The principle of neutrality provides that taxes should have as little effect on market decisions as
+possible. This principle is mostly visibly violated by the many incentives and disincentives contained
+in tax codes like credits, deductions, exemptions, and special rates.16
+Horizontal and Vertical Equity
+The concept of horizontal equity holds that similarly situated taxpayers should be treated equally.
+The concept of vertical equity holds that tax burden should increase as ability to pay increases.17 In
+other words, vertical equity measures how the tax burden is distributed along the income
+spectrum.18
+Horizontal equity is more economically measurable and definable than vertical equity. Economic
+theory provides less guidance when it comes to vertical equity.19 Vertical equity is often left to
+politics.20
+Regressivity and progressivity of the tax system are related topics and are covered in more detail
+below.
+Good Reason to Violate Principles of Sound Tax Policy
+While we are guided by the above principles, we recognize that sound tax policy does not exist in a
+vacuum. The principles of sound tax policy are a guiding light, but that light often must be refracted
+by reality. There are reasons to violate the principles of sound tax policy. The simplest is to provide a
+benefit to society other than the raising of revenue. For example, so-called ‘sin taxes’ in their most
+13 STAFF OF THE JOINT COMM. ON TAX’N, 114TH CONG., BACKGROUND ON CASH-FLOW AND CONSUMPTION-BASED
+APPROACHES TO TAXATION 37 (2016); see also, Annette Nellen, Now is a Good Time to Start Fixing the Sales Tax
+Base, 97 TAX NOTES STATE 987, 989-993 (2020)(discussing the tax base flaws of the typical sales tax); and
+DAVID BRUNORI, STATE TAX POLICY: A PRIMER 15 (5th ed. 2022). Further cite for the sale tax base reduction point.
+14 Footnote cite for this point about GET
+15 Cite to notes supra covering the federal cuts
+16 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 15-16 (5th ed. 2022).
+17 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 17-18 (5th ed. 2022).
+18 TAX REV. COMM’N, REP. OF THE 2020-2022 TAX REV. COMM’N 5 (2021).
+19 TAX REV. COMM’N, REP. OF THE 2020-2022 TAX REV. COMM’N 5 (2021).
+20 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 18 (5th ed. 2022).
+5
+
+--- page 5 table 1 ---
+as a share of the economy by transition to a service-based economy.13 This may not have been
+foreseeable in the 1930s when sales taxes were being enacted, but its continuance is foreseeable
+today. Hawai‘i’s General Excise Tax does not have this weakness.14
+Additionally, adequacy and robustness are important at this time due to the reduction in federal
+funding provided to the states, described earlier.15
+Neutrality
+The principle of neutrality provides that taxes should have as little effect on market decisions as
+possible. This principle is mostly visibly violated by the many incentives and disincentives contained
+in tax codes like credits, deductions, exemptions, and special rates.16
+Horizontal and Vertical Equity
+The concept of horizontal equity holds that similarly situated taxpayers should be treated equally.
+The concept of vertical equity holds that tax burden should increase as ability to pay increases.17 In
+other words, vertical equity measures how the tax burden is distributed along the income
+spectrum.18
+Horizontal equity is more economically measurable and definable than vertical equity. Economic
+theory provides less guidance when it comes to vertical equity.19 Vertical equity is often left to
+politics.20
+Regressivity and progressivity of the tax system are related topics and are covered in more detail
+below.
+
+--- page 5 table 2 ---
+While we are guided by the above principles, we recognize that sound tax policy does not exist in a
+vacuum. The principles of sound tax policy are a guiding light, but that light often must be refracted
+by reality. There are reasons to violate the principles of sound tax policy. The simplest is to provide a
+benefit to society other than the raising of revenue. For example, so-called ‘sin taxes’ in their most
+
+===== page 6 =====
+recognizable forms provide the benefit of discouraging the use of liquor or tobacco or any of an
+assortment of other activities.
+Sin taxes obviously violate horizontal equity. Sin taxes by definition apply to a subset of businesses
+and individuals engaging in a subset of activities. Creating tax distinctions between businesses that
+are equally situated but for society’s decision to disfavor one or the other industry obviously violates
+horizontal equity. Given the widespread usage of sin taxes, this violation is clear worth it.
+Tax exporting is another potential reason to violate the principles of sound tax policy. Tax exporting
+refers to the ability of a jurisdiction to shift the burden of a tax from residents to nonresidents.21 Doing
+so is nearly universally politically popular. Places with unique tourist attractions or natural resources
+have increased opportunities to do so.22 The Commission’s recommendations, specifically those
+regarding tourism or general excise tax, may violate the principle of horizontal equity or at least leave
+existing horizontal inequities in place. However, exporting tax to nonresidents may be worth it.
+Regressivity and Hawai‘i’s General Excise Tax
+Regressivity and progressivity are perennial tax policy topics.23 The concepts are related to vertical
+equity. A progressive tax system is one in which higher income taxpayers pay a larger percentage of
+their income in taxes than do lower income taxpayers. A regressive tax system is one in which lower
+income taxpayers pay a larger percentage of their income in taxes than do lower income taxpayers.
+On a tax-type-by-tax-type regressivity and progressivity are much easier to measure. However, the
+progressivity of the entire tax system is much more complex.24
+The importance of Hawai‘i’s General Excise Tax cannot be overstated. It is the state’s most important
+tax type.25 The reason for this is the breadth of the tax, but this is sometimes its greatest threat. A
+side effect of a broad consumption tax like the GET is regressivity. The GET is a very regressive tax
+type when viewed in isolation.26
+But the breadth of the tax is its greatest strength. The run-of-the-mill sales taxes, typical in mainland
+states, have steadily decreased in importance over the last few decades, finally being surpassed in
+nationwide state-level importance by the individual income tax.27 Hawai‘i’s General Excise Tax,
+however, did not see this fall, due to the breadth of its base. One reason for the declining importance
+21 David E. Wildasin, Tax Exporting and the Marginal Cost of Public Spending, 24 ECONOMICS LETTERS 353
+(1987).
+22 Inst. On Tax. and Econ. Policy, Why Does Tax Incidence Matter and How Do We Measure It?,
+https://itep.org/why-does-tax-incidence-matter-and-how-do-we-measure-it/.
+23 See generally, TAX REV. COMM’N, REPORT OF THE 2020-2022 TAX REV. COMM’N 6-8 (2021); TAX REV. COMM’N,
+REPORT OF THE 2015-2017 TAX REV. COMM’N 18-19 (2018); TAX REV. COMM’N, REPORT OF THE 2005-2007 TAX REV.
+COMM’N 2-3 (2006).
+24 The Department's Tax Research and Planning Office and the Institution on Taxation and Economic Policy
+(ITEP) come to different conclusions regarding the overall progressivity of Hawai‘i’s tax system.
+25 HAW. DEP’T OF TAXATION ANN. REP. 2024-2025, at 2.
+26 Citation needed
+27 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 55 (5th ed. 2022).
+6
+
+--- page 6 table 1 ---
+recognizable forms provide the benefit of discouraging the use of liquor or tobacco or any of an
+assortment of other activities.
+Sin taxes obviously violate horizontal equity. Sin taxes by definition apply to a subset of businesses
+and individuals engaging in a subset of activities. Creating tax distinctions between businesses that
+are equally situated but for society’s decision to disfavor one or the other industry obviously violates
+horizontal equity. Given the widespread usage of sin taxes, this violation is clear worth it.
+Tax exporting is another potential reason to violate the principles of sound tax policy. Tax exporting
+refers to the ability of a jurisdiction to shift the burden of a tax from residents to nonresidents.21 Doing
+so is nearly universally politically popular. Places with unique tourist attractions or natural resources
+have increased opportunities to do so.22 The Commission’s recommendations, specifically those
+regarding tourism or general excise tax, may violate the principle of horizontal equity or at least leave
+existing horizontal inequities in place. However, exporting tax to nonresidents may be worth it.
+Regressivity and Hawai‘i’s General Excise Tax
+Regressivity and progressivity are perennial tax policy topics.23 The concepts are related to vertical
+equity. A progressive tax system is one in which higher income taxpayers pay a larger percentage of
+their income in taxes than do lower income taxpayers. A regressive tax system is one in which lower
+income taxpayers pay a larger percentage of their income in taxes than do lower income taxpayers.
+On a tax-type-by-tax-type regressivity and progressivity are much easier to measure. However, the
+progressivity of the entire tax system is much more complex.24
+The importance of Hawai‘i’s General Excise Tax cannot be overstated. It is the state’s most important
+tax type.25 The reason for this is the breadth of the tax, but this is sometimes its greatest threat. A
+side effect of a broad consumption tax like the GET is regressivity. The GET is a very regressive tax
+type when viewed in isolation.26
+But the breadth of the tax is its greatest strength. The run-of-the-mill sales taxes, typical in mainland
+states, have steadily decreased in importance over the last few decades, finally being surpassed in
+nationwide state-level importance by the individual income tax.27 Hawai‘i’s General Excise Tax,
+however, did not see this fall, due to the breadth of its base. One reason for the declining importance
+
+===== page 7 =====
+of sales taxes is the longstanding exemption for most services.28 Another reason is the steady shift
+of the economy from an analog, physical one to an increasingly digital one.29 The base of the typical
+sales tax is largely limited to tangible personal property.30 However, the base of Hawai‘i’s General
+Excise Tax is very broad. Not so for the general excise tax, its design has led it to stand the test of
+time and remain Hawai‘i’s single most important tax type.31
+The Commission acknowledges the regressivity of the GET but also accepts two things: (1) that there
+is nothing the Commission can recommend to change the fundamental effects of the GET, and (2)
+the GET provides revenue stability and adequacy to Hawai‘i’s tax system, partly due to the attributes
+that make it regressive.
+The GET is too important of a revenue raiser for the state to introduce broad exemptions into it.
+Additionally, as can be seen with the income tax, incentives beget incentives. The Commission
+recommends against drastic change to the GET in the name of reducing regressivity.
+Hawai‘i’s individual income tax is progressive, with rates increasing as income increases and
+provides a better opportunities to address the regressivity of the GET. The income tax reform of 2024
+used the individual income tax in this way.
+DISCUSSION OF THE 2024 TAX REFORM – ACT 46, SLH 2024
+Regressivity is an important issue and there are multiple ways to address it.
+One is to raise the tax liability of the higher-income taxpayers. The other is to reduce the tax liability
+of lower-income taxpayers. The former raises revenue; the latter puts money directly into the
+pockets of the lower-income taxpayers. Act 46, SLH 2024 addressed these two levers.
+To be developed
+THE TAX REVIEW COMMISSION’S RECOMMENDATIONS
+The Commission appreciates the comprehensive work of previous Tax Review Commissions. The
+Commission has relied on that work in some areas and has broken new ground in others. As stated
+previously, the Commission’s focus has been competitiveness and revenue adequacy. Sometimes
+these two things pull in opposite directions. The Commission believes this report and its
+recommendations provide a balance.
+28 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 64-66 (5th ed. 2022).
+29 Jackson Brainerd, What Happens When States Ditch Income Taxfor Sales Tax?, National Conference of
+State Legislatures (February 14, 2023), https://www.ncsl.org/state-legislatures-news/details/what-happens-
+when-states-ditch-income-tax-for-sales-tax.
+30 HELLERSTEIN, HELLERSTEIN & APPLEBY, STATE TAXATION, § 12.04(1) (3d ed. 2026).
+31 HAW. DEP’T OF TAXATION ANN. REP. 2024-2025, at 2.
+7
+
+--- page 7 table 1 ---
+of sales taxes is the longstanding exemption for most services.28 Another reason is the steady shift
+of the economy from an analog, physical one to an increasingly digital one.29 The base of the typical
+sales tax is largely limited to tangible personal property.30 However, the base of Hawai‘i’s General
+Excise Tax is very broad. Not so for the general excise tax, its design has led it to stand the test of
+time and remain Hawai‘i’s single most important tax type.31
+The Commission acknowledges the regressivity of the GET but also accepts two things: (1) that there
+is nothing the Commission can recommend to change the fundamental effects of the GET, and (2)
+the GET provides revenue stability and adequacy to Hawai‘i’s tax system, partly due to the attributes
+that make it regressive.
+The GET is too important of a revenue raiser for the state to introduce broad exemptions into it.
+Additionally, as can be seen with the income tax, incentives beget incentives. The Commission
+recommends against drastic change to the GET in the name of reducing regressivity.
+Hawai‘i’s individual income tax is progressive, with rates increasing as income increases and
+provides a better opportunities to address the regressivity of the GET. The income tax reform of 2024
+used the individual income tax in this way.
+
+--- page 7 table 2 ---
+Regressivity is an important issue and there are multiple ways to address it.
+One is to raise the tax liability of the higher-income taxpayers. The other is to reduce the tax liability
+of lower-income taxpayers. The former raises revenue; the latter puts money directly into the
+pockets of the lower-income taxpayers. Act 46, SLH 2024 addressed these two levers.
+To be developed
+
+--- page 7 table 3 ---
+The Commission appreciates the comprehensive work of previous Tax Review Commissions. The
+Commission has relied on that work in some areas and has broken new ground in others. As stated
+previously, the Commission’s focus has been competitiveness and revenue adequacy. Sometimes
+these two things pull in opposite directions. The Commission believes this report and its
+recommendations provide a balance.
+
+===== page 8 =====
+The Tax Review Commission’s recommendations are provided in three distinct sets. First is a series
+of recommendations aimed at improving Hawai‘i’s competitiveness and encouraging economic
+growth. Next are several standalone recommendations. Finally, the Commission presents some
+ideas that are appropriate for further study but beyond what the Commission can develop a mature
+recommendation for.
+A SERIES ON COMPETITIVENESS
+Hawai‘i lags behind other states in competitiveness in economic growth and personal income
+growth.32 Data prove that Hawai‘i’s cost of living has not outpaced the cost of living on the mainland.
+However, data also prove that personal incomes have been outpaced by personal incomes on the
+mainland. The Tax Foundation ranks Hawai‘i among the bottom among states in their
+competitiveness index.33 However, the Tax Foundation’s methodology is focused almost exclusively
+on the tax affects on businesses.34 The Commission considers this incomplete. Find some resource
+from ITEP and show that Hawai‘i lags behind on their measures too, or at least just falls in the middle
+of the road.
+This should be improved. The structure of the tax system can either hinder or support this.
+Competitiveness and affordability are the same thing. Hawai‘i’s cost of living has increased apace
+with that of the mainland’s, but Hawai‘i’s personal income levels have not. This leads to an
+affordability issue that many of Hawai‘i’s people are experiencing acutely.
+Cite to some COST and Tax Foundation35 material on comparative between Hawai‘i and other
+states.36 The GET brings in relatively more revenue than other states’ general sales taxes, while
+Hawai‘i’s corporate and personal income taxes bring in relatively less compared to that of other
+states.37
+The Commission recommends implementing the following recommendations.
+Recommendation: placeholder
+32 Cite needed
+33 JANELLE FITTS, ET AL., TAX FOUNDATION, 2027 STATE TAX COMPETITIVENESS INDEX 33 (2027) (describing individual
+income taxes primarily in terms of their impact on an individual’s decision to become a self-employed
+entrepreneur).
+34 See generally JANELLE FITTS, ET AL., TAX FOUNDATION, 2027 STATE TAX COMPETITIVENESS INDEX 14 (2027).
+35 JANELLE FITTS, ET AL., TAX FOUNDATION, 2027 STATE TAX COMPETITIVENESS INDEX 2027.
+36 Andrew Phillips & Caroline Sallee, Ernst & Young LLP, TOTAL STATE AND LOCAL BUSINESS TAXES: STATE-BY-STATE
+ESTIMATES FOR FY24 (2025).
+37 ANDREW PHILLIPS & CAROLINE SALLEE, ERNST & YOUNG LLP, TOTAL STATE AND LOCAL BUSINESS TAXES: STATE-BY-STATE
+ESTIMATES FOR FY24, at 32 (2025).
+8
+
+--- page 8 table 1 ---
+The Tax Review Commission’s recommendations are provided in three distinct sets. First is a series
+of recommendations aimed at improving Hawai‘i’s competitiveness and encouraging economic
+growth. Next are several standalone recommendations. Finally, the Commission presents some
+ideas that are appropriate for further study but beyond what the Commission can develop a mature
+recommendation for.
+
+--- page 8 table 2 ---
+ | Find some resource
+from ITEP and show that Hawai‘i lags behind on their measures too, or at least just falls in the middle | 
+of the road. | 
+
+===== page 9 =====
+Recommendation: placeholder
+Recommendation: placeholder
+Table 2 - Revenue Raised (in millions) template
+2027 2028 2029 2030 2031
+proposal $1 $630 $670 $6 $6
+proposal $11 $12 $1 $15 $1
+Should the Competitiveness and Growth Agenda be Accompanied by Department Resources?
+The Commission has recommended a series of changes towards increasing Hawai‘i’s
+competitiveness and encouraging economic growth. Commensurately, Hawai‘i’s Department of
+Taxation (Department) should be competitive. Economic growth does not contribute to tax adequacy
+if the tax system cannot keep up. The prior Tax Review Commission made a specific
+recommendation to fund the Department.38
+Maintaining a competitive Department is not easy. Periods of growth are often periods of innovation.
+Ensuring tax collection paces economic growth will require the Department to keep up with the
+economy’s innovation. Investment in the Department's personnel as well as its technology is critical.
+At the same time, the Internal Revenue Service is becoming a less reliable partner to the state
+departments of revenue. The Treasury Inspector General has found and reported a decrease in audit
+collections following the staffing cuts at the IRS.39 The report states the fact that enforcement
+revenue has declined and states this is “due in large part” to a large decrease in “examination
+revenue.” However, the report does not state the decrease is due to the staffing cuts, but does point
+out that the decreases coincide with those staffing cuts.40 The report also highlights the increases in
+revenue through fiscal years 2024, noting these increases coincided with funding and staffing
+increases through the Inflation Reduction Act.41 Though this points to the actual, audit driven
+38 TAX REV. COMM’N, REPORT OF THE 2020-2022 TAX REV. COMM’N 15-16 (2021).
+39 U.S. DEP’T OF THE TREASURY INSPECTOR GENERAL FOR TAX ADMINISTRATION, TRENDS IN COMPLIANCE ACTIVITIES
+THROUGH FISCAL YEAR 2025, REP. NO. 2026-3SO-045 at 4-5 (2026), Trends in Compliance Activities Through
+Fiscal Year 2025.
+40 U.S. DEP’T OF THE TREASURY INSPECTOR GENERAL FOR TAX ADMINISTRATION, TRENDS IN COMPLIANCE ACTIVITIES
+THROUGH FISCAL YEAR 2025, REP. NO. 2026-3SO-045 at 5 (2026), Trends in Compliance Activities Through Fiscal
+Year 2025.
+41 Public Law No. 117-169 (“IRA”).
+9
+
+--- page 9 table 1 ---
+Table 2 - Revenue Raised (in millions) | template | 
+
+--- page 9 table 2 ---
+ |  |  | 2027 |  |  | 2028 |  |  | 2029 |  |  | 2030 |  |  | 2031 |  | 
+ | proposal |  |  | $1 |  |  | $630 |  |  | $670 |  |  | $6 |  |  | $6 | 
+proposal |  |  | $11 |  |  | $12 |  |  | $1 |  |  | $15 |  |  | $1 |  | 
+Should the Competitiveness and Growth Agenda be Accompanied by Department Resources? |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+The Commission has recommended a series of changes towards increasing Hawai‘i’s |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+competitiveness and encouraging economic growth. Commensurately, Hawai‘i’s Department of |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Taxation (Department) should be competitive. Economic growth does not contribute to tax adequacy |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+if the tax system cannot keep up. The prior Tax Review Commission made a specific |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+recommendation to fund the Department.38 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Maintaining a competitive Department is not easy. Periods of growth are often periods of innovation. |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+Ensuring tax collection paces economic growth will require the Department to keep up with the |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+economy’s innovation. Investment in the Department's personnel as well as its technology is critical. |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+At the same time, the Internal Revenue Service is becoming a less reliable partner to the state |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+departments of revenue. The Treasury Inspector General has found and reported a decrease in audit |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+collections following the staffing cuts at the IRS.39 The report states the fact that enforcement |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+revenue has declined and states this is “due in large part” to a large decrease in “examination |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+revenue.” However, the report does not state the decrease is due to the staffing cuts, but does point |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+out that the decreases coincide with those staffing cuts.40 The report also highlights the increases in |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+revenue through fiscal years 2024, noting these increases coincided with funding and staffing |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+increases through the Inflation Reduction Act.41 Though this points to the actual, audit driven |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 
+
+===== page 10 =====
+collections, and the effect reduced staffing has had on that, it leaves out the long-term detriment of
+the reduced deterrent effect.
+Though this is not a formal part of the Commission’s recommendations on competitiveness, the
+Commission believes the Department must be properly funded if it is to keep pace with a
+competitive, growing, and innovating economy. See the Commission’s general administration
+recommendation for more.
+STANDALONE RECOMMENDATIONS
+Develop and Utilize a Framework for Analyzing Credits and Exemptions
+Objective:
+Recommendation:
+Develop a framework or frameworks to analyze tax expenditures, including existing and proposed
+tax credits and exemptions.
+Narrative:
+The efficacy of existing credits and exemptions is an evergreen topic for Tax Review Commissions.
+Targeted tax incentives have been called the scourge of state tax policy.42 Targeted tax incentives are
+available to only a small number of taxpayers despite their typical language suggesting they are
+generally available.43 This is often accomplished through use of investment-size thresholds, jobs-
+creation minimums, or the use of other criteria that appears general but is designed to benefit
+specific taxpayers.44 On top of violating various principles of sound tax policy, many of which were
+highlighted earlier in this report, the literature suggests that businesses do not respond to state tax
+incentives anyway.45
+It is important to note what has already been done. In 2016, a pair of Acts were passed requiring the
+State Auditor to look at all credits and exemptions. These are referred to as Act 24546 and Act 261,47
+or, the 2016 Acts.
+• Act 245 (2016) for Income Tax and Financial Institution Tax
+• Act 261 (2016) for GET, Use, Public Service Company, and Insurance Premium Tax
+The 2016 Acts require the State Auditor to do seven things:
+42 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 30 (5th ed. 2022).
+43 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 30 (5th ed. 2022).
+44 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 30 (5th ed. 2022).
+45 DAVID BRUNORI, STATE TAX POLICY: A PRIMER 31-36 (5th ed. 2022).
+46 Act 245, H.B. 1527, 28th Leg., Reg. Sess. (Haw. 2016).
+47 Act 261, S.B. 2547, 28th Leg., Reg. Sess. (Haw. 2016).
+10
+
+--- page 10 table 1 ---
+collections, and the effect reduced staffing has had on that, it leaves out the long-term detriment of
+the reduced deterrent effect.
+Though this is not a formal part of the Commission’s recommendations on competitiveness, the
+Commission believes the Department must be properly funded if it is to keep pace with a
+competitive, growing, and innovating economy. See the Commission’s general administration
+recommendation for more.
+
+--- page 10 table 2 ---
+Objective:
+Recommendation:
+Develop a framework or frameworks to analyze tax expenditures, including existing and proposed
+tax credits and exemptions.
+
+===== page 11 =====
+1) determine the amount of tax expenditure for the exemptions, exclusions, and credits for
+each of the previous three fiscal years;
+2) estimate the amount of tax expenditure for the exemptions, exclusions, and credits for the
+current fiscal year and the next two fiscal years;
+3) determine whether the exemptions, exclusions, and credits have achieved and continue to
+achieve the purpose for which they were enacted by the Legislature;
+4) determine whether the exemptions, exclusions, and credits are necessary to promote or
+preserve tax equity or efficiency;
+5) determine whether an economic benefit has resulted, and if so, quantify the estimated
+benefit directly attributable to the exemptions, exclusions, and credits;
+6) estimate the annual cost of the exemptions, exclusions, and credits per low-income resident
+of the State; and
+7) recommend whether a provision should be retained, modified, or repealed.
+The 2016 Acts require review of the various credits, exemption, and exclusions on a 5-year rolling
+basis or a 10-year rolling basis, depending on tax type. The reports are provided on the State Auditor’s
+webpage.48
+In 2026, Act 16049 became law. Act 160 requires the Department of Business, Economic
+Development & Tourism (DBEDT) to study and evaluate the effectiveness of income tax credits and
+GET and use tax exemptions, in collaboration with the Department of Taxation. DBEDT must report
+their evaluation to the legislature by September 1 of each year. Act 160 applies to taxable years
+beginning after December 31, 2026, so, the first report will be due September 1, 2027.
+Additionally, prior Tax Review Commissions have considered this topic at length…to be developed
+The Tax Review Commission recognizes that credits, exemptions, and other forms of targeted tax
+incentives are inevitable. Given this, the Commission recommends utilizing a framework to guide
+the adoption of all tax incentives. The Commission has developed the following framework.
+JWW note: I might push for two things here, one being a robust PHD econ analysis that UHERO
+presented on and the other a simpler analysis for the pre-game analysis that the leg or leg staff can
+be expected to do on the fly. I mentioned this during the call when UHERO presented. To be
+developed if we do it at all.
+JWW note: Can we re-endorse, or at least cite to, the prior Commission’s recommendation about
+certain GET exemptions and recommend those be repealed? This was for simple and small
+exemptions, like the one for deaf or blind residents, which is worth like $10 per year or something.
+This is on pages 25-26 of the 2020-2022 Commission’s report.
+48 Office of the Auditor, State of Hawai‘i, https://auditor.hawaii.gov/tax-reviews/; archived reports available
+here: https://auditor.hawaii.gov/archived-reports/.
+49 Act 160, H.B. 2429, 33rd Leg., Reg. Sess. (Haw. 2026).
+11
+
+===== page 12 =====
+Transition Hawai‘i’s Corporate Income Tax to Single-sales Factor Apportionment
+JWW note: this may be moved to the competitiveness recommendation
+Objective:
+Recommendation:
+Narrative:
+Important Parallel Change
+Improve Compliance with, and Collect Data for, Hawai‘i’s Pension Income Exemption
+Objective:
+Recommendation:
+The Department of Taxation should address the forms governing the claim for the exemption to make
+compliance more robust and to enable collection of data on the size and makeup of the exemption.
+Narrative:
+Hawai‘i’s exemption of pension income from the income tax creates compliance failures. There is a
+lack of data regarding the size and cost of the exemption.
+Placeholder text for pension recommendation, if we pursue one.
+Enact a Clawback Provision to apply to Section 1031 Exchanges
+Objective:
+Recommendation:
+Create a clawback mechanism to apply to 1031 like-kind exchanges. Require a payment of tax on
+the deferred gain upon execution of the exchange on a property in another state.
+Narrative:
+12
+
+--- page 12 table 1 ---
+JWW note: this may be moved to the competitiveness recommendation
+Objective:
+Recommendation:
+Narrative:
+Important Parallel Change
+
+--- page 12 table 2 ---
+Objective:
+Recommendation:
+The Department of Taxation should address the forms governing the claim for the exemption to make
+compliance more robust and to enable collection of data on the size and makeup of the exemption.
+Narrative:
+Hawai‘i’s exemption of pension income from the income tax creates compliance failures. There is a
+lack of data regarding the size and cost of the exemption.
+Placeholder text for pension recommendation, if we pursue one.
+
+--- page 12 table 3 ---
+Objective:
+Recommendation:
+Create a clawback mechanism to apply to 1031 like-kind exchanges. Require a payment of tax on
+the deferred gain upon execution of the exchange on a property in another state.
+Narrative:
+
+===== page 13 =====
+Insert a Controlling Interest Provision in Hawai‘i’s Conveyance Tax
+Objective:
+Bring horizontal equity to Hawai‘i’s conveyance tax.
+Recommendation:
+Narrative:
+AREAS FOR FURTHER STUDY
+Placeholder for wealth attraction topic
+Objective:
+Recommendation:
+Narrative:
+placeholder
+Worldwide Combined Reporting, or, Net CFC-tested Income
+Objective:
+Recommendation:
+Transition Hawai‘i corporate income tax from a water’s edge basis to a worldwide combined basis.
+Narrative:
+placeholder
+Discussion:
+13
+
+--- page 13 table 1 ---
+Objective:
+Bring horizontal equity to Hawai‘i’s conveyance tax.
+Recommendation:
+Narrative:
+
+--- page 13 table 2 ---
+Narrative:
+placeholder
+
+--- page 13 table 3 ---
+Objective:
+
+--- page 13 table 4 ---
+Discussion:
+
+===== page 14 =====
+CONCLUSION
+14

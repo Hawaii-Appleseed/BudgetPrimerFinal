@@ -1,0 +1,146 @@
+
+===== page 1 =====
+Note to members: I want to pitch this to y’all, but I want to get some buy-in before doing more
+research and writing on it. This would be a recommendation for further study rather than a fully
+developed and detailed recommendation. I hope it will instigate and guide any further study by
+providing research, context, and options. I have inserted notes to myself in italics where I know
+I’ll have to add language if this moves forward, but also to highlight to y’all my acknowledgment
+that this is incomplete as-is. Again, I want to take the temperature on y’all’s openness to this
+before doing more work.
+Objective:
+Modernize Hawai‘i’s corporate income tax to better address the modern global economy and
+ensure its robustness in the face of federal changes.
+Proposed Recommendation:
+Further study and consider options for modernizing and bolstering Hawai‘i’s corporate
+income tax, including a transition to mandatory worldwide combined reporting as well as the
+alternatives described below.
+Narrative:
+The legislature is aware of this topic and has requested the Department to study the issue
+further and develop a revenue estimate for it.1 The Commission believes its research and
+description of the issues will add to the Department’s eventual report and to the general
+discourse. This narrative does not represent a complete or comprehensive
+recommendation. Rather, this is a recommendation to further study the topic.
+As described above (note: this refers to the report’s single sales factor writeup), state
+corporate income taxes, including Hawai‘i’s, use apportionment formulas to apportion (split
+up) taxpayers’ taxable income among the states. This calculation involves two things, the
+first is the apportionment formula itself and the second is the taxable income that is split up
+by the apportionment formula. The Commission’s earlier recommendation, to transition to
+single sales factor apportionment, concerned the actual apportionment formula. This
+recommendation, on the other hand, considers the universe of taxable income that is
+exposed to the apportionment formula.
+To determine this pot of income, Hawai‘i’s corporate income tax utilizes water’s edge
+combined reporting.2 This means that only the income of domestic entities is included and
+exposed to Hawai‘i’s apportionment factor to determine Hawai‘i’s share. Transitioning to a
+1 H.R. 179, 33rd Leg., Reg. Sess. (Haw. 2026).
+2 HAW. REV. STAT. § 235-38.5.
+1
+
+===== page 2 =====
+worldwide combined reporting method would change that, and the income of foreign
+affiliates would go into the pot of income. Additionally, the attributes of those foreign
+affiliates would be included in the Hawai‘i apportionment formula. So, not only would the
+income from foreign affiliates be included in the pot of income, but the attributes of those
+foreign affiliates, their sales, payroll, and property, would be included in the three factors of
+the Hawai‘i apportionment formula. Under current law, the factors only include the
+attributes of the domestic affiliates, similar to how the pot of taxable income only includes
+the income of the domestic affiliates.
+Mandatory worldwide combined reporting is constitutional. However, it is not fully used by
+any states currently.3 The cases holding mandatory worldwide combined reporting
+constitutional are Container Corporation,4 and Barclays Bank.5 At the time Container was
+decided, more than 10 states required worldwide combined reporting.6 Despite this, there
+was much consternation about mandatory worldwide combined reporting at the time, and a
+grand bargain was reached where the states agreed to back away from worldwide combined
+reporting and the federal government agreed to help the states enforce their system.7
+An important part of the federal government’s role was enforcement of transfer pricing.8
+Transfer pricing is important to the federal system, but less important to the states’ systems
+due to the widespread use of combined reporting. Insert description of transfer pricing and
+the reason the combined reporting method obviates its need.
+However, transfer pricing is still important to the states. This is because if states’ combined
+reporting systems are limited to the water’s edge, as they are, foreign affiliates will be
+excluded from the combined report and the advantages of combined reporting will
+disappear when multinational entities are involved. Thus, even with combined reporting, the
+only thing preventing multinational entities from taking full advantage of this and transferring
+income to excluded foreign affiliates, at will, is transfer pricing. The federal government’s
+enforcement of its transfer pricing regime was important to the efficacy of the state system.9
+Transfer pricing serves as a backstop. However, the federal government has not succeeded
+3 Alaska mandates worldwide combined reporting but only for oil and gas companies.
+4 Container Corporation of America v. Franchise Tax Board, 463 U.S. 159 (1983).
+5 Barclays Bank PLC v. Franchise Tax Board of California, 512 U.S. 298 (1994).
+6 U.S. GENERAL ACCOUNTING OFF., GAO/GGD-82-38, KEY ISSUES AFFECTING STATE TAXATION OF MULTINATIONAL
+CORPORATE INCOME NEED RESOLVING 31 (1982).
+7 Final Report of the Worldwide Unitary Taxation Working Group: Chairman’s Report and Supplemental
+Views,” https://lawcat.berkeley.edu/record/191585?ln=en (August 1984).
+8 MULTISTATE TAX COMMISSION, CHANGES IN FEDERAL TAXATION OF MULTINATIONAL CORPORATE GROUPS 20 (2026).
+9 Reuven Avi-Yonah, Should the States Return to Worldwide Combined Reporting?, 118 TAX NOTES INT’L 245,
+246 (2025).
+2
+
+===== page 3 =====
+in enforcing transfer pricing.10 Insert history of the federal government’s struggle to enforce
+transfer pricing
+Furthermore, changes to the federal tax system made in 2017 and 2025 have made transfer
+pricing less important to the federal system.11 Given this, states can expect even less
+enforcement of federal transfer pricing rules. The changes included the adoption of a 100
+percent dividends received deduction, which represents a move away from a worldwide
+system toward a territorial system,12 as well as the adoption of NCTI, and before it, GILTI,
+which represents additional taxation of the income of controlled foreign corporations.13
+Insert language demonstrating how these move the system away from transfer pricing.
+Model Law:
+There is a model statute available for mandatory worldwide combined reporting.14 The
+model is based on the Multistate Tax Commission’s combined reporting model, which
+Hawai‘i’s corporate income tax is at least loosely based on.15 The Commission recommends
+the model statute as a good starting point.
+Options:
+Adopting mandatory worldwide combined reporting will be a heavy lift, especially politically.
+It is a step no state has taken since the 1980s. Thus, the Commission provides the following
+options that may be less onerous but still serve to modernize the Hawai‘i’s corporate income
+tax.
+Elective worldwide combined reporting:
+Several states require worldwide combined reporting but allow taxpayer’s to elect into
+water’s edge combined reporting, these include California,16 North Dakota,17 Montana,18
+10 See generally, Reuven Avi-Yonah, et al., Commensurate With Income: IRS Nonenforcement Has Cost $1
+Trillion, 179 TAX NOTES FEDERAL 1297 (2023) (discussing the shortcomings of the Internal Revenue Service’s
+enforcement of the commensurate with income standard, just one aspect of transfer pricing).
+11 MULTISTATE TAX COMMISSION, CHANGES IN FEDERAL TAXATION OF MULTINATIONAL CORPORATE GROUPS 16-17 (2026).
+12 TAX POLICY CENTER, THE TAX POLICY BRIEFING BOOK, Key Elements of the U.S. Tax System,
+https://taxpolicycenter.org/briefing-book (January 2024).
+13 TAX POLICY CENTER, THE TAX POLICY BRIEFING BOOK, Key Elements of the U.S. Tax System,
+https://taxpolicycenter.org/briefing-book (January 2024).
+14 Model Statute for Worldwide Combined Reporting,
+https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5167213.
+15 HAW. CODE R. § 18-235-22-03; see also, HAW. REV. STAT. Chapter 255.
+16 CAL. REV. & TAX. CODE § 25110(a).
+17 N.D. CENT. CODE § 57-38.4-02.
+18 MONT. CODE ANN. § 15-31-324.
+3
+
+===== page 4 =====
+and, most recently, Colorado.19 Other states requires water’s edge combined reporting as
+the default but allow an election into worldwide combined, including Utah,20
+Massachusetts,21 and West Virginia.22 In total, approximately 12 states allow elective
+worldwide combined reporting.
+One common issue is the duration of the election. Colorado requires a 10-year election,
+meaning that once a taxpayer elects into water’s edge, that taxpayer is bound to that election
+for 10 tax years.23
+A simple and easy to understand issue with this option is that taxpayers will only elect into
+worldwide combined reporting if doing so would save them money. Thus, the revenue
+estimate for this option would be negative. The Commission still considers this a viable
+option both as a modernization of the corporate income tax and as a potential stepping
+stone toward mandatory worldwide combined reporting.
+Net CFC-tested Income:
+Net CFC-tested income, or, NCTI, is another option. The source of NCTI is Internal Revenue
+Code section 951A. States can conform to NCTI as a substitute to mandating worldwide
+combined reporting. Taxpayers are required to report the amount of NCTI on their federal
+returns, so it is a readily available figure that will not require additional filing or disclosure
+from taxpayers. However, the attributes of the CFCs generating the NCTI would ideally be
+included in the taxpayer’s apportionment factor. This could be complicated, but no more
+complicated that the same effort under mandatory worldwide combined reporting. In 2026,
+New Mexico conformed to IRC section 951A along with full factor representation. If this
+option is chosen, the Commission recommends their bill and law as a guide.24
+19 COLO. REV. STAT. § 39-22-303-8.5; H.B. 26-1289, 75th Gen. Assemb., 2d Reg. Sess. (Col. 2026).
+20 placehholder
+21 placehholder
+22 placehholder
+23 COLO. REV. STAT. § 39-22-303-8.5(c)(II)(A).
+24 S.B. 151, 57th Leg., 2d Reg. Sess. (N.M. 2026)
+4

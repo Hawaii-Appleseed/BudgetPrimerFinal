@@ -1,0 +1,130 @@
+
+===== page 1 =====
+Note to members:
+As explained at the meeting, this one is the least complete of the writeups I’ve done.
+For example, one of the bullet points below just says “Pursue artificial intelligence to
+the extent possible” without more. This is not intended to be complete; I just don’t know
+how to expand on it. This and other parts of this will need your input and help.
+Objective:
+Improve the Department’s collections rates on already delinquent accounts. Prevent
+accounts from becoming delinquent in the first place.
+Proposed Recommendation:
+Support the Department’s Collections Branch. Consider authorizing an alternative voluntary
+disclosure program. Support the Department generally.
+The Commission recommends a mix of minor changes that it believes may move the needle
+over time, particularly on delinquent collections. The recommendations below are toward
+improving collections of delinquent accounts but also addressing the front side and
+preventing accounts from becoming delinquent to the extent possible.
+The Commission’s recommendation is in three parts:
+• Support the Collections Branch of the Department:
+Explore private collection agency options.
+o
+Offer standardized installment plans.
+o
+Make qualification of installment plans automatic based on level of liability.
+o
+Pursue artificial intelligence to the extent possible.
+o
+• Revamp the Department’s Voluntary Disclosure Program:
+Consider adopting a one-year pilot program offering:
+o
+ a two-year look-back period.
+ objective qualification criteria.
+ non-anonymous signups for those that meet the objective qualification
+criteria.
+ immediate registration to taxpayers that qualify.
+Potentially limited to general excise tax and use tax. Potentially limited to
+o
+remote sellers with no physical presence in Hawai‘i.
+1
+
+===== page 2 =====
+Maintain current Voluntary Disclosure Programs, both the in-house program
+o
+and the Multistate Tax Commission program.
+• General support for the Department:
+Fund additional taxpayer education efforts.
+o
+Consider a simplified general excise tax only tax registration that can be
+o
+Support the Department’s use of artificial intelligence.
+o
+Support the Department and practitioners with workable and practicable
+o
+provisions.
+Narrative:
+Collections
+Collection of delinquent tax debt is an important issue for all tax agencies.1 However, due to
+the nature of delinquency, delinquent amounts are among the most difficult amounts of
+money to collect. The issue should be considered from both sides.
+Within the competitiveness recommendations, the Commission suggested the Department
+be funded appropriately so that it can ride along with the economy as it grows. The role of
+collections is different. Collections represents the amount of money the Department did not
+collect.
+Delinquent tax accounts are cumulative and it is impossible to collect 100 percent of all
+delinquent amounts. Therefore, delinquent amounts will consistently rise without a write-
+off mechanism.
+JWW note: we can ask the Department to provide information to us at the Nov 30th meeting
+or the next meeting to help fill this out.
+Collecting delinquent accounts is hard work. The Commission believes that the
+Department’s current efforts can be supplemented with the expertise and resources of
+private collections agencies.
+Preventing accounts from reaching Collections
+Bankruptcies happen and cannot completely be prevented. However, in some cases,
+taxpayers fail to keep their accounts current or fail to register when the begin business either
+through neglect or ignorance. Contacting those taxpayers that stop filing or paying before
+1 See generally, agendas for various FTA regionals meetings, peppered with Collections topics,
+https://hub.taxadmin.org/e/2026-msata-
+conference?_gl=1*m00lf4*_ga*NTgwNDI0NS4xNzg2MDU3NDU3*_ga_HQFJQFW06W*czE3OTQ5NDA3OTAkb
+zUkZzEkdDE3OTQ5NDA3OTQkajU2JGwwJGgw.
+2
+
+===== page 3 =====
+their accrued tax liability is unaddressably large is important. Additionally, giving those with
+manageable accrued tax liabilities a way to address their liabilities is also important. This
+can go toward reducing the number of cases that end up as delinquent accounts with the
+Department’s Collections Branch in the first place.
+Voluntary Disclosure Program
+The potential revamp or addition to the Department’s voluntary disclosure offering is based
+on a program that was recently approved by the Streamlined Sales Tax Governing Board
+(Streamlined).2 Streamlined is a sales tax simplification organization with 24 member states.
+The organization was created in 1999 by the National Governor’s Association and the
+National Conference of State Legislatures to simplify sales tax collection.3 The Streamlined
+voluntary disclosure program represents just a sliver of what Streamlined does overall.
+The Streamlined program provides objective qualification criteria, a near-automatic
+acceptance based on those criteria, non-anonymity, a two-year lookback period, and the
+ability to immediately register with the state to begin collecting tax and paying. The program
+is currently set to last one year.4
+The Commission recommends considering a similar program, either permanently or on a
+short-term basis. The Commission believes this may draw businesses and others into
+compliance that may be wary of the Department’s existing voluntary disclosure program and
+its minimum 10-year lookback period.5
+There is a connection to collections in that the more taxpayers the state can lure into
+compliance early on, the fewer there are out there accruing the size of liabilities that will
+prevent them from ever paying.
+It is unclear to the Commission whether a VDA program as described here would require
+amendments to the law or could be done with the Department’s current administrative
+authority.
+General support for the Department:
+2 SST Limited Lookback Program, https://www.streamlinedsalestax.org/for-businesses/sst-limited-lookback-
+program.
+3 About Streamlined FAQs, https://www.streamlinedsalestax.org/Shared-Pages/faqs/faqs---about-
+streamlined.
+4 SST Limited Lookback Program, https://www.streamlinedsalestax.org/for-businesses/sst-limited-lookback-
+program.
+5 Tax Information Release 2020-03 (August 3, 2020).
+3
+
+===== page 4 =====
+The 2020-2022 Tax Review Commission recommended assessing the Department’s needs
+and supporting those needs. The Commission stated that additional compliance staffing
+(noting the law of diminishing returns), the ability to continuously recruit even during a hiring
+freeze, and additional support for the Department’s policy and rulemaking functions.6
+On support the Department and practitioners with workable and practicable provisions,
+some things like the recently created adjusted gross income (AGI) requirement for the
+renewable energy credit,7 may be good policy but in practice are not feasible. For example,
+taxpayer’s AGI must be certified by February 28. This is six weeks before returns are due and
+before most taxpayers have had a chance to gather the documents and determine their AGI.
+6 TAX REV. COMM’N, REPORT OF THE 2020-2022 TAX REV. COMM’N 15-16 (2021).
+7 Act 24, SLH 2026.
+4
